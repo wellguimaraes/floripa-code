@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Group } from "three";
 
 import type { WorldArchipelago } from "../definition/types";
+import { drawSoon } from "./frames";
 import { geometry } from "./geometries";
 import { palette } from "./palette";
 
@@ -111,7 +112,7 @@ function Shark(props: {
       sighting.z + Math.cos(sighting.heading) * travel,
     );
     group.rotation.set(dive * 0.6, sighting.heading, 0);
-    window.setTimeout(() => state.invalidate(), 1000 / fps);
+    drawSoon(state.invalidate, fps);
   });
 
   return (

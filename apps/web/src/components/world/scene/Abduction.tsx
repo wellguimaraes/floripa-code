@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import { AdditiveBlending, type Group, type Mesh, type MeshBasicMaterial } from "three";
 
 import type { Vec3 } from "../definition/types";
+import { drawSoon } from "./frames";
 import { geometry } from "./geometries";
 import { palette } from "./palette";
 
@@ -65,7 +66,7 @@ export function Abduction(props: {
     figure.current.rotation.y = lift * Math.PI * 4;
     figure.current.scale.setScalar(scale * (1 - lift * 0.6));
 
-    window.setTimeout(() => state.invalidate(), 1000 / FPS);
+    drawSoon(state.invalidate, FPS);
   });
 
   return (

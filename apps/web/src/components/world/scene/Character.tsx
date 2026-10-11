@@ -17,6 +17,7 @@ import type { Placement } from "../engine/slots";
 import type { WorldCharacter } from "../engine/world";
 import { balloonTexture } from "./balloons";
 import { CharacterModel } from "./CharacterModel";
+import { drawSoon } from "./frames";
 import { geometry } from "./geometries";
 import { LitMaterial } from "./lighting";
 import { palette } from "./palette";
@@ -142,7 +143,7 @@ export function Character(props: {
       }
       // Keep frames coming until the walk ends, plus one to draw the arrival
       // pose, at a capped rate rather than the display's.
-      window.setTimeout(() => state.invalidate(), 1000 / movement.walkFps);
+      drawSoon(state.invalidate, movement.walkFps);
     }
     if (balloon.current !== null) {
       // Balloons keep one size on screen, so they stay easy to spot zoomed out:

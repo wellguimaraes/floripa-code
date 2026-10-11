@@ -1,8 +1,21 @@
+import { Matrix4 } from "three";
+
 import type { PropKind, TerrainKind, Vec3, WorldDefinition } from "../definition/types";
 import { islandBounds } from "../engine/archipelago";
 import { hashString } from "../engine/hash";
 import { geometry } from "./geometries";
 import { LitMaterial } from "./lighting";
+import {
+  chain,
+  type MergedPart,
+  mergedParts,
+  type Part,
+  rotateX,
+  rotateY,
+  rotateZ,
+  scale,
+  translate,
+} from "./merged";
 import { palette } from "./palette";
 import { Campfire, NightWater } from "./Night";
 import { Ripple } from "./Ripple";
@@ -167,17 +180,21 @@ function PropModel({
       // One family's pile, in front of the parent; its kids mine it from the sides.
       return (
         <group position-z={0.95} scale={0.55} rotation-y={(seed % 360) * (Math.PI / 180)}>
-          {rockPile(seed).map((rock) => (
-            <mesh
-              key={rock.key}
-              geometry={geometry.foliage}
-              position={rock.position}
-              rotation={rock.rotation}
-              scale={rock.scale}
-            >
-              <LitMaterial color={rock.color} flatShading />
-            </mesh>
-          ))}
+          <MergedMeshes
+            parts={mergedParts(`rocks:${seed}`, () =>
+              rockPile(seed).map((rock) => ({
+                geometry: geometry.foliage,
+                matrix: chain(
+                  translate(...rock.position),
+                  rotateX(rock.rotation[0]),
+                  rotateY(rock.rotation[1]),
+                  scale(...rock.scale),
+                ),
+                color: rock.color,
+              })),
+            )}
+            flatShading
+          />
         </group>
       );
     case "rope":
@@ -192,36 +209,9 @@ function PropModel({
         </mesh>
       );
     case "towel":
-      return (
-        // Long enough for a lying agent, head end (-z) included.
-        <group position-z={-0.3}>
-          <Block size={[0.8, 0.03, 1.9]} at={[0, 0.015, 0]} color={palette.towel} />
-          <Block size={[0.82, 0.032, 0.3]} at={[0, 0.016, -0.5]} color={palette.towelStripe} />
-          <Block size={[0.82, 0.032, 0.3]} at={[0, 0.016, 0.45]} color={palette.towelStripe} />
-        </group>
-      );
+      return <MergedMeshes parts={mergedParts("towel", towelParts)} />;
     case "beachChair":
-      // A lounger: feet toward the sea (+z), backrest raised behind.
-      return (
-        <>
-          {[-0.26, 0.26].flatMap((x) =>
-            [-0.3, 0.7].map((z) => (
-              <Block
-                key={`${x}:${z}`}
-                size={[0.05, 0.3, 0.05]}
-                at={[x, 0.15, z]}
-                color={palette.chairFrame}
-              />
-            )),
-          )}
-          <Block size={[0.62, 0.05, 1.1]} at={[0, 0.32, 0.2]} color={palette.chairFrame} />
-          <Block size={[0.54, 0.06, 1.04]} at={[0, 0.37, 0.2]} color={palette.chairCushion} />
-          <group position={[0, 0.34, -0.33]} rotation-x={0.95}>
-            <Block size={[0.62, 0.05, 0.7]} at={[0, 0, -0.35]} color={palette.chairFrame} />
-            <Block size={[0.54, 0.06, 0.66]} at={[0, 0.05, -0.35]} color={palette.chairCushion} />
-          </group>
-        </>
-      );
+      return <MergedMeshes parts={mergedParts("beachChair", loungerParts)} />;
     case "umbrella":
       return (
         <>
@@ -254,62 +244,110 @@ const PALM_FRONDS = 8;
  * from the seed; the prop's facing sets which way it leans.
  */
 function Palm({ seed }: { readonly seed: number }) {
+  return <MergedMeshes parts={mergedParts(`palm:${seed % 70}`, () => palmParts(seed))} />;
+}
+
+function palmParts(seed: number): Part[] {
   const height = 2.3 + (seed % 7) * 0.12;
   const bend = 0.45 + (seed % 5) * 0.1;
   const segment = height / PALM_SEGMENTS;
   // The trunk follows x = bend * t², so it leans more toward the top.
   const at = (t: number) => bend * t * t;
-  const top: [number, number, number] = [at(1), height, 0];
-  return (
-    <>
-      {Array.from({ length: PALM_SEGMENTS }, (_, index) => {
-        const t = (index + 0.5) / PALM_SEGMENTS;
-        const radius = 0.15 - t * 0.06;
-        return (
-          <mesh
-            key={index}
-            geometry={geometry.cylinder}
-            position={[at(t), (index + 0.5) * segment, 0]}
-            rotation-z={-Math.atan((2 * bend * t) / height)}
-            scale={[radius, segment * 1.04, radius]}
-          >
-            <LitMaterial color={index % 2 === 0 ? palette.palmTrunk : palette.palmTrunkDark} />
-          </mesh>
-        );
-      })}
-      {[0, 1, 2].map((index) => {
-        const angle = (index / 3) * Math.PI * 2 + 0.4;
-        return (
-          <mesh
-            key={index}
-            geometry={geometry.puff}
-            position={[top[0] + Math.cos(angle) * 0.13, height - 0.12, Math.sin(angle) * 0.13]}
-          >
-            <LitMaterial color={palette.coconut} />
-          </mesh>
-        );
-      })}
-      {Array.from({ length: PALM_FRONDS }, (_, index) => (
-        <group
-          key={index}
-          position={top}
-          rotation-y={(index / PALM_FRONDS) * Math.PI * 2 + (seed % 10) * 0.07}
-        >
-          {/* Rising from the crown, then drooping toward the tip. */}
-          <group rotation-z={index % 2 === 0 ? 0.4 : 0.2}>
-            <mesh geometry={geometry.box} position-x={0.42} scale={[0.85, 0.04, 0.34]}>
-              <LitMaterial color={index % 2 === 0 ? palette.palmLeaf : palette.palmLeafDark} />
-            </mesh>
-            <group position-x={0.82} rotation-z={-0.85}>
-              <mesh geometry={geometry.box} position-x={0.36} scale={[0.75, 0.035, 0.24]}>
-                <LitMaterial color={index % 2 === 0 ? palette.palmLeaf : palette.palmLeafDark} />
-              </mesh>
-            </group>
-          </group>
-        </group>
-      ))}
-    </>
-  );
+  const parts: Part[] = [];
+  for (let index = 0; index < PALM_SEGMENTS; index += 1) {
+    const t = (index + 0.5) / PALM_SEGMENTS;
+    const radius = 0.15 - t * 0.06;
+    parts.push({
+      geometry: geometry.cylinder,
+      matrix: chain(
+        translate(at(t), (index + 0.5) * segment, 0),
+        rotateZ(-Math.atan((2 * bend * t) / height)),
+        scale(radius, segment * 1.04, radius),
+      ),
+      color: index % 2 === 0 ? palette.palmTrunk : palette.palmTrunkDark,
+    });
+  }
+  for (let index = 0; index < 3; index += 1) {
+    const angle = (index / 3) * Math.PI * 2 + 0.4;
+    parts.push({
+      geometry: geometry.puff,
+      matrix: translate(at(1) + Math.cos(angle) * 0.13, height - 0.12, Math.sin(angle) * 0.13),
+      color: palette.coconut,
+    });
+  }
+  for (let index = 0; index < PALM_FRONDS; index += 1) {
+    const color = index % 2 === 0 ? palette.palmLeaf : palette.palmLeafDark;
+    // Rising from the crown, then drooping toward the tip.
+    const frond = chain(
+      translate(at(1), height, 0),
+      rotateY((index / PALM_FRONDS) * Math.PI * 2 + (seed % 10) * 0.07),
+      rotateZ(index % 2 === 0 ? 0.4 : 0.2),
+    );
+    parts.push({
+      geometry: geometry.box,
+      matrix: chain(frond, translate(0.42, 0, 0), scale(0.85, 0.04, 0.34)),
+      color,
+    });
+    parts.push({
+      geometry: geometry.box,
+      matrix: chain(
+        frond,
+        translate(0.82, 0, 0),
+        rotateZ(-0.85),
+        translate(0.36, 0, 0),
+        scale(0.75, 0.035, 0.24),
+      ),
+      color,
+    });
+  }
+  return parts;
+}
+
+/** A box of `size` centred at `at`, inside `frame`. */
+const block = (
+  size: readonly [number, number, number],
+  at: readonly [number, number, number],
+  color: string,
+  frame = new Matrix4(),
+): Part => ({
+  geometry: geometry.box,
+  matrix: chain(frame, translate(...at), scale(...size)),
+  color,
+});
+
+/** Long enough for a lying agent, head end (-z) included. */
+function towelParts(): Part[] {
+  const frame = translate(0, 0, -0.3);
+  return [
+    block([0.8, 0.03, 1.9], [0, 0.015, 0], palette.towel, frame),
+    block([0.82, 0.032, 0.3], [0, 0.016, -0.5], palette.towelStripe, frame),
+    block([0.82, 0.032, 0.3], [0, 0.016, 0.45], palette.towelStripe, frame),
+  ];
+}
+
+/** A lounger: feet toward the sea (+z), backrest raised behind. */
+function loungerParts(): Part[] {
+  const backrest = chain(translate(0, 0.34, -0.33), rotateX(0.95));
+  return [
+    ...[-0.26, 0.26].flatMap((x) =>
+      [-0.3, 0.7].map((z) => block([0.05, 0.3, 0.05], [x, 0.15, z], palette.chairFrame)),
+    ),
+    block([0.62, 0.05, 1.1], [0, 0.32, 0.2], palette.chairFrame),
+    block([0.54, 0.06, 1.04], [0, 0.37, 0.2], palette.chairCushion),
+    block([0.62, 0.05, 0.7], [0, 0, -0.35], palette.chairFrame, backrest),
+    block([0.54, 0.06, 0.66], [0, 0.05, -0.35], palette.chairCushion, backrest),
+  ];
+}
+
+function MergedMeshes(props: {
+  readonly parts: ReadonlyArray<MergedPart>;
+  readonly flatShading?: boolean;
+}) {
+  return props.parts.map((part) => (
+    <mesh key={part.color} geometry={part.geometry}>
+      <LitMaterial color={part.color} flatShading={props.flatShading ?? false} />
+    </mesh>
+  ));
 }
 
 interface PileRock {

@@ -17,6 +17,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 
 import type { Pose } from "../definition/types";
+import { drawSoon } from "./frames";
 import { NightContext, toNight } from "./lighting";
 import type { FamilyShades } from "./palette";
 
@@ -25,6 +26,7 @@ const MODEL_URL = `${import.meta.env.BASE_URL}world/character.glb`;
 /** Characters stand this tall in world units, like the shape-built ones did. */
 const HEIGHT = 1.45;
 const FADE_SECONDS = 0.25;
+const FADE_FPS = 30;
 
 const CLIPS: Record<Pose | "walk", string> = {
   walk: "Walking_A",
@@ -115,6 +117,7 @@ export function CharacterModel(props: {
   );
 
   const playing = useRef<AnimationAction | null>(null);
+  const fadeUntil = useRef(0);
   useFrame((state, delta) => {
     const next = rig.actions.get(CLIPS[isWalking() ? "walk" : pose]) ?? null;
     if (next !== playing.current) {
@@ -125,14 +128,10 @@ export function CharacterModel(props: {
         .play();
       previous?.fadeOut(FADE_SECONDS);
       playing.current = next;
-      // Draw the fade through, then let the scene go still again.
-      const until = performance.now() + FADE_SECONDS * 1000;
-      const keepDrawing = () => {
-        state.invalidate();
-        if (performance.now() < until) window.setTimeout(keepDrawing, 1000 / 30);
-      };
-      keepDrawing();
+      fadeUntil.current = performance.now() + FADE_SECONDS * 1000;
     }
+    // Draw the fade through, then let the scene go still again.
+    if (performance.now() < fadeUntil.current) drawSoon(state.invalidate, FADE_FPS);
     rig.mixer.update(Math.min(delta, 0.1));
     if (raiseHand) raiseArm(rig.arm);
   });
