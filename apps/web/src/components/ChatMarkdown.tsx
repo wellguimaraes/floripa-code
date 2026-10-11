@@ -758,7 +758,9 @@ export function MarkdownCodeBlockFrame({
   headerProps,
   children,
 }: {
-  as?: React.ElementType;
+  // Narrowed to elements that take HTML props: three.js JSX elements are global
+  // too, and the bare `ElementType` union would collapse `children` to never.
+  as?: React.ElementType<React.HTMLAttributes<HTMLElement>>;
   language: string;
   fenceTitle: string | null;
   theme: "light" | "dark";

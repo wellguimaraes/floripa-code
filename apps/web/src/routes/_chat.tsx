@@ -1,10 +1,12 @@
 import { AuthPreviewOperateScope } from "@t3tools/contracts";
-import { Outlet, createFileRoute, redirect, useParams } from "@tanstack/react-router";
+import { Outlet, createFileRoute, redirect, useMatch, useParams } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useMemo } from "react";
 
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { ThreadRouteView } from "../components/ThreadRouteView";
+import { WorldLayout } from "../components/world/WorldLayout";
+import { useWorldModeStore } from "../components/world/worldModeStore";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { useClientSettings, useLegacySidebarEnabled } from "../hooks/useSettings";
 import { openCommandPalette } from "../commandPaletteBus";
@@ -110,6 +112,13 @@ function ChatRouteGlobalShortcuts() {
           defaultProjectRef,
           handleNewThread,
         });
+        return;
+      }
+
+      if (command === "world.toggle") {
+        event.preventDefault();
+        event.stopPropagation();
+        useWorldModeStore.getState().toggle();
         return;
       }
 
@@ -221,10 +230,24 @@ function ChatRouteLayout() {
     strict: false,
     select: (params) => resolveThreadRouteTarget(params),
   });
+  // The world stands in for threads and the landing page; other chat pages
+  // such as pull requests still render normally.
+  // Read the landing match, not the location: the location changes before the
+  // matches do, and rendering the landing Outlet for that one render starts a
+  // draft that replaces the thread being opened.
+  const onLanding = useMatch({ from: "/_chat/", shouldThrow: false, select: () => true }) ?? false;
+  const worldMode =
+    useWorldModeStore((state) => state.enabled) && (Boolean(threadTarget) || onLanding);
   return (
     <>
       <ChatRouteGlobalShortcuts />
-      {threadTarget ? <ThreadRouteView target={threadTarget} /> : <Outlet />}
+      {worldMode ? (
+        <WorldLayout target={threadTarget ?? null} />
+      ) : threadTarget ? (
+        <ThreadRouteView target={threadTarget} />
+      ) : (
+        <Outlet />
+      )}
     </>
   );
 }
