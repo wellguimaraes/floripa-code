@@ -191,13 +191,36 @@ function PropModel({
           <LitMaterial color={palette.rope} />
         </mesh>
       );
-    case "beachChair":
+    case "towel":
       return (
-        <group rotation-x={-0.12}>
-          <Block size={[0.55, 0.05, 1.3]} at={[0, 0.26, 0]} color={palette.towel} />
-          <Block size={[0.57, 0.052, 0.26]} at={[0, 0.262, -0.3]} color={palette.towelStripe} />
-          <Block size={[0.57, 0.052, 0.26]} at={[0, 0.262, 0.25]} color={palette.towelStripe} />
+        // Long enough for a lying agent, head end (-z) included.
+        <group position-z={-0.3}>
+          <Block size={[0.8, 0.03, 1.9]} at={[0, 0.015, 0]} color={palette.towel} />
+          <Block size={[0.82, 0.032, 0.3]} at={[0, 0.016, -0.5]} color={palette.towelStripe} />
+          <Block size={[0.82, 0.032, 0.3]} at={[0, 0.016, 0.45]} color={palette.towelStripe} />
         </group>
+      );
+    case "beachChair":
+      // A lounger: feet toward the sea (+z), backrest raised behind.
+      return (
+        <>
+          {[-0.26, 0.26].flatMap((x) =>
+            [-0.3, 0.7].map((z) => (
+              <Block
+                key={`${x}:${z}`}
+                size={[0.05, 0.3, 0.05]}
+                at={[x, 0.15, z]}
+                color={palette.chairFrame}
+              />
+            )),
+          )}
+          <Block size={[0.62, 0.05, 1.1]} at={[0, 0.32, 0.2]} color={palette.chairFrame} />
+          <Block size={[0.54, 0.06, 1.04]} at={[0, 0.37, 0.2]} color={palette.chairCushion} />
+          <group position={[0, 0.34, -0.33]} rotation-x={0.95}>
+            <Block size={[0.62, 0.05, 0.7]} at={[0, 0, -0.35]} color={palette.chairFrame} />
+            <Block size={[0.54, 0.06, 0.66]} at={[0, 0.05, -0.35]} color={palette.chairCushion} />
+          </group>
+        </>
       );
     case "umbrella":
       return (
@@ -209,25 +232,7 @@ function PropModel({
         </>
       );
     case "palm":
-      return (
-        <>
-          <group rotation-z={0.12}>
-            <Cylinder radius={0.1} height={2.4} at={[0, 1.2, 0]} color={palette.palmTrunk} />
-          </group>
-          {[0, 1, 2, 3, 4].map((index) => (
-            <group key={index} position={[-0.28, 2.35, 0]} rotation-y={(index * Math.PI * 2) / 5}>
-              <mesh
-                geometry={geometry.box}
-                position-x={0.5}
-                rotation-z={-0.35}
-                scale={[1.1, 0.04, 0.3]}
-              >
-                <LitMaterial color={palette.palmLeaf} />
-              </mesh>
-            </group>
-          ))}
-        </>
-      );
+      return <Palm seed={seed} />;
     case "tree":
       return (
         <>
@@ -238,6 +243,73 @@ function PropModel({
         </>
       );
   }
+}
+
+const PALM_SEGMENTS = 7;
+const PALM_FRONDS = 8;
+
+/**
+ * A coconut palm: a ringed trunk curving away from upright, a crown of
+ * drooping two-part fronds and a cluster of coconuts. Height and bend come
+ * from the seed; the prop's facing sets which way it leans.
+ */
+function Palm({ seed }: { readonly seed: number }) {
+  const height = 2.3 + (seed % 7) * 0.12;
+  const bend = 0.45 + (seed % 5) * 0.1;
+  const segment = height / PALM_SEGMENTS;
+  // The trunk follows x = bend * t², so it leans more toward the top.
+  const at = (t: number) => bend * t * t;
+  const top: [number, number, number] = [at(1), height, 0];
+  return (
+    <>
+      {Array.from({ length: PALM_SEGMENTS }, (_, index) => {
+        const t = (index + 0.5) / PALM_SEGMENTS;
+        const radius = 0.15 - t * 0.06;
+        return (
+          <mesh
+            key={index}
+            geometry={geometry.cylinder}
+            position={[at(t), (index + 0.5) * segment, 0]}
+            rotation-z={-Math.atan((2 * bend * t) / height)}
+            scale={[radius, segment * 1.04, radius]}
+          >
+            <LitMaterial color={index % 2 === 0 ? palette.palmTrunk : palette.palmTrunkDark} />
+          </mesh>
+        );
+      })}
+      {[0, 1, 2].map((index) => {
+        const angle = (index / 3) * Math.PI * 2 + 0.4;
+        return (
+          <mesh
+            key={index}
+            geometry={geometry.puff}
+            position={[top[0] + Math.cos(angle) * 0.13, height - 0.12, Math.sin(angle) * 0.13]}
+          >
+            <LitMaterial color={palette.coconut} />
+          </mesh>
+        );
+      })}
+      {Array.from({ length: PALM_FRONDS }, (_, index) => (
+        <group
+          key={index}
+          position={top}
+          rotation-y={(index / PALM_FRONDS) * Math.PI * 2 + (seed % 10) * 0.07}
+        >
+          {/* Rising from the crown, then drooping toward the tip. */}
+          <group rotation-z={index % 2 === 0 ? 0.4 : 0.2}>
+            <mesh geometry={geometry.box} position-x={0.42} scale={[0.85, 0.04, 0.34]}>
+              <LitMaterial color={index % 2 === 0 ? palette.palmLeaf : palette.palmLeafDark} />
+            </mesh>
+            <group position-x={0.82} rotation-z={-0.85}>
+              <mesh geometry={geometry.box} position-x={0.36} scale={[0.75, 0.035, 0.24]}>
+                <LitMaterial color={index % 2 === 0 ? palette.palmLeaf : palette.palmLeafDark} />
+              </mesh>
+            </group>
+          </group>
+        </group>
+      ))}
+    </>
+  );
 }
 
 interface PileRock {

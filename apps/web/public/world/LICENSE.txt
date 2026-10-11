@@ -1,0 +1,6 @@
+character.glb is the "Rogue" from KayKit : Adventurers Character Pack (1.0)
+by Kay Lousberg (www.kaylousberg.com), trimmed to the animations the world
+view uses, without its props, and with a grayscale texture.
+
+Source: https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0
+License: Creative Commons Zero (CC0), http://creativecommons.org/publicdomain/zero/1.0/

@@ -7,8 +7,13 @@ import { LitMaterial } from "./lighting";
 import { palette } from "./palette";
 
 const BOARD_HEIGHT = 2.2;
-const BOARD_LIFT = 1.8;
+const BOARD_LIFT = 4.2;
 const FRAME = 0.28;
+const POLE_WIDTH = 0.42;
+/** A chunky board, so it reads as a solid object rather than a card. */
+const DEPTH = 0.5;
+/** How high the sign reaches, so the camera can fit it in. */
+export const SIGN_TOP = BOARD_LIFT + BOARD_HEIGHT + FRAME + 0.2;
 /** The board grows with the name, between these widths; longer names shrink, then truncate. */
 const MIN_BOARD_WIDTH = 6;
 const MAX_BOARD_WIDTH = 15;
@@ -30,26 +35,32 @@ export function Sign(props: {
   const width = board.width;
   return (
     <group position={slot.position as [number, number, number]} rotation-y={slot.facing}>
-      {[-1, 1].map((side) => (
-        <mesh
-          key={side}
-          geometry={geometry.box}
-          position={[side * (width / 2 - 0.7), BOARD_LIFT / 2, -0.02]}
-          scale={[0.26, BOARD_LIFT, 0.26]}
-        >
-          <LitMaterial color={palette.signPost} />
-        </mesh>
-      ))}
+      {/* One pole, running up behind the board to its middle. */}
+      <mesh
+        geometry={geometry.box}
+        position={[0, (BOARD_LIFT + BOARD_HEIGHT / 2) / 2, -DEPTH / 2 - POLE_WIDTH / 2]}
+        scale={[POLE_WIDTH, BOARD_LIFT + BOARD_HEIGHT / 2, POLE_WIDTH]}
+      >
+        <LitMaterial color={palette.signPost} />
+      </mesh>
       <mesh
         geometry={geometry.box}
         position={[0, BOARD_LIFT + BOARD_HEIGHT / 2, 0]}
-        scale={[width + FRAME * 2, BOARD_HEIGHT + FRAME * 2, 0.14]}
+        scale={[width + FRAME * 2, BOARD_HEIGHT + FRAME * 2, DEPTH]}
+      >
+        <LitMaterial color={palette.signPost} />
+      </mesh>
+      {/* A cap plank overhanging the top, for a bit of silhouette. */}
+      <mesh
+        geometry={geometry.box}
+        position={[0, BOARD_LIFT + BOARD_HEIGHT + FRAME + 0.1, 0]}
+        scale={[width + FRAME * 2 + 0.4, 0.2, DEPTH + 0.3]}
       >
         <LitMaterial color={palette.signPost} />
       </mesh>
       <mesh
         geometry={geometry.plane}
-        position={[0, BOARD_LIFT + BOARD_HEIGHT / 2, 0.072]}
+        position={[0, BOARD_LIFT + BOARD_HEIGHT / 2, DEPTH / 2 + 0.002]}
         scale={[width, BOARD_HEIGHT, 1]}
       >
         {/* Unlit so the name stays readable whatever the light does. */}

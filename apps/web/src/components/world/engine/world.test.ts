@@ -10,6 +10,7 @@ import {
   islandOffset,
   resolveArchipelago,
 } from "./archipelago";
+import { EMPTY_ATTENTION, acknowledgeIsland, isRippling, noticeAttention } from "./attention";
 import { EMPTY_BEAT_GATE, gateBeats, type BeatGate } from "./beats";
 import type { CharacterFacts } from "./facts";
 import { planRoute, shortestPath } from "./roads";
@@ -55,6 +56,7 @@ const testWorld: WorldDefinition = {
     beatSeconds: 8,
     quietSeconds: 45,
     kidSpeedScale: 1,
+    characterScale: 1,
     kidScale: 0.5,
   },
   archipelago: {
@@ -302,15 +304,27 @@ describe("resolveArchipelago", () => {
     expect(cells(newcomer)).toEqual({ b: 1, c: 2, d: 0 });
   });
 
-  it("ripples the water around an island while someone on it matches the ripple rule", () => {
-    const result = archipelago(
-      [character({ projectKey: "a", status: "approval" }), character({ projectKey: "b" })],
-      ["a", "b"],
-    );
-    expect(Object.fromEntries(result.islands.map((i) => [i.key, i.ripple]))).toEqual({
-      a: true,
-      b: false,
-    });
+  it("ripples an island from a new reason until it is acknowledged", () => {
+    const asking = character({ projectKey: "a", status: "approval" });
+    const quiet = character({ projectKey: "b" });
+    const at = (facts: CharacterFacts[]) => archipelago(facts, ["a", "b"]).islands;
+
+    let state = noticeAttention(EMPTY_ATTENTION, at([asking, quiet]));
+    expect(isRippling(state, "a")).toBe(true);
+    expect(isRippling(state, "b")).toBe(false);
+
+    // Keeps rippling after the reason clears, until someone interacts.
+    state = noticeAttention(state, at([{ ...asking, status: "working" }, quiet]));
+    expect(isRippling(state, "a")).toBe(true);
+    state = acknowledgeIsland(state, "a");
+    expect(isRippling(state, "a")).toBe(false);
+
+    // An ongoing reason does not come back after acknowledging; a new one does.
+    state = noticeAttention(state, at([asking, quiet]));
+    expect(isRippling(state, "a")).toBe(true);
+    state = acknowledgeIsland(state, "a");
+    state = noticeAttention(state, at([asking, quiet]));
+    expect(isRippling(state, "a")).toBe(false);
   });
 
   it("gives each family on an island its own colour, kids sharing their parent's", () => {

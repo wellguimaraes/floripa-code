@@ -1,21 +1,39 @@
 import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
-import { useEffect, useRef } from "react";
-import type { Group } from "three";
+import { Suspense, useEffect, useMemo, useRef } from "react";
+import {
+  BufferAttribute,
+  BufferGeometry,
+  type Group,
+  Line,
+  LineBasicMaterial,
+  type Object3D,
+  type Sprite,
+  Vector3,
+} from "three";
 
 import type { Pose, Vec3, WorldMovement, WorldRoads } from "../definition/types";
 import { planRoute } from "../engine/roads";
 import type { Placement } from "../engine/slots";
 import type { WorldCharacter } from "../engine/world";
 import { balloonTexture } from "./balloons";
+import { CharacterModel } from "./CharacterModel";
 import { geometry } from "./geometries";
 import { LitMaterial } from "./lighting";
 import { palette } from "./palette";
 
-export type FamilyShades = (typeof palette.families)[number];
+export type { FamilyShades } from "./palette";
+import type { FamilyShades } from "./palette";
 
 /** Long idle gaps arrive as one huge frame delta; never let a walker teleport. */
 const MAX_FRAME_DELTA = 0.1;
 const DRAG_CLICK_TOLERANCE_PX = 4;
+/** On-screen balloon size, whatever the zoom. */
+const BALLOON_PX = 46;
+/** On-screen length of the string between the raised hand and the balloon. */
+const STRING_PX = 30;
+/** Where the hand is before the model loads, in the character's own units. */
+const FALLBACK_HAND: readonly [number, number, number] = [0.3, 1.5, 0];
+const handPoint = new Vector3();
 
 interface Motion {
   readonly position: [number, number, number];
@@ -38,9 +56,29 @@ export function Character(props: {
 }) {
   const { character, shades, roads, movement, selected, onSelect, onRoot, onHover } = props;
   const { facts, placement, activity, intent } = character;
+  // On a seat, beach poses become sitting back, and a wave becomes a raised arm.
+  const seated = placement.seat !== undefined;
+  const pose = seated ? "slump" : activity.pose;
   const invalidate = useThree((state) => state.invalidate);
 
   const root = useRef<Group>(null);
+  const balloon = useRef<Sprite>(null);
+  const hand = useRef<Object3D | null>(null);
+  const string = useMemo(() => {
+    const line = new Line(
+      new BufferGeometry().setAttribute("position", new BufferAttribute(new Float32Array(6), 3)),
+      new LineBasicMaterial({ color: palette.balloonString }),
+    );
+    line.frustumCulled = false;
+    return line;
+  }, []);
+  useEffect(
+    () => () => {
+      string.geometry.dispose();
+      string.material.dispose();
+    },
+    [string],
+  );
   const body = useRef<Group>(null);
   const head = useRef<Group>(null);
   const armLeft = useRef<Group>(null);
@@ -106,9 +144,26 @@ export function Character(props: {
       // pose, at a capped rate rather than the display's.
       window.setTimeout(() => state.invalidate(), 1000 / movement.walkFps);
     }
-    group.position.set(current.position[0], current.position[1], current.position[2]);
+    if (balloon.current !== null) {
+      // Balloons keep one size on screen, so they stay easy to spot zoomed out:
+      // world size is pixels over zoom, less the character's own scale. The
+      // balloon floats a string's length above the raised hand.
+      const unit = 1 / state.camera.zoom / group.scale.y;
+      if (hand.current === null) handPoint.set(...FALLBACK_HAND);
+      else group.worldToLocal(hand.current.getWorldPosition(handPoint));
+      const balloonY = handPoint.y + (STRING_PX + BALLOON_PX / 2) * unit;
+      balloon.current.scale.setScalar(BALLOON_PX * unit);
+      balloon.current.position.set(handPoint.x, balloonY, handPoint.z);
+      const ends = string.geometry.getAttribute("position") as BufferAttribute;
+      ends.setXYZ(0, handPoint.x, handPoint.y, handPoint.z);
+      ends.setXYZ(1, handPoint.x, balloonY - (BALLOON_PX / 2) * unit, handPoint.z);
+      ends.needsUpdate = true;
+    }
+    // Climbs onto a seat on arrival, and off it before walking away.
+    const lift = walking ? 0 : (placement.seat ?? 0);
+    group.position.set(current.position[0], current.position[1] + lift, current.position[2]);
     group.rotation.y = current.route.length > 0 ? current.heading : placement.facing;
-    applyPose(walking ? "walk" : activity.pose, state.clock.elapsedTime, {
+    applyPose(walking ? "walk" : pose, state.clock.elapsedTime, {
       body,
       head,
       armLeft,
@@ -123,7 +178,7 @@ export function Character(props: {
     event.stopPropagation();
     onSelect(character);
   };
-  const scale = facts.kid ? movement.kidScale : 1;
+  const scale = movement.characterScale * (facts.kid ? movement.kidScale : 1);
 
   return (
     // Position and heading are written by the frame loop, never by props, so a
@@ -150,6 +205,59 @@ export function Character(props: {
           <meshBasicMaterial color={palette.selection} />
         </mesh>
       ) : null}
+      <Suspense
+        fallback={
+          // The shape-built figure stands in while the model downloads.
+          <ShapeBody
+            rig={{ body, head, armLeft, armRight, legLeft, legRight }}
+            shades={shades}
+            pose={pose}
+          />
+        }
+      >
+        <CharacterModel
+          pose={pose}
+          shades={shades}
+          isWalking={() => motion.current.route.length > 0}
+          raiseHand={intent.balloon !== undefined || (seated && activity.pose === "wave")}
+          handRef={hand}
+          handItem={
+            activity.pose === "mine" || activity.pose === "ponder" ? (
+              <ModelPickaxe />
+            ) : activity.pose === "fish" ? (
+              <ModelRod />
+            ) : undefined
+          }
+          chestItem={pose === "sleep" ? <ModelBlanket color={shades.dark} /> : undefined}
+        />
+      </Suspense>
+      {activity.pose === "mine" || activity.pose === "ponder" ? (
+        <NuggetPile count={facts.beat % (NUGGET_SPOTS.length + 1)} />
+      ) : null}
+      {intent.effect === "cloud" ? <Cloud /> : null}
+      {intent.balloon !== undefined ? (
+        <>
+          <primitive object={string} />
+          <sprite ref={balloon} renderOrder={10}>
+            <spriteMaterial map={balloonTexture(intent.balloon)} depthTest={false} />
+          </sprite>
+        </>
+      ) : null}
+    </group>
+  );
+}
+
+/** The shape-built figure: posed by `applyPose` in the frame loop. */
+function ShapeBody(props: {
+  readonly rig: PoseRig;
+  readonly shades: FamilyShades;
+  readonly pose: Pose;
+}) {
+  const { rig, shades, pose } = props;
+  const { body, head, armLeft, armRight, legLeft, legRight } = rig;
+  const activity = { pose };
+  return (
+    <>
       <group ref={body}>
         <Limb ref={legLeft} x={-0.1} y={0.32} color={shades.dark} kind="leg" />
         <Limb ref={legRight} x={0.1} y={0.32} color={shades.dark} kind="leg" />
@@ -179,16 +287,38 @@ export function Character(props: {
         ) : null}
       </group>
       {activity.pose === "fish" ? <FishingRod /> : null}
-      {activity.pose === "mine" || activity.pose === "ponder" ? (
-        <NuggetPile count={facts.beat % (NUGGET_SPOTS.length + 1)} />
-      ) : null}
-      {intent.effect === "cloud" ? <Cloud /> : null}
-      {intent.balloon !== undefined ? (
-        <sprite position-y={1.85} scale={[0.5, 0.5, 1]} renderOrder={10}>
-          <spriteMaterial map={balloonTexture(intent.balloon)} depthTest={false} />
-        </sprite>
-      ) : null}
+    </>
+  );
+}
+
+// Hand and chest items for the model, in its bone space: the hand slot's +y
+// runs along a held tool's handle.
+function ModelPickaxe() {
+  return (
+    <group>
+      <mesh geometry={geometry.cylinder} position-y={0.1} scale={[0.025, 0.6, 0.025]}>
+        <LitMaterial color={palette.rod} />
+      </mesh>
+      <mesh geometry={geometry.box} position-y={0.38} scale={[0.05, 0.06, 0.42]}>
+        <LitMaterial color={palette.metal} />
+      </mesh>
     </group>
+  );
+}
+
+function ModelRod() {
+  return (
+    <mesh geometry={geometry.cylinder} position-y={0.6} scale={[0.02, 1.4, 0.02]}>
+      <LitMaterial color={palette.rod} />
+    </mesh>
+  );
+}
+
+function ModelBlanket({ color }: { readonly color: string }) {
+  return (
+    <mesh geometry={geometry.box} position={[0, -0.25, 0.12]} scale={[0.7, 0.9, 0.06]}>
+      <LitMaterial color={color} />
+    </mesh>
   );
 }
 

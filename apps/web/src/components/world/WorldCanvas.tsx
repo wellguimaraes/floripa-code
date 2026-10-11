@@ -19,6 +19,13 @@ import {
   resolveArchipelago,
   type WorldIsland,
 } from "./engine/archipelago";
+import {
+  type AttentionState,
+  EMPTY_ATTENTION,
+  acknowledgeIsland,
+  isRippling,
+  noticeAttention,
+} from "./engine/attention";
 import { EMPTY_BEAT_GATE, gateBeats } from "./engine/beats";
 import { buildCharacterFacts, type CharacterFacts } from "./engine/facts";
 import { hashString } from "./engine/hash";
@@ -31,7 +38,7 @@ import { Island, type FurnitureSpot } from "./scene/Island";
 import { palette } from "./scene/palette";
 import { SharkSightings } from "./scene/Sharks";
 import { NightContext } from "./scene/lighting";
-import { Sign } from "./scene/Sign";
+import { SIGN_TOP, Sign } from "./scene/Sign";
 import { NewAgentBubble } from "./NewAgentBubble";
 import { layoutTags, type ScreenPoint } from "./scene/tagLayout";
 import { WorldBubble } from "./WorldBubble";
@@ -112,6 +119,13 @@ export default function WorldCanvas(props: {
       }),
     [memory, islandFacts, definition, projectOrder, clock, requested],
   );
+  // Ripples start with a new reason and last until the island is clicked.
+  const [attentionMemory] = useState(createAttentionMemory);
+  const [acknowledged, setAcknowledged] = useState(0);
+  const attention = useMemo(
+    () => attentionMemory.notice(islands, acknowledged),
+    [attentionMemory, islands, acknowledged],
+  );
   const bounds = useMemo(() => archipelagoBounds(definition, islands), [definition, islands]);
   const { islandSpots, shoreRadius } = useMemo(() => {
     const island = islandBounds(definition);
@@ -128,7 +142,9 @@ export default function WorldCanvas(props: {
   const ambientFps = Math.max(
     0,
     ...islands.flatMap((island) => island.characters.map((c) => c.activity.ambientFps ?? 0)),
-    islands.some((island) => island.ripple) ? definition.archipelago.ripple.fps : 0,
+    islands.some((island) => isRippling(attention, island.key))
+      ? definition.archipelago.ripple.fps
+      : 0,
   );
 
   // The reply bubble belongs to one character at a time; clicking it again,
@@ -249,6 +265,7 @@ export default function WorldCanvas(props: {
     }
   }, []);
   const containerRef = useRef<HTMLDivElement>(null);
+  const islandPress = useRef<{ x: number; y: number } | null>(null);
 
   const tagRefs = useRef(new Map<string, HTMLDivElement>());
   const moveTags = useCallback((points: ReadonlyArray<ScreenPoint>) => {
@@ -269,7 +286,21 @@ export default function WorldCanvas(props: {
 
   return (
     // Isolated so its overlays (tags, buttons, bubbles) stack under the chat panel.
-    <div ref={containerRef} className="relative isolate size-full">
+    <div
+      ref={containerRef}
+      className="relative isolate size-full"
+      // Any click on an island (a character, its ground, a + or a bubble) acknowledges it.
+      onPointerDown={(event) => {
+        islandPress.current = { x: event.clientX, y: event.clientY };
+      }}
+      onPointerUp={(event) => {
+        const start = islandPress.current;
+        islandPress.current = null;
+        if (start === null || hoveredIsland === null) return;
+        if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4) return;
+        if (attentionMemory.acknowledge(hoveredIsland)) setAcknowledged((count) => count + 1);
+      }}
+    >
       <Canvas
         frameloop="demand"
         dpr={[1, 1.5]}
@@ -325,7 +356,7 @@ export default function WorldCanvas(props: {
               <Island
                 definition={definition}
                 furniture={buildFurniture(definition, island.characters)}
-                ripple={island.ripple}
+                ripple={isRippling(attention, island.key)}
                 night={island.night}
               />
               <Sign
@@ -675,7 +706,7 @@ function fitCamera(input: {
   for (const island of bounds) {
     for (const x of [island.minX, island.maxX]) {
       for (const z of [island.minZ, island.maxZ]) {
-        for (const y of [-0.6, 3.2]) {
+        for (const y of [-0.6, SIGN_TOP]) {
           corner.set(x, y, z).applyMatrix4(camera.matrixWorldInverse);
           left = Math.min(left, corner.x);
           right = Math.max(right, corner.x);
@@ -762,6 +793,29 @@ function AmbientTicker({ fps }: { readonly fps: number }) {
   return null;
 }
 
+/** Remembers ripple reasons between updates; see `engine/attention`. */
+function createAttentionMemory() {
+  let state = EMPTY_ATTENTION;
+  let lastIslands: ReadonlyArray<WorldIsland> | null = null;
+  return {
+    /** Takes in new reasons when the islands changed; `_acknowledged` only re-reads. */
+    notice(islands: ReadonlyArray<WorldIsland>, _acknowledged: number): AttentionState {
+      if (islands !== lastIslands) {
+        state = noticeAttention(state, islands);
+        lastIslands = islands;
+      }
+      return state;
+    },
+    /** True when the island was rippling and has calmed down. */
+    acknowledge(islandKey: string): boolean {
+      const next = acknowledgeIsland(state, islandKey);
+      if (next === state) return false;
+      state = next;
+      return true;
+    },
+  };
+}
+
 /** Remembers island cells, placements and work pacing so nothing jumps across updates. */
 function createArchipelagoMemory() {
   let previous = EMPTY_ARCHIPELAGO_MEMORY;
@@ -804,9 +858,11 @@ function buildFurniture(
 ): FurnitureSpot[] {
   const spots: FurnitureSpot[] = [];
   for (const area of Object.values(definition.areas)) {
-    if (area.kind !== "fixed" || area.slotProp === undefined) continue;
+    if (area.kind !== "fixed") continue;
     for (const slot of area.slots) {
-      spots.push({ kind: area.slotProp, position: slot.position, facing: slot.facing, scale: 1 });
+      const kind = slot.prop ?? area.slotProp;
+      if (kind === undefined) continue;
+      spots.push({ kind, position: slot.position, facing: slot.facing, scale: 1 });
     }
   }
   for (const character of characters) {

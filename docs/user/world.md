@@ -12,8 +12,8 @@ Where a character is and what it does tells you the thread's state at a glance:
 - **Fishing off the pier**: it is waiting on a long command running in the
   background.
 - **Standing with a `!` or `?` balloon**: it needs your approval or has a question.
-- **On the beach, waving**: it finished and you have not read the reply yet. Once
-  you have, it lies down on a towel.
+- **On the beach, cheering** (or with an arm up, on a lounger): it finished and
+  you have not read the reply yet. Once you have, it rests on a towel or a lounger.
 - **On the raft under a grey cloud**: the run failed or hit a usage limit.
 
 Each agent has its own colour, shared with its subagents.
@@ -22,8 +22,9 @@ When everyone on an island has been done for an hour, and you have read what
 they finished, night falls there: the island goes dark and its agents sleep
 around a campfire. The first new work wakes them up.
 
-The water ripples around an island while someone on it needs you or has
-finished work you have not read, so you can spot it from far out.
+The water ripples around an island when someone on it needs you or finishes
+work you have not read, so you can spot it from far out. It keeps rippling until
+you click something on that island.
 
 Subagents appear as smaller copies of the agent that started them and mine the
 same rock pile beside it, on its island.

@@ -12,9 +12,17 @@ export type Vec3 = readonly [x: number, y: number, z: number];
 export interface WorldSlot {
   readonly position: Vec3;
   readonly facing: number;
+  /** Placed at this slot instead of the area's `slotProp`. */
+  readonly prop?: PropKind;
+  /**
+   * A seat this high off the ground, e.g. a lounger: the occupant climbs on
+   * and sits back instead of lying down, and waves with a raised arm.
+   */
+  readonly seat?: number;
 }
 
 export type PropKind =
+  | "towel"
   | "beachChair"
   | "umbrella"
   | "palm"
@@ -133,6 +141,8 @@ export interface WorldMovement {
   /** A thread with no new output for this long counts as `quiet`. */
   readonly quietSeconds: number;
   readonly kidSpeedScale: number;
+  /** Every character's size; kids are `kidScale` of it. */
+  readonly characterScale: number;
   readonly kidScale: number;
 }
 

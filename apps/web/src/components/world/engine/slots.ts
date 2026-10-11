@@ -8,6 +8,8 @@ export interface Placement {
   readonly slotIndex: number;
   readonly position: Vec3;
   readonly facing: number;
+  /** See `WorldSlot.seat`. */
+  readonly seat?: number;
   /** Road node a character walks through to reach this spot. */
   readonly entry: string;
 }

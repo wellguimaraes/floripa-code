@@ -16,6 +16,7 @@ export const palette = {
   question: "#38bdf8",
   balloonText: "#0f172a",
   balloonRim: "#ffffff",
+  balloonString: "#334155",
   eye: "#111827",
   cloud: "#6b7280",
   towel: "#f87171",
@@ -23,7 +24,12 @@ export const palette = {
   pole: "#e5e7eb",
   canopy: "#fb923c",
   palmTrunk: "#a16207",
+  palmTrunkDark: "#854d0e",
   palmLeaf: "#16a34a",
+  palmLeafDark: "#15803d",
+  coconut: "#78350f",
+  chairFrame: "#f5f5f4",
+  chairCushion: "#38bdf8",
   treeTrunk: "#92400e",
   treeLeaf: "#22a35a",
   signPost: "#7c4a21",
@@ -71,3 +77,5 @@ export const palette = {
   /** One per project, picked by the project's key; the island's plate shows it at the shore. */
   plates: ["#f97316", "#8b5cf6", "#ec4899", "#14b8a6", "#eab308", "#ef4444", "#3b82f6", "#22c55e"],
 } as const;
+
+export type FamilyShades = (typeof palette.families)[number];

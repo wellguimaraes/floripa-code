@@ -11,7 +11,7 @@ const NIGHT_DIM = 0.48;
 const nightColors = new Map<string, string>();
 
 /** A colour as it looks at night: pulled toward deep blue and dimmed. */
-function toNight(color: string): string {
+export function toNight(color: string): string {
   let night = nightColors.get(color);
   if (night === undefined) {
     night = `#${new Color(color)

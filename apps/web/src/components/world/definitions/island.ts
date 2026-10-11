@@ -58,6 +58,9 @@ const ring = (radius: number, count: number): WorldSlot[] =>
     };
   });
 
+// Seat height of the loungers on the beach (see the `beachChair` prop).
+const LOUNGER_SEAT = 0.4;
+
 // The raft floats off the front-left shore, tied to the lawn's front tree.
 const RAFT: readonly [number, number] = [-8.4, 8.4];
 const RAFT_TREE: readonly [number, number] = [-7, 4];
@@ -75,8 +78,12 @@ export const islandWorld: WorldDefinition = {
     prop("tree", RAFT_TREE[0], RAFT_TREE[1]),
     prop("tree", -3.2, -5.8),
     prop("tree", -1.2, 5.6),
-    prop("palm", 3.4, -8.2),
-    prop("palm", 3.6, 8),
+    prop("palm", 3.4, -8.2, 0.4),
+    prop("palm", 3.6, 8, 2.2),
+    prop("palm", 4.6, -7.6, 1.3),
+    prop("palm", -0.8, -9, 3.6),
+    prop("palm", -2.3, 8.7, 5),
+    prop("palm", -4.4, 7.7, 2.9),
     ...arc({ radius: 6.6, degrees: [-40, 40] }).map((slot) => ({
       kind: "umbrella" as const,
       position: slot.position,
@@ -111,12 +118,14 @@ export const islandWorld: WorldDefinition = {
     beach: {
       kind: "fixed",
       entry: "beach-path",
-      slotProp: "beachChair",
-      slots: arc({ radius: 7.6, degrees: [-50, -30, -10, 10, 30, 50] }),
-      spillover: [
-        ...arc({ radius: 8.8, degrees: [-40, -20, 0, 20, 40] }),
-        ...arc({ radius: 5.9, degrees: [-62, -47, -34, 22, 55, 68] }),
-      ],
+      slotProp: "towel",
+      // Towels with a lounger every third spot, two of them in an umbrella's shade.
+      slots: arc({ radius: 7.6, degrees: [-54, -40, -26, -13, 0, 13, 26, 40, 54] }).map(
+        (slot, index) =>
+          index % 3 === 1 ? { ...slot, prop: "beachChair" as const, seat: LOUNGER_SEAT } : slot,
+      ),
+      // A row on the sand behind the towels and loungers.
+      spillover: arc({ radius: 5.8, degrees: [-55, -40, -25, -10, 10, 25, 40, 55] }),
     },
     raft: {
       kind: "fixed",
@@ -134,8 +143,8 @@ export const islandWorld: WorldDefinition = {
     camp: {
       kind: "fixed",
       entry: "plaza",
-      slots: ring(1.5, 8),
-      spillover: ring(2.5, 12),
+      slots: ring(1.9, 8),
+      spillover: ring(3.1, 12),
     },
     // Around the parent's pile: its left, its right, then the near side.
     helpers: {
@@ -201,6 +210,7 @@ export const islandWorld: WorldDefinition = {
     beatSeconds: 3,
     quietSeconds: 45,
     kidSpeedScale: 1.25,
+    characterScale: 1.2,
     kidScale: 0.6,
   },
   // The camera looks from +x/+z: the sign stands on the far edge behind the
@@ -208,7 +218,8 @@ export const islandWorld: WorldDefinition = {
   archipelago: {
     columns: 2,
     gap: 6,
-    sign: { position: [-5.4, 0, -6.4], facing: Math.PI / 4 },
+    // Turned a little off the camera so the board's depth shows.
+    sign: { position: [-5.4, 0, -6.4], facing: Math.PI / 4 - 0.35 },
     ripple: {
       when: [{ status: ["approval", "input"] }, { status: "ready", unread: true }],
       fps: 20,

@@ -12,8 +12,11 @@ export interface WorldIsland {
   /** Where the island template's origin sits in the world. */
   readonly offset: Vec3;
   readonly characters: ReadonlyArray<WorldCharacter>;
-  /** Someone on the island matches the definition's ripple rule. */
-  readonly ripple: boolean;
+  /**
+   * Why the island wants attention: one reason per character and ripple rule
+   * it matches. `engine/attention` turns these into ripples.
+   */
+  readonly attention: ReadonlyArray<string>;
   /** Everyone has been resting long enough; see `archipelago.night`. */
   readonly night: boolean;
   /** Colour index per family (a character's `lookSeed`), distinct within the island. */
@@ -93,8 +96,10 @@ export function resolveArchipelago(input: {
     });
     for (const character of characters) placements.set(character.facts.key, character.placement);
     const cell = cells.get(key)!;
-    const ripple = characters.some((character) =>
-      definition.archipelago.ripple.when.some((match) => matchesFacts(match, character.facts)),
+    const attention = characters.flatMap((character) =>
+      definition.archipelago.ripple.when.flatMap((match, rule) =>
+        matchesFacts(match, character.facts) ? [`${character.facts.key}#${rule}`] : [],
+      ),
     );
     const islandHues = assignHues({
       facts: byProject.get(key)!,
@@ -103,7 +108,7 @@ export function resolveArchipelago(input: {
     });
     for (const [seed, hue] of islandHues) hues.set(seed, hue);
     const offset = islandOffset(cell, definition);
-    return { key, cell, offset, characters, ripple, night, hues: islandHues };
+    return { key, cell, offset, characters, attention, night, hues: islandHues };
   });
   return { islands, memory: { cells, placements, hues } };
 }
