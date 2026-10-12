@@ -343,6 +343,12 @@ import {
 } from "./scheduledTask.ts";
 import { SecretRequestAnswerInput, SecretRequestError } from "./secretRequest.ts";
 import {
+  VoiceTranscribeInput,
+  VoiceTranscription,
+  VoiceTranscriptionError,
+  VoiceTranscriptionModels,
+} from "./voice.ts";
+import {
   ProjectCloneActionInput,
   ProjectCloneActionResult,
   ProjectCloneListEvent,
@@ -512,6 +518,10 @@ export const WS_METHODS = {
   scheduledTasksRunNow: "scheduledTasks.runNow",
   scheduledTasksRotateWebhookToken: "scheduledTasks.rotateWebhookToken",
   secretsAnswerRequest: "secrets.answerRequest",
+
+  // Voice input
+  voiceTranscribe: "voice.transcribe",
+  voiceListTranscriptionModels: "voice.listTranscriptionModels",
   scheduledTasksListWebhookDeliveries: "scheduledTasks.listWebhookDeliveries",
   scheduledTasksGetWebhookDelivery: "scheduledTasks.getWebhookDelivery",
 
@@ -1786,6 +1796,19 @@ const WsSecretsAnswerRequestRpc = Rpc.make(WS_METHODS.secretsAnswerRequest, {
   error: Schema.Union([SecretRequestError, EnvironmentAuthorizationError]),
 });
 
+/** Speech to text through OpenRouter, with the environment's key and model. */
+const WsVoiceTranscribeRpc = Rpc.make(WS_METHODS.voiceTranscribe, {
+  payload: VoiceTranscribeInput,
+  success: VoiceTranscription,
+  error: Schema.Union([VoiceTranscriptionError, EnvironmentAuthorizationError]),
+});
+
+const WsVoiceListTranscriptionModelsRpc = Rpc.make(WS_METHODS.voiceListTranscriptionModels, {
+  payload: Schema.Struct({}),
+  success: VoiceTranscriptionModels,
+  error: Schema.Union([VoiceTranscriptionError, EnvironmentAuthorizationError]),
+});
+
 const WsScheduledTasksListWebhookDeliveriesRpc = Rpc.make(
   WS_METHODS.scheduledTasksListWebhookDeliveries,
   {
@@ -1893,6 +1916,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsScheduledTasksRunNowRpc,
   WsScheduledTasksRotateWebhookTokenRpc,
   WsSecretsAnswerRequestRpc,
+  WsVoiceTranscribeRpc,
+  WsVoiceListTranscriptionModelsRpc,
   WsScheduledTasksListWebhookDeliveriesRpc,
   WsScheduledTasksGetWebhookDeliveryRpc,
   WsServerReportClientActivityRpc,

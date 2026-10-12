@@ -1086,6 +1086,12 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:process-resource-history",
       tag: WS_METHODS.serverGetProcessResourceHistory,
     }),
+    // OpenRouter's list changes rarely; keep it for the settings session.
+    voiceTranscriptionModels: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:voice:transcription-models",
+      tag: WS_METHODS.voiceListTranscriptionModels,
+      staleTimeMs: 10 * 60_000,
+    }),
     scheduledTaskWebhookDeliveries: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:server:scheduled-task:webhook-deliveries",
       tag: WS_METHODS.scheduledTasksListWebhookDeliveries,
@@ -1330,6 +1336,12 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.scheduledTasksRotateWebhookToken,
       scheduler: configScheduler,
       concurrency: configConcurrency,
+    }),
+    // Off the config lane: a transcription can take seconds and must not hold
+    // up settings edits.
+    transcribeVoice: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:voice:transcribe",
+      tag: WS_METHODS.voiceTranscribe,
     }),
     // Off the config lane: answering a card must not queue behind settings
     // edits. One answer per card at a time.

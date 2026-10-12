@@ -692,6 +692,22 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["xcode android studio sdk avd runtime"],
   },
   {
+    id: "voice-openrouter-key",
+    title: "OpenRouter API key",
+    to: "/settings/integrations",
+    environmentOnly: true,
+    scope: "environment-defaults",
+    searchTerms: ["voice input microphone speech transcription dictation mic"],
+  },
+  {
+    id: "voice-transcription-model",
+    title: "Transcription model",
+    to: "/settings/integrations",
+    environmentOnly: true,
+    scope: "environment-defaults",
+    searchTerms: ["voice input speech to text whisper voxtral openrouter"],
+  },
+  {
     id: "browser-profiles",
     title: "Browser profiles",
     to: "/settings/integrations",

@@ -162,6 +162,7 @@ const BITBUCKET_SECRET_NAMES = {
   apiToken: "bitbucket-api-token",
 } as const;
 const BITBUCKET_SECRET_FIELDS = ["accessToken", "apiToken"] as const;
+const OPENROUTER_API_KEY_SECRET_NAME = "openrouter-api-key";
 
 /** Hosts are case-insensitive; a patch can arrive before decoding lowercased its keys. */
 function gitHubTokenSecretName(host: string): string {
@@ -217,7 +218,11 @@ export function redactServerSettingsForClient(settings: ServerSettings): ServerS
       Object.entries(settings.github.tokens).map(([host, token]) => [host, redactSecret(token)]),
     ),
   };
-  return { ...settings, providerInstances, usageLimitSources, bitbucket, github };
+  const voice = {
+    ...settings.voice,
+    openRouterApiKey: redactSecret(settings.voice.openRouterApiKey),
+  };
+  return { ...settings, providerInstances, usageLimitSources, bitbucket, github, voice };
 }
 
 export function applyProviderInstanceMutation(
@@ -766,7 +771,27 @@ const make = Effect.gen(function* () {
         tokens[host] = SECRET_REDACTED;
         moved = true;
       }
-      return moved ? { ...settings, bitbucket, github: { ...settings.github, tokens } } : settings;
+      const voice = { ...settings.voice };
+      const inlineKey = voice.openRouterApiKey;
+      if (inlineKey.length > 0 && inlineKey !== SECRET_REDACTED) {
+        const stored = yield* secretStore
+          .set(OPENROUTER_API_KEY_SECRET_NAME, textEncoder.encode(inlineKey))
+          .pipe(
+            Effect.as(true),
+            Effect.catch(() =>
+              Effect.logWarning("failed to move the OpenRouter API key into the secret store").pipe(
+                Effect.as(false),
+              ),
+            ),
+          );
+        if (stored) {
+          voice.openRouterApiKey = SECRET_REDACTED;
+          moved = true;
+        }
+      }
+      return moved
+        ? { ...settings, bitbucket, github: { ...settings.github, tokens }, voice }
+        : settings;
     });
 
   const loadSettingsFromDisk = Effect.gen(function* () {
@@ -960,12 +985,24 @@ const make = Effect.gen(function* () {
           );
         tokens[host] = Option.isSome(secret) ? textDecoder.decode(secret.value) : "";
       }
+      const voice = { ...settings.voice };
+      if (voice.openRouterApiKey === SECRET_REDACTED) {
+        const secret = yield* secretStore
+          .get(OPENROUTER_API_KEY_SECRET_NAME)
+          .pipe(
+            Effect.mapError(
+              (cause) => new ServerSettingsError({ settingsPath, operation: "read-secret", cause }),
+            ),
+          );
+        voice.openRouterApiKey = Option.isSome(secret) ? textDecoder.decode(secret.value) : "";
+      }
       return {
         ...settings,
         providerInstances: providerInstances as ServerSettings["providerInstances"],
         usageLimitSources: usageLimitSources as ServerSettings["usageLimitSources"],
         bitbucket,
         github: { ...settings.github, tokens },
+        voice,
       };
     });
 
@@ -1159,6 +1196,33 @@ const make = Effect.gen(function* () {
         });
       }
 
+      const voice = { ...next.voice };
+      let openRouterApiKey = voice.openRouterApiKey;
+      // As for Bitbucket: the marker keeps the saved key; a plaintext key hand-edited into
+      // settings.json is not in the secret store yet, so it moves there.
+      if (
+        openRouterApiKey === SECRET_REDACTED &&
+        current.voice.openRouterApiKey !== SECRET_REDACTED
+      ) {
+        openRouterApiKey = current.voice.openRouterApiKey;
+      }
+      if (openRouterApiKey !== SECRET_REDACTED) {
+        if (openRouterApiKey.length === 0) {
+          changes.push({
+            kind: "remove",
+            secretName: OPENROUTER_API_KEY_SECRET_NAME,
+            operation: "remove-secret",
+          });
+        } else {
+          changes.push({
+            kind: "write",
+            secretName: OPENROUTER_API_KEY_SECRET_NAME,
+            value: textEncoder.encode(openRouterApiKey),
+          });
+          voice.openRouterApiKey = SECRET_REDACTED;
+        }
+      }
+
       return {
         settings: {
           ...next,
@@ -1166,6 +1230,7 @@ const make = Effect.gen(function* () {
           usageLimitSources: usageLimitSources as ServerSettings["usageLimitSources"],
           bitbucket,
           github: { ...next.github, tokens },
+          voice,
         },
         changes,
       };

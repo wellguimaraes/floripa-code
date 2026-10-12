@@ -818,6 +818,22 @@ export const BitbucketSettings = Schema.Struct({
 });
 export type BitbucketSettings = typeof BitbucketSettings.Type;
 
+/** OpenRouter's speech-to-text model used until another one is picked. */
+export const DEFAULT_TRANSCRIPTION_MODEL = "mistralai/voxtral-mini-transcribe";
+
+/**
+ * Voice input for this environment: the server turns recorded speech into
+ * text through OpenRouter. The API key lives in the server's secret store;
+ * settings and clients only see a redaction marker when one is set.
+ */
+export const VoiceSettings = Schema.Struct({
+  openRouterApiKey: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  transcriptionModel: TrimmedNonEmptyString.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_TRANSCRIPTION_MODEL)),
+  ),
+});
+export type VoiceSettings = typeof VoiceSettings.Type;
+
 /**
  * Per-host choices for the GitHub CLI's logins. `account` pins one of the logins
  * `gh` holds for the host instead of its active one; a disabled host gets no
@@ -1279,6 +1295,7 @@ export const ServerSettings = Schema.Struct({
   ),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   bitbucket: BitbucketSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  voice: VoiceSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   github: GitHubSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   // Keyed by a user-chosen id so a source keeps its rows across edits. Entries
   // this build cannot decode round-trip untouched, as provider instances do.
@@ -1521,6 +1538,13 @@ export const ServerSettingsPatch = Schema.Struct({
       otlpTracesUrl: Schema.optionalKey(TrimmedString),
       otlpMetricsUrl: Schema.optionalKey(TrimmedString),
       otlpLogsUrl: Schema.optionalKey(TrimmedString),
+    }),
+  ),
+  /** An empty key clears it; an omitted one keeps what the server has. */
+  voice: Schema.optionalKey(
+    Schema.Struct({
+      openRouterApiKey: Schema.optionalKey(TrimmedString),
+      transcriptionModel: Schema.optionalKey(TrimmedNonEmptyString),
     }),
   ),
   /** An empty token clears it; an omitted one keeps what the server has. */
