@@ -97,6 +97,10 @@ export const ChatHeader = memo(function ChatHeader({
   onOpenProjectSettings,
 }: ChatHeaderProps) {
   const activeProjectName = activeProject?.title;
+  // The island sign's name: the sidebar's label for the project, last path segment.
+  const worldProjectName =
+    activeProjectGroupLabel?.slice(activeProjectGroupLabel.lastIndexOf("/") + 1) ||
+    activeProjectName;
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
   const interfaceFont = useClientSettings((settings) => settings.fontFamilySans);
   const breadcrumbContainerRef = useRef<HTMLDivElement>(null);
@@ -345,7 +349,7 @@ export const ChatHeader = memo(function ChatHeader({
               render={
                 <button
                   type="button"
-                  aria-label={`New thread in ${activeProjectName}`}
+                  aria-label={`New thread in ${worldProjectName}`}
                   onClick={onNewThreadInProject}
                   className={cn(
                     "mb-0.5 max-w-full cursor-pointer self-start truncate rounded-md px-1.5",
@@ -359,9 +363,9 @@ export const ChatHeader = memo(function ChatHeader({
                 />
               }
             >
-              {activeProjectName}
+              {worldProjectName}
             </TooltipTrigger>
-            <TooltipPopup side="top">New thread in {activeProjectName}</TooltipPopup>
+            <TooltipPopup side="top">New thread in {worldProjectName}</TooltipPopup>
           </Tooltip>
         ) : null}
         <WorkspaceBreadcrumb
