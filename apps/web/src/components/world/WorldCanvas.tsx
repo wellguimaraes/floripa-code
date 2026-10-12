@@ -1436,7 +1436,7 @@ function WorldControls({
 /** How far in, against framing its island, the map must be to start an agent there as is. */
 const REVEAL_MIN_ZOOM = 0.6;
 /** The new-agent bubble's size above its spot, with a little air. */
-const BUBBLE_ROOM = { width: 320, height: 340, below: 24, top: 56 };
+const BUBBLE_ROOM = { width: 464, height: 372, below: 24, top: 56 };
 const ZERO = new Vector3();
 
 /**

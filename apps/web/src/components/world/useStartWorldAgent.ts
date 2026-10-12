@@ -5,8 +5,12 @@ import {
   DEFAULT_SERVER_SETTINGS,
   type EnvironmentId,
   type ModelSelection,
+  type ProviderInteractionMode,
+  type RuntimeMode,
   type ScopedProjectRef,
+  type ServerProvider,
   type ThreadId,
+  type UnifiedSettings,
   type UploadChatAttachment,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
@@ -14,7 +18,11 @@ import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
-import { getClientSettings, mergeEnvironmentSettings } from "../../hooks/useSettings";
+import {
+  getClientSettings,
+  mergeEnvironmentSettings,
+  useEnvironmentSettings,
+} from "../../hooks/useSettings";
 import { newMessageId, newThreadId } from "../../lib/utils";
 import { readT3ProjectFile } from "../../lib/t3ProjectFileDefaults";
 import { resolveAppModelSelectionForInstance } from "../../modelSelection";
@@ -25,13 +33,16 @@ import {
 } from "../../providerInstances";
 import { getDefaultServerModel } from "../../providerModels";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
-import { readProjects, useProject } from "../../state/entities";
+import { readProjects, useProject, useServerConfigs } from "../../state/entities";
 import { environmentServerConfigsAtom } from "../../state/server";
 import { threadEnvironment } from "../../state/threads";
 import { useEnvironmentQuery } from "../../state/query";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { vcsEnvironment } from "../../state/vcs";
-import { resolveComposerProviderSelection } from "../ChatView.logic";
+import {
+  resolveComposerInteractionMode,
+  resolveComposerProviderSelection,
+} from "../ChatView.logic";
 import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "../chat/composerPromptHistory";
 
 /** Where a new agent works: the project checkout, a new worktree, or an existing one. */
@@ -62,6 +73,96 @@ async function readProjectSettings(
   return resolveProjectSettings(serverSettings, project.id, project, projectFile).settings;
 }
 
+type ProjectSettings = Awaited<ReturnType<typeof readProjectSettings>>;
+
+/** The project's settings, null until read. */
+function useProjectSettings(projectRef: ScopedProjectRef) {
+  const { environmentId, projectId } = projectRef;
+  const [projectSettings, setProjectSettings] = useState<ProjectSettings | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const project = findProject({ environmentId, projectId });
+      const settings = await readProjectSettings(environmentId, project);
+      if (!cancelled) setProjectSettings(settings);
+    })().catch((error: unknown) => {
+      console.warn("Could not read the project's settings.", error);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [environmentId, projectId]);
+  return projectSettings;
+}
+
+/** What a new agent runs with: the model and its options, permissions, and plan or build. */
+export interface WorldAgentSetup {
+  readonly modelSelection: ModelSelection;
+  readonly runtimeMode: RuntimeMode;
+  readonly interactionMode: ProviderInteractionMode;
+}
+
+/**
+ * The setup a fresh draft would pick: the project's default model or the last
+ * one used, and the project's permissions where the provider supports them.
+ */
+function resolveWorldAgentSetup(
+  providers: ReadonlyArray<ServerProvider>,
+  settings: UnifiedSettings,
+  projectSettings: ProjectSettings,
+): WorldAgentSetup | null {
+  const { stickyActiveProvider, stickyModelSelectionByProvider } = useComposerDraftStore.getState();
+  const preferred: ModelSelection | null =
+    projectSettings.defaultModelSelection ??
+    (stickyActiveProvider ? (stickyModelSelectionByProvider[stickyActiveProvider] ?? null) : null);
+  const { selectedProviderEntry: provider } = resolveComposerProviderSelection({
+    entries: sortProviderInstanceEntries(
+      applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings),
+    ),
+    candidateInstanceIds: [preferred?.instanceId],
+    lockedProvider: null,
+    lockedInstanceId: null,
+  });
+  if (provider === undefined) return null;
+  const keepsPreferred = preferred?.instanceId === provider.instanceId;
+  const modelSelection = createModelSelection(
+    provider.instanceId,
+    resolveAppModelSelectionForInstance(
+      provider.instanceId,
+      settings,
+      providers,
+      keepsPreferred ? preferred.model : null,
+    ) ?? getDefaultServerModel(providers, provider.driverKind),
+    keepsPreferred ? preferred.options : null,
+  );
+  const supportedRuntimeModes = provider.snapshot.supportedRuntimeModes ?? [];
+  const runtimeMode =
+    supportedRuntimeModes.length === 0 ||
+    supportedRuntimeModes.includes(projectSettings.defaultRuntimeMode)
+      ? projectSettings.defaultRuntimeMode
+      : supportedRuntimeModes[0]!;
+  return { modelSelection, runtimeMode, interactionMode: "default" };
+}
+
+/**
+ * The setup a new agent in a project starts with, for the bubble's pickers to
+ * show and change. Null until the project's settings are read, or when no
+ * provider is available.
+ */
+export function useWorldAgentSetup(projectRef: ScopedProjectRef): WorldAgentSetup | null {
+  const { environmentId } = projectRef;
+  const projectSettings = useProjectSettings(projectRef);
+  const providers = useServerConfigs().get(environmentId)?.providers;
+  const settings = useEnvironmentSettings(environmentId);
+  return useMemo(
+    () =>
+      projectSettings === null || providers === undefined
+        ? null
+        : resolveWorldAgentSetup(providers, settings, projectSettings),
+    [projectSettings, providers, settings],
+  );
+}
+
 /**
  * The workspaces a new agent in a project can pick from, and the one a fresh
  * draft would use. Existing worktrees come from the repo's local branches that
@@ -70,7 +171,7 @@ async function readProjectSettings(
  * the project counts as a repo so the picker shows right away.
  */
 export function useWorldAgentWorkspaces(projectRef: ScopedProjectRef) {
-  const { environmentId, projectId } = projectRef;
+  const { environmentId } = projectRef;
   const workspaceRoot = useProject(projectRef)?.workspaceRoot ?? null;
   // A live query, not a one-shot read: ref lists are streams that stay open,
   // so awaiting a settled result would never resolve.
@@ -101,20 +202,7 @@ export function useWorldAgentWorkspaces(projectRef: ScopedProjectRef) {
     refs.data?.refs.find((ref) => ref.current)?.name ??
     null;
 
-  const [worktreeByDefault, setWorktreeByDefault] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const project = findProject({ environmentId, projectId });
-      const projectSettings = await readProjectSettings(environmentId, project);
-      if (!cancelled) setWorktreeByDefault(projectSettings.defaultThreadEnvMode === "worktree");
-    })().catch((error: unknown) => {
-      console.warn("Could not read the project's workspace default.", error);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [environmentId, projectId]);
+  const worktreeByDefault = useProjectSettings(projectRef)?.defaultThreadEnvMode === "worktree";
 
   const defaultWorkspace: WorldAgentWorkspace =
     isRepo && worktreeByDefault ? { kind: "new-worktree" } : { kind: "local" };
@@ -123,10 +211,10 @@ export function useWorldAgentWorkspaces(projectRef: ScopedProjectRef) {
 
 /**
  * Starts a thread in a project straight away, without opening its draft. It
- * picks what a fresh draft would: the project's default model or the last one
- * used, and its permissions. It works in the given workspace, else the
- * project's local-or-worktree default. A new worktree starts from the given
- * base branch, which useWorldAgentWorkspaces finds like the branch picker does.
+ * runs with the given setup, which useWorldAgentSetup seeds with what a fresh
+ * draft would pick. It works in the given workspace, else the project's
+ * local-or-worktree default. A new worktree starts from the given base branch,
+ * which useWorldAgentWorkspaces finds like the branch picker does.
  */
 export function useStartWorldAgent() {
   const startTurn = useOrchestrationCommand(threadEnvironment.startTurn, { reportFailure: false });
@@ -137,7 +225,9 @@ export function useStartWorldAgent() {
       attachments: ReadonlyArray<ChatAttachment | UploadChatAttachment> = [],
       workspace: WorldAgentWorkspace | null = null,
       worktreeBaseBranch: string | null = null,
+      setup: WorldAgentSetup | null = null,
     ): Promise<ThreadId> => {
+      if (setup === null) throw new Error("No agent provider is available.");
       const { environmentId } = projectRef;
       const project = findProject(projectRef);
       const serverConfig = appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId);
@@ -149,39 +239,16 @@ export function useStartWorldAgent() {
         workspace?.kind ??
         (projectSettings.defaultThreadEnvMode === "worktree" ? "new-worktree" : "local");
 
-      const { stickyActiveProvider, stickyModelSelectionByProvider } =
-        useComposerDraftStore.getState();
-      const preferred: ModelSelection | null =
-        projectSettings.defaultModelSelection ??
-        (stickyActiveProvider
-          ? (stickyModelSelectionByProvider[stickyActiveProvider] ?? null)
-          : null);
-      const { selectedProviderEntry: provider } = resolveComposerProviderSelection({
-        entries: sortProviderInstanceEntries(
-          applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings),
-        ),
-        candidateInstanceIds: [preferred?.instanceId],
-        lockedProvider: null,
-        lockedInstanceId: null,
-      });
-      if (provider === undefined) throw new Error("No agent provider is available.");
-      const keepsPreferred = preferred?.instanceId === provider.instanceId;
-      const modelSelection = createModelSelection(
-        provider.instanceId,
-        resolveAppModelSelectionForInstance(
-          provider.instanceId,
-          settings,
-          providers,
-          keepsPreferred ? preferred.model : null,
-        ) ?? getDefaultServerModel(providers, provider.driverKind),
-        keepsPreferred ? preferred.options : null,
+      const { modelSelection, runtimeMode } = setup;
+      const provider = providers.find(
+        (candidate) => candidate.instanceId === modelSelection.instanceId,
       );
-      const supportedRuntimeModes = provider.snapshot.supportedRuntimeModes ?? [];
-      const runtimeMode =
-        supportedRuntimeModes.length === 0 ||
-        supportedRuntimeModes.includes(projectSettings.defaultRuntimeMode)
-          ? projectSettings.defaultRuntimeMode
-          : supportedRuntimeModes[0]!;
+      // Plan mode only where the provider offers it and the user turned it on.
+      const { interactionMode } = resolveComposerInteractionMode({
+        planModeEnabled: settings.planModeEnabled,
+        provider,
+        interactionMode: setup.interactionMode,
+      });
 
       const baseBranch = workspaceKind === "new-worktree" ? worktreeBaseBranch : null;
       if (workspaceKind === "new-worktree" && baseBranch === null)
@@ -196,7 +263,6 @@ export function useStartWorldAgent() {
         attachments: attachments.filter((attachment) => attachment.type === "image"),
         fallbackLabels: [firstFile && `File: ${firstFile.name}`],
       });
-      const interactionMode = "default" as const;
       const result = await startTurn({
         environmentId,
         input: {

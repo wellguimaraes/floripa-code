@@ -6,7 +6,12 @@ import { useEffect, useRef, useState } from "react";
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { cn, newMessageId } from "../../lib/utils";
-import { readEnvironmentSupportsTitleRegeneration, useThreadShell } from "../../state/entities";
+import {
+  readEnvironmentSupportsTitleRegeneration,
+  useProject,
+  useServerConfigs,
+  useThreadShell,
+} from "../../state/entities";
 import { threadEnvironment } from "../../state/threads";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { Button } from "../ui/button";
@@ -56,6 +61,15 @@ export function WorldBubble(props: {
   const { facts, onClose, onExpand, onArchived, listen = false, hue, onHueChange } = props;
   const { archiveThread } = useThreadActions();
   const thread = useThreadShell(facts.ref);
+  const project = useProject(
+    thread === null ? null : { environmentId: thread.environmentId, projectId: thread.projectId },
+  );
+  // Suggestions come from where the thread works and the provider it talks to.
+  const provider =
+    useServerConfigs()
+      .get(facts.ref.environmentId)
+      ?.providers.find((candidate) => candidate.instanceId === thread?.modelSelection.instanceId) ??
+    null;
   const lastSent = useLastSentMessage(facts.ref);
   const startTurn = useOrchestrationCommand(threadEnvironment.startTurn, {
     reportFailure: false,
@@ -213,6 +227,8 @@ export function WorldBubble(props: {
   return (
     <BubbleComposer
       environmentId={facts.ref.environmentId}
+      cwd={thread?.worktreePath ?? project?.workspaceRoot ?? null}
+      provider={provider}
       attachments={attachments}
       text={text}
       onTextChange={setText}
