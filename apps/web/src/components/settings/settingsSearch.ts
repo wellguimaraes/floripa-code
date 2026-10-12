@@ -658,6 +658,20 @@ export const SETTINGS_SEARCH_ITEMS = [
     providerSettingsOnly: true,
   },
   {
+    id: "voice-openrouter-key",
+    title: "OpenRouter API key",
+    to: "/settings/providers",
+    providerSettingsOnly: true,
+    searchTerms: ["voice input microphone speech transcription dictation mic"],
+  },
+  {
+    id: "voice-transcription-model",
+    title: "Transcription model",
+    to: "/settings/providers",
+    providerSettingsOnly: true,
+    searchTerms: ["voice input speech to text whisper voxtral scribe elevenlabs openrouter"],
+  },
+  {
     id: "agent-browser-access",
     title: "Agent browser access",
     to: "/settings/integrations",
@@ -690,22 +704,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/integrations",
     targetId: "devices",
     searchTerms: ["xcode android studio sdk avd runtime"],
-  },
-  {
-    id: "voice-openrouter-key",
-    title: "OpenRouter API key",
-    to: "/settings/integrations",
-    environmentOnly: true,
-    scope: "environment-defaults",
-    searchTerms: ["voice input microphone speech transcription dictation mic"],
-  },
-  {
-    id: "voice-transcription-model",
-    title: "Transcription model",
-    to: "/settings/integrations",
-    environmentOnly: true,
-    scope: "environment-defaults",
-    searchTerms: ["voice input speech to text whisper voxtral openrouter"],
   },
   {
     id: "browser-profiles",

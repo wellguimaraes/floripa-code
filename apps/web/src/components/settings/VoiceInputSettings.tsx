@@ -11,29 +11,18 @@ import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { SettingResetButton, SettingsRow, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
-import { useSettingsScope } from "./SettingsScopeContext";
 
 /**
  * Voice input in the world view: the environment records nothing itself, it
  * sends what the mic heard to OpenRouter with this key and model.
  */
-export function VoiceInputSettings() {
-  const { environment: selected } = useSettingsScope();
-  const connected = selected?.connection.phase === "connected" && selected.serverConfig !== null;
-  return (
-    <SettingsSection id="voice" title="Voice input">
-      {connected ? (
-        <VoiceInputControls key={selected.environmentId} environmentId={selected.environmentId} />
-      ) : (
-        <p className="px-4 py-3 text-xs text-muted-foreground">
-          Select a connected environment to set up voice input.
-        </p>
-      )}
-    </SettingsSection>
-  );
-}
-
-function VoiceInputControls({ environmentId }: { readonly environmentId: EnvironmentId }) {
+export function VoiceInputSettings({
+  environmentId,
+  readOnly,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly readOnly: boolean;
+}) {
   const voice = useEnvironmentSettings(environmentId, (settings) => settings.voice);
   const updateSettings = useAtomCommand(serverEnvironment.updateSettings, {
     label: "save voice settings",
@@ -65,7 +54,7 @@ function VoiceInputControls({ environmentId }: { readonly environmentId: Environ
   ].map((model) => ({ value: model.id, label: model.name }));
 
   return (
-    <>
+    <SettingsSection id="voice" title="Voice input">
       <SettingsRow
         {...searchableSetting("voice-openrouter-key")}
         serverScoped
@@ -101,20 +90,20 @@ function VoiceInputControls({ environmentId }: { readonly environmentId: Environ
               aria-label="OpenRouter API key"
               placeholder={keySaved ? "Stored secret, enter a new value to replace" : "Not set"}
               value={draft}
-              disabled={saving}
+              disabled={saving || readOnly}
               onChange={(event) => setDraft(event.target.value)}
             />
             {keySaved && newKey === "" ? (
               <Button
                 size="sm"
                 variant="outline"
-                disabled={saving}
+                disabled={saving || readOnly}
                 onClick={() => void save({ openRouterApiKey: "" })}
               >
                 Remove
               </Button>
             ) : (
-              <Button type="submit" size="sm" disabled={saving || newKey === ""}>
+              <Button type="submit" size="sm" disabled={saving || readOnly || newKey === ""}>
                 Save
               </Button>
             )}
@@ -141,7 +130,7 @@ function VoiceInputControls({ environmentId }: { readonly environmentId: Environ
           <Select
             value={voice.transcriptionModel}
             items={modelItems}
-            disabled={saving}
+            disabled={saving || readOnly}
             onValueChange={(value: string | null) => {
               if (value !== null && value !== voice.transcriptionModel) {
                 void save({ transcriptionModel: value });
@@ -161,6 +150,6 @@ function VoiceInputControls({ environmentId }: { readonly environmentId: Environ
           </Select>
         }
       />
-    </>
+    </SettingsSection>
   );
 }

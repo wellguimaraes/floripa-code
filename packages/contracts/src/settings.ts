@@ -819,7 +819,7 @@ export const BitbucketSettings = Schema.Struct({
 export type BitbucketSettings = typeof BitbucketSettings.Type;
 
 /** OpenRouter's speech-to-text model used until another one is picked. */
-export const DEFAULT_TRANSCRIPTION_MODEL = "mistralai/voxtral-mini-transcribe";
+export const DEFAULT_TRANSCRIPTION_MODEL = "elevenlabs/scribe-v2";
 
 /**
  * Voice input for this environment: the server turns recorded speech into
