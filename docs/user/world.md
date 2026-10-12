@@ -51,8 +51,8 @@ images and files to the message. The expand button, or `Cmd`+`Enter`
 from the notice that appears, or later from **Settings → Archived**. `Option`-click
 (`Alt`-click) a character to skip the bubble and open its chat; the map frames the character's
 island beside the panel. While a chat is open, clicking another character switches the
-chat to it instead of opening a bubble. Close the chat with the **×** button beside the panel,
-`Escape` on the map, or `Escape` twice quickly inside the chat, and the map goes back to where it was.
+chat to it instead of opening a bubble. Close the chat with the **×** button beside the panel or
+with `Escape` (on the map or inside the chat), and the map goes back to where it was.
 
 Right-click a character for **Open chat**, **Send voice command**,
 **Regenerate title**, **Stop** and **Archive**. Stop ends the agent's current run, like the stop button in the
