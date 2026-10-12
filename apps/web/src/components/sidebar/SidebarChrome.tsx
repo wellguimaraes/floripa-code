@@ -1,11 +1,14 @@
-import { ArrowLeftIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
+import { useAtomValue } from "@effect/atom-react";
+import { ArrowLeftIcon, ChartNoAxesColumnIcon, EarthIcon, SettingsIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo, useCallback } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
+import { shortcutLabelForCommand } from "../../keybindings";
 import { cn } from "../../lib/utils";
 import { usePullRequestsSupported } from "../../state/environments";
+import { primaryServerKeybindingsAtom } from "../../state/server";
 import { T3Wordmark } from "../T3Wordmark";
 import {
   resolveEnvironmentIdentificationPillLabel,
@@ -25,7 +28,9 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
 import { isSidebarUtilityPage, useNavigateToMainApp } from "./mainAppLocation";
+import { SidebarHeaderIconButton } from "./SidebarThreadHeader";
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
+import { useWorldModeStore } from "../world/worldModeStore";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
@@ -73,12 +78,40 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
           </div>
         ) : null}
       </div>
+      <WorldModeToggle onBackdrop={backdropVariant !== null} />
     </div>
   );
 });
 
-// Measures the brand at its titlebar inset, plus the header's right padding and the
-// sidebar border, so the sidebar minimum follows font size, zoom and macOS window controls.
+/** Switches the chat layout to the world and back; the same as `world.toggle`. */
+function WorldModeToggle({ onBackdrop }: { onBackdrop: boolean }) {
+  const enabled = useWorldModeStore((state) => state.enabled);
+  const toggle = useWorldModeStore((state) => state.toggle);
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const shortcut = shortcutLabelForCommand(keybindings, "world.toggle");
+  const label = enabled ? "Leave world" : "Enter world";
+  return (
+    <SidebarHeaderIconButton
+      label={label}
+      tooltip={shortcut ? `${label} (${shortcut})` : label}
+      aria-pressed={enabled}
+      // Takes the brand's color, so it reads on the stage artwork too.
+      className={cn(
+        "z-10",
+        onBackdrop
+          ? "text-white [--sidebar-icon-color:white] hover:bg-white/10 hover:text-white hover:[&>svg]:text-white"
+          : "[--sidebar-icon-color:var(--color-foreground)]",
+      )}
+      onClick={toggle}
+    >
+      <EarthIcon />
+    </SidebarHeaderIconButton>
+  );
+}
+
+// Measures the brand at its titlebar inset and the world toggle, plus the header's right
+// padding and the sidebar border, so the sidebar minimum follows font size, zoom and macOS
+// window controls.
 export function SidebarBrandWidthProbe({
   onWidthChange,
 }: {
@@ -99,8 +132,10 @@ export function SidebarBrandWidthProbe({
       className="pointer-events-none invisible fixed top-0 left-0 flex w-max border-r border-transparent pr-3"
       ref={observeWidth}
     >
-      <div className="ml-[var(--workspace-titlebar-content-left)] flex">
+      <div className="ml-[var(--workspace-titlebar-content-left)] flex gap-2">
         <SidebarBrandMark onBackdrop={false} />
+        {/* The world toggle at the row's end. */}
+        <div className="size-7" />
       </div>
     </div>
   );

@@ -13,3 +13,30 @@ export function drawSoon(invalidate: () => void, fps: number): void {
     invalidate();
   }, 1000 / fps);
 }
+
+/**
+ * Runs `run` once the browser has painted the current frame: the animation
+ * frame lands just before the paint, the task queued from it just after.
+ * Returns a cancel.
+ */
+export function afterPaint(run: () => void): () => void {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const frame = requestAnimationFrame(() => {
+    timer = setTimeout(run);
+  });
+  return () => {
+    cancelAnimationFrame(frame);
+    clearTimeout(timer);
+  };
+}
+
+/**
+ * Runs `run` when the main thread has nothing else to do, or after `timeoutMs`
+ * at the latest. Safari has no idle callbacks, so there it runs after the
+ * next paint. Returns a cancel.
+ */
+export function whenIdle(run: () => void, timeoutMs: number): () => void {
+  if (typeof requestIdleCallback !== "function") return afterPaint(run);
+  const handle = requestIdleCallback(run, { timeout: timeoutMs });
+  return () => cancelIdleCallback(handle);
+}

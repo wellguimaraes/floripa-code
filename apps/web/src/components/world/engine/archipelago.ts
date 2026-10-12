@@ -17,10 +17,13 @@ export interface WorldIsland {
    * it matches. `engine/attention` turns these into ripples.
    */
   readonly attention: ReadonlyArray<string>;
-  /** Everyone has been resting long enough; see `archipelago.night`. */
-  readonly night: boolean;
   /** Colour index per family (a character's `lookSeed`), distinct within the island. */
   readonly hues: ReadonlyMap<string, number>;
+  /**
+   * Hat index per worktree folder, distinct within the island, so agents
+   * sharing a worktree wear the same hat. The project checkout gets none.
+   */
+  readonly hats: ReadonlyMap<string, number>;
 }
 
 /** What the world remembers between updates so nothing jumps around. */
@@ -28,12 +31,14 @@ export interface ArchipelagoMemory {
   readonly cells: ReadonlyMap<string, number>;
   readonly placements: ReadonlyMap<string, Placement>;
   readonly hues: ReadonlyMap<string, number>;
+  readonly hats: ReadonlyMap<string, number>;
 }
 
 export const EMPTY_ARCHIPELAGO_MEMORY: ArchipelagoMemory = {
   cells: new Map(),
   placements: new Map(),
   hues: new Map(),
+  hats: new Map(),
 };
 
 /**
@@ -48,9 +53,13 @@ export function resolveArchipelago(input: {
   readonly projectOrder: ReadonlyArray<string>;
   /** How many family colours the renderer has. */
   readonly hueCount: number;
-  /** Epoch milliseconds, for deciding whether night has fallen. */
-  readonly now: number;
+  /** How many hats the renderer has. */
+  readonly hatCount: number;
+  /** Colours picked by hand, by family seed; they win over every other rule. */
+  readonly chosenHues?: Readonly<Record<string, number>>;
   readonly requested?: ReadonlyMap<string, SlotRequest>;
+  /** Islands per grid row; the definition's `columns` when left out. */
+  readonly columns?: number;
   readonly previous: ArchipelagoMemory;
 }): { readonly islands: WorldIsland[]; readonly memory: ArchipelagoMemory } {
   const { definition, previous } = input;
@@ -62,7 +71,8 @@ export function resolveArchipelago(input: {
   }
 
   const rank = new Map(input.projectOrder.map((key, index) => [key, index]));
-  const keys = [...byProject.keys()].toSorted(
+  // Every project keeps its island, empty once its last thread is archived.
+  const keys = [...new Set([...input.projectOrder, ...byProject.keys()])].toSorted(
     (a, b) => (rank.get(a) ?? Infinity) - (rank.get(b) ?? Infinity) || a.localeCompare(b),
   );
   const cells = new Map<string, number>();
@@ -84,12 +94,10 @@ export function resolveArchipelago(input: {
 
   const placements = new Map<string, Placement>();
   const hues = new Map<string, number>();
+  const hats = new Map<string, number>();
   const islands = keys.map((key) => {
-    const night = isNight(byProject.get(key)!, definition, input.now);
     const characters = resolveWorld({
-      facts: night
-        ? byProject.get(key)!.map((facts) => ({ ...facts, night }))
-        : byProject.get(key)!,
+      facts: byProject.get(key) ?? [],
       definition,
       previous: previous.placements,
       ...(input.requested === undefined ? {} : { requested: input.requested }),
@@ -102,73 +110,130 @@ export function resolveArchipelago(input: {
       ),
     );
     const islandHues = assignHues({
-      facts: byProject.get(key)!,
+      facts: byProject.get(key) ?? [],
       hueCount: input.hueCount,
+      chosen: input.chosenHues ?? {},
       previous: previous.hues,
     });
     for (const [seed, hue] of islandHues) hues.set(seed, hue);
-    const offset = islandOffset(cell, definition);
-    return { key, cell, offset, characters, attention, night, hues: islandHues };
+    const islandHats = assignHats({
+      facts: byProject.get(key) ?? [],
+      hatCount: input.hatCount,
+      previous: previous.hats,
+    });
+    for (const [path, hat] of islandHats) hats.set(path, hat);
+    const offset = islandOffset(cell, definition, input.columns);
+    return { key, cell, offset, characters, attention, hues: islandHues, hats: islandHats };
   });
-  return { islands, memory: { cells, placements, hues } };
-}
-
-function isNight(
-  facts: ReadonlyArray<CharacterFacts>,
-  definition: WorldDefinition,
-  now: number,
-): boolean {
-  const { when, afterMinutes } = definition.archipelago.night;
-  if (facts.length === 0 || !facts.every((fact) => matchesFacts(when, fact))) return false;
-  const lastActive = Math.max(...facts.map((fact) => Date.parse(fact.restingSince) || 0));
-  return now - lastActive >= afterMinutes * 60_000;
+  return { islands, memory: { cells, placements, hues, hats } };
 }
 
 /**
  * One colour per family, so a parent and its kids match and two families on
  * the same island never do (until there are more families than colours). A
- * family keeps its colour while it stays; newcomers start from a colour
- * picked by their seed and take the next free one.
+ * colour picked by hand always holds; otherwise a family keeps its colour
+ * while it stays, and newcomers start from a colour picked by their seed and
+ * take the next free one.
  */
 function assignHues(input: {
   readonly facts: ReadonlyArray<CharacterFacts>;
   readonly hueCount: number;
+  readonly chosen: Readonly<Record<string, number>>;
   readonly previous: ReadonlyMap<string, number>;
 }): Map<string, number> {
-  const { hueCount, previous } = input;
+  return assignDistinct({
+    groups: oldestFirst(input.facts.map((facts) => [facts.lookSeed, facts.createdAt])),
+    count: input.hueCount,
+    chosen: input.chosen,
+    previous: input.previous,
+  });
+}
+
+/**
+ * One hat per worktree, with the same rules as family colours minus picking
+ * by hand: kept while the worktree stays, distinct until hats run out.
+ */
+function assignHats(input: {
+  readonly facts: ReadonlyArray<CharacterFacts>;
+  readonly hatCount: number;
+  readonly previous: ReadonlyMap<string, number>;
+}): Map<string, number> {
+  if (input.hatCount === 0) return new Map();
+  return assignDistinct({
+    groups: oldestFirst(
+      input.facts.flatMap((facts) =>
+        facts.worktreePath === null ? [] : [[facts.worktreePath, facts.createdAt] as const],
+      ),
+    ),
+    count: input.hatCount,
+    chosen: {},
+    previous: input.previous,
+  });
+}
+
+/** Group keys ordered by their earliest member, ties by key. */
+function oldestFirst(members: ReadonlyArray<readonly [string, string]>): string[] {
   const firstSeen = new Map<string, string>();
-  for (const facts of input.facts) {
-    const seen = firstSeen.get(facts.lookSeed);
-    if (seen === undefined || facts.createdAt < seen)
-      firstSeen.set(facts.lookSeed, facts.createdAt);
+  for (const [group, createdAt] of members) {
+    const seen = firstSeen.get(group);
+    if (seen === undefined || createdAt < seen) firstSeen.set(group, createdAt);
   }
-  const families = [...firstSeen.keys()].toSorted(
+  return [...firstSeen.keys()].toSorted(
     (a, b) => firstSeen.get(a)!.localeCompare(firstSeen.get(b)!) || a.localeCompare(b),
   );
-  const hues = new Map<string, number>();
+}
+
+/**
+ * Gives each group one of `count` looks, distinct while they last: a pick by
+ * hand first, then the look the group had before, then one chosen by its key,
+ * moving to the next free one on a clash.
+ */
+function assignDistinct(input: {
+  readonly groups: ReadonlyArray<string>;
+  readonly count: number;
+  readonly chosen: Readonly<Record<string, number>>;
+  readonly previous: ReadonlyMap<string, number>;
+}): Map<string, number> {
+  const { groups, count, chosen, previous } = input;
+  const looks = new Map<string, number>();
   const used = new Set<number>();
-  for (const family of families) {
-    const hue = previous.get(family);
-    if (hue !== undefined && hue < hueCount && !used.has(hue)) {
-      hues.set(family, hue);
-      used.add(hue);
+  for (const group of groups) {
+    const look = chosen[group];
+    if (look !== undefined && look < count) {
+      looks.set(group, look);
+      used.add(look);
     }
   }
-  for (const family of families) {
-    if (hues.has(family)) continue;
-    const preferred = hashString(family) % hueCount;
-    let hue = preferred;
-    for (let step = 0; step < hueCount; step += 1) {
-      const candidate = (preferred + step) % hueCount;
+  for (const group of groups) {
+    if (looks.has(group)) continue;
+    const look = previous.get(group);
+    if (look !== undefined && look < count && !used.has(look)) {
+      looks.set(group, look);
+      used.add(look);
+    }
+  }
+  for (const group of groups) {
+    if (looks.has(group)) continue;
+    const preferred = hashString(group) % count;
+    let look = preferred;
+    for (let step = 0; step < count; step += 1) {
+      const candidate = (preferred + step) % count;
       if (!used.has(candidate)) {
-        hue = candidate;
+        look = candidate;
         break;
       }
     }
-    hues.set(family, hue);
-    used.add(hue);
+    looks.set(group, look);
+    used.add(look);
   }
-  return hues;
+  return looks;
+}
+
+/** The first colour no family on the island wears yet: the default for a new agent there. */
+export function suggestHue(island: Pick<WorldIsland, "hues">, hueCount: number): number {
+  const used = new Set(island.hues.values());
+  for (let hue = 0; hue < hueCount; hue += 1) if (!used.has(hue)) return hue;
+  return island.hues.size % hueCount;
 }
 
 /** The ground one island covers in its own coordinates. */
@@ -198,17 +263,51 @@ export function islandBounds(definition: WorldDefinition): {
 }
 
 /**
+ * How far the ground reaches from the middle of its bounds. Islands are round,
+ * so spacing them as circles packs them far closer than their boxes would.
+ */
+export function islandRadius(definition: WorldDefinition): number {
+  const { minX, minZ, maxX, maxZ } = islandBounds(definition);
+  const [centerX, centerZ] = [(minX + maxX) / 2, (minZ + maxZ) / 2];
+  return Math.max(
+    0,
+    ...definition.terrain.map(
+      (patch) =>
+        Math.hypot(patch.center[0] - centerX, patch.center[1] - centerZ) +
+        (patch.shape === "disc" ? patch.radius : Math.hypot(patch.size[0] / 2, patch.size[1] / 2)),
+    ),
+  );
+}
+
+/**
  * Lays the grid out along the screen, not the world axes: the camera looks
  * down the (1, 1) diagonal, so a column step of (s, -s) reads as "right" and
- * a row step of (s, s) as "down". Two islands then differ by
- * (s * (dc + dr), s * (dr - dc)), which clears their footprints when s covers
- * the depth plus the gap and 2s covers the width plus the gap.
+ * a row step of (s, s) as "down". Neighbours are then s * sqrt(2) apart,
+ * which leaves `gap` of water between their ground circles.
  */
-export function islandOffset(cell: number, definition: WorldDefinition): Vec3 {
-  const { columns, gap } = definition.archipelago;
-  const { minX, minZ, maxX, maxZ } = islandBounds(definition);
-  const step = Math.max(maxZ - minZ + gap, (maxX - minX + gap) / 2);
+export function islandOffset(
+  cell: number,
+  definition: WorldDefinition,
+  columns = definition.archipelago.columns,
+): Vec3 {
+  const { gap } = definition.archipelago;
+  const step = (2 * islandRadius(definition) + gap) / Math.SQRT2;
   const column = cell % columns;
   const row = Math.floor(cell / columns);
   return [(column + row) * step, 0, (row - column) * step];
+}
+
+/** How the islands line up on screen: down one column, along one row, or in a grid. */
+export type IslandArrangement = "column" | "row" | "grid";
+
+/** Islands per grid row for `count` islands; a grid is about as wide as it is tall. */
+export function arrangementColumns(arrangement: IslandArrangement, count: number): number {
+  switch (arrangement) {
+    case "column":
+      return 1;
+    case "row":
+      return Math.max(1, count);
+    case "grid":
+      return Math.max(1, Math.ceil(Math.sqrt(count)));
+  }
 }

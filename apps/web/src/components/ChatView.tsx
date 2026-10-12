@@ -357,6 +357,7 @@ import {
 } from "../lib/terminalCloseShortcut";
 import { resolveNewDraftStartFromOrigin } from "../lib/chatThreadActions";
 import {
+  buildProjectGroups,
   deriveLogicalProjectKeyFromSettings,
   selectProjectGroupingSettings,
 } from "../logicalProject";
@@ -2658,6 +2659,29 @@ export default function ChatView(props: ChatViewProps) {
   // drive the environment picker in BranchToolbar.
   const allProjects = useProjects();
   const primaryEnvironmentId = primaryEnvironment?.environmentId ?? null;
+  // The header leads with the same project label the sidebar shows, since the
+  // project's own title is often just its folder name.
+  const { sidebarProjectGroupingMode, sidebarProjectGroupingOverrides } = settings;
+  const activeProjectGroupLabel = useMemo(() => {
+    if (!activeProject) return null;
+    const group = buildProjectGroups({
+      projects: allProjects,
+      settings: { sidebarProjectGroupingMode, sidebarProjectGroupingOverrides },
+      preferredEnvironmentId: primaryEnvironmentId,
+    }).find((candidate) =>
+      candidate.memberProjectRefs.some(
+        (ref) =>
+          ref.environmentId === activeProject.environmentId && ref.projectId === activeProject.id,
+      ),
+    );
+    return group?.label ?? null;
+  }, [
+    activeProject,
+    allProjects,
+    primaryEnvironmentId,
+    sidebarProjectGroupingMode,
+    sidebarProjectGroupingOverrides,
+  ]);
   useEffect(() => {
     if (!activeThreadRef || !activeProjectRef) return;
     registerFaviconProjectForThread(activeThreadRef, activeProjectRef);
@@ -11349,6 +11373,7 @@ export default function ChatView(props: ChatViewProps) {
             isServerThread={isServerThread}
             activeThreadTitle={activeThread.title}
             activeProject={activeProject ?? null}
+            activeProjectGroupLabel={activeProjectGroupLabel}
             parentThreadLink={parentThreadLink}
             onOpenThread={onOpenRelatedThread}
             rightPanelOpen={inlineRightPanelOwnsTitleBar}

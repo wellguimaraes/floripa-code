@@ -1,40 +1,96 @@
 import { useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useRef } from "react";
-import { AdditiveBlending, type Group, type Mesh, type MeshBasicMaterial } from "three";
+import { Suspense, useEffect, useMemo, useRef } from "react";
+import {
+  AdditiveBlending,
+  type Group,
+  type Mesh,
+  type MeshBasicMaterial,
+  Quaternion,
+  Vector3,
+} from "three";
 
 import type { Vec3 } from "../definition/types";
+import { CharacterModel } from "./CharacterModel";
 import { drawSoon } from "./frames";
 import { geometry } from "./geometries";
-import { palette } from "./palette";
+import { type FamilyShades, palette } from "./palette";
 
-const DESCEND = 0.8;
-const BEAM = 1.8;
-const LEAVE = 0.8;
+const DESCEND = 1;
+const BEAM = 2;
+const LEAVE = 0.9;
 export const ABDUCTION_SECONDS = DESCEND + BEAM + LEAVE;
-const HOVER_HEIGHT = 3.4;
+const HOVER_HEIGHT = 6;
+/** The saucer's size for a single character; a wide group gets a wider one. */
+const SAUCER_SCALE = 2.6;
 const FPS = 30;
 
-/**
- * A saucer drops in over an archived character, beams it up and flies off.
- * A stand-in figure in the character's colours does the rising, since the
- * real one is gone the moment the thread is archived.
- */
-export function Abduction(props: {
+export interface AbductedFigure {
+  readonly key: string;
   readonly position: Vec3;
   readonly scale: number;
-  readonly shades: { readonly light: string; readonly base: string; readonly dark: string };
+  /** The way the character faced, so the stand-in turns up exactly as it stood. */
+  readonly facing: number;
+  readonly shades: FamilyShades;
+}
+
+const up = new Vector3(0, 1, 0);
+
+/**
+ * A saucer drops in over archived characters, beams them all up at once and
+ * flies off. Stand-ins of the same model in each character's colours do the
+ * rising, since the real ones are gone the moment their threads are archived.
+ */
+export function Abduction(props: {
+  readonly figures: ReadonlyArray<AbductedFigure>;
   readonly onDone: () => void;
 }) {
-  const { position, scale, shades, onDone } = props;
+  const { figures, onDone } = props;
+  // Hover over the group's middle, high and wide enough to take everyone in.
+  const { center, size } = useMemo(() => {
+    const middle = new Vector3();
+    for (const figure of figures) middle.add(new Vector3(...figure.position));
+    middle.divideScalar(Math.max(1, figures.length));
+    const reach = Math.max(
+      0,
+      ...figures.map((figure) =>
+        Math.hypot(figure.position[0] - middle.x, figure.position[2] - middle.z),
+      ),
+    );
+    return { center: middle, size: Math.max(SAUCER_SCALE, reach * 0.55) };
+  }, [figures]);
+  const hover = HOVER_HEIGHT + size;
+  // Each beam runs from its character up to the saucer's belly.
+  const beams = useMemo(
+    () =>
+      figures.map((figure) => {
+        const from = new Vector3(...figure.position).sub(center);
+        const to = new Vector3(0, hover - 0.4 * size, 0);
+        const along = to.clone().sub(from);
+        return {
+          from,
+          to,
+          middle: from.clone().add(to).multiplyScalar(0.5),
+          length: along.length(),
+          turn: new Quaternion().setFromUnitVectors(up, along.normalize()),
+        };
+      }),
+    [figures, center, hover, size],
+  );
+
   const saucer = useRef<Group>(null);
-  const figure = useRef<Group>(null);
-  const beam = useRef<Mesh>(null);
+  const figureRefs = useRef<Array<Group | null>>([]);
+  const beamRefs = useRef<Array<Mesh | null>>([]);
   const startedAt = useRef<number | null>(null);
   const invalidate = useThree((state) => state.invalidate);
-  useEffect(() => invalidate(), [invalidate]);
+  // Draw once more on the way out too: the scene only redraws when asked, so
+  // without it the last frame, saucer included, would stay on screen.
+  useEffect(() => {
+    invalidate();
+    return () => invalidate();
+  }, [invalidate]);
 
   useFrame((state) => {
-    if (saucer.current === null || figure.current === null || beam.current === null) return;
+    if (saucer.current === null) return;
     const now = state.clock.elapsedTime;
     startedAt.current ??= now;
     const t = now - startedAt.current;
@@ -47,61 +103,78 @@ export function Abduction(props: {
     const lift = ease((t - DESCEND) / BEAM);
     const leave = Math.max(0, (t - DESCEND - BEAM) / LEAVE);
 
+    // Off to the side and up, shrinking into the distance until it is gone.
     saucer.current.position.set(
-      leave * leave * 6,
-      HOVER_HEIGHT + (1 - descend) * 6 + leave * leave * 8,
-      -leave * leave * 6,
+      leave * leave * 30,
+      hover + (1 - descend) * 10 + leave * leave * 30,
+      -leave * leave * 30,
     );
-    saucer.current.rotation.y = t * 4;
+    saucer.current.scale.setScalar(size * (1 - leave));
+    saucer.current.rotation.y = t * 2.5;
 
     const beaming = t > DESCEND && t < DESCEND + BEAM;
-    beam.current.visible = beaming;
-    (beam.current.material as MeshBasicMaterial).opacity = beaming
-      ? 0.35 + Math.sin(t * 18) * 0.08
-      : 0;
+    const opacity = beaming ? 0.32 + Math.sin(t * 18) * 0.08 : 0;
+    for (const beam of beamRefs.current) {
+      if (beam === null) continue;
+      beam.visible = beaming;
+      (beam.material as MeshBasicMaterial).opacity = opacity;
+    }
 
-    // Rise into the saucer, spinning and shrinking, then vanish inside it.
-    figure.current.visible = t < DESCEND + BEAM;
-    figure.current.position.y = lift * (HOVER_HEIGHT - 0.4);
-    figure.current.rotation.y = lift * Math.PI * 4;
-    figure.current.scale.setScalar(scale * (1 - lift * 0.6));
+    // Rise along the beam into the saucer, spinning and shrinking, then vanish inside it.
+    figures.forEach((figure, index) => {
+      const group = figureRefs.current[index];
+      const path = beams[index];
+      if (!group || !path) return;
+      group.visible = t < DESCEND + BEAM;
+      group.position.lerpVectors(path.from, path.to, lift);
+      group.rotation.y = figure.facing + lift * Math.PI * 4;
+      group.scale.setScalar(figure.scale * (1 - lift * 0.6));
+    });
 
     drawSoon(state.invalidate, FPS);
   });
 
   return (
-    <group position={position as [number, number, number]}>
-      <group ref={figure} scale={scale}>
-        <mesh geometry={geometry.leg} position={[-0.1, 0.16, 0]}>
-          <meshLambertMaterial color={shades.dark} />
+    <group position={[center.x, center.y, center.z]}>
+      {figures.map((figure, index) => (
+        <group
+          key={figure.key}
+          ref={(group) => {
+            figureRefs.current[index] = group;
+          }}
+          position={beams[index]!.from}
+          scale={figure.scale}
+          rotation-y={figure.facing}
+        >
+          <Suspense fallback={null}>
+            <CharacterModel pose="stand" shades={figure.shades} isWalking={() => false} />
+          </Suspense>
+        </group>
+      ))}
+      {beams.map((beam, index) => (
+        <mesh
+          key={figures[index]!.key}
+          ref={(mesh) => {
+            beamRefs.current[index] = mesh;
+          }}
+          geometry={geometry.cone}
+          position={beam.middle}
+          quaternion={beam.turn}
+          // Point at the saucer, widening toward the ground.
+          scale={[1.1, beam.length, 1.1]}
+          visible={false}
+          renderOrder={6}
+        >
+          <meshBasicMaterial
+            color={palette.ufoBeam}
+            transparent
+            opacity={0}
+            depthWrite={false}
+            blending={AdditiveBlending}
+          />
         </mesh>
-        <mesh geometry={geometry.leg} position={[0.1, 0.16, 0]}>
-          <meshLambertMaterial color={shades.dark} />
-        </mesh>
-        <mesh geometry={geometry.torso} position-y={0.6}>
-          <meshLambertMaterial color={shades.base} />
-        </mesh>
-        <mesh geometry={geometry.head} position-y={1.12}>
-          <meshLambertMaterial color={shades.light} />
-        </mesh>
-      </group>
-      <mesh
-        ref={beam}
-        geometry={geometry.cone}
-        position-y={HOVER_HEIGHT / 2}
-        scale={[1.1, HOVER_HEIGHT, 1.1]}
-        visible={false}
-        renderOrder={6}
-      >
-        <meshBasicMaterial
-          color={palette.ufoBeam}
-          transparent
-          opacity={0}
-          depthWrite={false}
-          blending={AdditiveBlending}
-        />
-      </mesh>
-      <group ref={saucer} position-y={HOVER_HEIGHT + 6}>
+      ))}
+      <group ref={saucer} position-y={hover + 10} scale={size}>
         <mesh geometry={geometry.head} scale={[4.2, 0.9, 4.2]}>
           <meshLambertMaterial color={palette.ufoHull} />
         </mesh>

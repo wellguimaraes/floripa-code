@@ -11,16 +11,18 @@ import {
   Vector3,
 } from "three";
 
-import type { Pose, Vec3, WorldMovement, WorldRoads } from "../definition/types";
-import { planRoute } from "../engine/roads";
+import type { Pose, Vec3, WorldMovement } from "../definition/types";
+import { type Obstacle, planRoute } from "../engine/route";
 import type { Placement } from "../engine/slots";
 import type { WorldCharacter } from "../engine/world";
 import { balloonTexture } from "./balloons";
 import { CharacterModel } from "./CharacterModel";
 import { drawSoon } from "./frames";
 import { geometry } from "./geometries";
+import { Hat } from "./Hat";
 import { LitMaterial } from "./lighting";
 import { palette } from "./palette";
+import { SelectionRing } from "./SelectionRing";
 
 export type { FamilyShades } from "./palette";
 import type { FamilyShades } from "./palette";
@@ -46,16 +48,26 @@ export function Character(props: {
   readonly character: WorldCharacter;
   /** The family's colour; kids get their parent's. */
   readonly shades: FamilyShades;
-  readonly roads: WorldRoads;
+  /** The worktree's hat; null in the project checkout. */
+  readonly hat: number | null;
+  /** What to walk around on the way to a new spot. */
+  readonly obstacles: ReadonlyArray<Obstacle>;
   readonly movement: WorldMovement;
   readonly selected: boolean;
   readonly onSelect: (character: WorldCharacter) => void;
+  /** An option- or alt-click: straight to the character's chat. */
+  readonly onOpen: (character: WorldCharacter) => void;
+  /** A cmd- or ctrl-click: adds the character to the selection, or takes it out. */
+  readonly onPick: (character: WorldCharacter) => void;
+  /** A right-click, at that screen point. */
+  readonly onMenu: (character: WorldCharacter, point: { x: number; y: number }) => void;
   /** Hands out the character's root so overlays (the reply bubble) can follow it. */
   readonly onRoot: (key: string, root: Group | null) => void;
   /** Screen point to anchor a label at, or null when the pointer leaves. */
   readonly onHover: (character: WorldCharacter, point: { x: number; y: number } | null) => void;
 }) {
-  const { character, shades, roads, movement, selected, onSelect, onRoot, onHover } = props;
+  const { character, shades, hat, obstacles, movement, selected, onRoot, onHover } = props;
+  const { onSelect, onOpen, onPick, onMenu } = props;
   const { facts, placement, activity, intent } = character;
   // On a seat, beach poses become sitting back, and a wave becomes a raised arm.
   const seated = placement.seat !== undefined;
@@ -103,14 +115,9 @@ export function Character(props: {
     lastPlacement.current = placement;
     if (previous === null || samePlacement(previous, placement)) return;
     const current = motion.current;
-    current.route = planRoute({
-      roads,
-      from: current.position,
-      fromPlacement: previous,
-      to: placement,
-    }).slice(1);
+    current.route = planRoute({ from: current.position, to: placement.position, obstacles });
     invalidate();
-  }, [placement, roads, invalidate]);
+  }, [placement, obstacles, invalidate]);
 
   const speed = movement.walkSpeed * (facts.kid ? movement.kidSpeedScale : 1);
   useFrame((state, frameDelta) => {
@@ -177,7 +184,14 @@ export function Character(props: {
   const select = (event: ThreeEvent<MouseEvent>) => {
     if (event.delta > DRAG_CLICK_TOLERANCE_PX) return;
     event.stopPropagation();
-    onSelect(character);
+    if (event.nativeEvent.altKey) onOpen(character);
+    else if (event.nativeEvent.metaKey || event.nativeEvent.ctrlKey) onPick(character);
+    else onSelect(character);
+  };
+  const openMenu = (event: ThreeEvent<MouseEvent>) => {
+    event.stopPropagation();
+    event.nativeEvent.preventDefault();
+    onMenu(character, { x: event.nativeEvent.clientX, y: event.nativeEvent.clientY });
   };
   const scale = movement.characterScale * (facts.kid ? movement.kidScale : 1);
 
@@ -188,6 +202,7 @@ export function Character(props: {
       ref={root}
       scale={scale}
       onClick={select}
+      onContextMenu={openMenu}
       onPointerOver={(event) => {
         event.stopPropagation();
         onHover(character, { x: event.nativeEvent.clientX, y: event.nativeEvent.clientY });
@@ -201,11 +216,7 @@ export function Character(props: {
       <mesh geometry={geometry.shadow} rotation-x={-Math.PI / 2} position-y={0.012}>
         <meshBasicMaterial color={palette.shadow} transparent opacity={0.18} depthWrite={false} />
       </mesh>
-      {selected ? (
-        <mesh geometry={geometry.ring} rotation-x={-Math.PI / 2} position-y={0.02}>
-          <meshBasicMaterial color={palette.selection} />
-        </mesh>
-      ) : null}
+      {selected ? <SelectionRing fps={movement.walkFps} /> : null}
       <Suspense
         fallback={
           // The shape-built figure stands in while the model downloads.
@@ -223,13 +234,9 @@ export function Character(props: {
           raiseHand={intent.balloon !== undefined || (seated && activity.pose === "wave")}
           handRef={hand}
           handItem={
-            activity.pose === "mine" || activity.pose === "ponder" ? (
-              <ModelPickaxe />
-            ) : activity.pose === "fish" ? (
-              <ModelRod />
-            ) : undefined
+            activity.pose === "mine" || activity.pose === "ponder" ? <ModelPickaxe /> : undefined
           }
-          chestItem={pose === "sleep" ? <ModelBlanket color={shades.dark} /> : undefined}
+          headItem={hat === null ? undefined : <Hat style={hat} />}
         />
       </Suspense>
       {activity.pose === "mine" || activity.pose === "ponder" ? (
@@ -280,46 +287,24 @@ function ShapeBody(props: {
             <meshBasicMaterial color={palette.eye} />
           </mesh>
         </group>
-        {activity.pose === "sleep" ? (
-          // Over the legs and chest; the body lies on its back, so local +z is up.
-          <mesh geometry={geometry.box} position={[0, 0.4, 0.14]} scale={[0.58, 0.82, 0.05]}>
-            <LitMaterial color={shades.dark} />
-          </mesh>
-        ) : null}
       </group>
-      {activity.pose === "fish" ? <FishingRod /> : null}
     </>
   );
 }
 
-// Hand and chest items for the model, in its bone space: the hand slot's +y
-// runs along a held tool's handle.
+// Hand items for the model, in its bone space: the hand slot's +y
+// runs along a held tool's handle and +x along the swing, so a pickaxe's head
+// lies along x to strike the pile.
 function ModelPickaxe() {
   return (
     <group>
       <mesh geometry={geometry.cylinder} position-y={0.1} scale={[0.025, 0.6, 0.025]}>
         <LitMaterial color={palette.rod} />
       </mesh>
-      <mesh geometry={geometry.box} position-y={0.38} scale={[0.05, 0.06, 0.42]}>
+      <mesh geometry={geometry.box} position-y={0.38} scale={[0.42, 0.07, 0.06]}>
         <LitMaterial color={palette.metal} />
       </mesh>
     </group>
-  );
-}
-
-function ModelRod() {
-  return (
-    <mesh geometry={geometry.cylinder} position-y={0.6} scale={[0.02, 1.4, 0.02]}>
-      <LitMaterial color={palette.rod} />
-    </mesh>
-  );
-}
-
-function ModelBlanket({ color }: { readonly color: string }) {
-  return (
-    <mesh geometry={geometry.box} position={[0, -0.25, 0.12]} scale={[0.7, 0.9, 0.06]}>
-      <LitMaterial color={color} />
-    </mesh>
   );
 }
 
@@ -396,25 +381,6 @@ function NuggetPile({ count }: { readonly count: number }) {
   );
 }
 
-/** Held out over the water from the right hand, line hanging to the surface. */
-function FishingRod() {
-  return (
-    <group position={[0.27, 0.55, 0.3]} rotation-x={0.9}>
-      <mesh geometry={geometry.cylinder} position-y={0.8} scale={[0.02, 1.6, 0.02]}>
-        <LitMaterial color={palette.rod} />
-      </mesh>
-      <mesh
-        geometry={geometry.cylinder}
-        position={[0, 1.6, -0.4]}
-        rotation-x={-0.9}
-        scale={[0.006, 1, 0.006]}
-      >
-        <meshBasicMaterial color={palette.foam} />
-      </mesh>
-    </group>
-  );
-}
-
 function Cloud() {
   return (
     <group position-y={1.75}>
@@ -453,7 +419,7 @@ function applyPose(pose: Pose | "walk", time: number, rig: PoseRig) {
   armRight.rotation.set(0, 0, 0);
   legLeft.rotation.set(0, 0, 0);
   legRight.rotation.set(0, 0, 0);
-  const seated = pose === "slump" || pose === "fish";
+  const seated = pose === "slump";
   if (seated) {
     legLeft.rotation.x = -Math.PI / 2;
     legRight.rotation.x = -Math.PI / 2;
@@ -491,21 +457,10 @@ function applyPose(pose: Pose | "walk", time: number, rig: PoseRig) {
       head.rotation.z = 0.2;
       head.rotation.x = -0.1;
       break;
-    case "fish":
-      // Sitting on the pier's edge, legs over the water.
-      body.position.set(0, -0.3, 0);
-      armRight.rotation.x = -1.2;
-      armLeft.rotation.x = -1;
-      break;
     case "slump":
       head.rotation.x = 0.45;
       armLeft.rotation.z = -0.15;
       armRight.rotation.z = 0.15;
-      break;
-    case "sleep":
-      // Flat on the ground, feet toward where the slot faces (the fire).
-      body.rotation.x = -Math.PI / 2;
-      body.position.set(0, 0.2, 0);
       break;
     case "lie":
       // Head toward the chair's back (-z), feet toward its foot.

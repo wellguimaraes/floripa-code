@@ -1,10 +1,11 @@
-import { Matrix4 } from "three";
+import { useContext } from "react";
+import { type BufferGeometry, Matrix4 } from "three";
 
 import type { PropKind, TerrainKind, Vec3, WorldDefinition } from "../definition/types";
 import { islandBounds } from "../engine/archipelago";
 import { hashString } from "../engine/hash";
 import { geometry } from "./geometries";
-import { LitMaterial } from "./lighting";
+import { FadedContext, LitMaterial } from "./lighting";
 import {
   chain,
   type MergedPart,
@@ -17,8 +18,9 @@ import {
   translate,
 } from "./merged";
 import { palette } from "./palette";
-import { Campfire, NightWater } from "./Night";
 import { Ripple } from "./Ripple";
+import { propShadows } from "./shadows";
+import { roundPatchGeometry, shallowsGeometry } from "./terrain";
 
 const TERRAIN: Record<TerrainKind, { readonly color: string; readonly top: number }> = {
   // Stacked a hair apart so overlapping patches never z-fight.
@@ -39,9 +41,9 @@ export function Island(props: {
   readonly definition: WorldDefinition;
   readonly furniture: ReadonlyArray<FurnitureSpot>;
   readonly ripple: boolean;
-  readonly night: boolean;
 }) {
-  const { definition, furniture, ripple, night } = props;
+  const { definition, furniture, ripple } = props;
+  const faded = useContext(FadedContext);
   const bounds = islandBounds(definition);
   const center: [number, number] = [
     (bounds.minX + bounds.maxX) / 2,
@@ -51,24 +53,30 @@ export function Island(props: {
   return (
     <group>
       {ripple ? <Ripple center={center} radius={radius + 0.3} /> : null}
-      {night ? (
-        <>
-          <NightWater center={center} radius={radius + 4} />
-          <Campfire position={definition.archipelago.night.campfire} />
-        </>
-      ) : null}
       {definition.terrain.map((patch) => {
         const style = TERRAIN[patch.kind];
         const y = style.top - TERRAIN_DEPTH / 2;
         return patch.shape === "disc" ? (
-          <mesh
+          <group
             key={`${patch.kind}:${patch.center.join(",")}:${patch.radius}`}
-            geometry={geometry.disc}
-            position={[patch.center[0], y, patch.center[1]]}
-            scale={[patch.radius, TERRAIN_DEPTH, patch.radius]}
+            position={[patch.center[0], 0, patch.center[1]]}
           >
-            <LitMaterial color={style.color} />
-          </mesh>
+            <mesh geometry={roundPatchGeometry(patch.kind, patch.radius, style.top, faded)}>
+              <meshLambertMaterial vertexColors />
+            </mesh>
+            {patch.kind === "sand" ? (
+              // Just above the sea, under the island's rim: turquoise, then
+              // paler water over the sand close in.
+              <>
+                <mesh geometry={shallowsGeometry(patch.radius + 2.1)} position-y={-0.24}>
+                  <LitMaterial color={palette.lagoon} />
+                </mesh>
+                <mesh geometry={shallowsGeometry(patch.radius + 0.9)} position-y={-0.23}>
+                  <LitMaterial color={palette.shallows} />
+                </mesh>
+              </>
+            ) : null}
+          </group>
         ) : (
           <mesh
             key={`${patch.kind}:${patch.center.join(",")}:${patch.size.join(",")}`}
@@ -80,6 +88,7 @@ export function Island(props: {
           </mesh>
         );
       })}
+      <PropShadows geometry={propShadows([...definition.props, ...furniture])} />
       {definition.props.map((prop) => (
         <Prop
           key={`${prop.kind}:${prop.position.join(",")}`}
@@ -99,6 +108,16 @@ export function Island(props: {
         />
       ))}
     </group>
+  );
+}
+
+function PropShadows({ geometry: shadows }: { readonly geometry: BufferGeometry | null }) {
+  if (shadows === null) return null;
+  return (
+    // On the lawn, just under the characters' own shadows.
+    <mesh geometry={shadows} position-y={0.011} renderOrder={1}>
+      <meshBasicMaterial color={palette.shadow} transparent opacity={0.14} depthWrite={false} />
+    </mesh>
   );
 }
 
@@ -126,7 +145,7 @@ function Prop(props: {
 
 /**
  * Each model is built around its slot: local +z is the way the occupant faces,
- * and the thing they work at stands in front of them. Long props (pier, rope)
+ * and the thing they work at stands in front of them. Long props (rope)
  * run `length` units along +z.
  */
 function PropModel({
@@ -140,24 +159,6 @@ function PropModel({
   readonly seed: number;
 }) {
   switch (kind) {
-    case "pier":
-      return (
-        <>
-          <Block size={[1.3, 0.1, length]} at={[0, -0.05, length / 2]} color={palette.plank} />
-          {/* Posts only where the deck is over water, past the first stretch on the sand. */}
-          {Array.from({ length: Math.floor((length - 1.2) / 1.6) + 1 }, (_, index) =>
-            [-0.6, 0.6].map((x) => (
-              <Cylinder
-                key={`${index}:${x}`}
-                radius={0.07}
-                height={0.8}
-                at={[x, -0.35, Math.min(length - 0.1, 1.4 + index * 1.6)]}
-                color={palette.woodDark}
-              />
-            )),
-          )}
-        </>
-      );
     case "raft":
       return (
         <>

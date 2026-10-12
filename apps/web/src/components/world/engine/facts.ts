@@ -15,13 +15,16 @@ export interface CharacterFacts {
   readonly ref: ScopedThreadRef;
   readonly title: string;
   readonly createdAt: string;
+  /** When the agent last replied: its latest run's end, else the thread's last update. */
+  readonly lastReplyAt: string;
   readonly status: SidebarThreadStatus;
   readonly unread: boolean;
   /** A subagent whose parent is also in the world. */
   readonly kid: boolean;
   readonly parentKey: string | null;
+  /** A kid is working, or the thread waits on a background subagent. */
   readonly hasWorkingKids: boolean;
-  /** A background task, such as a long command, is still running. */
+  /** A background task other than a subagent, such as a long command, is still running. */
   readonly backgroundTask: boolean;
   /**
    * Grows as the thread's work advances (its item count): one nugget per
@@ -30,15 +33,13 @@ export interface CharacterFacts {
   readonly beat: number;
   /** No new output for a while; set by `gateBeats`, which knows the timing. */
   readonly quiet: boolean;
-  /** When the thread last finished work, or last changed if it never ran. */
-  readonly restingSince: string;
-  /** Night on the character's island; set by `resolveArchipelago`. */
-  readonly night: boolean;
   readonly provider: string;
   /** The island the character lives on: its project, or its parent's for a kid. */
   readonly projectKey: string;
   /** Nearest ancestor that is not a subagent, so kids share their parent's look. */
   readonly lookSeed: string;
+  /** The worktree folder the thread works in; null in the project's own checkout. */
+  readonly worktreePath: string | null;
 }
 
 const WORLD_CHARACTER_LIMIT = 30;
@@ -73,29 +74,34 @@ export function buildCharacterFacts(input: {
       ref: { environmentId: thread.environmentId, threadId: thread.id },
       title: thread.title,
       createdAt: thread.createdAt,
-      status: resolveSidebarThreadStatus(thread),
+      lastReplyAt: thread.latestRun?.completedAt ?? thread.updatedAt,
+      status: subagentStatus(thread, parent),
       unread: hasUnseenCompletion({ ...thread, lastVisitedAt }),
       kid,
       parentKey: kid ? parentKey : null,
-      backgroundTask: thread.pendingBackgroundTasks.length > 0,
+      backgroundTask: thread.pendingBackgroundTasks.some((task) => task.kind !== "subagent"),
       beat: thread.itemCount,
       quiet: false,
-      restingSince: thread.latestRun?.completedAt ?? thread.updatedAt,
-      night: false,
       provider: thread.providerInstanceId as string,
       projectKey: scopedProjectKey({
         environmentId: thread.environmentId,
         projectId: thread.projectId,
       }),
       lookSeed: lookSeed(thread, byId),
+      worktreePath: thread.worktreePath,
     };
   });
 
-  const parentsWithWorkingKids = new Set(
-    drafts.flatMap((facts) =>
+  const parentsWithWorkingKids = new Set([
+    ...drafts.flatMap((facts) =>
       facts.parentKey !== null && facts.status === "working" ? [facts.parentKey] : [],
     ),
-  );
+    ...chosen.flatMap((thread) =>
+      thread.pendingBackgroundTasks.some((task) => task.kind === "subagent")
+        ? [threadKey(thread)]
+        : [],
+    ),
+  ]);
   // A kid's desk is beside its parent, so the whole family lives on the
   // parent's island even when a subagent ran in another project.
   const draftByKey = new Map(drafts.map((facts) => [facts.key, facts]));
@@ -115,6 +121,30 @@ export function buildCharacterFacts(input: {
 
 function threadKey(thread: EnvironmentThreadShell): string {
   return scopedThreadKey({ environmentId: thread.environmentId, threadId: thread.id });
+}
+
+/**
+ * A subagent thread owns no runs: its work happens inside its parent's, so on
+ * its own it always reads as ready. It is working while the parent waits on it
+ * in the background, or while the parent's current run has touched it.
+ */
+function subagentStatus(
+  thread: EnvironmentThreadShell,
+  parent: EnvironmentThreadShell | null,
+): SidebarThreadStatus {
+  const status = resolveSidebarThreadStatus(thread);
+  if (parent === null || thread.runtime !== null || status !== "ready") return status;
+  const waitedOn = parent.pendingBackgroundTasks.some(
+    (task) =>
+      task.kind === "subagent" && "childThreadId" in task && task.childThreadId === thread.id,
+  );
+  if (waitedOn) return "working";
+  const runStartedAt = parent.latestRun?.startedAt ?? null;
+  return resolveSidebarThreadStatus(parent) === "working" &&
+    runStartedAt !== null &&
+    thread.updatedAt >= runStartedAt
+    ? "working"
+    : status;
 }
 
 function subagentParent(

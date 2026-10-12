@@ -6,14 +6,17 @@ import { validateWorldDefinition } from "../definition/validate";
 import { islandWorld } from "../definitions/island";
 import {
   EMPTY_ARCHIPELAGO_MEMORY,
-  islandBounds,
   islandOffset,
+  islandRadius,
   resolveArchipelago,
+  arrangementColumns,
+  type IslandArrangement,
+  suggestHue,
 } from "./archipelago";
 import { EMPTY_ATTENTION, acknowledgeIsland, isRippling, noticeAttention } from "./attention";
 import { EMPTY_BEAT_GATE, gateBeats, type BeatGate } from "./beats";
 import type { CharacterFacts } from "./facts";
-import { planRoute, shortestPath } from "./roads";
+import { planRoute } from "./route";
 import { resolveIntent } from "./rules";
 import type { Placement } from "./slots";
 import { resolveWorld } from "./world";
@@ -65,7 +68,6 @@ const testWorld: WorldDefinition = {
     sign: { position: [0, 0, 0], facing: 0 },
     ripple: { when: [{ status: "approval" }], fps: 20 },
     newAgents: { area: "desks", marker: [0, 1, 0] },
-    night: { when: { status: "ready", unread: false }, afterMinutes: 60, campfire: [0, 0] },
     sharks: { intervalSeconds: [20, 45], surfaceSeconds: 4, offshore: [1, 2], fps: 24 },
   },
 };
@@ -79,6 +81,7 @@ const character = (overrides: Partial<CharacterFacts> = {}): CharacterFacts => {
     ref: { environmentId: EnvironmentId.make("env"), threadId: ThreadId.make(key) },
     title: key,
     createdAt: `2026-01-01T00:00:${String(counter).padStart(2, "0")}.000Z`,
+    lastReplyAt: "2026-01-01T00:00:00.000Z",
     status: "working",
     unread: false,
     kid: false,
@@ -87,11 +90,10 @@ const character = (overrides: Partial<CharacterFacts> = {}): CharacterFacts => {
     backgroundTask: false,
     beat: 0,
     quiet: false,
-    restingSince: "2026-01-01T00:00:00.000Z",
-    night: false,
     provider: "codex",
     lookSeed: key,
     projectKey: "env:project",
+    worktreePath: null,
     ...overrides,
   };
 };
@@ -270,9 +272,15 @@ describe("resolveArchipelago", () => {
     facts: CharacterFacts[],
     projectOrder: string[],
     previous = EMPTY_ARCHIPELAGO_MEMORY,
-    now = Date.parse("2026-01-01T00:30:00.000Z"),
   ) =>
-    resolveArchipelago({ facts, definition: testWorld, projectOrder, hueCount: 3, now, previous });
+    resolveArchipelago({
+      facts,
+      definition: testWorld,
+      projectOrder,
+      hueCount: 3,
+      hatCount: 3,
+      previous,
+    });
   const cells = (result: ReturnType<typeof archipelago>) =>
     Object.fromEntries(result.islands.map((island) => [island.key, island.cell]));
 
@@ -282,11 +290,12 @@ describe("resolveArchipelago", () => {
       ["a", "b"],
     );
     expect(cells(result)).toEqual({ a: 0, b: 1 });
-    // Islands 10 by 6 with a gap of 2: a step of 8 clears the depth and half the width.
-    expect(result.islands.map((island) => island.offset)).toEqual([
-      [0, 0, 0],
-      [8, 0, -8],
-    ]);
+    // A 10 by 6 island reaches sqrt(34) from its middle; with a gap of 2 the
+    // neighbour sits 2 * sqrt(34) + 2 away along the screen's "right".
+    const [first, second] = result.islands.map((island) => island.offset);
+    expect(first).toEqual([0, 0, 0]);
+    expect(Math.hypot(second![0], second![2])).toBeCloseTo(2 * Math.sqrt(34) + 2);
+    expect(second![0]).toBeCloseTo(-second![2]);
   });
 
   it("keeps islands in place when another project leaves or arrives", () => {
@@ -294,11 +303,15 @@ describe("resolveArchipelago", () => {
     const b = character({ projectKey: "b" });
     const c = character({ projectKey: "c" });
     const first = archipelago([a, b, c], ["a", "b", "c"]);
-    const withoutA = archipelago([b, c], ["a", "b", "c"], first.memory);
+    // With its last thread archived, a project keeps its island, empty.
+    const emptyA = archipelago([b, c], ["a", "b", "c"], first.memory);
+    expect(cells(emptyA)).toEqual({ a: 0, b: 1, c: 2 });
+    expect(emptyA.islands.find((island) => island.key === "a")!.characters).toEqual([]);
+    const withoutA = archipelago([b, c], ["b", "c"], emptyA.memory);
     expect(cells(withoutA)).toEqual({ b: 1, c: 2 });
     const newcomer = archipelago(
       [b, c, character({ projectKey: "d" })],
-      ["a", "b", "c", "d"],
+      ["b", "c", "d"],
       withoutA.memory,
     );
     expect(cells(newcomer)).toEqual({ b: 1, c: 2, d: 0 });
@@ -348,69 +361,85 @@ describe("resolveArchipelago", () => {
     expect(later.islands[0]!.hues.get("q")).toBe(first.islands[0]!.hues.get("q"));
   });
 
-  it("puts an island to sleep once everyone there has rested long enough", () => {
-    const rested = (at: string) =>
-      character({ projectKey: "a", status: "ready", unread: false, restingSince: at });
-    const people = [rested("2026-01-01T00:00:00.000Z"), rested("2026-01-01T00:10:00.000Z")];
-    const at = (iso: string, facts = people) =>
-      archipelago(facts, ["a"], EMPTY_ARCHIPELAGO_MEMORY, Date.parse(iso)).islands[0]!;
-    // An hour from the most recent finish, not the first.
-    expect(at("2026-01-01T01:05:00.000Z").night).toBe(false);
-    const night = at("2026-01-01T01:10:00.000Z");
-    expect(night.night).toBe(true);
-    expect(night.characters.every((c) => c.facts.night)).toBe(true);
-    // One character still working keeps the lights on.
-    const busy = [...people, character({ projectKey: "a", status: "working" })];
-    expect(at("2026-01-01T05:00:00.000Z", busy).night).toBe(false);
+  it("dresses a family in the colour picked for it, and suggests a free one", () => {
+    const families = ["p", "q"].map((seed) => character({ projectKey: "a", lookSeed: seed }));
+    const auto = archipelago(families, ["a"]).islands[0]!;
+    const picked = (auto.hues.get("p")! + 1) % 3;
+    const [island] = resolveArchipelago({
+      facts: families,
+      definition: testWorld,
+      projectOrder: ["a"],
+      hueCount: 3,
+      hatCount: 3,
+      chosenHues: { p: picked },
+      previous: EMPTY_ARCHIPELAGO_MEMORY,
+    }).islands;
+    expect(island!.hues.get("p")).toBe(picked);
+    expect(island!.hues.get("q")).not.toBe(picked);
+    expect(suggestHue(island!, 3)).toBe(3 - picked - island!.hues.get("q")!);
+  });
+
+  it("gives agents sharing a worktree the same hat, and none in the project checkout", () => {
+    const first = character({ projectKey: "a", worktreePath: "/wt/one" });
+    const second = character({ projectKey: "a", worktreePath: "/wt/one" });
+    const other = character({ projectKey: "a", worktreePath: "/wt/two" });
+    const local = character({ projectKey: "a" });
+    const [island] = archipelago([first, second, other, local], ["a"]).islands;
+    expect([...island!.hats.keys()].toSorted()).toEqual(["/wt/one", "/wt/two"]);
+    expect(island!.hats.get("/wt/one")).not.toBe(island!.hats.get("/wt/two"));
   });
 
   it("never overlaps two islands", () => {
-    const { minX, minZ, maxX, maxZ } = islandBounds(testWorld);
+    const reach = islandRadius(testWorld);
     const offsets = Array.from({ length: 12 }, (_, cell) => islandOffset(cell, testWorld));
     for (const [i, a] of offsets.entries()) {
       for (const b of offsets.slice(i + 1)) {
-        const apartX = Math.abs(a[0] - b[0]) >= maxX - minX + testWorld.archipelago.gap;
-        const apartZ = Math.abs(a[2] - b[2]) >= maxZ - minZ + testWorld.archipelago.gap;
-        expect(apartX || apartZ).toBe(true);
+        expect(Math.hypot(a[0] - b[0], a[2] - b[2])).toBeGreaterThanOrEqual(
+          2 * reach + testWorld.archipelago.gap - 1e-9,
+        );
       }
     }
   });
+
+  it("lines islands up down the screen, along it, or in a square grid", () => {
+    // The camera looks down the (1, 1) diagonal: x - z runs right, x + z runs down.
+    const onScreen = (arrangement: IslandArrangement, count: number) =>
+      Array.from({ length: count }, (_, cell) => {
+        const [x, , z] = islandOffset(cell, testWorld, arrangementColumns(arrangement, count));
+        return [Math.round(x - z), Math.round(x + z)] as const;
+      });
+    const column = onScreen("column", 3);
+    expect(new Set(column.map(([right]) => right)).size).toBe(1);
+    expect(new Set(column.map(([, down]) => down)).size).toBe(3);
+    const row = onScreen("row", 3);
+    expect(new Set(row.map(([right]) => right)).size).toBe(3);
+    expect(new Set(row.map(([, down]) => down)).size).toBe(1);
+    const grid = onScreen("grid", 5);
+    expect(new Set(grid.map(([right]) => right)).size).toBe(3);
+    expect(new Set(grid.map(([, down]) => down)).size).toBe(2);
+  });
 });
 
-describe("roads", () => {
-  it("takes the shortest road, not the fewest stops", () => {
-    expect(shortestPath(testWorld.roads, "a", "c")).toEqual(["a", "b", "c"]);
+describe("planRoute", () => {
+  const pile = { x: 5, z: 0, radius: 0.65 };
+
+  it("walks straight when nothing is in the way", () => {
+    expect(planRoute({ from: [0, 0, 0], to: [10, 0, 0], obstacles: [] })).toEqual([[10, 0, 0]]);
   });
 
-  it("walks straight within an area and along the road between areas", () => {
-    const desk: Placement = {
-      area: "desks",
-      slotIndex: 0,
-      position: [0, 0, 0],
-      facing: 0,
-      entry: "a",
-    };
-    const otherDesk: Placement = { ...desk, slotIndex: 2, position: [2, 0, 0] };
-    const beach: Placement = {
-      area: "beach",
-      slotIndex: 0,
-      position: [10, 0, 10],
-      facing: 0,
-      entry: "c",
-    };
-    const roads = testWorld.roads;
+  it("steps around an obstacle on the side it is already passing", () => {
+    const route = planRoute({ from: [0, 0, 0.3], to: [10, 0, 0.3], obstacles: [pile] });
+    expect(route).toHaveLength(2);
+    const [detour, end] = route;
+    expect(end).toEqual([10, 0, 0.3]);
+    // Past the pile's edge plus room to spare, on the +z side the line was on.
+    expect(detour![2]).toBeGreaterThan(pile.radius);
+    expect(Math.hypot(detour![0] - pile.x, detour![2] - pile.z)).toBeGreaterThan(pile.radius + 0.4);
+  });
 
-    expect(planRoute({ roads, from: [0, 0, 0], fromPlacement: desk, to: otherDesk })).toEqual([
-      [0, 0, 0],
-      [2, 0, 0],
-    ]);
-    expect(planRoute({ roads, from: [0, 0, 0], fromPlacement: desk, to: beach })).toEqual([
-      [0, 0, 0],
-      [0, 0, 5],
-      [5, 0, 5],
-      [10, 0, 5],
-      [10, 0, 10],
-    ]);
+  it("walks right up to an obstacle at either end", () => {
+    // Mining a pile means standing next to it.
+    expect(planRoute({ from: [0, 0, 0], to: [4, 0, 0], obstacles: [pile] })).toEqual([[4, 0, 0]]);
   });
 });
 

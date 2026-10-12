@@ -2,21 +2,37 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { PlusIcon } from "lucide-react";
 import { scopedProjectKey } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef } from "@t3tools/contracts";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type Object3D, OrthographicCamera, Plane, Raycaster, Vector2, Vector3 } from "three";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { type Object3D, OrthographicCamera, Plane, Ray, Raycaster, Vector2, Vector3 } from "three";
 import { MapControls } from "three/examples/jsm/controls/MapControls.js";
 
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { useClientSettings } from "../../hooks/useSettings";
+import { useThreadActions } from "../../hooks/useThreadActions";
+import { threadEnvironment } from "../../state/threads";
+import { useOrchestrationCommand } from "../../state/use-orchestration-command";
+import { readLocalApi } from "../../localApi";
 import { cn } from "../../lib/utils";
+import { formatElapsedDurationLabel } from "../../timestampFormat";
 import { buildProjectGroups, selectProjectGroupingSettings } from "../../logicalProject";
-import { useProjects, useThreadShells } from "../../state/entities";
+import {
+  readEnvironmentSupportsTitleRegeneration,
+  readThreadShell,
+  useProjects,
+  useThreadShells,
+} from "../../state/entities";
 import { useUiStateStore } from "../../uiStateStore";
+import { toastManager } from "../ui/toast";
 import type { Vec3, WorldDefinition } from "./definition/types";
 import { validateWorldDefinition } from "./definition/validate";
 import {
+  arrangementColumns,
   EMPTY_ARCHIPELAGO_MEMORY,
   islandBounds,
   resolveArchipelago,
+  suggestHue,
+  type IslandArrangement,
   type WorldIsland,
 } from "./engine/archipelago";
 import {
@@ -29,19 +45,29 @@ import {
 import { EMPTY_BEAT_GATE, gateBeats } from "./engine/beats";
 import { buildCharacterFacts, type CharacterFacts } from "./engine/facts";
 import { hashString } from "./engine/hash";
+import { islandObstacles } from "./engine/route";
 import type { SlotRequest } from "./engine/slots";
 import type { WorldCharacter } from "./engine/world";
-import { Abduction } from "./scene/Abduction";
-import { Character, type FamilyShades } from "./scene/Character";
+import { type AbductedFigure, Abduction } from "./scene/Abduction";
+import { Character } from "./scene/Character";
 import { geometry } from "./scene/geometries";
+import { HAT_COUNT } from "./scene/Hat";
 import { Island, type FurnitureSpot } from "./scene/Island";
+import { afterPaint, whenIdle } from "./scene/frames";
+import { FadedContext, toFaded } from "./scene/lighting";
 import { palette } from "./scene/palette";
 import { SharkSightings } from "./scene/Sharks";
-import { NightContext } from "./scene/lighting";
 import { SIGN_TOP, Sign } from "./scene/Sign";
 import { NewAgentBubble } from "./NewAgentBubble";
+import { useWorldHueStore } from "./worldHueStore";
+import { useWorldLookStore, type WorldLook } from "./worldLookStore";
+import { useWorldArrangementStore } from "./worldArrangementStore";
+import { useWorldVisibilityStore } from "./worldVisibilityStore";
+import { IslandArrangementMenu } from "./IslandArrangementMenu";
+import { ProjectVisibilityMenu } from "./ProjectVisibilityMenu";
 import { layoutTags, type ScreenPoint } from "./scene/tagLayout";
-import { WorldBubble } from "./WorldBubble";
+import { isStoppable, WorldBubble } from "./WorldBubble";
+import { voiceInputSupported } from "./useVoiceInput";
 
 /**
  * The 3D world. Renders on demand only: a still scene draws no frames.
@@ -51,12 +77,14 @@ import { WorldBubble } from "./WorldBubble";
 export default function WorldCanvas(props: {
   readonly definition: WorldDefinition;
   readonly selectedKey: string | null;
-  /** Opens a thread's full chat. */
-  readonly onExpand: (ref: ScopedThreadRef) => void;
+  /** Opens a thread's full chat; settles once the chat shows it. */
+  readonly onExpand: (ref: ScopedThreadRef) => Promise<void>;
   /** The chat panel, if open; framing the islands keeps clear of it. */
   readonly panel: () => HTMLElement | null;
+  /** The top bar spot where the project visibility menu goes. */
+  readonly toolbar: HTMLElement | null;
 }) {
-  const { definition, selectedKey, onExpand, panel } = props;
+  const { definition, selectedKey, onExpand, panel, toolbar } = props;
   if (import.meta.env.DEV) assertValidDefinition(definition);
 
   const threads = useThreadShells();
@@ -100,25 +128,60 @@ export default function WorldCanvas(props: {
     () => facts.map((f) => ({ ...f, projectKey: islandOf.get(f.projectKey) ?? f.projectKey })),
     [facts, islandOf],
   );
+  // Islands hidden from the projects menu leave the map; the rest close up.
+  const hidden = useWorldVisibilityStore((state) => state.hidden);
+  const hideIsland = useWorldVisibilityStore((state) => state.toggleHidden);
+  const showOnlyIsland = useWorldVisibilityStore((state) => state.showOnly);
+  const visibleOrder = useMemo(
+    () => projectOrder.filter((key) => !hidden[key]),
+    [projectOrder, hidden],
+  );
+  const visibleFacts = useMemo(
+    () => islandFacts.filter((f) => !hidden[f.projectKey]),
+    [islandFacts, hidden],
+  );
+  const arrangement = useWorldArrangementStore((state) => state.arrangement);
   const [memory] = useState(createArchipelagoMemory);
   // Piles picked for agents started from them, by the thread they will become.
   const [requested, setRequested] = useState<ReadonlyMap<string, SlotRequest>>(new Map());
-  // Re-check often while anyone works (quiet threads), and slowly otherwise
-  // so a resting island still falls asleep without any update arriving.
+  const chosenHues = useWorldHueStore((state) => state.chosen);
+  const chooseHue = useWorldHueStore((state) => state.choose);
+  // Re-check while anyone works, so a thread that goes quiet is noticed.
   const anyoneWorking = facts.some((f) => f.status === "working");
-  const clock = useClock(anyoneWorking ? QUIET_CHECK_MS : NIGHT_CHECK_MS);
+  const clock = useClock(anyoneWorking ? QUIET_CHECK_MS : null);
   const islands = useMemo(
     () =>
       memory.resolve({
-        facts: islandFacts,
+        facts: visibleFacts,
         definition,
-        projectOrder,
+        projectOrder: visibleOrder,
         hueCount: palette.families.length,
+        hatCount: HAT_COUNT,
+        chosenHues,
         checkedAt: clock,
         requested,
+        columns: arrangementColumns(arrangement, visibleOrder.length),
       }),
-    [memory, islandFacts, definition, projectOrder, clock, requested],
+    [memory, visibleFacts, definition, visibleOrder, clock, requested, chosenHues, arrangement],
   );
+  // The open chat's header shows its character, so it needs the same look.
+  const setLooks = useWorldLookStore((state) => state.setLooks);
+  useEffect(() => {
+    const looks = new Map<string, WorldLook>();
+    for (const island of islands) {
+      for (const { facts: character } of island.characters) {
+        looks.set(character.key, {
+          hue: island.hues.get(character.lookSeed) ?? 0,
+          hat:
+            character.worktreePath === null
+              ? null
+              : (island.hats.get(character.worktreePath) ?? null),
+        });
+      }
+    }
+    setLooks(looks);
+  }, [islands, setLooks]);
+  useEffect(() => () => setLooks(new Map()), [setLooks]);
   // Ripples start with a new reason and last until the island is clicked.
   const [attentionMemory] = useState(createAttentionMemory);
   const [acknowledged, setAcknowledged] = useState(0);
@@ -127,6 +190,7 @@ export default function WorldCanvas(props: {
     [attentionMemory, islands, acknowledged],
   );
   const bounds = useMemo(() => archipelagoBounds(definition, islands), [definition, islands]);
+  const obstacles = useMemo(() => islandObstacles(definition), [definition]);
   const { islandSpots, shoreRadius } = useMemo(() => {
     const island = islandBounds(definition);
     const center = [(island.minX + island.maxX) / 2, (island.minZ + island.maxZ) / 2] as const;
@@ -155,8 +219,70 @@ export default function WorldCanvas(props: {
       ? null
       : (islands.flatMap((island) => island.characters).find((c) => c.facts.key === bubbleKey) ??
         null);
-  const toggleBubble = (character: WorldCharacter) =>
+  const bubbleIsland =
+    bubble === null ? undefined : islands.find((island) => island.key === bubble.facts.projectKey);
+  // Characters cmd-clicked together, e.g. to archive them in one go.
+  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
+  // The bubble opened by "Send voice command" starts listening right away.
+  const [listenKey, setListenKey] = useState<string | null>(null);
+  const toggleBubble = (character: WorldCharacter) => {
+    setPicked(new Set());
+    setListenKey(null);
+    // With a chat open, a click switches the chat to that character instead.
+    if (selectedKey !== null) {
+      switchChat(character);
+      return;
+    }
+    // Opening a character's bubble drops a new-agent bubble nothing was typed into.
+    if (bubbleKey !== character.facts.key && newAgentDraft.current.trim() === "") {
+      setNewAgent(null);
+    }
     setBubbleKey((current) => (current === character.facts.key ? null : character.facts.key));
+  };
+  const togglePicked = (character: WorldCharacter) => {
+    // The character already singled out (its bubble or open chat) starts the selection.
+    const anchor = bubble?.facts.key ?? chatKey;
+    const anchorShown = islands.some((island) =>
+      island.characters.some((c) => c.facts.key === anchor),
+    );
+    setBubbleKey(null);
+    setPicked((current) => {
+      const next = new Set(current);
+      if (next.size === 0 && anchor !== null && anchorShown) next.add(anchor);
+      if (!next.delete(character.facts.key)) next.add(character.facts.key);
+      return next;
+    });
+  };
+  const openChat = (character: WorldCharacter) => {
+    setBubbleKey(null);
+    switchChat(character);
+  };
+  // The ring moves to the clicked character (and its bubble closes) at once;
+  // the chat, heavier to mount or swap, follows once that has been drawn.
+  // Clicking on before it does drops the chat still waiting.
+  const [switchingTo, setSwitchingTo] = useState<string | null>(null);
+  const pendingChat = useRef<(() => void) | null>(null);
+  const dropPendingChat = useCallback(() => {
+    pendingChat.current?.();
+    pendingChat.current = null;
+  }, []);
+  const switchChat = (character: WorldCharacter) => {
+    const key = character.facts.key;
+    dropPendingChat();
+    if (key === selectedKey) {
+      setSwitchingTo(null);
+      return;
+    }
+    setSwitchingTo(key);
+    pendingChat.current = afterPaint(() => {
+      pendingChat.current = null;
+      void onExpand(character.facts.ref).finally(() =>
+        setSwitchingTo((current) => (current === key ? null : current)),
+      );
+    });
+  };
+  useEffect(() => dropPendingChat, [dropPendingChat]);
+  const chatKey = switchingTo ?? selectedKey;
   const roots = useRef(new Map<string, Object3D>());
   const registerRoot = useCallback((key: string, root: Object3D | null) => {
     if (root === null) roots.current.delete(key);
@@ -165,30 +291,199 @@ export default function WorldCanvas(props: {
   const bubbleRef = useRef<HTMLDivElement>(null);
 
   // Archived characters leave by saucer: the real one is hidden at once and
-  // a stand-in in its colours is beamed up from where it stood.
+  // a stand-in of it is beamed up from where it stood.
   const [abductions, setAbductions] = useState<
     ReadonlyArray<{
-      readonly key: string;
-      readonly position: Vec3;
-      readonly scale: number;
-      readonly shades: FamilyShades;
+      readonly id: number;
+      readonly islandKeys: ReadonlyArray<string>;
+      readonly figures: ReadonlyArray<AbductedFigure>;
     }>
   >([]);
-  const abduct = (character: WorldCharacter) => {
-    const root = roots.current.get(character.facts.key);
-    if (root === undefined) return;
-    const at = root.getWorldPosition(new Vector3());
-    const island = islands.find((i) => i.characters.includes(character));
-    const hue = island?.hues.get(character.facts.lookSeed) ?? 0;
+  const abductionId = useRef(0);
+  /** One saucer takes everyone archived together. */
+  const abduct = (characters: ReadonlyArray<WorldCharacter>) => {
+    const islandKeys = new Set<string>();
+    const figures = characters.flatMap((character): AbductedFigure[] => {
+      const root = roots.current.get(character.facts.key);
+      if (root === undefined) return [];
+      const at = root.getWorldPosition(new Vector3());
+      const island = islands.find((i) => i.characters.includes(character));
+      if (island !== undefined) islandKeys.add(island.key);
+      const hue = island?.hues.get(character.facts.lookSeed) ?? 0;
+      return [
+        {
+          key: character.facts.key,
+          position: [at.x, at.y, at.z],
+          scale: root.scale.y,
+          facing: root.rotation.y,
+          shades: palette.families[hue]!,
+        },
+      ];
+    });
+    if (figures.length === 0) return;
+    abductionId.current += 1;
     setAbductions((all) => [
       ...all,
-      {
-        key: character.facts.key,
-        position: [at.x, at.y, at.z],
-        scale: root.scale.y,
-        shades: palette.families[hue]!,
-      },
+      { id: abductionId.current, islandKeys: [...islandKeys], figures },
     ]);
+  };
+  const abducted = new Set(abductions.flatMap((a) => a.figures.map((figure) => figure.key)));
+  // An island keeps its colour while a saucer is still carrying its last agents away.
+  const leaving = new Set(abductions.flatMap((a) => a.islandKeys));
+
+  const { archiveThread } = useThreadActions();
+  // Archive, not delete: each can be undone from its toast or Settings → Archived.
+  const archiveAll = async (characters: ReadonlyArray<WorldCharacter>) => {
+    setPicked(new Set());
+    setBubbleKey(null);
+    const results = await Promise.all(
+      characters.map(async (character) => ({
+        character,
+        result: await archiveThread(character.facts.ref),
+      })),
+    );
+    abduct(results.filter((r) => r.result._tag === "Success").map((r) => r.character));
+    const failed = results.flatMap(({ character, result }) =>
+      result._tag === "Failure" ? [{ character, error: squashAtomCommandFailure(result) }] : [],
+    );
+    const first = failed[0];
+    if (first !== undefined) {
+      toastManager.add({
+        type: "error",
+        title:
+          failed.length === 1
+            ? `Could not archive "${first.character.facts.title || "Untitled thread"}"`
+            : `Could not archive ${failed.length} agents`,
+        description:
+          first.error instanceof Error && first.error.message !== ""
+            ? first.error.message
+            : "Stop the run first.",
+      });
+    }
+  };
+
+  const [zoomTo, setZoomTo] = useState<{ readonly key: string } | null>(null);
+  const showIslandMenu = async (key: string, point: { x: number; y: number }) => {
+    const api = readLocalApi();
+    if (api === undefined) return;
+    const clicked = await api.contextMenu.show(
+      [
+        { id: "only", label: "Show only this island" },
+        { id: "hide", label: "Hide this island" },
+        { id: "zoom", label: "Zoom to this island", separatorBefore: true },
+      ],
+      point,
+    );
+    if (clicked === "only") showOnlyIsland(key, projectOrder);
+    else if (clicked === "hide") hideIsland(key);
+    else if (clicked === "zoom") setZoomTo({ key });
+  };
+
+  const interruptTurn = useOrchestrationCommand(threadEnvironment.interruptTurn, {
+    reportFailure: false,
+  });
+  const stopAll = async (characters: ReadonlyArray<WorldCharacter>) => {
+    setPicked(new Set());
+    const results = await Promise.all(
+      characters
+        .filter((c) => isStoppable(c.facts))
+        .map(async (character) => ({
+          character,
+          result: await interruptTurn({
+            environmentId: character.facts.ref.environmentId,
+            input: { threadId: character.facts.ref.threadId },
+          }),
+        })),
+    );
+    const failed = results.flatMap(({ character, result }) =>
+      result._tag === "Failure" ? [{ character, error: squashAtomCommandFailure(result) }] : [],
+    );
+    const first = failed[0];
+    if (first !== undefined) {
+      toastManager.add({
+        type: "error",
+        title:
+          failed.length === 1
+            ? `Could not stop "${first.character.facts.title || "Untitled thread"}"`
+            : `Could not stop ${failed.length} agents`,
+        description: first.error instanceof Error ? first.error.message : undefined,
+      });
+    }
+  };
+
+  const updateMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
+    reportFailure: false,
+  });
+  // The new title arrives on the thread shell, like the bubble's regenerate button.
+  const regenerateTitle = async (character: WorldCharacter) => {
+    const result = await updateMetadata({
+      environmentId: character.facts.ref.environmentId,
+      input: { threadId: character.facts.ref.threadId, regenerateTitle: true },
+    });
+    if (result._tag === "Failure") {
+      const error = squashAtomCommandFailure(result);
+      toastManager.add({
+        type: "error",
+        title: `Could not regenerate the title of "${character.facts.title || "Untitled thread"}"`,
+        description: error instanceof Error ? error.message : undefined,
+      });
+    }
+  };
+
+  const showMenu = async (character: WorldCharacter, point: { x: number; y: number }) => {
+    const api = readLocalApi();
+    if (api === undefined) return;
+    const all = islands.flatMap((island) => island.characters);
+    const group =
+      picked.has(character.facts.key) && picked.size > 1
+        ? all.filter((c) => picked.has(c.facts.key))
+        : null;
+    if (group !== null) {
+      const running = group.filter((c) => isStoppable(c.facts)).length;
+      const clicked = await api.contextMenu.show(
+        [
+          { id: "stop", label: `Stop (${running})`, disabled: running === 0 },
+          { id: "archive", label: `Archive (${group.length})` },
+        ],
+        point,
+      );
+      if (clicked === "stop") void stopAll(group);
+      else if (clicked === "archive") void archiveAll(group);
+      return;
+    }
+    const regenerating = readThreadShell(character.facts.ref)?.titleRegeneration != null;
+    const clicked = await api.contextMenu.show(
+      [
+        { id: "open", label: "Open chat" },
+        { id: "voice", label: "Send voice command", disabled: !voiceInputSupported() },
+        ...(readEnvironmentSupportsTitleRegeneration(character.facts.ref.environmentId)
+          ? [
+              {
+                id: "regenerate-title",
+                label: regenerating ? "Regenerating…" : "Regenerate title",
+                disabled: regenerating,
+              },
+            ]
+          : []),
+        {
+          id: "stop",
+          label: "Stop",
+          disabled: !isStoppable(character.facts),
+          separatorBefore: true,
+        },
+        { id: "archive", label: "Archive" },
+      ],
+      point,
+    );
+    if (clicked === "open") openChat(character);
+    else if (clicked === "stop") void stopAll([character]);
+    else if (clicked === "archive") void archiveAll([character]);
+    else if (clicked === "regenerate-title") void regenerateTitle(character);
+    else if (clicked === "voice") {
+      setPicked(new Set());
+      setListenKey(character.facts.key);
+      setBubbleKey(character.facts.key);
+    }
   };
   const moveBubble = useCallback((points: ReadonlyArray<ScreenPoint>) => {
     const point = points[0];
@@ -197,9 +492,18 @@ export default function WorldCanvas(props: {
     }
   }, []);
   const pressedAt = useRef<{ x: number; y: number } | null>(null);
+  // A click on the sea or an island's ground closes the bubble; the end of a pan does not.
+  const clickGround = (event: MouseEvent) => {
+    const start = pressedAt.current;
+    if (start === null) return;
+    if (Math.hypot(event.clientX - start.x, event.clientY - start.y) <= 4) {
+      setBubbleKey(null);
+      setPicked(new Set());
+    }
+  };
 
   // Hovering an island tags every character on it with its thread title;
-  // the one under the pointer shows its full title.
+  // the one under the pointer comes to the front. Clicking it shows the full title.
   const [hoveredIsland, setHoveredIsland] = useState<string | null>(null);
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
   const onHover = (character: WorldCharacter, point: { x: number; y: number } | null) => {
@@ -216,6 +520,7 @@ export default function WorldCanvas(props: {
     readonly slotIndex: number;
     readonly position: Vec3;
   } | null>(null);
+  const newAgentDraft = useRef("");
   const newAgentSpots = useMemo(() => {
     const { area: areaId, marker } = definition.archipelago.newAgents;
     const area = definition.areas[areaId];
@@ -266,6 +571,30 @@ export default function WorldCanvas(props: {
   }, []);
   const containerRef = useRef<HTMLDivElement>(null);
   const islandPress = useRef<{ x: number; y: number } | null>(null);
+  // A press anywhere outside the bubble closes it. The canvas decides for
+  // itself: a character click toggles or switches, empty ground closes.
+  const bubbleOpen = bubbleKey !== null;
+  useEffect(() => {
+    if (!bubbleOpen) return;
+    const closeOutside = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target === null || bubbleRef.current?.contains(target)) return;
+      // The bubble's own popovers (its colour picker) and dialogs (the voice
+      // key prompt) portal out of it.
+      if (
+        target instanceof Element &&
+        target.closest(
+          '[data-slot="popover-positioner"], [data-slot="dialog-viewport"], [data-slot="dialog-backdrop"]',
+        )
+      ) {
+        return;
+      }
+      if (containerRef.current?.querySelector("canvas")?.contains(target)) return;
+      setBubbleKey(null);
+    };
+    document.addEventListener("pointerdown", closeOutside, true);
+    return () => document.removeEventListener("pointerdown", closeOutside, true);
+  }, [bubbleOpen]);
 
   const tagRefs = useRef(new Map<string, HTMLDivElement>());
   const moveTags = useCallback((points: ReadonlyArray<ScreenPoint>) => {
@@ -310,17 +639,20 @@ export default function WorldCanvas(props: {
         onPointerDown={(event) => {
           pressedAt.current = { x: event.clientX, y: event.clientY };
         }}
-        onPointerMissed={(event) => {
-          // A click on empty ground closes the bubble; the end of a pan does not.
-          const start = pressedAt.current;
-          if (start === null) return;
-          if (Math.hypot(event.clientX - start.x, event.clientY - start.y) <= 4) {
-            setBubbleKey(null);
-          }
-        }}
+        onPointerMissed={clickGround}
       >
         <color attach="background" args={[palette.sky]} />
-        <WorldControls bounds={bounds} panel={panel} />
+        <WorldControls
+          bounds={bounds}
+          islands={islandSpots}
+          radius={shoreRadius + ISLAND_HOVER_MARGIN}
+          shoreRadius={shoreRadius}
+          panel={panel}
+          focusKey={selectedKey}
+          roots={roots}
+          zoomTo={zoomTo}
+          arrangement={arrangement}
+        />
         <FollowTracker
           roots={roots}
           keys={bubble === null ? [] : [bubble.facts.key]}
@@ -350,63 +682,98 @@ export default function WorldCanvas(props: {
           shoreRadius={shoreRadius}
           config={definition.archipelago.sharks}
         />
-        {islands.map((island) => (
-          <NightContext value={island.night} key={island.key}>
-            <group position={island.offset as [number, number, number]}>
-              <Island
-                definition={definition}
-                furniture={buildFurniture(definition, island.characters)}
-                ripple={isRippling(attention, island.key)}
-                night={island.night}
-              />
-              <Sign
-                slot={definition.archipelago.sign}
-                text={projectTitles.get(island.key) ?? "Project"}
-                color={palette.plates[hashString(island.key) % palette.plates.length]!}
-              />
-              {island.characters
-                .filter((character) => !abductions.some((a) => a.key === character.facts.key))
-                .map((character) => (
-                  <Character
-                    key={character.facts.key}
-                    character={character}
-                    shades={palette.families[island.hues.get(character.facts.lookSeed) ?? 0]!}
-                    roads={definition.roads}
-                    movement={definition.movement}
-                    selected={character.facts.key === (bubble?.facts.key ?? selectedKey)}
-                    onSelect={toggleBubble}
-                    onRoot={registerRoot}
-                    onHover={onHover}
-                  />
-                ))}
-            </group>
-          </NightContext>
-        ))}
+        {islands.map((island) => {
+          // Everyone there archived: once the saucer has left, the island stays
+          // washed out until new work lands.
+          const faded = island.characters.length === 0 && !leaving.has(island.key);
+          const plate = palette.plates[hashString(island.key) % palette.plates.length]!;
+          return (
+            <FadedContext key={island.key} value={faded}>
+              <group
+                position={island.offset as [number, number, number]}
+                // Characters stop their own clicks, so these are the ground, props and sign.
+                onClick={(event) => clickGround(event.nativeEvent)}
+                onContextMenu={(event) => {
+                  event.stopPropagation();
+                  event.nativeEvent.preventDefault();
+                  void showIslandMenu(island.key, {
+                    x: event.nativeEvent.clientX,
+                    y: event.nativeEvent.clientY,
+                  });
+                }}
+              >
+                <Island
+                  definition={definition}
+                  furniture={buildFurniture(definition, island.characters)}
+                  ripple={isRippling(attention, island.key)}
+                />
+                <Sign
+                  slot={definition.archipelago.sign}
+                  text={projectTitles.get(island.key) ?? "Project"}
+                  color={faded ? toFaded(plate) : plate}
+                />
+                {island.characters
+                  .filter((character) => !abducted.has(character.facts.key))
+                  .map((character) => (
+                    <Character
+                      key={character.facts.key}
+                      character={character}
+                      shades={palette.families[island.hues.get(character.facts.lookSeed) ?? 0]!}
+                      hat={
+                        character.facts.worktreePath === null
+                          ? null
+                          : (island.hats.get(character.facts.worktreePath) ?? null)
+                      }
+                      obstacles={obstacles}
+                      movement={definition.movement}
+                      selected={
+                        character.facts.key === (bubble?.facts.key ?? chatKey) ||
+                        picked.has(character.facts.key)
+                      }
+                      onSelect={toggleBubble}
+                      onOpen={openChat}
+                      onPick={togglePicked}
+                      onMenu={(target, point) => void showMenu(target, point)}
+                      onRoot={registerRoot}
+                      onHover={onHover}
+                    />
+                  ))}
+              </group>
+            </FadedContext>
+          );
+        })}
         {abductions.map((abduction) => (
           <Abduction
-            key={abduction.key}
-            position={abduction.position}
-            scale={abduction.scale}
-            shades={abduction.shades}
-            onDone={() => setAbductions((all) => all.filter((a) => a.key !== abduction.key))}
+            key={abduction.id}
+            figures={abduction.figures}
+            onDone={() => setAbductions((all) => all.filter((a) => a.id !== abduction.id))}
           />
         ))}
       </Canvas>
       {bubble !== null ? (
         // Positioned by FollowTracker on every drawn frame, above the character's head.
-        <div ref={bubbleRef} className="pointer-events-none absolute top-0 left-0 z-10">
+        <div ref={bubbleRef} className="pointer-events-none absolute top-0 left-0 z-30">
           <div className="pointer-events-auto -translate-x-1/2 -translate-y-[calc(100%+0.75rem)]">
             <WorldBubble
-              key={bubble.facts.key}
+              key={`${bubble.facts.key}:${listenKey === bubble.facts.key}`}
               facts={bubble.facts}
+              listen={listenKey === bubble.facts.key}
+              hue={bubbleIsland?.hues.get(bubble.facts.lookSeed) ?? 0}
+              onHueChange={(hue) =>
+                // A family already wearing it on this island steps aside to a free colour.
+                chooseHue(
+                  bubble.facts.lookSeed,
+                  hue,
+                  [...(bubbleIsland?.hues ?? [])].flatMap(([seed, worn]) =>
+                    worn === hue ? [seed] : [],
+                  ),
+                )
+              }
               onClose={() => setBubbleKey(null)}
-              onExpand={() => {
-                setBubbleKey(null);
-                onExpand(bubble.facts.ref);
-              }}
+              onExpand={() => openChat(bubble)}
               onArchived={() => {
                 setBubbleKey(null);
-                abduct(bubble);
+                abduct([bubble]);
               }}
             />
           </div>
@@ -422,7 +789,8 @@ export default function WorldCanvas(props: {
             else spotRefs.current.set(spot.key, button);
           }}
           aria-label={`Start a new agent on ${projectTitles.get(spot.islandKey) ?? "this island"}`}
-          className="invisible absolute top-0 left-0 z-10"
+          // Under the name tags and popovers: a pile sits right below a miner's head.
+          className="invisible absolute top-0 left-0 z-0"
           // The map zooms on wheel; keep that working with the pointer on a button.
           onWheel={(event) =>
             containerRef.current
@@ -431,6 +799,7 @@ export default function WorldCanvas(props: {
           }
           onClick={() => {
             setBubbleKey(null);
+            newAgentDraft.current = "";
             setNewAgent({
               islandKey: spot.islandKey,
               slotIndex: spot.slotIndex,
@@ -451,8 +820,16 @@ export default function WorldCanvas(props: {
               islandName={projectTitles.get(newAgent.islandKey) ?? "this island"}
               project={projectRefs.get(newAgent.islandKey)!}
               onClose={() => setNewAgent(null)}
+              onTextChange={(text) => {
+                newAgentDraft.current = text;
+              }}
+              suggestedHue={suggestHue(
+                islands.find((island) => island.key === newAgent.islandKey) ?? { hues: new Map() },
+                palette.families.length,
+              )}
               onStarted={(thread) => {
                 const { slotIndex } = newAgent;
+                chooseHue(thread.ref.threadId, thread.hue);
                 setRequested((all) =>
                   new Map(all).set(thread.key, {
                     area: definition.archipelago.newAgents.area,
@@ -465,6 +842,21 @@ export default function WorldCanvas(props: {
           </div>
         </div>
       ) : null}
+      {toolbar !== null
+        ? createPortal(
+            <>
+              <IslandArrangementMenu />
+              <ProjectVisibilityMenu
+                projects={projectOrder.map((key) => ({
+                  key,
+                  title: projectTitles.get(key) ?? "Project",
+                  color: palette.plates[hashString(key) % palette.plates.length]!,
+                }))}
+              />
+            </>,
+            toolbar,
+          )
+        : null}
       {tagged.map((character) => {
         const focused = character.facts.key === hoveredKey;
         return (
@@ -477,19 +869,42 @@ export default function WorldCanvas(props: {
             }}
             className={cn("pointer-events-none absolute top-0 left-0", focused ? "z-20" : "z-10")}
           >
-            <div
-              className={cn(
-                "-translate-x-1/2 -translate-y-full truncate rounded px-1.5 py-0.5 text-3xs leading-tight shadow-sm",
-                focused
-                  ? "max-w-64 bg-popover text-popover-foreground"
-                  : "max-w-32 bg-popover/80 text-popover-foreground/90",
-              )}
-            >
-              {character.facts.title || "Untitled thread"}
-            </div>
+            <CharacterTag facts={character.facts} focused={focused} />
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** A resting agent's tag also says how long ago it last replied, kept current while shown. */
+function CharacterTag(props: { readonly facts: CharacterFacts; readonly focused: boolean }) {
+  const { facts, focused } = props;
+  const resting =
+    (facts.status === "ready" || facts.status === "waiting") &&
+    !facts.hasWorkingKids &&
+    !facts.backgroundTask;
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (!resting) return;
+    const id = setInterval(() => setNowMs(Date.now()), 1_000);
+    return () => clearInterval(id);
+  }, [resting]);
+  const elapsed = resting ? formatElapsedDurationLabel(facts.lastReplyAt, nowMs) : "";
+  return (
+    <div
+      className={cn(
+        "-translate-x-1/2 -translate-y-full flex max-w-36 gap-1 rounded px-1.5 py-0.5",
+        "text-3xs leading-tight shadow-sm",
+        focused ? "bg-popover text-popover-foreground" : "bg-popover/80 text-popover-foreground/90",
+      )}
+    >
+      <span className="truncate">{facts.title || "Untitled thread"}</span>
+      {elapsed !== "" ? (
+        <span className="shrink-0 tabular-nums opacity-60">
+          {elapsed === "just now" ? "now" : elapsed}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -563,7 +978,7 @@ function PointTracker(props: {
   return null;
 }
 
-// Covers the shore, the pier and the raft just offshore.
+// Covers the shore and the raft just offshore.
 const ISLAND_HOVER_MARGIN = 3.5;
 const seaLevel = new Plane(new Vector3(0, 1, 0), 0);
 
@@ -596,6 +1011,8 @@ function IslandHoverTracker(props: {
         -((event.clientY - rect.top) / rect.height) * 2 + 1,
       );
       raycaster.setFromCamera(pointer, camera);
+      // Start above the scene: an orthographic ray can begin below sea level.
+      raycaster.ray.origin.addScaledVector(raycaster.ray.direction, -1000);
       if (raycaster.ray.intersectPlane(seaLevel, hit) === null) {
         report(null);
         return;
@@ -631,10 +1048,29 @@ const PANEL_CLOSE_SPACE = 48;
  */
 function WorldControls({
   bounds,
+  islands,
+  radius,
+  shoreRadius,
   panel,
+  focusKey,
+  roots,
+  zoomTo,
+  arrangement,
 }: {
+  /** Each island's ground, in the same order as `islands`. */
   readonly bounds: ReadonlyArray<Bounds> | null;
+  readonly islands: ReadonlyArray<{ readonly key: string; readonly x: number; readonly z: number }>;
+  readonly radius: number;
+  /** How far each island's ground reaches from its middle. */
+  readonly shoreRadius: number;
   readonly panel: () => HTMLElement | null;
+  /** The character whose chat is open: slid into view beside the panel. */
+  readonly focusKey: string | null;
+  readonly roots: React.RefObject<Map<string, Object3D>>;
+  /** An island to frame, from its menu; a new object frames it again. */
+  readonly zoomTo: { readonly key: string } | null;
+  /** How the islands line up; a new one frames them all where they now stand. */
+  readonly arrangement: IslandArrangement;
 }) {
   const camera = useThree((state) => state.camera);
   const element = useThree((state) => state.gl.domElement);
@@ -642,6 +1078,20 @@ function WorldControls({
   const size = useThree((state) => state.size);
   const controlsRef = useRef<MapControls | null>(null);
   const fitted = useRef(false);
+  /** How much of the canvas's right side the chat panel hides. */
+  const coveredRight = useCallback(() => {
+    const panelRect = panel()?.getBoundingClientRect();
+    // The panel's close button sits just outside it, on the left.
+    return panelRect
+      ? element.getBoundingClientRect().right - (panelRect.left - PANEL_CLOSE_SPACE)
+      : 0;
+  }, [element, panel]);
+  // Camera moves the app makes glide; grabbing the map stops them.
+  const flight = useRef<{
+    readonly from: View;
+    readonly to: View;
+    readonly startedAt: number;
+  } | null>(null);
   useEffect(() => {
     const controls = new MapControls(camera, element);
     controls.enableRotate = false;
@@ -649,14 +1099,30 @@ function WorldControls({
     controls.screenSpacePanning = true;
     controls.minZoom = 3;
     controls.maxZoom = 110;
+    // A fresh control looks at the origin, which would swing an already panned
+    // camera round to it on a remount (hot reload). Keep the spot it looks at
+    // and the fixed viewing angle instead.
+    const ground = new Ray(camera.position, camera.getWorldDirection(new Vector3())).intersectPlane(
+      seaLevel,
+      new Vector3(),
+    );
+    if (ground !== null) {
+      controls.target.copy(ground);
+      camera.position.copy(ground).add(CAMERA_OFFSET);
+    }
     controls.update();
     controlsRef.current = controls;
     // Wrapped: invalidate's argument is a frame count, not the event.
     const redraw = () => invalidate();
+    const stopFlight = () => {
+      flight.current = null;
+    };
     controls.addEventListener("change", redraw);
+    controls.addEventListener("start", stopFlight);
     redraw();
     return () => {
       controls.removeEventListener("change", redraw);
+      controls.removeEventListener("start", stopFlight);
       controls.dispose();
       controlsRef.current = null;
     };
@@ -666,37 +1132,246 @@ function WorldControls({
     if (controls === null || bounds === null || fitted.current) return;
     if (!(camera instanceof OrthographicCamera) || size.width === 0) return;
     fitted.current = true;
-    const canvasRect = element.getBoundingClientRect();
-    const panelRect = panel()?.getBoundingClientRect();
-    fitCamera({
+    applyView(
       camera,
       controls,
-      bounds,
-      viewport: size,
-      // The panel's close button sits just outside it, on the left.
-      coveredRight: panelRect ? canvasRect.right - (panelRect.left - PANEL_CLOSE_SPACE) : 0,
-    });
+      frameView({ camera, controls, bounds, viewport: size, coveredRight: coveredRight() }),
+    );
     invalidate();
-  }, [bounds, camera, element, invalidate, panel, size]);
+  }, [bounds, camera, invalidate, coveredRight, size]);
+
+  const fly = useCallback(
+    (to: View) => {
+      const controls = controlsRef.current;
+      if (controls === null) return;
+      flight.current = { from: currentView(camera, controls), to, startedAt: performance.now() };
+      invalidate();
+    },
+    [camera, invalidate],
+  );
+  const framedArrangement = useRef(arrangement);
+  useEffect(() => {
+    if (framedArrangement.current === arrangement) return;
+    framedArrangement.current = arrangement;
+    const controls = controlsRef.current;
+    if (controls === null || bounds === null || !(camera instanceof OrthographicCamera)) return;
+    fly(frameView({ camera, controls, bounds, viewport: size, coveredRight: coveredRight() }));
+  }, [arrangement, bounds, camera, fly, size, coveredRight]);
+  useFrame((state) => {
+    const controls = controlsRef.current;
+    const moving = flight.current;
+    if (moving === null || controls === null || !(camera instanceof OrthographicCamera)) return;
+    const t = Math.min(1, (performance.now() - moving.startedAt) / FLIGHT_MS);
+    const ease = t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2;
+    applyView(camera, controls, {
+      target: flightTarget.lerpVectors(moving.from.target, moving.to.target, ease),
+      // Zoom is a scale: interpolating its log keeps the speed even.
+      zoom: moving.from.zoom * (moving.to.zoom / moving.from.zoom) ** ease,
+    });
+    if (t >= 1) flight.current = null;
+    else state.invalidate();
+  });
+
+  // Double-click an island to frame it, or the sea to frame them all again.
+  useEffect(() => {
+    const controls = controlsRef.current;
+    if (controls === null || bounds === null || !(camera instanceof OrthographicCamera)) return;
+    const raycaster = new Raycaster();
+    const pointer = new Vector2();
+    const hit = new Vector3();
+    const onDoubleClick = (event: MouseEvent) => {
+      const rect = element.getBoundingClientRect();
+      pointer.set(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      raycaster.setFromCamera(pointer, camera);
+      // An orthographic ray starts inside the view volume, which can be below
+      // sea level; start it well above the scene instead.
+      raycaster.ray.origin.addScaledVector(raycaster.ray.direction, -1000);
+      const ground = raycaster.ray.intersectPlane(seaLevel, hit);
+      const index =
+        ground === null
+          ? -1
+          : islands.findIndex((island) => Math.hypot(hit.x - island.x, hit.z - island.z) <= radius);
+      const island = bounds[index];
+      fly(
+        frameView({
+          camera,
+          controls,
+          bounds: island === undefined ? bounds : [island],
+          viewport: size,
+          coveredRight: coveredRight(),
+        }),
+      );
+    };
+    element.addEventListener("dblclick", onDoubleClick);
+    return () => element.removeEventListener("dblclick", onDoubleClick);
+  }, [bounds, islands, radius, camera, element, fly, coveredRight, size]);
+
+  // Opening a chat waits for its panel to settle, then frames its character's
+  // island beside it, but only when the panel hides part of the island or the
+  // character. Closing it flies back to wherever the map was before.
+  const beforeChat = useRef<View | null>(null);
+  const waitForPanel = useRef<(() => void) | null>(null);
+  const stopWaiting = useCallback(() => {
+    waitForPanel.current?.();
+    waitForPanel.current = null;
+  }, []);
+  const frameFocus = useEffectEvent((key: string) => {
+    const controls = controlsRef.current;
+    const root = roots.current.get(key);
+    if (controls === null || root === undefined || bounds === null) return;
+    if (!(camera instanceof OrthographicCamera)) return;
+    root.getWorldPosition(focusPoint);
+    const distances = islands.map((spot) =>
+      Math.hypot(focusPoint.x - spot.x, focusPoint.z - spot.z),
+    );
+    const nearest = distances.indexOf(Math.min(...distances));
+    const island = bounds[nearest];
+    const spot = islands[nearest];
+    if (island === undefined || spot === undefined) return;
+    const covered = coveredRight();
+    const head = focusPoint.clone().setY(focusPoint.y + FOLLOW_HEIGHT * root.scale.y);
+    const shore = Array.from({ length: SHORE_SAMPLES }, (_, index) => {
+      const angle = (index / SHORE_SAMPLES) * Math.PI * 2;
+      return new Vector3(
+        spot.x + Math.cos(angle) * shoreRadius,
+        0,
+        spot.z + Math.sin(angle) * shoreRadius,
+      );
+    });
+    if (onScreen(camera, [focusPoint, head, ...shore], size, covered)) return;
+    // Switching chats keeps the view from before the first move.
+    beforeChat.current ??= currentView(camera, controls);
+    fly(frameView({ camera, controls, bounds: [island], viewport: size, coveredRight: covered }));
+  });
+  const onFocus = useEffectEvent((key: string | null) => {
+    stopWaiting();
+    if (key === null) {
+      if (beforeChat.current !== null) fly(beforeChat.current);
+      beforeChat.current = null;
+      return;
+    }
+    // The panel mounts with the chat; its width can still change as the
+    // chat lays out. Wait until it holds still for a few frames, then until
+    // the chat's own mount work is done, so the glide does not stutter.
+    let last: DOMRect | null = null;
+    let still = 0;
+    let frames = 0;
+    const check = () => {
+      const rect = panel()?.getBoundingClientRect() ?? null;
+      frames += 1;
+      still = rect !== null && last !== null && sameRect(rect, last) ? still + 1 : 0;
+      last = rect;
+      if (still >= PANEL_STILL_FRAMES || (rect !== null && frames >= PANEL_WAIT_FRAMES)) {
+        waitForPanel.current = whenIdle(() => {
+          waitForPanel.current = null;
+          frameFocus(key);
+        }, PANEL_IDLE_WAIT_MS);
+      } else if (frames < PANEL_WAIT_FRAMES) {
+        waitFrame();
+      } else {
+        waitForPanel.current = null;
+      }
+    };
+    const waitFrame = () => {
+      const frame = requestAnimationFrame(check);
+      waitForPanel.current = () => cancelAnimationFrame(frame);
+    };
+    waitFrame();
+  });
+  useEffect(() => onFocus(focusKey), [focusKey]);
+  useEffect(() => stopWaiting, [stopWaiting]);
+
+  const onZoomTo = useEffectEvent((key: string) => {
+    const controls = controlsRef.current;
+    const island = bounds?.[islands.findIndex((spot) => spot.key === key)];
+    if (controls === null || island === undefined || !(camera instanceof OrthographicCamera)) {
+      return;
+    }
+    fly(
+      frameView({
+        camera,
+        controls,
+        bounds: [island],
+        viewport: size,
+        coveredRight: coveredRight(),
+      }),
+    );
+  });
+  useEffect(() => {
+    if (zoomTo !== null) onZoomTo(zoomTo.key);
+  }, [zoomTo]);
   return null;
 }
 
-function fitCamera(input: {
+const FLIGHT_MS = 450;
+const PANEL_STILL_FRAMES = 2;
+const PANEL_WAIT_FRAMES = 60;
+/** The longest a settled panel waits for the chat to finish its work before the camera glides. */
+const PANEL_IDLE_WAIT_MS = 300;
+const SHORE_SAMPLES = 16;
+const flightTarget = new Vector3();
+const focusPoint = new Vector3();
+
+function sameRect(a: DOMRect, b: DOMRect): boolean {
+  return a.left === b.left && a.top === b.top && a.width === b.width && a.height === b.height;
+}
+
+/** True when every point falls inside the part of the canvas the panel leaves visible. */
+function onScreen(
+  camera: OrthographicCamera,
+  points: ReadonlyArray<Vector3>,
+  viewport: { readonly width: number; readonly height: number },
+  coveredRight: number,
+): boolean {
+  camera.updateMatrixWorld();
+  const projected = new Vector3();
+  return points.every((point) => {
+    projected.copy(point).project(camera);
+    const x = ((projected.x + 1) / 2) * viewport.width;
+    const y = ((1 - projected.y) / 2) * viewport.height;
+    return x >= 0 && x <= viewport.width - coveredRight && y >= 0 && y <= viewport.height;
+  });
+}
+
+/** Where the map looks and how far in it is zoomed. */
+interface View {
+  readonly target: Vector3;
+  readonly zoom: number;
+}
+
+function currentView(camera: Object3D & { zoom?: number }, controls: MapControls): View {
+  return { target: controls.target.clone(), zoom: camera.zoom ?? 1 };
+}
+
+function applyView(camera: OrthographicCamera, controls: MapControls, view: View) {
+  controls.target.copy(view.target);
+  camera.position.copy(view.target).add(CAMERA_OFFSET);
+  camera.zoom = view.zoom;
+  camera.updateProjectionMatrix();
+  controls.update();
+}
+
+/** The view that fits `bounds` into the part of the canvas the panel leaves visible. */
+function frameView(input: {
   readonly camera: OrthographicCamera;
   readonly controls: MapControls;
   readonly bounds: ReadonlyArray<Bounds>;
   readonly viewport: { readonly width: number; readonly height: number };
   readonly coveredRight: number;
-}) {
-  const { camera, controls, bounds, viewport } = input;
+}): View {
+  const { controls, bounds, viewport } = input;
+  // Measured on a copy, so the real camera only moves when the view is applied.
+  const probe = input.camera.clone();
   // Keep a usable strip of world even when the panel covers most of the canvas.
   const coveredRight = Math.max(0, Math.min(input.coveredRight, viewport.width - 320));
   const first = bounds[0]!;
-  const start = new Vector3((first.minX + first.maxX) / 2, 0, (first.minZ + first.maxZ) / 2);
-  controls.target.copy(start);
-  camera.position.copy(start).add(CAMERA_OFFSET);
-  camera.lookAt(start);
-  camera.updateMatrixWorld();
+  const target = new Vector3((first.minX + first.maxX) / 2, 0, (first.minZ + first.maxZ) / 2);
+  probe.position.copy(target).add(CAMERA_OFFSET);
+  probe.lookAt(target);
+  probe.updateMatrixWorld();
   // Measure every island on screen at zoom 1 (one unit per pixel).
   let left = Infinity;
   let right = -Infinity;
@@ -707,7 +1382,7 @@ function fitCamera(input: {
     for (const x of [island.minX, island.maxX]) {
       for (const z of [island.minZ, island.maxZ]) {
         for (const y of [-0.6, SIGN_TOP]) {
-          corner.set(x, y, z).applyMatrix4(camera.matrixWorldInverse);
+          corner.set(x, y, z).applyMatrix4(probe.matrixWorldInverse);
           left = Math.min(left, corner.x);
           right = Math.max(right, corner.x);
           bottom = Math.min(bottom, corner.y);
@@ -717,27 +1392,33 @@ function fitCamera(input: {
     }
   }
   // Slide the view sideways onto the middle of that, then zoom to fit.
-  const shift = new Vector3((left + right) / 2, (bottom + top) / 2, 0).transformDirection(
-    camera.matrixWorld,
+  target.add(
+    new Vector3((left + right) / 2, (bottom + top) / 2, 0)
+      .transformDirection(probe.matrixWorld)
+      .multiplyScalar(Math.hypot((left + right) / 2, (bottom + top) / 2)),
   );
-  shift.multiplyScalar(Math.hypot((left + right) / 2, (bottom + top) / 2));
-  controls.target.add(shift);
-  camera.position.add(shift);
   const margin = 1.15;
   const zoom = Math.min(
-    (viewport.width - coveredRight) / ((right - left) * margin),
-    viewport.height / ((top - bottom) * margin),
+    controls.maxZoom,
+    Math.max(
+      controls.minZoom,
+      Math.min(
+        (viewport.width - coveredRight) / ((right - left) * margin),
+        viewport.height / ((top - bottom) * margin),
+      ),
+    ),
   );
-  camera.zoom = Math.min(controls.maxZoom, Math.max(controls.minZoom, zoom));
   // Centre the islands in the part of the canvas the panel leaves visible.
-  const panelShift = new Vector3(coveredRight / 2 / camera.zoom, 0, 0).transformDirection(
-    camera.matrixWorld,
+  target.add(
+    new Vector3(1, 0, 0)
+      .transformDirection(probe.matrixWorld)
+      .multiplyScalar(coveredRight / 2 / zoom),
   );
-  panelShift.multiplyScalar(coveredRight / 2 / camera.zoom);
-  controls.target.add(panelShift);
-  camera.position.add(panelShift);
-  camera.updateProjectionMatrix();
-  controls.update();
+  // The screen-space shifts above also move the target up or down; slide it
+  // back along the line of sight onto sea level, where the camera aims.
+  const sight = new Vector3().copy(CAMERA_OFFSET).normalize();
+  target.addScaledVector(sight, -target.y / sight.y);
+  return { target, zoom };
 }
 
 /** Each island's ground in world coordinates. */
@@ -756,7 +1437,6 @@ function archipelagoBounds(
 }
 
 const QUIET_CHECK_MS = 5000;
-const NIGHT_CHECK_MS = 60_000;
 
 /** The current time, refreshed every `intervalMs` while given; null pauses it. */
 function useClock(intervalMs: number | null): number {
@@ -820,15 +1500,19 @@ function createAttentionMemory() {
 function createArchipelagoMemory() {
   let previous = EMPTY_ARCHIPELAGO_MEMORY;
   let beats = EMPTY_BEAT_GATE;
+  let layout: string | null = null;
   return {
     resolve(input: {
       readonly facts: ReadonlyArray<CharacterFacts>;
       readonly definition: WorldDefinition;
       readonly projectOrder: ReadonlyArray<string>;
       readonly hueCount: number;
+      readonly hatCount: number;
+      readonly chosenHues: Readonly<Record<string, number>>;
       /** Last clock tick; a new one re-checks pacing and quiet threads. */
       readonly checkedAt: number;
       readonly requested: ReadonlyMap<string, SlotRequest>;
+      readonly columns: number;
     }): WorldIsland[] {
       const { movement } = input.definition;
       const paced = gateBeats({
@@ -839,12 +1523,11 @@ function createArchipelagoMemory() {
         quietMs: movement.quietSeconds * 1000,
       });
       beats = paced.gate;
-      const result = resolveArchipelago({
-        ...input,
-        facts: paced.facts,
-        now: Math.max(input.checkedAt, Date.now()),
-        previous,
-      });
+      // When the set of islands changes, they pack up again from the top.
+      const nextLayout = input.projectOrder.join("|");
+      if (layout !== null && layout !== nextLayout) previous = { ...previous, cells: new Map() };
+      layout = nextLayout;
+      const result = resolveArchipelago({ ...input, facts: paced.facts, previous });
       previous = result.memory;
       return result.islands;
     },

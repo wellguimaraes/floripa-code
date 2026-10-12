@@ -17,8 +17,7 @@ export function matchesFacts(match: CharacterFactMatch, facts: CharacterFacts): 
     (match.kid === undefined || match.kid === facts.kid) &&
     (match.hasWorkingKids === undefined || match.hasWorkingKids === facts.hasWorkingKids) &&
     (match.backgroundTask === undefined || match.backgroundTask === facts.backgroundTask) &&
-    (match.quiet === undefined || match.quiet === facts.quiet) &&
-    (match.night === undefined || match.night === facts.night)
+    (match.quiet === undefined || match.quiet === facts.quiet)
   );
 }
 

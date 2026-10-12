@@ -72,6 +72,48 @@ describe("buildCharacterFacts", () => {
     expect(facts.find((f) => f.ref.threadId === "parent")?.hasWorkingKids).toBe(true);
   });
 
+  it("keeps a background subagent working while its settled parent waits on it", () => {
+    const facts = build([
+      thread("parent", {
+        runtime: { ...running, status: "idle" },
+        pendingBackgroundTasks: [
+          { taskId: "task-1", kind: "subagent", childThreadId: ThreadId.make("kid") },
+        ],
+      }),
+      thread("kid", subagentOf("parent")),
+      thread("done-kid", subagentOf("parent")),
+    ]);
+    const byId = new Map(facts.map((f) => [f.ref.threadId as string, f]));
+    expect(byId.get("kid")!.status).toBe("working");
+    expect(byId.get("done-kid")!.status).toBe("ready");
+    expect(byId.get("parent")).toMatchObject({
+      status: "waiting",
+      hasWorkingKids: true,
+      backgroundTask: false,
+    });
+  });
+
+  it("keeps a subagent working while its parent's current run has touched it", () => {
+    const facts = build([
+      thread("parent", {
+        runtime: running,
+        latestRun: {
+          runId: RunId.make("run-1"),
+          status: "running",
+          requestedAt: "2026-01-01T00:00:00.000Z",
+          startedAt: "2026-01-01T00:00:00.000Z",
+          completedAt: null,
+          assistantMessageId: null,
+        },
+      }),
+      thread("kid", { ...subagentOf("parent"), updatedAt: "2026-01-01T00:01:00.000Z" }),
+      thread("old-kid", { ...subagentOf("parent"), updatedAt: "2025-12-31T00:00:00.000Z" }),
+    ]);
+    const byId = new Map(facts.map((f) => [f.ref.threadId as string, f]));
+    expect(byId.get("kid")!.status).toBe("working");
+    expect(byId.get("old-kid")!.status).toBe("ready");
+  });
+
   it("puts a subagent on its parent's island even when it ran in another project", () => {
     const facts = build([
       thread("parent", { projectId: ProjectId.make("app") }),

@@ -27,7 +27,6 @@ export type PropKind =
   | "umbrella"
   | "palm"
   | "tree"
-  | "pier"
   | "raft"
   | "rope"
   | "rockPile";
@@ -83,8 +82,6 @@ export interface CharacterFactMatch {
   readonly backgroundTask?: boolean;
   /** The thread has produced nothing new for `movement.quietSeconds`. */
   readonly quiet?: boolean;
-  /** Night has fallen on the character's island; see `archipelago.night`. */
-  readonly night?: boolean;
   readonly provider?: string | ReadonlyArray<string>;
 }
 
@@ -103,7 +100,7 @@ export interface WorldRule extends WorldIntent {
 }
 
 /** Poses are the renderer's vocabulary; activities name a pose plus timing. */
-export type Pose = "stand" | "lie" | "sleep" | "wave" | "slump" | "fish" | "mine" | "ponder";
+export type Pose = "stand" | "lie" | "wave" | "slump" | "mine" | "ponder";
 
 export interface WorldActivity {
   readonly pose: Pose;
@@ -171,17 +168,6 @@ export interface WorldArchipelago {
   readonly newAgents: {
     readonly area: string;
     readonly marker: Vec3;
-  };
-  /**
-   * An island falls asleep once every character on it has matched `when`
-   * for `afterMinutes`, counted from the most recent `restingSince` there:
-   * it turns dark, a campfire lights at `campfire`, and its characters get
-   * `night: true` so rules can send them to bed.
-   */
-  readonly night: {
-    readonly when: CharacterFactMatch;
-    readonly afterMinutes: number;
-    readonly campfire: readonly [x: number, z: number];
   };
   /**
    * Now and then a shark fin surfaces in the water near a random island,
