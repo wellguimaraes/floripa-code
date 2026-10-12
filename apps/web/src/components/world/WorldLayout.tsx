@@ -1,7 +1,7 @@
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { MessagesSquareIcon, XIcon } from "lucide-react";
+import { XIcon } from "lucide-react";
 import {
   type CSSProperties,
   Suspense,
@@ -20,8 +20,8 @@ import { buildThreadRouteParams, type ThreadRouteTarget } from "../../threadRout
 import { RightPanelResizeHandle } from "../preview/RightPanelResizeHandle";
 import { ThreadRouteView } from "../ThreadRouteView";
 import { Button } from "../ui/button";
-import { SidebarInset, useSidebar } from "../ui/sidebar";
-import { islandWorld } from "./definitions/island";
+import { SidebarInset, useSidebar, useSidebarVisibility } from "../ui/sidebar";
+import { islandWorlds } from "./definitions/island";
 import { palette } from "./scene/palette";
 import { useWorldLook } from "./worldLookStore";
 import { useWorldModeStore } from "./worldModeStore";
@@ -33,6 +33,8 @@ const CHAT_MIN_WIDTH = 400;
 const CHAT_DEFAULT_WIDTH = 720;
 // Room left of the chat for its close button (4rem) and right of it for the margin (0.75rem).
 const CHAT_GUTTERS = 76;
+// Two Escapes this close together inside the chat close it.
+const DOUBLE_ESCAPE_MS = 500;
 
 function readChatMaxWidth(): number {
   if (typeof window === "undefined") return CHAT_DEFAULT_WIDTH;
@@ -93,11 +95,40 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
   useEffect(() => collapseSidebar(), []);
 
   useEffect(() => {
+    useWorldModeStore.getState().setShown(true);
+    return () => useWorldModeStore.getState().setShown(false);
+  }, []);
+
+  // Opening the sidebar is the way out of the world.
+  const sidebarVisible = useSidebarVisibility();
+  const sidebarWasVisible = useRef(sidebarVisible);
+  useEffect(() => {
+    const wasVisible = sidebarWasVisible.current;
+    sidebarWasVisible.current = sidebarVisible;
+    if (sidebarVisible && !wasVisible) setWorldMode(false);
+  }, [setWorldMode, sidebarVisible]);
+
+  useEffect(() => {
     if (target === null) return;
-    // Escape inside the chat belongs to the chat (menus, composer); outside it closes the panel.
+    // Escape inside the chat belongs to the chat (menus, composer) unless pressed twice in a row
+    // with nothing in the chat taking it; outside it closes the panel at once.
+    let lastFreeEscapeAt = Number.NEGATIVE_INFINITY;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
-      if (event.target instanceof Node && panelRef.current?.contains(event.target)) return;
+      if (event.key !== "Escape" || event.isComposing || event.repeat) return;
+      // The message editor (ProseMirror) prevents every Escape; its menus also stop the event,
+      // so one that gets here from the editor was not used.
+      const fromEditor = event.target instanceof Element && event.target.closest(".ProseMirror");
+      if (event.defaultPrevented && !fromEditor) {
+        lastFreeEscapeAt = Number.NEGATIVE_INFINITY;
+        return;
+      }
+      if (event.target instanceof Node && panelRef.current?.contains(event.target)) {
+        const now = event.timeStamp;
+        if (now - lastFreeEscapeAt > DOUBLE_ESCAPE_MS) {
+          lastFreeEscapeAt = now;
+          return;
+        }
+      }
       event.preventDefault();
       void navigate({ to: "/" });
     };
@@ -110,7 +141,7 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
       <div className="absolute inset-0">
         <Suspense fallback={null}>
           <WorldCanvas
-            definition={islandWorld}
+            definitions={islandWorlds}
             selectedKey={selectedKey}
             onExpand={openThread}
             panel={readPanel}
@@ -123,17 +154,9 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
           // Stacked over the chat panel so toolbar popovers drop down on top of it.
           "pointer-events-none absolute inset-x-0 top-0 z-10 flex h-[var(--workspace-topbar-height)] items-center justify-end gap-2 px-3",
           isElectron && "drag-region",
-          // An open chat pins its panel toggles to the window's top-right corner.
-          target !== null && "pr-36",
         )}
       >
         <div ref={setToolbar} className="pointer-events-auto flex items-center gap-2" />
-        <div className="pointer-events-auto">
-          <Button variant="glass" size="sm" onClick={() => setWorldMode(false)}>
-            <MessagesSquareIcon />
-            Leave world
-          </Button>
-        </div>
       </div>
       {target !== null ? (
         <div
@@ -155,10 +178,22 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
             </Button>
           </div>
           {/* Framed in the character's colour, so it is clear whose chat this is; the
-              white outline keeps the frame visible against the sea and dark themes. */}
+              white outline keeps the frame visible against the sea and dark themes.
+              Layout containment makes the frame the anchor for the chat's fixed
+              titlebar controls, so its panel toggles sit at the header's right end. */}
           <div
-            className="flex size-full flex-col overflow-hidden rounded-xl border-6 border-border bg-background shadow-xl outline-2 outline-white"
-            style={look === null ? undefined : { borderColor: palette.families[look.hue]?.base }}
+            className="flex size-full flex-col overflow-hidden rounded-xl border-6 border-border bg-background shadow-xl outline-2 outline-white [contain:layout]"
+            style={
+              {
+                "--workspace-controls-top": "0px",
+                // Taller than the app's bar, so the portrait and the project chip over the
+                // title get room to breathe.
+                "--workspace-topbar-height": "68px",
+                "--workspace-controls-right": "0.75rem",
+                "--workspace-native-controls-inset": "0px",
+                ...(look === null ? {} : { borderColor: palette.families[look.hue]?.base }),
+              } as CSSProperties
+            }
           >
             <ThreadRouteView target={target} container="bare" />
           </div>

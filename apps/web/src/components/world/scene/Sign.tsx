@@ -99,7 +99,7 @@ function signBoard(
   const context = canvas.getContext("2d")!;
   context.fillStyle = color;
   context.fillRect(0, 0, canvas.width, canvas.height);
-  context.fillStyle = isLight(color) ? palette.signTextDark : palette.signTextLight;
+  context.fillStyle = signTextColor(color);
   context.font = font(size);
   context.textAlign = "center";
   context.textBaseline = "middle";
@@ -111,9 +111,9 @@ function signBoard(
   return { texture, width };
 }
 
-/** Whether dark text reads better than white on this colour (relative luminance). */
-function isLight(color: string): boolean {
+/** The sign's text colour on this board colour: dark where it reads better than white. */
+export function signTextColor(color: string): string {
   const { r, g, b } = new Color(color);
   // three's Color holds linear values, which is what the luminance formula wants.
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.4;
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.4 ? palette.signTextDark : palette.signTextLight;
 }

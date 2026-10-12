@@ -1,26 +1,32 @@
 import { createContext, useContext } from "react";
-import { Color } from "three";
+import { Color, SRGBColorSpace } from "three";
+import { palette } from "./palette";
 
-/** True inside an island nobody is on any more: it shows, in washed-out grey. */
+/** True inside an island nobody is on any more: it shows in dark shades of the sea. */
 export const FadedContext = createContext(false);
 
-/** How far toward white a faded grey is lifted, so the island reads as washed out. */
-const LIFT = 0.3;
+/** The darkest and lightest shade of the sea an empty island is drawn in. */
+const SEA = new Color(palette.water).getHSL({ h: 0, s: 0, l: 0 }, SRGBColorSpace);
+const DARKEST = 0.2;
+const LIGHTEST = 0.5;
+/** The sea's saturation kept, so the island blends into the water without glowing. */
+const SATURATION = 0.7;
 const fadedColors = new Map<string, string>();
 
-/** A colour as it looks on an empty island: its own brightness in grey, lightened. */
+/** A colour as it looks on an empty island: its own brightness as a shade of the sea. */
 export function toFaded(color: string): string {
   let faded = fadedColors.get(color);
   if (faded === undefined) {
     const source = new Color(color);
     const grey = 0.2126 * source.r + 0.7152 * source.g + 0.0722 * source.b;
-    faded = `#${new Color(grey, grey, grey).lerp(new Color(1, 1, 1), LIFT).getHexString()}`;
+    const lightness = DARKEST + (LIGHTEST - DARKEST) * grey;
+    faded = `#${new Color().setHSL(SEA.h, SEA.s * SATURATION, lightness, SRGBColorSpace).getHexString()}`;
     fadedColors.set(color, faded);
   }
   return faded;
 }
 
-/** The world's lit surface material; washed out on an empty island. */
+/** The world's lit surface material; in sea shades on an empty island. */
 export function LitMaterial(props: {
   readonly color: string;
   readonly flatShading?: boolean;

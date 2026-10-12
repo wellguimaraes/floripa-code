@@ -1,7 +1,7 @@
 import { cn } from "../../lib/utils";
 import { palette } from "./scene/palette";
 
-/** One swatch per family colour; the picked one is ringed. */
+/** One swatch per family colour; the picked one gets a white border and black outline. */
 export function HuePicker(props: {
   readonly hue: number;
   readonly onChange: (hue: number) => void;
@@ -20,9 +20,11 @@ export function HuePicker(props: {
           className={cn(
             "size-5 cursor-pointer rounded-full outline-none",
             "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-            index === hue && "ring-3 ring-foreground/85 ring-inset",
           )}
-          style={{ backgroundColor: shades.base }}
+          style={{
+            backgroundColor: shades.base,
+            ...(index === hue && { border: "2px solid #fff", outline: "2px solid #000" }),
+          }}
           onClick={() => onChange(index)}
         />
       ))}

@@ -38,6 +38,7 @@ import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
 import { SidebarBrandWidthProbe, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { MainAppLocationTracker } from "./sidebar/mainAppLocation";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
+import { useWorldModeStore } from "./world/worldModeStore";
 import { useProjects } from "../state/entities";
 import {
   clampThreadSidebarWidth,
@@ -85,6 +86,7 @@ function SidebarControl() {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { toggleSidebar } = useSidebar();
   const isSidebarVisible = useSidebarVisibility();
+  const worldShown = useWorldModeStore((state) => state.shown);
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
   const stageBackdropVariant = useSidebarStageBackdropVariant(
     environmentIdentificationMode === "artwork",
@@ -152,6 +154,10 @@ function SidebarControl() {
               className={cn(
                 "pointer-events-auto",
                 isSidebarVisible && stageBackdropVariant && "relative top-auto translate-y-0",
+                // Over the world's sky, like the window controls beside it.
+                worldShown &&
+                  !isSidebarVisible &&
+                  "text-white [--control-icon-color:white] [:hover,[data-pressed]]:bg-white/15",
               )}
               aria-label="Toggle main sidebar"
             />

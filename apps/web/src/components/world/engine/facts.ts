@@ -42,6 +42,15 @@ export interface CharacterFacts {
   readonly worktreePath: string | null;
 }
 
+/** Done with its turn and waiting on nothing: resting on the beach. */
+export function isResting(facts: CharacterFacts): boolean {
+  return (
+    (facts.status === "ready" || facts.status === "waiting") &&
+    !facts.hasWorkingKids &&
+    !facts.backgroundTask
+  );
+}
+
 const WORLD_CHARACTER_LIMIT = 30;
 
 /**

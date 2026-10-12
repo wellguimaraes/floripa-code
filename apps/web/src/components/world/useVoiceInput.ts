@@ -129,20 +129,31 @@ export function useVoiceInput(
     listener.continuous = false;
     let heard = "";
     let failed = false;
+    // Set when the take is thrown away: nothing heard after that is reported.
+    let dropped = false;
     listener.addEventListener("result", (event) => {
+      if (dropped) return;
       heard = Array.from(event.results, (result) => result[0]?.transcript ?? "").join("");
       latest.current.onText(heard);
     });
     listener.addEventListener("error", (event) => {
+      if (dropped) return;
       failed = true;
       latest.current.onError(SPEECH_ERRORS[event.error] ?? "Could not hear that.");
     });
     listener.addEventListener("end", () => {
       finish.current = null;
       setPhase("idle");
-      if (!failed) latest.current.onDone?.(heard);
+      if (!failed && !dropped) latest.current.onDone?.(heard);
     });
-    finish.current = (send) => (send ? listener.stop() : listener.abort());
+    finish.current = (send) => {
+      if (send) {
+        listener.stop();
+        return;
+      }
+      dropped = true;
+      listener.abort();
+    };
     setPhase("listening");
     listener.start();
   };
@@ -275,6 +286,8 @@ export function useVoiceInput(
     start,
     /** End the take now and use what was said. */
     stop: () => finish.current?.(true),
+    /** End the take now and throw away what was said. */
+    cancel: () => finish.current?.(false),
     keyPrompt,
     /** The prompt was closed without a key: the unsent take is dropped. */
     dismissKeyPrompt: () => {

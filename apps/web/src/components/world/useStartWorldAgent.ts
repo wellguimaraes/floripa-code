@@ -11,7 +11,7 @@ import {
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { getClientSettings, mergeEnvironmentSettings } from "../../hooks/useSettings";
@@ -25,10 +25,10 @@ import {
 } from "../../providerInstances";
 import { getDefaultServerModel } from "../../providerModels";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
-import { readProjects } from "../../state/entities";
+import { readProjects, useProject } from "../../state/entities";
 import { environmentServerConfigsAtom } from "../../state/server";
 import { threadEnvironment } from "../../state/threads";
-import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
+import { useEnvironmentQuery } from "../../state/query";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { vcsEnvironment } from "../../state/vcs";
 import { resolveComposerProviderSelection } from "../ChatView.logic";
@@ -65,81 +65,78 @@ async function readProjectSettings(
 /**
  * The workspaces a new agent in a project can pick from, and the one a fresh
  * draft would use. Existing worktrees come from the repo's local branches that
- * are checked out somewhere other than the project checkout. Until git answers,
+ * are checked out somewhere other than the project checkout; a new worktree
+ * starts from the default branch, else the current one. Until git answers,
  * the project counts as a repo so the picker shows right away.
  */
 export function useWorldAgentWorkspaces(projectRef: ScopedProjectRef) {
-  const listRefs = useAtomQueryRunner(vcsEnvironment.listRefs, {
-    reportFailure: false,
-    refresh: true,
-  });
   const { environmentId, projectId } = projectRef;
-  const [state, setState] = useState<{
-    readonly defaultWorkspace: WorldAgentWorkspace;
-    readonly worktrees: ReadonlyArray<{ readonly path: string; readonly branch: string }>;
-    readonly isRepo: boolean;
-  }>({ defaultWorkspace: { kind: "local" }, worktrees: [], isRepo: true });
+  const workspaceRoot = useProject(projectRef)?.workspaceRoot ?? null;
+  // A live query, not a one-shot read: ref lists are streams that stay open,
+  // so awaiting a settled result would never resolve.
+  const refsAtom = useMemo(
+    () =>
+      workspaceRoot === null
+        ? null
+        : vcsEnvironment.listRefs({
+            environmentId,
+            input: { cwd: workspaceRoot, limit: 200 },
+          }),
+    [environmentId, workspaceRoot],
+  );
+  const refs = useEnvironmentQuery(refsAtom);
+  const isRepo = refs.failure === null && (refs.data?.isRepo ?? true);
+  const worktrees = useMemo(
+    () =>
+      (refs.data?.refs ?? []).flatMap((ref) =>
+        ref.isRemote !== true && ref.worktreePath !== null && ref.worktreePath !== workspaceRoot
+          ? [{ path: ref.worktreePath, branch: ref.name }]
+          : [],
+      ),
+    [refs.data, workspaceRoot],
+  );
+  // The server lists the current and default branches first.
+  const worktreeBaseBranch =
+    refs.data?.refs.find((ref) => ref.isDefault)?.name ??
+    refs.data?.refs.find((ref) => ref.current)?.name ??
+    null;
 
+  const [worktreeByDefault, setWorktreeByDefault] = useState(false);
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       const project = findProject({ environmentId, projectId });
-      const [projectSettings, refs] = await Promise.all([
-        readProjectSettings(environmentId, project),
-        listRefs({
-          environmentId,
-          input: { cwd: project.workspaceRoot, refKind: "local", limit: 200 },
-        }),
-      ]);
-      if (cancelled) return;
-      const isRepo = refs._tag === "Success" && refs.value.isRepo;
-      const worktrees =
-        refs._tag === "Success"
-          ? refs.value.refs.flatMap((ref) =>
-              ref.worktreePath !== null && ref.worktreePath !== project.workspaceRoot
-                ? [{ path: ref.worktreePath, branch: ref.name }]
-                : [],
-            )
-          : [];
-      setState({
-        defaultWorkspace:
-          isRepo && projectSettings.defaultThreadEnvMode === "worktree"
-            ? { kind: "new-worktree" }
-            : { kind: "local" },
-        worktrees,
-        isRepo,
-      });
+      const projectSettings = await readProjectSettings(environmentId, project);
+      if (!cancelled) setWorktreeByDefault(projectSettings.defaultThreadEnvMode === "worktree");
     })().catch((error: unknown) => {
-      console.warn("Could not list the project's worktrees.", error);
+      console.warn("Could not read the project's workspace default.", error);
     });
     return () => {
       cancelled = true;
     };
-  }, [environmentId, listRefs, projectId]);
+  }, [environmentId, projectId]);
 
-  return state;
+  const defaultWorkspace: WorldAgentWorkspace =
+    isRepo && worktreeByDefault ? { kind: "new-worktree" } : { kind: "local" };
+  return { defaultWorkspace, worktrees, worktreeBaseBranch, isRepo };
 }
 
 /**
  * Starts a thread in a project straight away, without opening its draft. It
  * picks what a fresh draft would: the project's default model or the last one
  * used, and its permissions. It works in the given workspace, else the
- * project's local-or-worktree default, basing a new worktree on the repo's
- * default branch like the branch picker does.
+ * project's local-or-worktree default. A new worktree starts from the given
+ * base branch, which useWorldAgentWorkspaces finds like the branch picker does.
  */
 export function useStartWorldAgent() {
   const startTurn = useOrchestrationCommand(threadEnvironment.startTurn, { reportFailure: false });
-  const listRefs = useAtomQueryRunner(vcsEnvironment.listRefs, {
-    reportFailure: false,
-    refresh: true,
-  });
-
   return useCallback(
     async (
       projectRef: ScopedProjectRef,
       text: string,
       attachments: ReadonlyArray<ChatAttachment | UploadChatAttachment> = [],
       workspace: WorldAgentWorkspace | null = null,
+      worktreeBaseBranch: string | null = null,
     ): Promise<ThreadId> => {
       const { environmentId } = projectRef;
       const project = findProject(projectRef);
@@ -186,21 +183,9 @@ export function useStartWorldAgent() {
           ? projectSettings.defaultRuntimeMode
           : supportedRuntimeModes[0]!;
 
-      let baseBranch: string | null = null;
-      if (workspaceKind === "new-worktree") {
-        const refs = await listRefs({
-          environmentId,
-          input: { cwd: project.workspaceRoot, limit: 100 },
-        });
-        if (refs._tag === "Success") {
-          baseBranch =
-            refs.value.refs.find((ref) => ref.isDefault)?.name ??
-            refs.value.refs.find((ref) => ref.current)?.name ??
-            null;
-        }
-        if (baseBranch === null)
-          throw new Error("Could not find a branch to base the worktree on.");
-      }
+      const baseBranch = workspaceKind === "new-worktree" ? worktreeBaseBranch : null;
+      if (workspaceKind === "new-worktree" && baseBranch === null)
+        throw new Error("Could not find a branch to base the worktree on.");
 
       const threadId = newThreadId();
       const createdAt = new Date().toISOString();
@@ -256,6 +241,6 @@ export function useStartWorldAgent() {
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
       return threadId;
     },
-    [listRefs, startTurn],
+    [startTurn],
   );
 }

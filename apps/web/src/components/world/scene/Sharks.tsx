@@ -27,11 +27,14 @@ interface Sighting {
  */
 export function SharkSightings(props: {
   /** Island centres in world space and how far their shore reaches. */
-  readonly islands: ReadonlyArray<{ readonly x: number; readonly z: number }>;
-  readonly shoreRadius: number;
+  readonly islands: ReadonlyArray<{
+    readonly x: number;
+    readonly z: number;
+    readonly shoreRadius: number;
+  }>;
   readonly config: WorldArchipelago["sharks"];
 }) {
-  const { islands, shoreRadius, config } = props;
+  const { islands, config } = props;
   const [sighting, setSighting] = useState<Sighting | null>(null);
   const islandsRef = useRef(islands);
   useEffect(() => {
@@ -55,7 +58,7 @@ export function SharkSightings(props: {
       const island = candidates[Math.floor(Math.random() * candidates.length)]!;
       const angle = Math.random() * Math.PI * 2;
       const [near, far] = config.offshore;
-      const distance = shoreRadius + near + Math.random() * (far - near);
+      const distance = island.shoreRadius + near + Math.random() * (far - near);
       // Swim along the shore, one way or the other.
       const along = angle + (Math.random() < 0.5 ? Math.PI / 2 : -Math.PI / 2);
       setSighting({
@@ -67,7 +70,7 @@ export function SharkSightings(props: {
     };
     schedule();
     return () => window.clearTimeout(timer);
-  }, [sighting, config, shoreRadius]);
+  }, [sighting, config]);
 
   return sighting === null ? null : (
     <Shark

@@ -1,4 +1,4 @@
-import { useContext } from "react";
+import { useContext, useMemo } from "react";
 import { type BufferGeometry, Matrix4 } from "three";
 
 import type { PropKind, TerrainKind, Vec3, WorldDefinition } from "../definition/types";
@@ -20,7 +20,7 @@ import {
 import { palette } from "./palette";
 import { Ripple } from "./Ripple";
 import { propShadows } from "./shadows";
-import { roundPatchGeometry, shallowsGeometry } from "./terrain";
+import { roundPatchGeometry, shallowsEdge, shallowsGeometry } from "./terrain";
 
 const TERRAIN: Record<TerrainKind, { readonly color: string; readonly top: number }> = {
   // Stacked a hair apart so overlapping patches never z-fight.
@@ -37,6 +37,31 @@ export interface FurnitureSpot {
   readonly scale: number;
 }
 
+/** How far the outer shallows reach past a sand patch's edge. */
+const LAGOON_REACH = 2.1;
+
+/**
+ * The outline the ripple follows: the outer shallows around the island's sand,
+ * or a plain circle around the island when it has no round sand patch.
+ */
+function rippleShore(definition: WorldDefinition): {
+  readonly center: readonly [x: number, z: number];
+  readonly radius: number;
+  readonly edge: (angle: number) => number;
+} {
+  const sand = definition.terrain.find((patch) => patch.shape === "disc" && patch.kind === "sand");
+  if (sand !== undefined && sand.shape === "disc") {
+    const radius = sand.radius + LAGOON_REACH;
+    return { center: sand.center, radius, edge: shallowsEdge(radius) };
+  }
+  const bounds = islandBounds(definition);
+  return {
+    center: [(bounds.minX + bounds.maxX) / 2, (bounds.minZ + bounds.maxZ) / 2],
+    radius: Math.max(bounds.maxX - bounds.minX, bounds.maxZ - bounds.minZ) / 2 + LAGOON_REACH,
+    edge: () => 0,
+  };
+}
+
 export function Island(props: {
   readonly definition: WorldDefinition;
   readonly furniture: ReadonlyArray<FurnitureSpot>;
@@ -44,15 +69,10 @@ export function Island(props: {
 }) {
   const { definition, furniture, ripple } = props;
   const faded = useContext(FadedContext);
-  const bounds = islandBounds(definition);
-  const center: [number, number] = [
-    (bounds.minX + bounds.maxX) / 2,
-    (bounds.minZ + bounds.maxZ) / 2,
-  ];
-  const radius = Math.max(bounds.maxX - bounds.minX, bounds.maxZ - bounds.minZ) / 2;
+  const shore = useMemo(() => rippleShore(definition), [definition]);
   return (
     <group>
-      {ripple ? <Ripple center={center} radius={radius + 0.3} /> : null}
+      {ripple ? <Ripple center={shore.center} radius={shore.radius} edge={shore.edge} /> : null}
       {definition.terrain.map((patch) => {
         const style = TERRAIN[patch.kind];
         const y = style.top - TERRAIN_DEPTH / 2;
@@ -64,11 +84,12 @@ export function Island(props: {
             <mesh geometry={roundPatchGeometry(patch.kind, patch.radius, style.top, faded)}>
               <meshLambertMaterial vertexColors />
             </mesh>
-            {patch.kind === "sand" ? (
+            {patch.kind === "sand" && !faded ? (
               // Just above the sea, under the island's rim: turquoise, then
-              // paler water over the sand close in.
+              // paler water over the sand close in. Gone on an empty island,
+              // where they'd read as rings of darker sea.
               <>
-                <mesh geometry={shallowsGeometry(patch.radius + 2.1)} position-y={-0.24}>
+                <mesh geometry={shallowsGeometry(patch.radius + LAGOON_REACH)} position-y={-0.24}>
                   <LitMaterial color={palette.lagoon} />
                 </mesh>
                 <mesh geometry={shallowsGeometry(patch.radius + 0.9)} position-y={-0.23}>

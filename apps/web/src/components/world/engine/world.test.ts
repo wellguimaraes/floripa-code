@@ -3,17 +3,16 @@ import { describe, expect, it } from "vite-plus/test";
 
 import type { FixedArea, WorldDefinition } from "../definition/types";
 import { validateWorldDefinition } from "../definition/validate";
-import { islandWorld } from "../definitions/island";
+import { ISLAND_SIZES, islandWorlds } from "../definitions/island";
 import {
   EMPTY_ARCHIPELAGO_MEMORY,
-  islandOffset,
+  islandOffsets,
   islandRadius,
   resolveArchipelago,
   arrangementColumns,
   type IslandArrangement,
   suggestHue,
 } from "./archipelago";
-import { EMPTY_ATTENTION, acknowledgeIsland, isRippling, noticeAttention } from "./attention";
 import { EMPTY_BEAT_GATE, gateBeats, type BeatGate } from "./beats";
 import type { CharacterFacts } from "./facts";
 import { planRoute } from "./route";
@@ -317,27 +316,15 @@ describe("resolveArchipelago", () => {
     expect(cells(newcomer)).toEqual({ b: 1, c: 2, d: 0 });
   });
 
-  it("ripples an island from a new reason until it is acknowledged", () => {
+  it("ripples an island only while someone on it waits on you", () => {
     const asking = character({ projectKey: "a", status: "approval" });
     const quiet = character({ projectKey: "b" });
-    const at = (facts: CharacterFacts[]) => archipelago(facts, ["a", "b"]).islands;
+    const rippling = (facts: CharacterFacts[]) =>
+      archipelago(facts, ["a", "b"]).islands.map((island) => island.ripple);
 
-    let state = noticeAttention(EMPTY_ATTENTION, at([asking, quiet]));
-    expect(isRippling(state, "a")).toBe(true);
-    expect(isRippling(state, "b")).toBe(false);
-
-    // Keeps rippling after the reason clears, until someone interacts.
-    state = noticeAttention(state, at([{ ...asking, status: "working" }, quiet]));
-    expect(isRippling(state, "a")).toBe(true);
-    state = acknowledgeIsland(state, "a");
-    expect(isRippling(state, "a")).toBe(false);
-
-    // An ongoing reason does not come back after acknowledging; a new one does.
-    state = noticeAttention(state, at([asking, quiet]));
-    expect(isRippling(state, "a")).toBe(true);
-    state = acknowledgeIsland(state, "a");
-    state = noticeAttention(state, at([asking, quiet]));
-    expect(isRippling(state, "a")).toBe(false);
+    expect(rippling([asking, quiet])).toEqual([true, false]);
+    // Stops as soon as the answer comes in.
+    expect(rippling([{ ...asking, status: "working" }, quiet])).toEqual([false, false]);
   });
 
   it("gives each family on an island its own colour, kids sharing their parent's", () => {
@@ -389,23 +376,52 @@ describe("resolveArchipelago", () => {
     expect(island!.hats.get("/wt/one")).not.toBe(island!.hats.get("/wt/two"));
   });
 
-  it("never overlaps two islands", () => {
-    const reach = islandRadius(testWorld);
-    const offsets = Array.from({ length: 12 }, (_, cell) => islandOffset(cell, testWorld));
-    for (const [i, a] of offsets.entries()) {
-      for (const b of offsets.slice(i + 1)) {
-        expect(Math.hypot(a[0] - b[0], a[2] - b[2])).toBeGreaterThanOrEqual(
-          2 * reach + testWorld.archipelago.gap - 1e-9,
-        );
+  it("never overlaps two islands, whatever their sizes", () => {
+    const { gap } = testWorld.archipelago;
+    for (const columns of [1, 3, 12]) {
+      const islands = Array.from({ length: 12 }, (_, cell) => ({ cell, radius: 2 + (cell % 4) }));
+      const offsets = islandOffsets({ islands, gap, columns });
+      for (const [i, a] of offsets.entries()) {
+        for (const [j, b] of offsets.entries()) {
+          if (j <= i) continue;
+          expect(Math.hypot(a[0] - b[0], a[2] - b[2])).toBeGreaterThanOrEqual(
+            islands[i]!.radius + islands[j]!.radius + gap - 1e-9,
+          );
+        }
       }
     }
+  });
+
+  it("lays each island out at its own size", () => {
+    const big: WorldDefinition = {
+      ...testWorld,
+      terrain: [{ shape: "box", kind: "grass", center: [5, 0], size: [20, 12] }],
+    };
+    const result = resolveArchipelago({
+      facts: [character({ projectKey: "a" }), character({ projectKey: "b" })],
+      definition: testWorld,
+      definitionOf: (key) => (key === "b" ? big : testWorld),
+      projectOrder: ["a", "b"],
+      hueCount: 3,
+      hatCount: 3,
+      previous: EMPTY_ARCHIPELAGO_MEMORY,
+    });
+    const [a, b] = result.islands;
+    expect(b!.definition).toBe(big);
+    expect(Math.hypot(b!.offset[0] - a!.offset[0], b!.offset[2] - a!.offset[2])).toBeCloseTo(
+      islandRadius(testWorld) + islandRadius(big) + testWorld.archipelago.gap,
+    );
   });
 
   it("lines islands up down the screen, along it, or in a square grid", () => {
     // The camera looks down the (1, 1) diagonal: x - z runs right, x + z runs down.
     const onScreen = (arrangement: IslandArrangement, count: number) =>
       Array.from({ length: count }, (_, cell) => {
-        const [x, , z] = islandOffset(cell, testWorld, arrangementColumns(arrangement, count));
+        const [x, , z] = islandOffsets({
+          islands: Array.from({ length: count }, (_, index) => ({ cell: index, radius: 5 })),
+          gap: testWorld.archipelago.gap,
+          columns: arrangementColumns(arrangement, count),
+        })[cell]!;
         return [Math.round(x - z), Math.round(x + z)] as const;
       });
     const column = onScreen("column", 3);
@@ -444,8 +460,16 @@ describe("planRoute", () => {
 });
 
 describe("validateWorldDefinition", () => {
-  it("accepts the island", () => {
-    expect(validateWorldDefinition(islandWorld)).toEqual([]);
+  it("accepts the island at every size", () => {
+    for (const island of islandWorlds) expect(validateWorldDefinition(island)).toEqual([]);
+  });
+
+  it("gives every island size its rock piles and beach spots", () => {
+    const counts = islandWorlds.map((island) => {
+      const { mine, beach } = island.areas as Record<string, FixedArea>;
+      return { piles: mine!.slots.length, restSpots: beach!.slots.length };
+    });
+    expect(counts).toEqual(ISLAND_SIZES);
   });
 
   it("names broken references and disconnected areas", () => {

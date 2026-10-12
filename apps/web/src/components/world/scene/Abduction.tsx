@@ -21,7 +21,7 @@ const LEAVE = 0.9;
 export const ABDUCTION_SECONDS = DESCEND + BEAM + LEAVE;
 const HOVER_HEIGHT = 6;
 /** The saucer's size for a single character; a wide group gets a wider one. */
-const SAUCER_SCALE = 2.6;
+const SAUCER_SCALE = 3.6;
 const FPS = 30;
 
 export interface AbductedFigure {

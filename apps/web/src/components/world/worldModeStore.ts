@@ -5,9 +5,15 @@ import { resolveStorage } from "../../lib/storage";
 
 interface WorldModeState {
   readonly enabled: boolean;
+  /** Whether the world is on screen right now; enabled worlds hide on routes like settings. */
+  readonly shown: boolean;
   /** Whether the sidebar was open before the world collapsed it, to reopen it on the way out. */
   readonly sidebarWasOpen: boolean | null;
+  /** Whether the new-agent shortcut's project picker is open; the world shows it. */
+  readonly pickingProject: boolean;
+  readonly setPickingProject: (picking: boolean) => void;
   readonly setSidebarWasOpen: (open: boolean | null) => void;
+  readonly setShown: (shown: boolean) => void;
   readonly setEnabled: (enabled: boolean) => void;
   readonly toggle: () => void;
 }
@@ -17,8 +23,12 @@ export const useWorldModeStore = create<WorldModeState>()(
   persist(
     (set) => ({
       enabled: false,
+      shown: false,
       sidebarWasOpen: null,
+      pickingProject: false,
+      setPickingProject: (pickingProject) => set({ pickingProject }),
       setSidebarWasOpen: (sidebarWasOpen) => set({ sidebarWasOpen }),
+      setShown: (shown) => set({ shown }),
       setEnabled: (enabled) => set({ enabled }),
       toggle: () => set((state) => ({ enabled: !state.enabled })),
     }),

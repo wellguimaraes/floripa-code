@@ -9,14 +9,13 @@ export interface WorldIsland {
   /** The project's key; every character on the island shares it. */
   readonly key: string;
   readonly cell: number;
+  /** This island's own template, e.g. one of a bigger size. */
+  readonly definition: WorldDefinition;
   /** Where the island template's origin sits in the world. */
   readonly offset: Vec3;
   readonly characters: ReadonlyArray<WorldCharacter>;
-  /**
-   * Why the island wants attention: one reason per character and ripple rule
-   * it matches. `engine/attention` turns these into ripples.
-   */
-  readonly attention: ReadonlyArray<string>;
+  /** Whether any character on it matches a ripple rule, e.g. one waiting on you. */
+  readonly ripple: boolean;
   /** Colour index per family (a character's `lookSeed`), distinct within the island. */
   readonly hues: ReadonlyMap<string, number>;
   /**
@@ -49,6 +48,8 @@ export const EMPTY_ARCHIPELAGO_MEMORY: ArchipelagoMemory = {
 export function resolveArchipelago(input: {
   readonly facts: ReadonlyArray<CharacterFacts>;
   readonly definition: WorldDefinition;
+  /** The template of each island, by project key; `definition` when left out. */
+  readonly definitionOf?: (key: string) => WorldDefinition;
   /** Every known project key in a stable order, e.g. by creation time. */
   readonly projectOrder: ReadonlyArray<string>;
   /** How many family colours the renderer has. */
@@ -92,22 +93,32 @@ export function resolveArchipelago(input: {
     used.add(next);
   }
 
+  const definitions = new Map(
+    keys.map((key) => [key, input.definitionOf?.(key) ?? definition] as const),
+  );
+  const offsets = islandOffsets({
+    islands: keys.map((key) => ({
+      cell: cells.get(key)!,
+      radius: islandRadius(definitions.get(key)!),
+    })),
+    gap: definition.archipelago.gap,
+    columns: input.columns ?? definition.archipelago.columns,
+  });
   const placements = new Map<string, Placement>();
   const hues = new Map<string, number>();
   const hats = new Map<string, number>();
-  const islands = keys.map((key) => {
+  const islands = keys.map((key, index) => {
+    const islandDefinition = definitions.get(key)!;
     const characters = resolveWorld({
       facts: byProject.get(key) ?? [],
-      definition,
+      definition: islandDefinition,
       previous: previous.placements,
       ...(input.requested === undefined ? {} : { requested: input.requested }),
     });
     for (const character of characters) placements.set(character.facts.key, character.placement);
     const cell = cells.get(key)!;
-    const attention = characters.flatMap((character) =>
-      definition.archipelago.ripple.when.flatMap((match, rule) =>
-        matchesFacts(match, character.facts) ? [`${character.facts.key}#${rule}`] : [],
-      ),
+    const ripple = characters.some((character) =>
+      definition.archipelago.ripple.when.some((match) => matchesFacts(match, character.facts)),
     );
     const islandHues = assignHues({
       facts: byProject.get(key) ?? [],
@@ -122,8 +133,16 @@ export function resolveArchipelago(input: {
       previous: previous.hats,
     });
     for (const [path, hat] of islandHats) hats.set(path, hat);
-    const offset = islandOffset(cell, definition, input.columns);
-    return { key, cell, offset, characters, attention, hues: islandHues, hats: islandHats };
+    return {
+      key,
+      cell,
+      definition: islandDefinition,
+      offset: offsets[index]!,
+      characters,
+      ripple,
+      hues: islandHues,
+      hats: islandHats,
+    };
   });
   return { islands, memory: { cells, placements, hues, hats } };
 }
@@ -281,20 +300,37 @@ export function islandRadius(definition: WorldDefinition): number {
 
 /**
  * Lays the grid out along the screen, not the world axes: the camera looks
- * down the (1, 1) diagonal, so a column step of (s, -s) reads as "right" and
- * a row step of (s, s) as "down". Neighbours are then s * sqrt(2) apart,
- * which leaves `gap` of water between their ground circles.
+ * down the (1, 1) diagonal, so (1, -1) reads as "right" and (1, 1) as "down".
+ * Each column is as wide as its biggest island and each row as tall, which
+ * leaves at least `gap` of water between neighbours' ground circles.
  */
-export function islandOffset(
-  cell: number,
-  definition: WorldDefinition,
-  columns = definition.archipelago.columns,
-): Vec3 {
-  const { gap } = definition.archipelago;
-  const step = (2 * islandRadius(definition) + gap) / Math.SQRT2;
-  const column = cell % columns;
-  const row = Math.floor(cell / columns);
-  return [(column + row) * step, 0, (row - column) * step];
+export function islandOffsets(input: {
+  readonly islands: ReadonlyArray<{ readonly cell: number; readonly radius: number }>;
+  readonly gap: number;
+  readonly columns: number;
+}): Vec3[] {
+  const { islands, gap, columns } = input;
+  const columnRadius: number[] = [];
+  const rowRadius: number[] = [];
+  for (const { cell, radius } of islands) {
+    const column = cell % columns;
+    const row = Math.floor(cell / columns);
+    columnRadius[column] = Math.max(columnRadius[column] ?? 0, radius);
+    rowRadius[row] = Math.max(rowRadius[row] ?? 0, radius);
+  }
+  // How far along its axis each column's or row's middle lies from the first one's.
+  const along = (radii: ReadonlyArray<number | undefined>, index: number) => {
+    let distance = 0;
+    for (let step = 1; step <= index; step += 1) {
+      distance += (radii[step - 1] ?? 0) + gap + (radii[step] ?? 0);
+    }
+    return distance;
+  };
+  return islands.map(({ cell }) => {
+    const right = along(columnRadius, cell % columns);
+    const down = along(rowRadius, Math.floor(cell / columns));
+    return [(right + down) / Math.SQRT2, 0, (down - right) / Math.SQRT2];
+  });
 }
 
 /** How the islands line up on screen: down one column, along one row, or in a grid. */

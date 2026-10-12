@@ -154,7 +154,7 @@ export interface WorldArchipelago {
   readonly sign: WorldSlot;
   /**
    * The water ripples around an island while any character on it matches one
-   * of these, e.g. one that needs you or has news. Animates at `fps` only then.
+   * of these, e.g. one waiting on your answer. Animates at `fps` only then.
    */
   readonly ripple: {
     readonly when: ReadonlyArray<CharacterFactMatch>;

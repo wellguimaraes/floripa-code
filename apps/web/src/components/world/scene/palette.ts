@@ -6,7 +6,7 @@ export const palette = {
   sky: "#8fd3f4",
   skyLight: "#ffffff",
   groundLight: "#7fae7a",
-  water: "#5cb8e6",
+  water: "#3a8bbd",
   // Clear Caribbean water over sand: pale by the shore, turquoise further out.
   shallows: "#a6eee4",
   lagoon: "#4fd3cf",
@@ -39,7 +39,7 @@ export const palette = {
   signTextDark: "#1f1408",
   signTextLight: "#ffffff",
   foam: "#ffffff",
-  ufoHull: "#b8c2cc",
+  ufoHull: "#4a5059",
   ufoDome: "#7dd3fc",
   ufoLight: "#fde047",
   ufoBeam: "#a3f7b5",

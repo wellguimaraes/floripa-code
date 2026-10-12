@@ -94,14 +94,12 @@ export function shallowsGeometry(radius: number): CircleGeometry {
   if (cached !== undefined) return cached;
   const disc = new CircleGeometry(radius, SEGMENTS);
   disc.rotateX(-Math.PI / 2);
-  const seed = hashString(key) % 1000;
+  const edge = shallowsEdge(radius);
   const positions = disc.getAttribute("position");
   for (let index = 1; index < positions.count; index += 1) {
     const x = positions.getX(index);
     const z = positions.getZ(index);
-    const angle = Math.atan2(x, z);
-    const wave = Math.sin(4 * angle + seed) * 0.5 + Math.sin(7 * angle + seed * 3) * 0.5;
-    const scale = 1 + (0.35 * wave) / radius;
+    const scale = 1 + edge(Math.atan2(x, z)) / radius;
     positions.setXYZ(index, x * scale, 0, z * scale);
   }
   disc.computeVertexNormals();
@@ -110,3 +108,13 @@ export function shallowsGeometry(radius: number): CircleGeometry {
 }
 
 const flatCache = new Map<string, CircleGeometry>();
+
+/**
+ * How far the edge of `shallowsGeometry(radius)` sits outside its circle at
+ * `angle` (measured from +z toward +x), so other shapes can follow it.
+ */
+export function shallowsEdge(radius: number): (angle: number) => number {
+  const seed = hashString(`shallows:${radius}`) % 1000;
+  return (angle) =>
+    0.35 * (Math.sin(4 * angle + seed) * 0.5 + Math.sin(7 * angle + seed * 3) * 0.5);
+}

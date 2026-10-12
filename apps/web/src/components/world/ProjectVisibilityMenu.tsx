@@ -7,7 +7,7 @@ import { useWorldVisibilityStore } from "./worldVisibilityStore";
 
 /**
  * Top bar menu that shows or hides each project's island. An eye button
- * opens a popover listing every project with its sign colour. A press
+ * that counts the shown projects opens a popover listing every project with its sign colour. A press
  * anywhere outside the menu, or Escape, closes it.
  */
 export function ProjectVisibilityMenu(props: {
@@ -48,13 +48,16 @@ export function ProjectVisibilityMenu(props: {
     <div ref={menuRef} className="relative">
       <Button
         variant="glass"
-        size="icon-sm"
-        aria-label="Show or hide projects"
+        size="sm"
+        aria-label={`Show or hide projects, ${shown} of ${props.projects.length} shown`}
         title="Show or hide projects"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
-        {shown < props.projects.length ? <EyeOffIcon /> : <EyeIcon />}
+        <EyeIcon />
+        <span className="tabular-nums">
+          {shown} of {props.projects.length}
+        </span>
       </Button>
       {open ? (
         <div className="absolute top-full right-0 mt-2 flex w-60 flex-col gap-0.5 rounded-xl border border-border/60 bg-popover/90 p-1.5 text-popover-foreground shadow-lg backdrop-blur">

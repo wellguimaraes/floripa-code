@@ -318,17 +318,51 @@ export const ChatHeader = memo(function ChatHeader({
       onContextMenu={handleHeaderContextMenu}
     >
       {worldLook !== null ? (
-        <Suspense fallback={<div className="h-11 w-8 shrink-0" />}>
-          <CharacterPortrait hue={worldLook.hue} hat={worldLook.hat} className="h-11 w-8" />
+        <Suspense fallback={<div className="w-8 shrink-0 self-stretch" />}>
+          <CharacterPortrait
+            hue={worldLook.hue}
+            hat={worldLook.hat}
+            // As tall as the chip and title beside it.
+            className="w-8 self-stretch"
+          />
         </Suspense>
       ) : null}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* The project title is often just a folder name, so the sidebar's
             label for it sits above, matching the sidebar row. */}
-        {activeProjectGroupLabel && activeProjectGroupLabel !== activeProjectName ? (
+        {worldLook === null &&
+        activeProjectGroupLabel &&
+        activeProjectGroupLabel !== activeProjectName ? (
           <span className="min-w-0 truncate text-xs leading-4 font-medium text-secondary-label">
             {activeProjectGroupLabel}
           </span>
+        ) : null}
+        {/* In the world, the project shows as its island's sign: a chip in the
+            sign's colour above the title, which then stands alone. */}
+        {worldLook !== null && activeProject ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label={`New thread in ${activeProjectName}`}
+                  onClick={onNewThreadInProject}
+                  className={cn(
+                    "mb-0.5 max-w-full cursor-pointer self-start truncate rounded-md px-1.5",
+                    "text-xs leading-5 font-semibold",
+                    "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                  )}
+                  style={{
+                    backgroundColor: worldLook.plate.background,
+                    color: worldLook.plate.text,
+                  }}
+                />
+              }
+            >
+              {activeProjectName}
+            </TooltipTrigger>
+            <TooltipPopup side="top">New thread in {activeProjectName}</TooltipPopup>
+          </Tooltip>
         ) : null}
         <WorkspaceBreadcrumb
           ariaLabel="Thread breadcrumb"
@@ -337,7 +371,7 @@ export const ChatHeader = memo(function ChatHeader({
           {/* The project always leads the header: knowing which project a
             thread lives in is priority zero, and the thread title alone
             doesn't answer it. */}
-          {activeProject ? (
+          {worldLook === null && activeProject ? (
             <>
               <WorkspaceBreadcrumbItem className="shrink">
                 <Tooltip>
@@ -364,7 +398,7 @@ export const ChatHeader = memo(function ChatHeader({
               </WorkspaceBreadcrumbSeparator>
             </>
           ) : null}
-          {parentThreadLink ? (
+          {worldLook === null && parentThreadLink ? (
             <>
               <WorkspaceBreadcrumbItem>
                 <Tooltip>
@@ -403,7 +437,11 @@ export const ChatHeader = memo(function ChatHeader({
               <input
                 autoFocus
                 aria-label="Thread title"
-                className="min-w-0 flex-1 rounded-sm bg-transparent text-sm font-medium text-foreground outline-none ring-1 ring-inset ring-ring/50 focus:ring-ring"
+                className={cn(
+                  "min-w-0 flex-1 rounded-sm bg-transparent text-sm font-medium text-foreground outline-none ring-1 ring-inset ring-ring/50 focus:ring-ring",
+                  // The world's header leads with the title alone, so it reads larger.
+                  worldLook !== null && "text-base",
+                )}
                 defaultValue={renamingTitle}
                 onBlur={(event) => {
                   if (renameCommittedRef.current) return;
@@ -438,7 +476,9 @@ export const ChatHeader = memo(function ChatHeader({
                   }
                 >
                   <h2 className="min-w-0">
-                    <WorkspaceBreadcrumbText>{activeThreadTitle}</WorkspaceBreadcrumbText>
+                    <WorkspaceBreadcrumbText className={cn(worldLook !== null && "text-base")}>
+                      {activeThreadTitle}
+                    </WorkspaceBreadcrumbText>
                   </h2>
                   <ChevronDownIcon
                     aria-hidden
@@ -453,7 +493,9 @@ export const ChatHeader = memo(function ChatHeader({
                 <TooltipTrigger
                   render={<h2 aria-label={activeThreadTitle} className="min-w-0 flex-1" />}
                 >
-                  <WorkspaceBreadcrumbText>{activeThreadTitle}</WorkspaceBreadcrumbText>
+                  <WorkspaceBreadcrumbText className={cn(worldLook !== null && "text-base")}>
+                    {activeThreadTitle}
+                  </WorkspaceBreadcrumbText>
                 </TooltipTrigger>
                 <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
               </Tooltip>

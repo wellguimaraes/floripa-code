@@ -31,5 +31,4 @@ export const geometry = {
   fin: new ConeGeometry(1, 1, 3),
   foliage: new IcosahedronGeometry(1, 0),
   plane: new PlaneGeometry(1, 1),
-  ripple: new RingGeometry(0.95, 1, 64),
 };

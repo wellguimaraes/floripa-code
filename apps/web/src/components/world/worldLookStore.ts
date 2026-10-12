@@ -5,6 +5,8 @@ export interface WorldLook {
   readonly hue: number;
   /** The worktree's hat; null in the project checkout. */
   readonly hat: number | null;
+  /** The island sign's colour, and the text colour that reads on it. */
+  readonly plate: { readonly background: string; readonly text: string };
 }
 
 interface WorldLookState {
@@ -23,5 +25,6 @@ export const useWorldLookStore = create<WorldLookState>()((set) => ({
 export function useWorldLook(threadKey: string): WorldLook | null {
   const hue = useWorldLookStore((state) => state.looks.get(threadKey)?.hue);
   const hat = useWorldLookStore((state) => state.looks.get(threadKey)?.hat ?? null);
-  return hue === undefined ? null : { hue, hat };
+  const plate = useWorldLookStore((state) => state.looks.get(threadKey)?.plate);
+  return hue === undefined || plate === undefined ? null : { hue, hat, plate };
 }
