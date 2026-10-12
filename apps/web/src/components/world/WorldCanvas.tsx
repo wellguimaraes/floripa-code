@@ -77,12 +77,14 @@ export default function WorldCanvas(props: {
   readonly selectedKey: string | null;
   /** Opens a thread's full chat; settles once the chat shows it. */
   readonly onExpand: (ref: ScopedThreadRef) => Promise<void>;
+  /** Closes the chat panel. */
+  readonly onCloseChat: () => void;
   /** The chat panel, if open; framing the islands keeps clear of it. */
   readonly panel: () => HTMLElement | null;
   /** The top bar spot where the project visibility menu goes. */
   readonly toolbar: HTMLElement | null;
 }) {
-  const { definitions, selectedKey, onExpand, panel, toolbar } = props;
+  const { definitions, selectedKey, onExpand, onCloseChat, panel, toolbar } = props;
   if (import.meta.env.DEV) definitions.forEach(assertValidDefinition);
   // Rules, pacing and the archipelago's settings are the same at every size.
   const definition = definitions[0]!;
@@ -340,6 +342,15 @@ export default function WorldCanvas(props: {
       { id: abductionId.current, islandKeys: [...islandKeys], figures },
     ]);
   };
+  /** Archived characters leave, and their chat closes with them. */
+  const leave = (characters: ReadonlyArray<WorldCharacter>) => {
+    abduct(characters);
+    if (characters.some((c) => c.facts.key === chatKey)) {
+      dropPendingChat();
+      setSwitchingTo(null);
+      onCloseChat();
+    }
+  };
   const abducted = new Set(abductions.flatMap((a) => a.figures.map((figure) => figure.key)));
   // An island keeps its colour while a saucer is still carrying its last agents away.
   const leaving = new Set(abductions.flatMap((a) => a.islandKeys));
@@ -355,7 +366,7 @@ export default function WorldCanvas(props: {
         result: await archiveThread(character.facts.ref),
       })),
     );
-    abduct(results.filter((r) => r.result._tag === "Success").map((r) => r.character));
+    leave(results.filter((r) => r.result._tag === "Success").map((r) => r.character));
     const failed = results.flatMap(({ character, result }) =>
       result._tag === "Failure" ? [{ character, error: squashAtomCommandFailure(result) }] : [],
     );
@@ -539,16 +550,22 @@ export default function WorldCanvas(props: {
 
   // Hovering an island tags every character on it with its thread title;
   // the one under the pointer comes to the front. Clicking it shows the full title.
+  // The character whose chat is open keeps its tag, a bigger one, hovered or not.
   const [hoveredIsland, setHoveredIsland] = useState<string | null>(null);
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
   const onHover = (character: WorldCharacter, point: { x: number; y: number } | null) => {
     if (point !== null) setHoveredKey(character.facts.key);
     else setHoveredKey((current) => (current === character.facts.key ? null : current));
   };
-  const tagged =
-    islands
-      .find((island) => island.key === hoveredIsland)
-      ?.characters.filter((character) => character.facts.key !== bubble?.facts.key) ?? [];
+  const chatCharacter = islands
+    .flatMap((island) => island.characters)
+    .find((character) => character.facts.key === chatKey);
+  const tagged = [
+    ...(islands.find((island) => island.key === hoveredIsland)?.characters ?? []),
+    ...(chatCharacter !== undefined && chatCharacter.facts.projectKey !== hoveredIsland
+      ? [chatCharacter]
+      : []),
+  ].filter((character) => character.facts.key !== bubble?.facts.key);
   // Empty spots on the hovered island get a start button for a new agent.
   const [newAgent, setNewAgent] = useState<{
     readonly islandKey: string;
@@ -834,7 +851,7 @@ export default function WorldCanvas(props: {
               onExpand={() => openChat(bubble)}
               onArchived={() => {
                 setBubbleKey(null);
-                abduct([bubble]);
+                leave([bubble]);
               }}
             />
           </div>
@@ -938,6 +955,7 @@ export default function WorldCanvas(props: {
         : null}
       {tagged.map((character) => {
         const focused = character.facts.key === hoveredKey;
+        const chatting = character.facts.key === chatKey;
         return (
           // Positioned by FollowTracker on drawn frames, above the character's head.
           <div
@@ -946,9 +964,12 @@ export default function WorldCanvas(props: {
               if (tag === null) tagRefs.current.delete(character.facts.key);
               else tagRefs.current.set(character.facts.key, tag);
             }}
-            className={cn("pointer-events-none absolute top-0 left-0", focused ? "z-20" : "z-10")}
+            className={cn(
+              "pointer-events-none absolute top-0 left-0",
+              focused || chatting ? "z-20" : "z-10",
+            )}
           >
-            <CharacterTag facts={character.facts} focused={focused} />
+            <CharacterTag facts={character.facts} focused={focused} chatting={chatting} />
           </div>
         );
       })}
@@ -957,8 +978,13 @@ export default function WorldCanvas(props: {
 }
 
 /** A resting agent's tag also says how long ago it last replied, kept current while shown. */
-function CharacterTag(props: { readonly facts: CharacterFacts; readonly focused: boolean }) {
-  const { facts, focused } = props;
+function CharacterTag(props: {
+  readonly facts: CharacterFacts;
+  readonly focused: boolean;
+  /** Its chat is open: bigger, and solid, so it is easy to find. */
+  readonly chatting: boolean;
+}) {
+  const { facts, focused, chatting } = props;
   const resting = isResting(facts);
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
@@ -971,9 +997,12 @@ function CharacterTag(props: { readonly facts: CharacterFacts; readonly focused:
   return (
     <div
       className={cn(
-        "-translate-x-1/2 -translate-y-full flex max-w-36 items-center gap-1 rounded px-1.5 py-0.5",
-        "text-3xs leading-tight shadow-sm",
-        focused ? "bg-popover text-popover-foreground" : "bg-popover/80 text-popover-foreground/90",
+        "-translate-x-1/2 -translate-y-full flex items-center gap-1 rounded leading-tight shadow-sm",
+        !chatting && "max-w-36 px-1.5 py-0.5 text-3xs",
+        chatting && "max-w-56 gap-1.5 rounded-md px-2.5 py-1 text-sm font-medium shadow-md",
+        focused || chatting
+          ? "bg-popover text-popover-foreground"
+          : "bg-popover/80 text-popover-foreground/90",
       )}
     >
       <span className="truncate">{facts.title || "Untitled thread"}</span>
@@ -982,6 +1011,7 @@ function CharacterTag(props: { readonly facts: CharacterFacts; readonly focused:
         <span
           className={cn(
             "size-1.5 shrink-0 rounded-full",
+            chatting && "size-2",
             elapsedMs <= 5 * 60_000 && "bg-red-500",
             elapsedMs > 5 * 60_000 && elapsedMs <= 60 * 60_000 && "bg-yellow-400",
             elapsedMs > 60 * 60_000 && "bg-gray-400",

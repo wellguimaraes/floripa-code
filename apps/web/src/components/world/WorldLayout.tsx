@@ -33,8 +33,6 @@ const CHAT_MIN_WIDTH = 400;
 const CHAT_DEFAULT_WIDTH = 720;
 // Room left of the chat for its close button (4rem) and right of it for the margin (0.75rem).
 const CHAT_GUTTERS = 76;
-// Two Escapes this close together inside the chat close it.
-const DOUBLE_ESCAPE_MS = 500;
 
 function readChatMaxWidth(): number {
   if (typeof window === "undefined") return CHAT_DEFAULT_WIDTH;
@@ -110,25 +108,13 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
 
   useEffect(() => {
     if (target === null) return;
-    // Escape inside the chat belongs to the chat (menus, composer) unless pressed twice in a row
-    // with nothing in the chat taking it; outside it closes the panel at once.
-    let lastFreeEscapeAt = Number.NEGATIVE_INFINITY;
+    // Escape closes the panel unless something in it (a menu, picker, dialog) took it first.
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.isComposing || event.repeat) return;
       // The message editor (ProseMirror) prevents every Escape; its menus also stop the event,
       // so one that gets here from the editor was not used.
       const fromEditor = event.target instanceof Element && event.target.closest(".ProseMirror");
-      if (event.defaultPrevented && !fromEditor) {
-        lastFreeEscapeAt = Number.NEGATIVE_INFINITY;
-        return;
-      }
-      if (event.target instanceof Node && panelRef.current?.contains(event.target)) {
-        const now = event.timeStamp;
-        if (now - lastFreeEscapeAt > DOUBLE_ESCAPE_MS) {
-          lastFreeEscapeAt = now;
-          return;
-        }
-      }
+      if (event.defaultPrevented && !fromEditor) return;
       event.preventDefault();
       void navigate({ to: "/" });
     };
@@ -144,6 +130,7 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
             definitions={islandWorlds}
             selectedKey={selectedKey}
             onExpand={openThread}
+            onCloseChat={closePanel}
             panel={readPanel}
             toolbar={toolbar}
           />
