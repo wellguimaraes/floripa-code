@@ -21,9 +21,8 @@ import { RightPanelResizeHandle } from "../preview/RightPanelResizeHandle";
 import { ThreadRouteView } from "../ThreadRouteView";
 import { Button } from "../ui/button";
 import { SidebarInset, useSidebar, useSidebarVisibility } from "../ui/sidebar";
+import { ContrastSlider } from "./ContrastSlider";
 import { islandWorlds } from "./definitions/island";
-import { palette } from "./scene/palette";
-import { useWorldLook } from "./worldLookStore";
 import { useWorldModeStore } from "./worldModeStore";
 
 // three.js and the scene load only when someone opens the world.
@@ -69,7 +68,6 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
   const [toolbar, setToolbar] = useState<HTMLDivElement | null>(null);
   const chatWidth = useChatWidth();
   const selectedKey = target?.kind === "server" ? scopedThreadKey(target.threadRef) : null;
-  const look = useWorldLook(selectedKey ?? "");
 
   const openThread = (ref: ScopedThreadRef) =>
     navigate({ to: "/$environmentId/$threadId", params: buildThreadRouteParams(ref) });
@@ -130,7 +128,6 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
             definitions={islandWorlds}
             selectedKey={selectedKey}
             onExpand={openThread}
-            onCloseChat={closePanel}
             panel={readPanel}
             toolbar={toolbar}
           />
@@ -139,11 +136,16 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
       <div
         className={cn(
           // Stacked over the chat panel so toolbar popovers drop down on top of it.
-          "pointer-events-none absolute inset-x-0 top-0 z-10 flex h-[var(--workspace-topbar-height)] items-center justify-end gap-2 px-3",
+          "pointer-events-none absolute inset-x-0 top-0 z-10 flex h-[var(--workspace-topbar-height)] items-center gap-2 pr-3",
           isElectron && "drag-region",
         )}
+        // Clears the window controls and the folded sidebar toggle on the left.
+        style={{ paddingLeft: "var(--workspace-titlebar-content-left)" }}
       >
-        <div ref={setToolbar} className="pointer-events-auto flex items-center gap-2" />
+        <div className="pointer-events-auto flex items-center gap-2">
+          <ContrastSlider />
+          <div ref={setToolbar} className="flex items-center gap-2" />
+        </div>
       </div>
       {target !== null ? (
         <div
@@ -158,27 +160,25 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
             } as CSSProperties
           }
         >
-          <RightPanelResizeHandle handlers={chatWidth.handlers} />
+          <RightPanelResizeHandle handlers={chatWidth.handlers} showIndicator={false} />
           <div className="absolute top-1 -left-10">
             <Button variant="glass" size="icon-sm" aria-label="Close chat" onClick={closePanel}>
               <XIcon />
             </Button>
           </div>
-          {/* Framed in the character's colour, so it is clear whose chat this is; the
-              white outline keeps the frame visible against the sea and dark themes.
-              Layout containment makes the frame the anchor for the chat's fixed
-              titlebar controls, so its panel toggles sit at the header's right end. */}
+          {/* Layout containment makes the frame the anchor for the chat's fixed
+              titlebar controls. The chat's header is a footer here, so its panel
+              toggles sit at the footer's right end. */}
           <div
-            className="flex size-full flex-col overflow-hidden rounded-xl border-6 border-border bg-background shadow-xl outline-2 outline-white [contain:layout]"
+            className="flex size-full flex-col overflow-hidden rounded-xl bg-background shadow-xl [contain:layout]"
             style={
               {
-                "--workspace-controls-top": "0px",
+                "--workspace-controls-top": "calc(100% - var(--workspace-topbar-height))",
                 // Taller than the app's bar, so the portrait and the project chip over the
                 // title get room to breathe.
                 "--workspace-topbar-height": "68px",
                 "--workspace-controls-right": "0.75rem",
                 "--workspace-native-controls-inset": "0px",
-                ...(look === null ? {} : { borderColor: palette.families[look.hue]?.base }),
               } as CSSProperties
             }
           >

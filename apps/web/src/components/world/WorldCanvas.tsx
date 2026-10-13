@@ -1,10 +1,19 @@
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { Canvas, type ThreeEvent, useFrame, useThree } from "@react-three/fiber";
 import { PlusIcon } from "lucide-react";
 import { scopedProjectKey } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { type Object3D, OrthographicCamera, Plane, Ray, Raycaster, Vector2, Vector3 } from "three";
+import {
+  CustomToneMapping,
+  type Object3D,
+  OrthographicCamera,
+  Plane,
+  Ray,
+  Raycaster,
+  Vector2,
+  Vector3,
+} from "three";
 import { MapControls } from "three/examples/jsm/controls/MapControls.js";
 
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -42,11 +51,12 @@ import { islandObstacles } from "./engine/route";
 import type { SlotRequest } from "./engine/slots";
 import type { WorldCharacter } from "./engine/world";
 import { type AbductedFigure, Abduction } from "./scene/Abduction";
-import { Character } from "./scene/Character";
+import { BALLOON_NAME, BALLOON_PX, Character, HITBOX_NAME } from "./scene/Character";
 import { geometry } from "./scene/geometries";
 import { HAT_COUNT } from "./scene/Hat";
 import { Island, type FurnitureSpot } from "./scene/Island";
 import { afterPaint, whenIdle } from "./scene/frames";
+import { SceneContrast } from "./scene/contrast";
 import { FadedContext, toFaded } from "./scene/lighting";
 import { palette } from "./scene/palette";
 import { SharkSightings } from "./scene/Sharks";
@@ -62,6 +72,7 @@ import { useWorldVisibilityStore } from "./worldVisibilityStore";
 import { AddProjectButton } from "./AddProjectButton";
 import { IslandArrangementMenu } from "./IslandArrangementMenu";
 import { ProjectVisibilityMenu } from "./ProjectVisibilityMenu";
+import { RestoreArchivedDialog } from "./RestoreArchivedDialog";
 import { layoutTags, type ScreenPoint } from "./scene/tagLayout";
 import { isStoppable, WorldBubble } from "./WorldBubble";
 import { voiceInputSupported } from "./useVoiceInput";
@@ -77,14 +88,12 @@ export default function WorldCanvas(props: {
   readonly selectedKey: string | null;
   /** Opens a thread's full chat; settles once the chat shows it. */
   readonly onExpand: (ref: ScopedThreadRef) => Promise<void>;
-  /** Closes the chat panel. */
-  readonly onCloseChat: () => void;
   /** The chat panel, if open; framing the islands keeps clear of it. */
   readonly panel: () => HTMLElement | null;
   /** The top bar spot where the project visibility menu goes. */
   readonly toolbar: HTMLElement | null;
 }) {
-  const { definitions, selectedKey, onExpand, onCloseChat, panel, toolbar } = props;
+  const { definitions, selectedKey, onExpand, panel, toolbar } = props;
   if (import.meta.env.DEV) definitions.forEach(assertValidDefinition);
   // Rules, pacing and the archipelago's settings are the same at every size.
   const definition = definitions[0]!;
@@ -99,7 +108,7 @@ export default function WorldCanvas(props: {
   // One island per sidebar project group, so clones of the same repository
   // share an island under the same name the sidebar shows.
   const groupingSettings = useClientSettings(selectProjectGroupingSettings);
-  const { islandOf, projectOrder, projectTitles, projectRefs } = useMemo(() => {
+  const { islandOf, projectOrder, projectTitles, projectRefs, projectMembers } = useMemo(() => {
     const groups = buildProjectGroups({ projects, settings: groupingSettings });
     const islandOf = new Map<string, string>();
     for (const group of groups) {
@@ -124,6 +133,7 @@ export default function WorldCanvas(props: {
           { environmentId: group.representative.environmentId, projectId: group.representative.id },
         ]),
       ),
+      projectMembers: new Map(sorted.map((group) => [group.key, group.memberProjectRefs])),
     };
   }, [projects, groupingSettings]);
   const islandFacts = useMemo(
@@ -186,12 +196,30 @@ export default function WorldCanvas(props: {
   );
   // The open chat's header shows its character, so it needs the same look.
   const setLooks = useWorldLookStore((state) => state.setLooks);
+  const recolorFamily = useCallback(
+    (
+      island: { readonly hues: ReadonlyMap<string, number> } | undefined,
+      seed: string,
+      hue: number,
+    ) =>
+      // A family already wearing it on this island steps aside to a free colour.
+      chooseHue(
+        seed,
+        hue,
+        [...(island?.hues ?? [])].flatMap(([other, worn]) => (worn === hue ? [other] : [])),
+      ),
+    [chooseHue],
+  );
   useEffect(() => {
     const looks = new Map<string, WorldLook>();
+    // The chat header's colour picker finds its character's family by thread key.
+    const families = new Map<string, { readonly island: WorldIsland; readonly seed: string }>();
     for (const island of islands) {
       const plate = palette.plates[hashString(island.key) % palette.plates.length]!;
       for (const { facts: character } of island.characters) {
+        families.set(character.key, { island, seed: character.lookSeed });
         looks.set(character.key, {
+          kid: character.kid,
           plate: { background: plate, text: signTextColor(plate) },
           hue: island.hues.get(character.lookSeed) ?? 0,
           hat:
@@ -201,10 +229,27 @@ export default function WorldCanvas(props: {
         });
       }
     }
-    setLooks(looks);
-  }, [islands, setLooks]);
-  useEffect(() => () => setLooks(new Map()), [setLooks]);
+    setLooks(looks, (threadKey, hue) => {
+      const family = families.get(threadKey);
+      if (family !== undefined) recolorFamily(family.island, family.seed, hue);
+    });
+  }, [islands, setLooks, recolorFamily]);
+  useEffect(() => () => setLooks(new Map(), null), [setLooks]);
   const bounds = useMemo(() => archipelagoBounds(islands), [islands]);
+  // Overlays above a hat sit higher, so the hat stays in view.
+  const hatted = useMemo(
+    () =>
+      new Set(
+        islands.flatMap((island) =>
+          island.characters.flatMap(({ facts: character }) =>
+            character.worktreePath !== null && island.hats.has(character.worktreePath)
+              ? [character.key]
+              : [],
+          ),
+        ),
+      ),
+    [islands],
+  );
   const obstacles = useMemo(
     () => new Map(definitions.map((sized) => [sized, islandObstacles(sized)])),
     [definitions],
@@ -315,7 +360,7 @@ export default function WorldCanvas(props: {
     }>
   >([]);
   const abductionId = useRef(0);
-  /** One saucer takes everyone archived together. */
+  /** One saucer takes everyone archived together. An open chat stays open. */
   const abduct = (characters: ReadonlyArray<WorldCharacter>) => {
     const islandKeys = new Set<string>();
     const figures = characters.flatMap((character): AbductedFigure[] => {
@@ -342,15 +387,6 @@ export default function WorldCanvas(props: {
       { id: abductionId.current, islandKeys: [...islandKeys], figures },
     ]);
   };
-  /** Archived characters leave, and their chat closes with them. */
-  const leave = (characters: ReadonlyArray<WorldCharacter>) => {
-    abduct(characters);
-    if (characters.some((c) => c.facts.key === chatKey)) {
-      dropPendingChat();
-      setSwitchingTo(null);
-      onCloseChat();
-    }
-  };
   const abducted = new Set(abductions.flatMap((a) => a.figures.map((figure) => figure.key)));
   // An island keeps its colour while a saucer is still carrying its last agents away.
   const leaving = new Set(abductions.flatMap((a) => a.islandKeys));
@@ -366,7 +402,7 @@ export default function WorldCanvas(props: {
         result: await archiveThread(character.facts.ref),
       })),
     );
-    leave(results.filter((r) => r.result._tag === "Success").map((r) => r.character));
+    abduct(results.filter((r) => r.result._tag === "Success").map((r) => r.character));
     const failed = results.flatMap(({ character, result }) =>
       result._tag === "Failure" ? [{ character, error: squashAtomCommandFailure(result) }] : [],
     );
@@ -387,6 +423,7 @@ export default function WorldCanvas(props: {
   };
 
   const [zoomTo, setZoomTo] = useState<{ readonly key: string } | null>(null);
+  const [restoringOn, setRestoringOn] = useState<string | null>(null);
   const showIslandMenu = async (key: string, point: { x: number; y: number }) => {
     const api = readLocalApi();
     if (api === undefined) return;
@@ -409,10 +446,11 @@ export default function WorldCanvas(props: {
         { id: "zoom", label: "Zoom to this island", separatorBefore: true },
         {
           id: "archive-idle",
-          label: `Archive idle agents (${idle.length})`,
+          label: `Archive ${idle.length} idle ${idle.length === 1 ? "agent" : "agents"}`,
           disabled: idle.length === 0,
           separatorBefore: true,
         },
+        { id: "restore-archived", label: "Restore archived agent…" },
       ],
       point,
     );
@@ -422,6 +460,7 @@ export default function WorldCanvas(props: {
     else if (clicked === "shrink") setIslandSize(key, size - 1);
     else if (clicked === "zoom") setZoomTo({ key });
     else if (clicked === "archive-idle") void archiveAll(idle);
+    else if (clicked === "restore-archived") setRestoringOn(key);
   };
 
   const interruptTurn = useOrchestrationCommand(threadEnvironment.interruptTurn, {
@@ -560,6 +599,20 @@ export default function WorldCanvas(props: {
   const chatCharacter = islands
     .flatMap((island) => island.characters)
     .find((character) => character.facts.key === chatKey);
+  // The chat header's archive button goes through archiveAll, so the agent leaves by saucer.
+  const archiveChat = useRef(async () => {});
+  useEffect(() => {
+    archiveChat.current = async () => {
+      if (chatCharacter !== undefined) await archiveAll([chatCharacter]);
+    };
+  });
+  const chatCharacterKey = chatCharacter?.facts.key ?? null;
+  useEffect(() => {
+    if (chatCharacterKey === null) return;
+    const { setArchiveChatAgent } = useWorldModeStore.getState();
+    setArchiveChatAgent(() => archiveChat.current());
+    return () => setArchiveChatAgent(null);
+  }, [archiveChat, chatCharacterKey]);
   const tagged = [
     ...(islands.find((island) => island.key === hoveredIsland)?.characters ?? []),
     ...(chatCharacter !== undefined && chatCharacter.facts.projectKey !== hoveredIsland
@@ -646,6 +699,11 @@ export default function WorldCanvas(props: {
     }
   }, []);
   const containerRef = useRef<HTMLDivElement>(null);
+  // The map zooms on wheel; overlays pass it on so that keeps working under the pointer.
+  const forwardWheel = (event: React.WheelEvent) =>
+    containerRef.current
+      ?.querySelector("canvas")
+      ?.dispatchEvent(new WheelEvent("wheel", event.nativeEvent));
   // A press anywhere outside the bubble closes it. The canvas decides for
   // itself: a character click toggles or switches, empty ground closes.
   const bubbleOpen = bubbleKey !== null;
@@ -717,7 +775,8 @@ export default function WorldCanvas(props: {
       <Canvas
         frameloop="demand"
         dpr={[1, 1.5]}
-        gl={{ antialias: true }}
+        // CustomToneMapping is ACES plus the contrast slider; see scene/contrast.
+        gl={{ antialias: true, toneMapping: CustomToneMapping }}
         orthographic
         camera={{ position: [18, 20, 18], zoom: 42, near: -1000, far: 2000 }}
         onPointerDown={(event) => {
@@ -725,7 +784,7 @@ export default function WorldCanvas(props: {
         }}
         onPointerMissed={clickGround}
       >
-        <color attach="background" args={[palette.sky]} />
+        <SceneContrast />
         <WorldControls
           bounds={bounds}
           islands={islandSpots}
@@ -739,9 +798,15 @@ export default function WorldCanvas(props: {
         <FollowTracker
           roots={roots}
           keys={bubble === null ? [] : [bubble.facts.key]}
+          hatted={hatted}
           onMove={moveBubble}
         />
-        <FollowTracker roots={roots} keys={tagged.map((c) => c.facts.key)} onMove={moveTags} />
+        <FollowTracker
+          roots={roots}
+          keys={tagged.map((c) => c.facts.key)}
+          hatted={hatted}
+          onMove={moveTags}
+        />
         <PointTracker points={newAgentSpots} onMove={moveSpots} />
         <PointTracker
           points={newAgent === null ? [] : [{ key: "new-agent", position: newAgent.position }]}
@@ -769,9 +834,12 @@ export default function WorldCanvas(props: {
             <FadedContext key={island.key} value={faded}>
               <group
                 position={island.offset as [number, number, number]}
-                // Characters stop their own clicks, so these are the ground, props and sign.
-                onClick={(event) => clickGround(event.nativeEvent)}
+                // A prop or limb in front of a character is hit first; the character still wins.
+                onClick={(event) => {
+                  if (!hitsCharacter(event)) clickGround(event.nativeEvent);
+                }}
                 onContextMenu={(event) => {
+                  if (hitsCharacter(event)) return;
                   event.stopPropagation();
                   event.nativeEvent.preventDefault();
                   void showIslandMenu(island.key, {
@@ -837,21 +905,12 @@ export default function WorldCanvas(props: {
               facts={bubble.facts}
               listen={listenKey === bubble.facts.key}
               hue={bubbleIsland?.hues.get(bubble.facts.lookSeed) ?? 0}
-              onHueChange={(hue) =>
-                // A family already wearing it on this island steps aside to a free colour.
-                chooseHue(
-                  bubble.facts.lookSeed,
-                  hue,
-                  [...(bubbleIsland?.hues ?? [])].flatMap(([seed, worn]) =>
-                    worn === hue ? [seed] : [],
-                  ),
-                )
-              }
+              onHueChange={(hue) => recolorFamily(bubbleIsland, bubble.facts.lookSeed, hue)}
               onClose={() => setBubbleKey(null)}
               onExpand={() => openChat(bubble)}
               onArchived={() => {
                 setBubbleKey(null);
-                leave([bubble]);
+                abduct([bubble]);
               }}
             />
           </div>
@@ -868,13 +927,9 @@ export default function WorldCanvas(props: {
           }}
           aria-label={`Start a new agent on ${projectTitles.get(spot.islandKey) ?? "this island"}`}
           // Under the name tags and popovers: a pile sits right below a miner's head.
-          className="invisible absolute top-0 left-0 z-0"
-          // The map zooms on wheel; keep that working with the pointer on a button.
-          onWheel={(event) =>
-            containerRef.current
-              ?.querySelector("canvas")
-              ?.dispatchEvent(new WheelEvent("wheel", event.nativeEvent))
-          }
+          // Only the circle takes the pointer; the button's own box sits off it.
+          className="pointer-events-none invisible absolute top-0 left-0 z-0"
+          onWheel={forwardWheel}
           onClick={() => {
             setBubbleKey(null);
             newAgentDraft.current = "";
@@ -885,7 +940,7 @@ export default function WorldCanvas(props: {
             });
           }}
         >
-          <span className="flex size-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md ring-2 ring-background transition-transform hover:scale-110">
+          <span className="pointer-events-auto flex size-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md ring-2 ring-background transition-transform hover:scale-110">
             <PlusIcon className="size-3.5" />
           </span>
         </button>
@@ -937,10 +992,18 @@ export default function WorldCanvas(props: {
         onPick={startOnIsland}
         onClose={() => setPickingProject(false)}
       />
+      {restoringOn !== null ? (
+        <RestoreArchivedDialog
+          title={projectTitles.get(restoringOn) ?? "this island"}
+          color={palette.plates[hashString(restoringOn) % palette.plates.length]!}
+          projectRefs={projectMembers.get(restoringOn) ?? []}
+          onClose={() => setRestoringOn(null)}
+        />
+      ) : null}
       {toolbar !== null
         ? createPortal(
             <>
-              <AddProjectButton />
+              <AddProjectButton islandOf={islandOf} />
               <IslandArrangementMenu />
               <ProjectVisibilityMenu
                 projects={projectOrder.map((key) => ({
@@ -969,7 +1032,26 @@ export default function WorldCanvas(props: {
               focused || chatting ? "z-20" : "z-10",
             )}
           >
-            <CharacterTag facts={character.facts} focused={focused} chatting={chatting} />
+            {/* Clicks, hovers and right-clicks on the tag act as they would on the character. */}
+            <CharacterTag
+              facts={character.facts}
+              focused={focused}
+              chatting={chatting}
+              onPointerEnter={() => setHoveredKey(character.facts.key)}
+              onPointerLeave={() =>
+                setHoveredKey((current) => (current === character.facts.key ? null : current))
+              }
+              onWheel={forwardWheel}
+              onClick={(event) => {
+                if (event.altKey) openChat(character);
+                else if (event.metaKey || event.ctrlKey) togglePicked(character);
+                else toggleBubble(character);
+              }}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                void showMenu(character, { x: event.clientX, y: event.clientY });
+              }}
+            />
           </div>
         );
       })}
@@ -983,8 +1065,13 @@ function CharacterTag(props: {
   readonly focused: boolean;
   /** Its chat is open: bigger, and solid, so it is easy to find. */
   readonly chatting: boolean;
+  readonly onPointerEnter: () => void;
+  readonly onPointerLeave: () => void;
+  readonly onWheel: (event: React.WheelEvent) => void;
+  readonly onClick: (event: React.MouseEvent) => void;
+  readonly onContextMenu: (event: React.MouseEvent) => void;
 }) {
-  const { facts, focused, chatting } = props;
+  const { facts, focused, chatting, ...handlers } = props;
   const resting = isResting(facts);
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
@@ -995,9 +1082,11 @@ function CharacterTag(props: {
   const elapsed = resting ? formatElapsedDurationLabel(facts.lastReplyAt, nowMs) : "";
   const elapsedMs = nowMs - Date.parse(facts.lastReplyAt);
   return (
-    <div
+    <button
+      type="button"
+      {...handlers}
       className={cn(
-        "-translate-x-1/2 -translate-y-full flex items-center gap-1 rounded leading-tight shadow-sm",
+        "-translate-x-1/2 -translate-y-full pointer-events-auto flex cursor-pointer items-center gap-1 rounded leading-tight shadow-sm",
         !chatting && "max-w-36 px-1.5 py-0.5 text-3xs",
         chatting && "max-w-56 gap-1.5 rounded-md px-2.5 py-1 text-sm font-medium shadow-md",
         focused || chatting
@@ -1023,27 +1112,42 @@ function CharacterTag(props: {
           {elapsed === "just now" ? "now" : elapsed}
         </span>
       ) : null}
-    </div>
+    </button>
+  );
+}
+
+/** Whether a pointer event on an island also went through a character's hitbox or balloon. */
+function hitsCharacter(event: ThreeEvent<MouseEvent>): boolean {
+  return event.intersections.some(
+    (hit) => hit.object.name === HITBOX_NAME || hit.object.name === BALLOON_NAME,
   );
 }
 
 const FOLLOW_HEIGHT = 1.6;
+/** Extra height over a hatted head: the tallest hats rise about this far. */
+const HAT_LIFT = 0.35;
+/** Room between a balloon's top and the overlay above it. */
+const BALLOON_CLEARANCE_PX = 4;
 const SPOT_MIN_SPACING_PX = 34;
-// Reused on every frame; trackers only touch it inside their frame callback.
+// Reused on every frame; trackers only touch them inside their frame callback.
 const followPoint = new Vector3();
+const balloonPoint = new Vector3();
 
 /**
- * Reports where characters are on screen, just above their heads, so DOM
- * overlays (the reply bubble, name tags) can follow them. Runs only on drawn
+ * Reports where characters are on screen, just above their heads (or their
+ * balloon, when they hold one), so DOM overlays (the reply bubble, name tags)
+ * can follow them. Runs only on drawn
  * frames, so a still scene costs nothing; a pan, zoom or walk moves them along.
  */
 function FollowTracker(props: {
   readonly roots: React.RefObject<Map<string, Object3D>>;
   readonly keys: ReadonlyArray<string>;
+  /** Characters wearing a hat, followed from higher up. */
+  readonly hatted: ReadonlySet<string>;
   /** Called once per drawn frame with every followed character's screen point. */
   readonly onMove: (points: ReadonlyArray<ScreenPoint>) => void;
 }) {
-  const { roots, keys, onMove } = props;
+  const { roots, keys, hatted, onMove } = props;
   const invalidate = useThree((state) => state.invalidate);
   const signature = keys.join("\u0000");
   useEffect(() => {
@@ -1056,13 +1160,16 @@ function FollowTracker(props: {
       const root = roots.current.get(key);
       if (root === undefined) continue;
       root.getWorldPosition(followPoint);
-      followPoint.y += FOLLOW_HEIGHT * root.scale.y;
+      followPoint.y += (FOLLOW_HEIGHT + (hatted.has(key) ? HAT_LIFT : 0)) * root.scale.y;
       followPoint.project(state.camera);
-      points.push({
-        key,
-        x: ((followPoint.x + 1) / 2) * state.size.width,
-        y: ((1 - followPoint.y) / 2) * state.size.height,
-      });
+      let y = ((1 - followPoint.y) / 2) * state.size.height;
+      const balloon = root.getObjectByName(BALLOON_NAME);
+      if (balloon !== undefined) {
+        balloon.getWorldPosition(balloonPoint).project(state.camera);
+        const top = ((1 - balloonPoint.y) / 2) * state.size.height - BALLOON_PX / 2;
+        y = Math.min(y, top - BALLOON_CLEARANCE_PX);
+      }
+      points.push({ key, x: ((followPoint.x + 1) / 2) * state.size.width, y });
     }
     onMove(points);
   });

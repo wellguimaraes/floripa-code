@@ -37,7 +37,7 @@ export function IslandArrangementMenu() {
       >
         <current.icon />
       </MenuTrigger>
-      <MenuPopup align="end">
+      <MenuPopup align="start">
         <MenuRadioGroup
           value={arrangement}
           onValueChange={(value) => setArrangement(value as IslandArrangement)}

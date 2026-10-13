@@ -16,6 +16,8 @@ import { useRouter } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
 
 import { resolveSnoozePresets } from "../components/Sidebar.snooze";
+import { worldThreadActionMenuItems } from "../components/world/worldThreadActionMenu";
+import { useWorldModeStore } from "../components/world/worldModeStore";
 import {
   buildThreadActionMenuItems,
   threadActionRequiresOperate,
@@ -73,8 +75,10 @@ export function useThreadActionMenu(input: {
   /** Fallback for "Copy path" when the thread has no worktree. */
   readonly projectCwd: string | null;
   readonly onStartRename: () => void;
+  /** The world's chat, which trims the menu to what the world has a place for. */
+  readonly world?: boolean;
 }) {
-  const { threadRef, projectCwd, onStartRename } = input;
+  const { threadRef, projectCwd, onStartRename, world = false } = input;
   const router = useRouter();
   const projects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -147,7 +151,7 @@ export function useThreadActionMenu(input: {
         };
         const isRegeneratingTitle = thread.titleRegeneration != null;
         const snoozePresets = resolveSnoozePresets(now, timestampFormat);
-        const items = buildThreadActionMenuItems({
+        const allItems = buildThreadActionMenuItems({
           canOperate: readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope),
           branch: thread.branch ?? null,
           projectFilter: null,
@@ -161,6 +165,7 @@ export function useThreadActionMenu(input: {
           supports,
           snoozePresets,
         });
+        const items = world ? worldThreadActionMenuItems(allItems) : allItems;
         const clicked = await settlePromise(() => api.contextMenu.show(items, position));
         if (clicked._tag === "Failure" || clicked.value === null) return;
         const action: ThreadActionMenuId = clicked.value;
@@ -246,8 +251,9 @@ export function useThreadActionMenu(input: {
           }
           case "auto-settle:enabled":
           case "auto-settle:disabled":
-            await reportFailure("Failed to update auto-settle", () =>
-              setThreadAutoSettle(threadRef, action === "auto-settle:enabled"),
+            await reportFailure(
+              world ? "Failed to update auto-archive" : "Failed to update auto-settle",
+              () => setThreadAutoSettle(threadRef, action === "auto-settle:enabled"),
             );
             return;
           case "rename":
@@ -294,6 +300,12 @@ export function useThreadActionMenu(input: {
                 api.dialogs.confirm(`Archive thread "${thread.title}"?`),
               );
               if (confirmed._tag === "Failure" || !confirmed.value) return;
+            }
+            // The world archives its way: the agent leaves by saucer and the chat closes.
+            const archiveChatAgent = world ? useWorldModeStore.getState().archiveChatAgent : null;
+            if (archiveChatAgent !== null) {
+              await archiveChatAgent();
+              return;
             }
             let didArchive = false;
             const result = await archiveThread(threadRef, {
@@ -366,6 +378,7 @@ export function useThreadActionMenu(input: {
       unsettleThread,
       unsnoozeThread,
       updateThreadMetadata,
+      world,
     ],
   );
 

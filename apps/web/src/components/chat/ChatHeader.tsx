@@ -11,9 +11,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { ChevronDownIcon } from "lucide-react";
 import {
-  lazy,
   memo,
-  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -42,9 +40,9 @@ import { observeResize } from "~/lib/observeResize";
 import { cn } from "~/lib/utils";
 import { useClientSettings } from "../../hooks/useSettings";
 import { useWorldLook } from "../world/worldLookStore";
+import { WorldChatCharacter, WorldRegenerateTitleButton } from "../world/WorldChatActions";
 
 // three.js loads only when the world shows this thread's character.
-const CharacterPortrait = lazy(() => import("../world/scene/CharacterPortrait"));
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -221,6 +219,7 @@ export const ChatHeader = memo(function ChatHeader({
     threadRef: isServerThread ? activeThreadRef : null,
     projectCwd: activeProjectCwd,
     onStartRename: startRename,
+    world: worldLook !== null,
   });
   const titleButtonRef = useRef<HTMLButtonElement | null>(null);
   const titleMenuTimerRef = useRef<number | null>(null);
@@ -322,14 +321,11 @@ export const ChatHeader = memo(function ChatHeader({
       onContextMenu={handleHeaderContextMenu}
     >
       {worldLook !== null ? (
-        <Suspense fallback={<div className="w-8 shrink-0 self-stretch" />}>
-          <CharacterPortrait
-            hue={worldLook.hue}
-            hat={worldLook.hat}
-            // As tall as the chip and title beside it.
-            className="w-8 self-stretch"
-          />
-        </Suspense>
+        <WorldChatCharacter
+          threadRef={isServerThread ? activeThreadRef : null}
+          hue={worldLook.hue}
+          hat={worldLook.hat}
+        />
       ) : null}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* The project title is often just a folder name, so the sidebar's
@@ -504,6 +500,9 @@ export const ChatHeader = memo(function ChatHeader({
                 <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
               </Tooltip>
             )}
+            {worldLook !== null && renamingTitle === null && isServerThread ? (
+              <WorldRegenerateTitleButton threadRef={activeThreadRef} />
+            ) : null}
           </WorkspaceBreadcrumbItem>
         </WorkspaceBreadcrumb>
       </div>

@@ -1,3 +1,4 @@
+import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -16,13 +17,18 @@ import { readEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
 import { toastManager } from "../ui/toast";
+import { useWorldVisibilityStore } from "./worldVisibilityStore";
 
 /**
  * Top bar button that adds a project to the world. It opens the system folder
  * picker and makes a project of the chosen folder, which then shows up as a new
  * island. Only the desktop app has a folder picker, so the browser shows nothing.
+ * Picking a project that is already there brings its island back if it was hidden.
  */
-export function AddProjectButton() {
+export function AddProjectButton(props: {
+  /** The island each project stands on, by scoped project key. */
+  readonly islandOf: ReadonlyMap<string, string>;
+}) {
   const environmentId = usePrimaryEnvironmentId();
   const projects = useProjects();
   const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
@@ -50,11 +56,11 @@ export function AddProjectButton() {
       cwd,
     );
     if (existing) {
-      toastManager.add({
-        type: "info",
-        title: "Project already added",
-        description: `${existing.title} already has an island.`,
-      });
+      const island = props.islandOf.get(
+        scopedProjectKey(scopeProjectRef(existing.environmentId, existing.id)),
+      );
+      const visibility = useWorldVisibilityStore.getState();
+      if (island !== undefined && visibility.hidden[island]) visibility.toggleHidden(island);
       return;
     }
     if (!readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)) {

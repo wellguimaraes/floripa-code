@@ -12,6 +12,12 @@ interface WorldModeState {
   /** Whether the new-agent shortcut's project picker is open; the world shows it. */
   readonly pickingProject: boolean;
   readonly setPickingProject: (picking: boolean) => void;
+  /**
+   * Archives the agent whose chat is open the world's way: its saucer exit, then the chat
+   * closes. Set while the world shows that agent.
+   */
+  readonly archiveChatAgent: (() => Promise<void>) | null;
+  readonly setArchiveChatAgent: (archive: (() => Promise<void>) | null) => void;
   readonly setSidebarWasOpen: (open: boolean | null) => void;
   readonly setShown: (shown: boolean) => void;
   readonly setEnabled: (enabled: boolean) => void;
@@ -27,6 +33,8 @@ export const useWorldModeStore = create<WorldModeState>()(
       sidebarWasOpen: null,
       pickingProject: false,
       setPickingProject: (pickingProject) => set({ pickingProject }),
+      archiveChatAgent: null,
+      setArchiveChatAgent: (archiveChatAgent) => set({ archiveChatAgent }),
       setSidebarWasOpen: (sidebarWasOpen) => set({ sidebarWasOpen }),
       setShown: (shown) => set({ shown }),
       setEnabled: (enabled) => set({ enabled }),

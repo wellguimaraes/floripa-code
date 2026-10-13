@@ -70,8 +70,8 @@ export const palette = {
   ],
   /** Worktree hats; see `Hat`. */
   hats: {
-    hardHat: "#facc15",
-    hardHatRidge: "#eab308",
+    hardHat: "#f97316",
+    hardHatRidge: "#c2410c",
     straw: "#f2d58a",
     strawBand: "#b45309",
     topHat: "#1f2937",

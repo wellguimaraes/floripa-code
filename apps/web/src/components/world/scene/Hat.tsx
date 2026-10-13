@@ -6,8 +6,8 @@ import { palette } from "./palette";
  * Hats mark the worktree an agent works in: agents in the same worktree wear
  * the same one, agents in the project checkout wear none. Each is built in
  * head units: the head is 1 wide and the origin sits on top of it, y up and
- * +z toward the face. Shapes differ, not just colours, because colour already
- * names the family.
+ * +z toward the face. Each hat has its own shape and colour, never the
+ * wearer's, so a worktree's agents match whatever their family.
  */
 export const HAT_COUNT = 6;
 

@@ -1,5 +1,6 @@
 import { createContext, useContext } from "react";
 import { Color, SRGBColorSpace } from "three";
+import { KeepColorContext, keepColors } from "./contrast";
 import { palette } from "./palette";
 
 /** True inside an island nobody is on any more: it shows in dark shades of the sea. */
@@ -26,15 +27,17 @@ export function toFaded(color: string): string {
   return faded;
 }
 
-/** The world's lit surface material; in sea shades on an empty island. */
+/** The world's lit surface material; in sea shades on an empty island, in full colour on a character. */
 export function LitMaterial(props: {
   readonly color: string;
   readonly flatShading?: boolean;
   readonly side?: 0 | 1 | 2;
 }) {
   const faded = useContext(FadedContext);
+  const keepColor = useContext(KeepColorContext);
   return (
     <meshLambertMaterial
+      {...(keepColor ? { onUpdate: keepColors } : {})}
       color={faded ? toFaded(props.color) : props.color}
       flatShading={props.flatShading ?? false}
       side={props.side ?? 0}

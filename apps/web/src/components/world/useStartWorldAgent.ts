@@ -166,13 +166,17 @@ export function useWorldAgentSetup(projectRef: ScopedProjectRef): WorldAgentSetu
 /**
  * The workspaces a new agent in a project can pick from, and the one a fresh
  * draft would use. Existing worktrees come from the repo's local branches that
- * are checked out somewhere other than the project checkout; a new worktree
- * starts from the default branch, else the current one. Until git answers,
- * the project counts as a repo so the picker shows right away.
+ * are checked out somewhere other than the main checkout, which the project
+ * folder sits in (or is) and the picker offers on its own; a new worktree
+ * starts from the default branch, else the main checkout's current one. Until
+ * git answers, the project counts as a repo so the picker shows right away.
  */
 export function useWorldAgentWorkspaces(projectRef: ScopedProjectRef) {
   const { environmentId } = projectRef;
-  const workspaceRoot = useProject(projectRef)?.workspaceRoot ?? null;
+  const project = useProject(projectRef);
+  const workspaceRoot = project?.workspaceRoot ?? null;
+  // The project can be a folder inside the repo, so its root isn't always the checkout's.
+  const repoRoot = project?.repositoryIdentity?.rootPath ?? workspaceRoot;
   // A live query, not a one-shot read: ref lists are streams that stay open,
   // so awaiting a settled result would never resolve.
   const refsAtom = useMemo(
@@ -190,23 +194,24 @@ export function useWorldAgentWorkspaces(projectRef: ScopedProjectRef) {
   const worktrees = useMemo(
     () =>
       (refs.data?.refs ?? []).flatMap((ref) =>
-        ref.isRemote !== true && ref.worktreePath !== null && ref.worktreePath !== workspaceRoot
+        ref.isRemote !== true &&
+        ref.worktreePath !== null &&
+        ref.worktreePath !== workspaceRoot &&
+        ref.worktreePath !== repoRoot
           ? [{ path: ref.worktreePath, branch: ref.name }]
           : [],
       ),
-    [refs.data, workspaceRoot],
+    [refs.data, workspaceRoot, repoRoot],
   );
   // The server lists the current and default branches first.
-  const worktreeBaseBranch =
-    refs.data?.refs.find((ref) => ref.isDefault)?.name ??
-    refs.data?.refs.find((ref) => ref.current)?.name ??
-    null;
+  const mainBranch = refs.data?.refs.find((ref) => ref.current)?.name ?? null;
+  const worktreeBaseBranch = refs.data?.refs.find((ref) => ref.isDefault)?.name ?? mainBranch;
 
   const worktreeByDefault = useProjectSettings(projectRef)?.defaultThreadEnvMode === "worktree";
 
   const defaultWorkspace: WorldAgentWorkspace =
     isRepo && worktreeByDefault ? { kind: "new-worktree" } : { kind: "local" };
-  return { defaultWorkspace, worktrees, worktreeBaseBranch, isRepo };
+  return { defaultWorkspace, worktrees, mainBranch, worktreeBaseBranch, isRepo };
 }
 
 /**

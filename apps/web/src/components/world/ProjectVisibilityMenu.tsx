@@ -1,8 +1,8 @@
 import { EyeIcon, EyeOffIcon } from "lucide-react";
-import { useEffect, useRef } from "react";
 
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
+import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { useWorldVisibilityStore } from "./worldVisibilityStore";
 
 /**
@@ -22,45 +22,21 @@ export function ProjectVisibilityMenu(props: {
   const setOpen = useWorldVisibilityStore((state) => state.setMenuOpen);
   const toggleHidden = useWorldVisibilityStore((state) => state.toggleHidden);
   const shown = props.projects.filter((project) => !hidden[project.key]).length;
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (event: PointerEvent) => {
-      if (menuRef.current?.contains(event.target as Node)) return;
-      setOpen(false);
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
-      // Claim the key so the world layout does not also close the chat.
-      event.preventDefault();
-      setOpen(false);
-    };
-    document.addEventListener("pointerdown", onPointerDown, true);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown, true);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open, setOpen]);
 
   return (
-    <div ref={menuRef} className="relative">
-      <Button
-        variant="glass"
-        size="sm"
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        render={<Button variant="glass" size="sm" />}
         aria-label={`Show or hide projects, ${shown} of ${props.projects.length} shown`}
         title="Show or hide projects"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
       >
         <EyeIcon />
         <span className="tabular-nums">
           {shown} of {props.projects.length}
         </span>
-      </Button>
-      {open ? (
-        <div className="absolute top-full right-0 mt-2 flex w-60 flex-col gap-0.5 rounded-xl border border-border/60 bg-popover/90 p-1.5 text-popover-foreground shadow-lg backdrop-blur">
+      </PopoverTrigger>
+      <PopoverPopup align="start" sideOffset={8} padding="compact" width="sm">
+        <div className="flex flex-col gap-0.5">
           <div className="flex items-center gap-2 px-2 py-1">
             <span className="flex-1 text-sm font-medium">Projects</span>
             <span className="text-xs text-muted-foreground tabular-nums">
@@ -98,7 +74,7 @@ export function ProjectVisibilityMenu(props: {
             })}
           </ul>
         </div>
-      ) : null}
-    </div>
+      </PopoverPopup>
+    </Popover>
   );
 }

@@ -17,7 +17,9 @@ interface SpeechRecognitionLike {
   continuous: boolean;
   addEventListener(
     type: "result",
-    listener: (event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void,
+    listener: (event: {
+      results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }>;
+    }) => void,
   ): void;
   addEventListener(type: "error", listener: (event: { error: string }) => void): void;
   addEventListener(type: "end", listener: () => void): void;
@@ -63,8 +65,8 @@ const RECORDER_FORMATS: ReadonlyArray<readonly [mimeType: string, format: VoiceA
   ["audio/webm", "webm"],
 ];
 
-// A pause this long after speech ends the take, like the browser's own service.
-const SILENCE_MS = 1_500;
+// A pause this long after speech ends the take. Long enough to stop and think mid-sentence.
+const SILENCE_MS = 3_500;
 // Nothing said this long after the mic opens: give up.
 const NO_SPEECH_MS = 8_000;
 // Well under the server's size cap at the bitrate below.
@@ -91,7 +93,8 @@ export type VoiceKeyPrompt = "missing" | "rejected";
 /**
  * Speech to text for one environment. With an OpenRouter key saved there, the
  * mic records and the server transcribes; without one, the browser's own
- * speech service is used where it works. A take ends on a pause or on `stop`.
+ * speech service is used where it works. A take ends on a pause or on `stop`;
+ * a held take (push to talk) ignores pauses and ends only on `stop`.
  */
 export function useVoiceInput(
   environmentId: EnvironmentId,
@@ -121,12 +124,15 @@ export function useVoiceInput(
   });
   // Ends the current take: `send` false throws away what was recorded.
   const finish = useRef<((send: boolean) => void) | null>(null);
+  // While set, a pause does not end the take: it is held open until `stop`.
+  const held = useRef(false);
 
   const startBrowser = (Recognition: new () => SpeechRecognitionLike) => {
     const listener = new Recognition();
     listener.lang = navigator.language;
     listener.interimResults = true;
-    listener.continuous = false;
+    // A held take keeps listening through pauses; once let go, the next pause ends it.
+    listener.continuous = held.current;
     let heard = "";
     let failed = false;
     // Set when the take is thrown away: nothing heard after that is reported.
@@ -135,6 +141,8 @@ export function useVoiceInput(
       if (dropped) return;
       heard = Array.from(event.results, (result) => result[0]?.transcript ?? "").join("");
       latest.current.onText(heard);
+      const last = event.results[event.results.length - 1];
+      if (listener.continuous && !held.current && last?.isFinal) listener.stop();
     });
     listener.addEventListener("error", (event) => {
       if (dropped) return;
@@ -206,7 +214,8 @@ export function useVoiceInput(
       if (Math.sqrt(sum / samples.length) > SPEECH_LEVEL) spokeAt = now;
       if (
         now - startedAt > MAX_RECORDING_MS ||
-        (spokeAt === null ? now - startedAt > NO_SPEECH_MS : now - spokeAt > SILENCE_MS)
+        (!held.current &&
+          (spokeAt === null ? now - startedAt > NO_SPEECH_MS : now - spokeAt > SILENCE_MS))
       ) {
         finish.current?.(true);
       }
@@ -266,8 +275,10 @@ export function useVoiceInput(
     latest.current.onDone?.(result.value.text);
   };
 
-  const start = () => {
+  /** `hold` keeps the take open through pauses until `stop`: push to talk. */
+  const start = (options?: { readonly hold?: boolean }) => {
     if (finish.current !== null) return;
+    held.current = options?.hold === true;
     if (hasKey && recorderSupported()) {
       void startRecording();
       return;
@@ -288,6 +299,10 @@ export function useVoiceInput(
     stop: () => finish.current?.(true),
     /** End the take now and throw away what was said. */
     cancel: () => finish.current?.(false),
+    /** A held take goes back to ending on the next pause. */
+    endOnPause: () => {
+      held.current = false;
+    },
     keyPrompt,
     /** The prompt was closed without a key: the unsent take is dropped. */
     dismissKeyPrompt: () => {
@@ -300,7 +315,10 @@ export function useVoiceInput(
       const waiting = unsent.current;
       unsent.current = null;
       if (waiting !== null) void sendRecording(waiting.recording, waiting.format);
-      else if (finish.current === null) void startRecording();
+      else if (finish.current === null) {
+        held.current = false;
+        void startRecording();
+      }
     },
   };
 }

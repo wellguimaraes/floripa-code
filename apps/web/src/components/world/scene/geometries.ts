@@ -19,6 +19,8 @@ export const geometry = {
   limb: new CapsuleGeometry(0.06, 0.24, 3, 6),
   leg: new CapsuleGeometry(0.075, 0.16, 3, 6),
   head: new SphereGeometry(0.22, 14, 10),
+  /** A character's invisible pointer target: one shape, so no gaps between limbs. */
+  hitbox: new CapsuleGeometry(0.32, 0.95, 2, 8),
   eye: new SphereGeometry(0.03, 6, 4),
   shadow: new CircleGeometry(0.34, 16),
   ring: new RingGeometry(0.4, 0.6, 32),

@@ -6,6 +6,7 @@ import {
   type Group,
   Line,
   LineBasicMaterial,
+  type Mesh,
   type Object3D,
   type Sprite,
   Vector3,
@@ -20,6 +21,7 @@ import { CharacterModel } from "./CharacterModel";
 import { drawSoon } from "./frames";
 import { geometry } from "./geometries";
 import { Hat } from "./Hat";
+import { KeepColorContext, keepColors } from "./contrast";
 import { LitMaterial } from "./lighting";
 import { palette } from "./palette";
 import { SelectionRing } from "./SelectionRing";
@@ -31,11 +33,17 @@ import type { FamilyShades } from "./palette";
 const MAX_FRAME_DELTA = 0.1;
 const DRAG_CLICK_TOLERANCE_PX = 4;
 /** On-screen balloon size, whatever the zoom. */
-const BALLOON_PX = 46;
+export const BALLOON_PX = 46;
+/** The balloon sprite's name, so overlays can find it and sit above it. */
+export const BALLOON_NAME = "balloon";
+/** The hitbox's name, so the island under a character can tell the click was the character's. */
+export const HITBOX_NAME = "character-hitbox";
 /** On-screen length of the string between the raised hand and the balloon. */
 const STRING_PX = 30;
 /** Where the hand is before the model loads, in the character's own units. */
 const FALLBACK_HAND: readonly [number, number, number] = [0.3, 1.5, 0];
+/** Standing, the hitbox runs from the feet to just above the hat. */
+const HITBOX_CENTER_Y = 0.79;
 const handPoint = new Vector3();
 
 interface Motion {
@@ -92,6 +100,7 @@ export function Character(props: {
     },
     [string],
   );
+  const hitbox = useRef<Mesh>(null);
   const body = useRef<Group>(null);
   const head = useRef<Group>(null);
   const armLeft = useRef<Group>(null);
@@ -171,6 +180,12 @@ export function Character(props: {
     const lift = walking ? 0 : (placement.seat ?? 0);
     group.position.set(current.position[0], current.position[1] + lift, current.position[2]);
     group.rotation.y = current.route.length > 0 ? current.heading : placement.facing;
+    if (hitbox.current !== null) {
+      // Lying down, the model stretches back along -z at about knee height.
+      const lying = !walking && pose === "lie";
+      hitbox.current.rotation.x = lying ? Math.PI / 2 : 0;
+      hitbox.current.position.set(0, lying ? 0.3 : HITBOX_CENTER_Y, lying ? -0.35 : 0);
+    }
     applyPose(walking ? "walk" : pose, state.clock.elapsedTime, {
       body,
       head,
@@ -193,65 +208,81 @@ export function Character(props: {
     event.nativeEvent.preventDefault();
     onMenu(character, { x: event.nativeEvent.clientX, y: event.nativeEvent.clientY });
   };
+  // Only the hitbox and the balloon take the pointer. Handlers on the root
+  // would raycast every limb, and the gaps between them flicker the hover.
+  const pointer = {
+    onClick: select,
+    onContextMenu: openMenu,
+    onPointerOver: (event: ThreeEvent<PointerEvent>) => {
+      event.stopPropagation();
+      onHover(character, { x: event.nativeEvent.clientX, y: event.nativeEvent.clientY });
+      document.body.style.cursor = "pointer";
+    },
+    onPointerOut: () => {
+      onHover(character, null);
+      document.body.style.cursor = "";
+    },
+  };
   const scale = movement.characterScale * (facts.kid ? movement.kidScale : 1);
 
   return (
     // Position and heading are written by the frame loop, never by props, so a
     // re-render cannot snap a walking character to its destination.
-    <group
-      ref={root}
-      scale={scale}
-      onClick={select}
-      onContextMenu={openMenu}
-      onPointerOver={(event) => {
-        event.stopPropagation();
-        onHover(character, { x: event.nativeEvent.clientX, y: event.nativeEvent.clientY });
-        document.body.style.cursor = "pointer";
-      }}
-      onPointerOut={() => {
-        onHover(character, null);
-        document.body.style.cursor = "";
-      }}
-    >
-      <mesh geometry={geometry.shadow} rotation-x={-Math.PI / 2} position-y={0.012}>
-        <meshBasicMaterial color={palette.shadow} transparent opacity={0.18} depthWrite={false} />
-      </mesh>
-      {selected ? <SelectionRing fps={movement.walkFps} /> : null}
-      <Suspense
-        fallback={
-          // The shape-built figure stands in while the model downloads.
-          <ShapeBody
-            rig={{ body, head, armLeft, armRight, legLeft, legRight }}
-            shades={shades}
-            pose={pose}
-          />
-        }
-      >
-        <CharacterModel
-          pose={pose}
-          shades={shades}
-          isWalking={() => motion.current.route.length > 0}
-          raiseHand={intent.balloon !== undefined || (seated && activity.pose === "wave")}
-          handRef={hand}
-          handItem={
-            activity.pose === "mine" || activity.pose === "ponder" ? <ModelPickaxe /> : undefined
-          }
-          headItem={hat === null ? undefined : <Hat style={hat} />}
+    // Everything it wears and carries keeps its colours at any contrast.
+    <KeepColorContext value>
+      <group ref={root} scale={scale}>
+        <mesh
+          ref={hitbox}
+          name={HITBOX_NAME}
+          geometry={geometry.hitbox}
+          position-y={HITBOX_CENTER_Y}
+          visible={false}
+          {...pointer}
         />
-      </Suspense>
-      {activity.pose === "mine" || activity.pose === "ponder" ? (
-        <NuggetPile count={facts.beat % (NUGGET_SPOTS.length + 1)} />
-      ) : null}
-      {intent.effect === "cloud" ? <Cloud /> : null}
-      {intent.balloon !== undefined ? (
-        <>
-          <primitive object={string} />
-          <sprite ref={balloon} renderOrder={10}>
-            <spriteMaterial map={balloonTexture(intent.balloon)} depthTest={false} />
-          </sprite>
-        </>
-      ) : null}
-    </group>
+        <mesh geometry={geometry.shadow} rotation-x={-Math.PI / 2} position-y={0.012}>
+          <meshBasicMaterial color={palette.shadow} transparent opacity={0.18} depthWrite={false} />
+        </mesh>
+        {selected ? <SelectionRing fps={movement.walkFps} /> : null}
+        <Suspense
+          fallback={
+            // The shape-built figure stands in while the model downloads.
+            <ShapeBody
+              rig={{ body, head, armLeft, armRight, legLeft, legRight }}
+              shades={shades}
+              pose={pose}
+            />
+          }
+        >
+          <CharacterModel
+            pose={pose}
+            shades={shades}
+            isWalking={() => motion.current.route.length > 0}
+            raiseHand={intent.balloon !== undefined || (seated && activity.pose === "wave")}
+            handRef={hand}
+            handItem={
+              activity.pose === "mine" || activity.pose === "ponder" ? <ModelPickaxe /> : undefined
+            }
+            headItem={hat === null ? undefined : <Hat style={hat} />}
+          />
+        </Suspense>
+        {activity.pose === "mine" || activity.pose === "ponder" ? (
+          <NuggetPile count={facts.beat % (NUGGET_SPOTS.length + 1)} />
+        ) : null}
+        {intent.effect === "cloud" ? <Cloud /> : null}
+        {intent.balloon !== undefined ? (
+          <>
+            <primitive object={string} />
+            <sprite ref={balloon} name={BALLOON_NAME} renderOrder={10} {...pointer}>
+              <spriteMaterial
+                map={balloonTexture(intent.balloon)}
+                depthTest={false}
+                onUpdate={keepColors}
+              />
+            </sprite>
+          </>
+        ) : null}
+      </group>
+    </KeepColorContext>
   );
 }
 

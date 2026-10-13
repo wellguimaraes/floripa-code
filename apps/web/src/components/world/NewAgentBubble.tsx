@@ -1,8 +1,8 @@
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ProviderInstanceId, ScopedProjectRef, ScopedThreadRef } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
-import { FolderGit2Icon, FolderGitIcon, FolderIcon, XIcon } from "lucide-react";
-import { useState } from "react";
+import { XIcon } from "lucide-react";
+import { useMemo, useState } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
@@ -13,7 +13,7 @@ import {
   sortProviderInstanceEntries,
 } from "../../providerInstances";
 import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
-import { useProject, useServerConfigs } from "../../state/entities";
+import { useProject, useServerConfigs, useThreadShellsForProjectRefs } from "../../state/entities";
 import { ComposerFooterModeControls, runtimeModeOptions } from "../chat/ChatComposer";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
@@ -21,6 +21,12 @@ import { Button } from "../ui/button";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { BubbleComposer } from "./BubbleComposer";
 import { HuePicker } from "./HuePicker";
+import { lastUsedWorkspaceValue } from "./lastUsedWorkspace";
+import {
+  NewAgentWorkspacePicker,
+  type PickableWorkspace,
+  WorkspaceIcon,
+} from "./NewAgentWorkspacePicker";
 import { useBubbleAttachments } from "./useBubbleAttachments";
 import {
   useStartWorldAgent,
@@ -37,7 +43,8 @@ const workspaceValue = (workspace: WorldAgentWorkspace) =>
  * Starts an agent from an empty spot on an island. Enter sends the text as the
  * first message of a new thread in that project, with any attached, dropped,
  * or pasted files, using the defaults a fresh draft would; the chat stays closed.
- * In a repo it can work in the checkout, a new worktree, or an existing one.
+ * In a repo it first asks where the agent works: the main worktree, a new worktree,
+ * or another existing one, starting on the one the project's latest thread uses.
  * The model, its traits, permissions and plan mode use the chat's own pickers;
  * a picked model becomes the default for new chats once the agent starts.
  * The text box, files, voice and send live in BubbleComposer, shared by both bubbles.
@@ -61,21 +68,48 @@ export function NewAgentBubble(props: {
   const startAgent = useStartWorldAgent();
   const [text, setText] = useState("");
   const workspaces = useWorldAgentWorkspaces(project);
+  const { environmentId, projectId } = project;
+  const projectRefs = useMemo(() => [{ environmentId, projectId }], [environmentId, projectId]);
+  const projectThreads = useThreadShellsForProjectRefs(projectRefs);
   // Null until picked: the project's default applies.
   const [workspace, setWorkspace] = useState<WorldAgentWorkspace | null>(null);
-  const workspaceItems: ReadonlyArray<{
-    readonly value: string;
-    readonly label: string;
-    readonly workspace: WorldAgentWorkspace;
-  }> = [
-    { value: "local", label: "Current checkout", workspace: { kind: "local" } },
-    { value: "new-worktree", label: "New worktree", workspace: { kind: "new-worktree" } },
+  // The first step, in a repo: where the agent works.
+  const [pickingWorkspace, setPickingWorkspace] = useState(true);
+  const workspaceItems: ReadonlyArray<PickableWorkspace> = [
+    {
+      value: "local",
+      label: "Main worktree",
+      detail: workspaces.mainBranch ?? "The project folder",
+      workspace: { kind: "local" },
+    },
+    {
+      value: "new-worktree",
+      label: "New worktree",
+      detail:
+        workspaces.worktreeBaseBranch === null
+          ? "From the default branch"
+          : `From ${workspaces.worktreeBaseBranch}`,
+      workspace: { kind: "new-worktree" },
+    },
     ...workspaces.worktrees.map((worktree) => {
       const item: WorldAgentWorkspace = { kind: "worktree", ...worktree };
-      return { value: workspaceValue(item), label: worktree.branch, workspace: item };
+      return {
+        value: workspaceValue(item),
+        label: worktree.branch,
+        detail: worktree.path.split(/[\\/]/).findLast((part) => part !== "") ?? worktree.path,
+        workspace: item,
+      };
     }),
   ];
-  const selectedWorkspace = workspace ?? workspaces.defaultWorkspace;
+  // The one the project's latest thread uses while it still exists, else the project's default.
+  const lastUsed = lastUsedWorkspaceValue(
+    projectThreads,
+    new Set(workspaceItems.map((item) => item.value)),
+  );
+  const defaultWorkspace =
+    workspaceItems.find((item) => item.value === lastUsed)?.workspace ??
+    workspaces.defaultWorkspace;
+  const selectedWorkspace = workspace ?? defaultWorkspace;
 
   const providers =
     useServerConfigs().get(project.environmentId)?.providers ?? EMPTY_SERVER_PROVIDERS;
@@ -176,6 +210,20 @@ export function NewAgentBubble(props: {
     }
   };
 
+  if (pickingWorkspace && workspaces.isRepo)
+    return (
+      <NewAgentWorkspacePicker
+        islandName={islandName}
+        workspaces={workspaceItems}
+        defaultValue={workspaceValue(selectedWorkspace)}
+        onPick={(picked) => {
+          setWorkspace(picked);
+          setPickingWorkspace(false);
+        }}
+        onClose={onClose}
+      />
+    );
+
   return (
     <BubbleComposer
       cwd={selectedWorkspace.kind === "worktree" ? selectedWorkspace.path : workspaceRoot}
@@ -185,19 +233,18 @@ export function NewAgentBubble(props: {
         if (command === "model") setModelPickerOpen(true);
         else setPicked((current) => ({ ...current, interactionMode: command }));
       }}
-      // Half again as wide as the reply bubble, so the agent pickers fit on one row.
-      className="w-108"
       environmentId={project.environmentId}
       attachments={attachments}
       text={text}
       onTextChange={changeText}
       onSubmit={() => void start()}
       onClose={onClose}
+      narrow
       placeholder="What should it work on?"
       inputLabel={`Task for a new agent on ${islandName}`}
       submitLabel="Start"
       speakLabel="Speak the task"
-      hint="Enter to start"
+      footerStart={<HuePicker hue={hue} onChange={setHue} />}
       error={state.phase === "error" ? state.message : null}
       onError={showError}
       busy={state.phase === "starting"}
@@ -225,26 +272,14 @@ export function NewAgentBubble(props: {
               }}
             >
               <SelectTrigger size="xs" aria-label="Workspace">
-                {selectedWorkspace.kind === "new-worktree" ? (
-                  <FolderGit2Icon />
-                ) : selectedWorkspace.kind === "worktree" ? (
-                  <FolderGitIcon />
-                ) : (
-                  <FolderIcon />
-                )}
+                <WorkspaceIcon workspace={selectedWorkspace} />
                 <SelectValue />
               </SelectTrigger>
               <SelectPopup alignItemWithTrigger={false}>
                 {workspaceItems.map((item) => (
                   <SelectItem key={item.value} value={item.value}>
                     <span className="inline-flex min-w-0 items-center gap-1.5">
-                      {item.workspace.kind === "new-worktree" ? (
-                        <FolderGit2Icon className="size-3" />
-                      ) : item.workspace.kind === "worktree" ? (
-                        <FolderGitIcon className="size-3" />
-                      ) : (
-                        <FolderIcon className="size-3" />
-                      )}
+                      <WorkspaceIcon workspace={item.workspace} className="size-3" />
                       <span className="truncate">{item.label}</span>
                     </span>
                   </SelectItem>
@@ -315,7 +350,6 @@ export function NewAgentBubble(props: {
           />
         </div>
       ) : null}
-      <HuePicker hue={hue} onChange={setHue} />
     </BubbleComposer>
   );
 }

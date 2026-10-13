@@ -13,7 +13,7 @@ import {
 
 import { type ComposerSlashCommand, collapseExpandedComposerCursor } from "../../composer-logic";
 import { useTheme } from "../../hooks/useTheme";
-import { cn } from "../../lib/utils";
+import { cn, isMacPlatform } from "../../lib/utils";
 import { ComposerPromptEditor, type ComposerPromptEditorHandle } from "../ComposerPromptEditor";
 import { EMPTY_COMPOSER_CONTEXT_RECORDS } from "../composerContextPresentation";
 import { Button } from "../ui/button";
@@ -34,6 +34,13 @@ const MENU_PREFERRED_HEIGHT = 300;
 const MENU_VIEWPORT_MARGIN = 12;
 
 const NO_SLASH_COMMANDS: ReadonlyArray<BubbleSlashCommand> = [];
+
+// The mic button held this long is push to talk: letting go ends the take.
+const HOLD_TO_TALK_MS = 300;
+// Cmd+Shift (Ctrl+Shift off the Mac) held this long with no other key is push to talk,
+// so shortcuts that start with those keys still work.
+const TALK_KEYS_HOLD_MS = 250;
+const MODIFIER_KEYS = new Set(["Meta", "Control", "Shift", "Alt"]);
 
 /** The caret at the end of the text, counted the way the editor counts it. */
 const endOf = (text: string) => collapseExpandedComposerCursor(text, text.length);
@@ -67,7 +74,7 @@ export function BubbleComposer(props: {
   readonly submitLabel: string;
   readonly speakLabel: string;
   /** The status line when nothing else is going on, such as "Enter to send". */
-  readonly hint: string;
+  readonly hint?: string;
   /** Owned by the bubble, so its own failures and the composer's share one line. */
   readonly error: string | null;
   readonly onError: (message: string | null) => void;
@@ -81,10 +88,15 @@ export function BubbleComposer(props: {
   /** Start listening at once and send what was said: a voice command. */
   readonly listenOnOpen?: boolean;
   readonly header: ReactNode;
-  /** Extra classes for the frame, such as a wider width. */
-  readonly className?: string;
+  /** A slimmer frame, for the new-agent bubble. */
+  readonly narrow?: boolean;
   /** Shown between the staged files and the status line. */
   readonly children?: ReactNode;
+  /**
+   * Takes the status line's place beside the buttons; the status then shows
+   * on its own line above, only while there is something to say.
+   */
+  readonly footerStart?: ReactNode;
 }) {
   const { attachments, text, onTextChange, onSubmit, onError, error, busy } = props;
   const fileInput = useRef<HTMLInputElement>(null);
@@ -161,13 +173,119 @@ export function BubbleComposer(props: {
     onError,
   });
   const listening = voice.phase === "listening";
-  const startListening = (sendWhenDone: boolean) => {
+  // Set while the mic button or the talk keys are held down.
+  const [talkHeld, setTalkHeld] = useState(false);
+  // What is going on right now; null when the bubble is idle.
+  const status = props.notice
+    ? props.notice
+    : listening
+      ? talkHeld
+        ? "Listening… let go to finish"
+        : "Listening…"
+      : voice.phase === "transcribing"
+        ? "Transcribing…"
+        : error !== null
+          ? error
+          : attachments.preparing
+            ? "Preparing image…"
+            : busy && props.busyStatus
+              ? props.busyStatus
+              : null;
+  const startListening = (sendWhenDone: boolean, hold = false) => {
     if (voice.phase !== "idle") return;
     typedBeforeVoice.current = latestText.current;
     sendWhenHeard.current = sendWhenDone;
     onError(null);
-    voice.start();
+    voice.start({ hold });
   };
+  // Drops the take and puts back what was typed before it.
+  const dropSpeech = () => {
+    voice.cancel();
+    setTalkHeld(false);
+    replaceText(typedBeforeVoice.current);
+    editor.current?.focusAtEnd();
+  };
+  const canTalk = () => voiceInputSupported() && voice.phase === "idle" && !busy;
+
+  // A press on the mic starts listening. Held, letting go ends the take; tapped, the
+  // take ends on a pause, or on the next press.
+  const micPressedAt = useRef<number | null>(null);
+  const releaseMic = () => {
+    const pressedAt = micPressedAt.current;
+    if (pressedAt === null) return;
+    micPressedAt.current = null;
+    setTalkHeld(false);
+    if (performance.now() - pressedAt >= HOLD_TO_TALK_MS) voice.stop();
+    else voice.endOnPause();
+  };
+
+  // Holding Cmd+Shift (Ctrl+Shift off the Mac) while the bubble has focus is push to talk.
+  const mac = isMacPlatform(navigator.platform);
+  const talkKeysLabel = mac ? "⌘⇧" : "Ctrl+Shift";
+  const startKeyTalk = useEffectEvent(() => {
+    if (!canTalk() || !frame.current?.contains(document.activeElement)) return false;
+    setTalkHeld(true);
+    startListening(false, true);
+    return true;
+  });
+  const endKeyTalk = useEffectEvent((keep: boolean) => {
+    if (!keep) {
+      dropSpeech();
+      return;
+    }
+    setTalkHeld(false);
+    voice.stop();
+  });
+  useEffect(() => {
+    const talkKeys = (event: KeyboardEvent) =>
+      event.shiftKey &&
+      !event.altKey &&
+      (mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey);
+    let timer: number | undefined;
+    let talking = false;
+    const disarm = () => {
+      window.clearTimeout(timer);
+      timer = undefined;
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      disarm();
+      if (talking) {
+        // Any other key makes it a shortcut, not speech.
+        if (MODIFIER_KEYS.has(event.key)) return;
+        talking = false;
+        endKeyTalk(false);
+        return;
+      }
+      if (event.repeat || !MODIFIER_KEYS.has(event.key) || !talkKeys(event)) return;
+      timer = window.setTimeout(() => {
+        timer = undefined;
+        talking = startKeyTalk();
+      }, TALK_KEYS_HOLD_MS);
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (talkKeys(event)) return;
+      disarm();
+      if (!talking) return;
+      talking = false;
+      endKeyTalk(true);
+    };
+    // Keys let go in another window never come back as keyup.
+    const onBlur = () => {
+      disarm();
+      if (!talking) return;
+      talking = false;
+      endKeyTalk(true);
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("keyup", onKeyUp, true);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      disarm();
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("keyup", onKeyUp, true);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, [mac]);
   const listenOnOpen = useEffectEvent(() => {
     if (props.listenOnOpen) startListening(true);
   });
@@ -188,10 +306,10 @@ export function BubbleComposer(props: {
       // Focusable, so a click anywhere in the bubble keeps the keyboard here and Escape still works.
       tabIndex={-1}
       className={cn(
-        "flex w-72 flex-col gap-2 rounded-xl border border-border bg-popover p-2.5 outline-none",
+        "flex w-108 flex-col gap-2 rounded-xl border border-border bg-popover p-2.5 outline-none",
+        props.narrow && "w-96",
         "text-popover-foreground shadow-lg",
         dropping && "border-primary",
-        props.className,
       )}
       onKeyDown={(event) => {
         if (event.key !== "Escape" || event.nativeEvent.isComposing) return;
@@ -206,9 +324,8 @@ export function BubbleComposer(props: {
         event.stopPropagation();
         // While listening, Escape drops the take and puts back what was typed before it.
         if (listening) {
-          voice.cancel();
-          replaceText(typedBeforeVoice.current);
-          editor.current?.focusAtEnd();
+          micPressedAt.current = null;
+          dropSpeech();
           return;
         }
         props.onClose();
@@ -322,22 +439,17 @@ export function BubbleComposer(props: {
         onRemove={attachments.remove}
       />
       {props.children}
+      {props.footerStart !== undefined && status !== null ? (
+        <span className="truncate text-xs text-muted-foreground">{status}</span>
+      ) : null}
       <div className="flex items-center gap-2">
-        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-          {props.notice
-            ? props.notice
-            : listening
-              ? "Listening…"
-              : voice.phase === "transcribing"
-                ? "Transcribing…"
-                : error !== null
-                  ? error
-                  : attachments.preparing
-                    ? "Preparing image…"
-                    : busy && props.busyStatus
-                      ? props.busyStatus
-                      : props.hint}
-        </span>
+        {props.footerStart !== undefined ? (
+          <div className="min-w-0 flex-1">{props.footerStart}</div>
+        ) : (
+          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+            {status ?? props.hint}
+          </span>
+        )}
         <input
           ref={fileInput}
           type="file"
@@ -368,10 +480,34 @@ export function BubbleComposer(props: {
                 ? "Stop listening"
                 : props.speakLabel
           }
-          title={listening ? "Stop listening" : props.speakLabel}
+          title={
+            listening
+              ? "Stop listening"
+              : `${props.speakLabel} (hold to talk, or hold ${talkKeysLabel})`
+          }
           aria-pressed={listening}
           disabled={!voiceInputSupported() || voice.phase === "transcribing" || busy}
-          onClick={() => (listening ? voice.stop() : startListening(false))}
+          onPointerDown={(event) => {
+            if (event.button !== 0) return;
+            if (listening) {
+              voice.stop();
+              return;
+            }
+            if (!canTalk()) return;
+            // Letting go outside the button still ends the take.
+            event.currentTarget.setPointerCapture(event.pointerId);
+            micPressedAt.current = performance.now();
+            setTalkHeld(true);
+            startListening(false, true);
+          }}
+          onPointerUp={releaseMic}
+          onPointerCancel={releaseMic}
+          onClick={(event) => {
+            // Pointers are handled on press; this is Enter or Space on the focused button.
+            if (event.detail !== 0) return;
+            if (listening) voice.stop();
+            else startListening(false);
+          }}
         >
           {voice.phase === "transcribing" ? (
             <LoaderIcon className="animate-spin" />

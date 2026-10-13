@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { useThreadActions } from "../../hooks/useThreadActions";
+import { formatShortcutLabel } from "../../keybindings";
 import { cn, newMessageId } from "../../lib/utils";
 import {
   readEnvironmentSupportsTitleRegeneration,
@@ -15,13 +16,16 @@ import {
 import { threadEnvironment } from "../../state/threads";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { Button } from "../ui/button";
+import { Kbd } from "../ui/kbd";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "../chat/composerPromptHistory";
 import { BubbleComposer } from "./BubbleComposer";
 import type { CharacterFacts } from "./engine/facts";
 import { HuePicker } from "./HuePicker";
 import { palette } from "./scene/palette";
 import { useBubbleAttachments } from "./useBubbleAttachments";
+import { ARCHIVE_SHORTCUT, useArchiveShortcut } from "./useArchiveShortcut";
 import { useLastSentMessage } from "./useLastSentMessage";
 
 /**
@@ -39,6 +43,16 @@ export function isStoppable(facts: CharacterFacts): boolean {
  * reopening it picks up where you left off.
  */
 const unsentDrafts = new Map<string, string>();
+
+const NO_MODIFIERS = {
+  metaKey: false,
+  ctrlKey: false,
+  shiftKey: false,
+  altKey: false,
+  modKey: false,
+};
+// Handled by the composer's Enter key.
+const EXPAND_SHORTCUT = formatShortcutLabel({ ...NO_MODIFIERS, key: "enter", modKey: true });
 
 /**
  * A quick reply box beside a character: send a message without leaving the
@@ -215,6 +229,8 @@ export function WorldBubble(props: {
     onArchived();
   };
 
+  useArchiveShortcut(archive);
+
   const expand = () => {
     // Carry the unsent text and files into the full chat's composer.
     const draft = scopeThreadRef(facts.ref.environmentId, facts.ref.threadId);
@@ -239,7 +255,7 @@ export function WorldBubble(props: {
       inputLabel={`Message ${facts.title || "this agent"}`}
       submitLabel="Send"
       speakLabel="Speak a message"
-      hint="Enter to send"
+      hint={`Enter to send · ${EXPAND_SHORTCUT} to open full chat`}
       error={state.phase === "error" ? state.message : null}
       onError={showError}
       busy={state.phase === "sending"}
@@ -265,7 +281,7 @@ export function WorldBubble(props: {
               >
                 <span className="text-muted-foreground">Color</span>
                 <span
-                  className="size-4 rounded-full"
+                  className="size-3 rounded-full"
                   style={{ backgroundColor: palette.families[hue]?.base }}
                 />
               </PopoverTrigger>
@@ -304,25 +320,47 @@ export function WorldBubble(props: {
                 <RefreshCwIcon className={cn(regeneratingTitle && "animate-spin")} />
               </Button>
             ) : null}
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              aria-label="Archive this thread"
-              title="Archive this thread"
-              disabled={state.phase === "archiving"}
-              onClick={() => void archive()}
-            >
-              <ArchiveIcon />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              aria-label="Open full chat"
-              title="Open full chat (⌘/Ctrl+Enter)"
-              onClick={expand}
-            >
-              <MessagesSquareIcon />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label="Archive this thread"
+                    aria-keyshortcuts="Alt+A"
+                    disabled={state.phase === "archiving"}
+                    onClick={() => void archive()}
+                  />
+                }
+              >
+                <ArchiveIcon />
+              </TooltipTrigger>
+              <TooltipPopup side="top">
+                <span className="flex items-center gap-2">
+                  Archive this thread <Kbd>{ARCHIVE_SHORTCUT}</Kbd>
+                </span>
+              </TooltipPopup>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label="Open full chat"
+                    aria-keyshortcuts="Control+Enter Meta+Enter"
+                    onClick={expand}
+                  />
+                }
+              >
+                <MessagesSquareIcon />
+              </TooltipTrigger>
+              <TooltipPopup side="top">
+                <span className="flex items-center gap-2">
+                  Open full chat <Kbd>{EXPAND_SHORTCUT}</Kbd>
+                </span>
+              </TooltipPopup>
+            </Tooltip>
             <Button variant="ghost" size="icon-xs" aria-label="Close" onClick={onClose}>
               <XIcon />
             </Button>

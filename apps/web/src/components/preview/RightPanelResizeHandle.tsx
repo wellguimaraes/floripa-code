@@ -4,6 +4,8 @@ import { cn } from "~/lib/utils";
 interface Props {
   handlers: ResizableWidthHandlers;
   className?: string;
+  /** Floating, rounded panels hide the line; the cursor alone signals the edge. */
+  showIndicator?: boolean;
 }
 
 /**
@@ -14,7 +16,7 @@ interface Props {
  * - Visual indicator is a 1px line that lights up on hover/active to mirror
  *   VS Code / Cursor.
  */
-export function RightPanelResizeHandle({ handlers, className }: Props) {
+export function RightPanelResizeHandle({ handlers, className, showIndicator = true }: Props) {
   return (
     <div
       role="separator"
@@ -25,10 +27,12 @@ export function RightPanelResizeHandle({ handlers, className }: Props) {
       )}
       {...handlers}
     >
-      <span
-        aria-hidden
-        className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors duration-150 group-hover:bg-border group-active:bg-primary/60"
-      />
+      {showIndicator ? (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors duration-150 group-hover:bg-border group-active:bg-primary/60"
+        />
+      ) : null}
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { useEffect, useMemo } from "react";
 import { CanvasTexture, Color, SRGBColorSpace } from "three";
 
 import type { WorldSlot } from "../definition/types";
+import { KeepColorContext, keepColors } from "./contrast";
 import { geometry } from "./geometries";
 import { LitMaterial } from "./lighting";
 import { palette } from "./palette";
@@ -34,39 +35,42 @@ export function Sign(props: {
   useEffect(() => () => board.texture.dispose(), [board]);
   const width = board.width;
   return (
-    <group position={slot.position as [number, number, number]} rotation-y={slot.facing}>
-      {/* One pole, running up behind the board to its middle. */}
-      <mesh
-        geometry={geometry.box}
-        position={[0, (BOARD_LIFT + BOARD_HEIGHT / 2) / 2, -DEPTH / 2 - POLE_WIDTH / 2]}
-        scale={[POLE_WIDTH, BOARD_LIFT + BOARD_HEIGHT / 2, POLE_WIDTH]}
-      >
-        <LitMaterial color={palette.signPost} />
-      </mesh>
-      <mesh
-        geometry={geometry.box}
-        position={[0, BOARD_LIFT + BOARD_HEIGHT / 2, 0]}
-        scale={[width + FRAME * 2, BOARD_HEIGHT + FRAME * 2, DEPTH]}
-      >
-        <LitMaterial color={palette.signPost} />
-      </mesh>
-      {/* A cap plank overhanging the top, for a bit of silhouette. */}
-      <mesh
-        geometry={geometry.box}
-        position={[0, BOARD_LIFT + BOARD_HEIGHT + FRAME + 0.1, 0]}
-        scale={[width + FRAME * 2 + 0.4, 0.2, DEPTH + 0.3]}
-      >
-        <LitMaterial color={palette.signPost} />
-      </mesh>
-      <mesh
-        geometry={geometry.plane}
-        position={[0, BOARD_LIFT + BOARD_HEIGHT / 2, DEPTH / 2 + 0.002]}
-        scale={[width, BOARD_HEIGHT, 1]}
-      >
-        {/* Unlit so the name stays readable whatever the light does. */}
-        <meshBasicMaterial map={board.texture} />
-      </mesh>
-    </group>
+    // Keeps its colours at any contrast, so the project's name stays easy to spot.
+    <KeepColorContext value>
+      <group position={slot.position as [number, number, number]} rotation-y={slot.facing}>
+        {/* One pole, running up behind the board to its middle. */}
+        <mesh
+          geometry={geometry.box}
+          position={[0, (BOARD_LIFT + BOARD_HEIGHT / 2) / 2, -DEPTH / 2 - POLE_WIDTH / 2]}
+          scale={[POLE_WIDTH, BOARD_LIFT + BOARD_HEIGHT / 2, POLE_WIDTH]}
+        >
+          <LitMaterial color={palette.signPost} />
+        </mesh>
+        <mesh
+          geometry={geometry.box}
+          position={[0, BOARD_LIFT + BOARD_HEIGHT / 2, 0]}
+          scale={[width + FRAME * 2, BOARD_HEIGHT + FRAME * 2, DEPTH]}
+        >
+          <LitMaterial color={palette.signPost} />
+        </mesh>
+        {/* A cap plank overhanging the top, for a bit of silhouette. */}
+        <mesh
+          geometry={geometry.box}
+          position={[0, BOARD_LIFT + BOARD_HEIGHT + FRAME + 0.1, 0]}
+          scale={[width + FRAME * 2 + 0.4, 0.2, DEPTH + 0.3]}
+        >
+          <LitMaterial color={palette.signPost} />
+        </mesh>
+        <mesh
+          geometry={geometry.plane}
+          position={[0, BOARD_LIFT + BOARD_HEIGHT / 2, DEPTH / 2 + 0.002]}
+          scale={[width, BOARD_HEIGHT, 1]}
+        >
+          {/* Unlit so the name stays readable whatever the light does. */}
+          <meshBasicMaterial map={board.texture} onUpdate={keepColors} />
+        </mesh>
+      </group>
+    </KeepColorContext>
   );
 }
 

@@ -18,6 +18,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 
 import type { Pose } from "../definition/types";
+import { keepColors } from "./contrast";
 import { drawSoon } from "./frames";
 import type { FamilyShades } from "./palette";
 
@@ -81,6 +82,7 @@ export function CharacterModel(props: {
       if (!mesh.isMesh) return;
       const source = mesh.material as Material & { map?: MeshLambertMaterial["map"] };
       const material = new MeshLambertMaterial({ map: source.map ?? null });
+      keepColors(material);
       mesh.material = material;
       mesh.frustumCulled = false;
       materials.set(mesh, material);
