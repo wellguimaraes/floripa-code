@@ -4,10 +4,36 @@ import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { CheckIcon, ChevronRightIcon } from "lucide-react";
 import type * as React from "react";
 
+import { isElectron } from "~/env";
 import { cn } from "~/lib/utils";
 import { buttonVariants } from "./button";
 
 const Menu = MenuPrimitive.Root;
+
+/**
+ * Electron recomputes window drag regions only after a layout pass, and Base UI
+ * moves the positioner with `transform`, which skips layout. A menu opened over a
+ * drag region kept its no-drag rectangle where it first rendered (the window's
+ * corner), so its rows stayed unhoverable until something else laid the page out.
+ * Moving it by left/top lays the page out on every move instead.
+ */
+export function renderPositionerByOffsets(props: React.ComponentProps<"div">) {
+  const match = /^translate\((-?[\d.]+)px, (-?[\d.]+)px\)$/.exec(
+    String(props.style?.transform ?? ""),
+  );
+  if (match === null) return <div {...props} />;
+  return (
+    <div
+      {...props}
+      style={{
+        ...props.style,
+        transform: undefined,
+        left: Number(match[1]),
+        top: Number(match[2]),
+      }}
+    />
+  );
+}
 
 function MenuTrigger({ className, children, ...props }: MenuPrimitive.Trigger.Props) {
   return (
@@ -43,6 +69,7 @@ function MenuPopup({
         anchor={anchor}
         className="z-[130]"
         data-slot="menu-positioner"
+        render={isElectron ? renderPositionerByOffsets : undefined}
         side={side}
         sideOffset={sideOffset}
       >
