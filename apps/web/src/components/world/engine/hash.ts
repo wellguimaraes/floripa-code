@@ -7,3 +7,14 @@ export function hashString(value: string): number {
   }
   return hash >>> 0;
 }
+
+/** xorshift32 numbers in [0, 1) from `seed`: cheap, and the same on every platform. */
+export function seededRandom(seed: number): () => number {
+  let state = seed || 1;
+  return () => {
+    state ^= state << 13;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    return (state >>> 0) / 4294967296;
+  };
+}

@@ -134,6 +134,8 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
     facing,
   });
   const node = (x: number, z: number): Vec3 => [x * scale, 0, z * scale];
+  const perArea = (count: number) => Math.round(count * scale * scale);
+  const dunes = { center: at(2.5, -6), radius: 3 * scale };
 
   // A point `along` the pier from its foot and `side` units to its right (local +x).
   const shore = 9.5 * scale - PIER_LANDING;
@@ -167,6 +169,14 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
       prop("palm", -2.3, 8.7, 5),
       prop("palm", -8.6, -1.2, 2.9),
       { kind: "pier", position: onPier(0, 0), facing: PIER_FACING, length: PIER_LENGTH },
+    ],
+    // Pebbles and tufts on the sand, as many per unit of ground at every size.
+    scenery: [
+      { kind: "rock", on: "sand", count: perArea(4), scale: [0.6, 1.2] },
+      { kind: "grass", on: "sand", count: perArea(14), scale: [0.7, 1.1] },
+      // A thicker patch on the sand between the lawn and the dunes.
+      { kind: "grass", on: "sand", count: perArea(8), scale: [0.7, 1.1], near: dunes },
+      { kind: "rock", on: "sand", count: perArea(3), scale: [0.4, 0.7], near: dunes },
     ],
     areas: {
       mine: {

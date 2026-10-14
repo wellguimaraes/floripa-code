@@ -34,6 +34,9 @@ export const palette = {
   chairCushion: "#38bdf8",
   treeTrunk: "#92400e",
   treeLeaf: "#22a35a",
+  // Sand scenery from the KayKit pack, shaded light at the top to dark below (see `nature.ts`).
+  leafLight: "#9ad35b",
+  leafDark: "#2e8b47",
   signPost: "#7c4a21",
   signTextDark: "#1f1408",
   signTextLight: "#ffffff",

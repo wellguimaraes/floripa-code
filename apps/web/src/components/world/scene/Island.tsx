@@ -1,9 +1,10 @@
-import { useContext, useMemo } from "react";
+import { Suspense, useContext, useMemo } from "react";
 import { type BufferGeometry, Matrix4 } from "three";
 
 import type { PropKind, TerrainKind, Vec3, WorldDefinition } from "../definition/types";
 import { islandBounds } from "../engine/archipelago";
 import { hashString } from "../engine/hash";
+import { islandScenery, isScenery } from "../engine/scenery";
 import { geometry } from "./geometries";
 import { FadedContext, LitMaterial } from "./lighting";
 import {
@@ -17,6 +18,7 @@ import {
   scale,
   translate,
 } from "./merged";
+import { sceneryGeometry, useNatureModels } from "./nature";
 import { palette } from "./palette";
 import { Ripple } from "./Ripple";
 import { propShadows } from "./shadows";
@@ -112,16 +114,23 @@ export function Island(props: {
           </mesh>
         );
       })}
-      <PropShadows geometry={propShadows([...definition.props, ...furniture])} />
-      {definition.props.map((prop) => (
-        <Prop
-          key={`${prop.kind}:${prop.position.join(",")}`}
-          kind={prop.kind}
-          position={prop.position}
-          facing={prop.facing}
-          length={prop.length}
-        />
-      ))}
+      <PropShadows
+        geometry={propShadows([...definition.props, ...islandScenery(definition), ...furniture])}
+      />
+      <Suspense fallback={null}>
+        <Scenery definition={definition} />
+      </Suspense>
+      {definition.props
+        .filter((prop) => !isScenery(prop.kind))
+        .map((prop) => (
+          <Prop
+            key={`${prop.kind}:${prop.position.join(",")}`}
+            kind={prop.kind}
+            position={prop.position}
+            facing={prop.facing}
+            length={prop.length}
+          />
+        ))}
       {furniture.map((spot) => (
         <Prop
           key={`${spot.kind}-${spot.position.join(",")}`}
@@ -132,6 +141,17 @@ export function Island(props: {
         />
       ))}
     </group>
+  );
+}
+
+/** The island's pebbles and grass tufts, as one mesh. */
+function Scenery({ definition }: { readonly definition: WorldDefinition }) {
+  const baked = sceneryGeometry(useNatureModels(), definition, useContext(FadedContext));
+  if (baked === null) return null;
+  return (
+    <mesh geometry={baked}>
+      <meshLambertMaterial vertexColors />
+    </mesh>
   );
 }
 
@@ -212,6 +232,10 @@ function PropModel({
       return <MergedMeshes parts={mergedParts(`pier:${length}`, () => pierParts(length))} />;
     case "palm":
       return <Palm seed={seed} />;
+    case "rock":
+    case "grass":
+      // Drawn together with the rest of the island's scenery; see `Scenery`.
+      return null;
     case "tree":
       return (
         <>

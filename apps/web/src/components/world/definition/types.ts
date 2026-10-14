@@ -27,7 +27,10 @@ export interface WorldSlot {
   readonly ledge?: boolean;
 }
 
-export type PropKind = "towel" | "beachChair" | "pier" | "palm" | "tree" | "rockPile";
+/** Small things strewn around for looks; see `SceneryRule`. */
+export type SceneryKind = "rock" | "grass";
+
+export type PropKind = "towel" | "beachChair" | "pier" | "palm" | "tree" | "rockPile" | SceneryKind;
 
 export interface WorldProp {
   readonly kind: PropKind;
@@ -35,6 +38,23 @@ export interface WorldProp {
   readonly facing: number;
   /** Stretches the prop along its facing, e.g. a pier's length. */
   readonly length?: number;
+  /** Grows or shrinks the prop; 1 is its usual size. */
+  readonly scale?: number;
+}
+
+/**
+ * Scenery strewn over one kind of ground, e.g. pebbles on the sand. The
+ * engine places it the same way on every island: clear of slots, roads and
+ * props, and never between the camera and a slot (see `islandScenery`).
+ */
+export interface SceneryRule {
+  readonly kind: SceneryKind;
+  readonly on: TerrainKind;
+  readonly count: number;
+  /** Picked at random in this range, 1 being the kind's usual size. */
+  readonly scale: readonly [min: number, max: number];
+  /** Only within this circle, e.g. a cluster in one stretch of beach. */
+  readonly near?: { readonly center: readonly [x: number, z: number]; readonly radius: number };
 }
 
 /** Fixed slots in the world, entered through one road node. */
@@ -197,6 +217,8 @@ export interface WorldArchipelago {
 export interface WorldDefinition {
   readonly terrain: ReadonlyArray<TerrainPatch>;
   readonly props: ReadonlyArray<WorldProp>;
+  /** Placed in order, so list the biggest first: smaller things fill the gaps. */
+  readonly scenery?: ReadonlyArray<SceneryRule>;
   readonly areas: Readonly<Record<string, WorldArea>>;
   readonly roads: WorldRoads;
   /** Checked top to bottom; the first match wins. */

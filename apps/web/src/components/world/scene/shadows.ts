@@ -15,6 +15,7 @@ const CASTERS: Partial<
   tree: { height: 1.25, radius: 0.8 },
   // The pile sits in front of its slot, where the parent mines it.
   rockPile: { height: 0.3, radius: 0.7, ahead: 0.95 },
+  rock: { height: 0.1, radius: 0.3 },
 };
 /** How far a palm's crown leans out from its foot, on average. */
 const PALM_LEAN = 0.65;

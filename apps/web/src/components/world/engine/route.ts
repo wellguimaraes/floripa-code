@@ -1,4 +1,5 @@
 import type { PropKind, Vec3, WorldDefinition, WorldSlot } from "../definition/types";
+import { islandScenery } from "./scenery";
 
 /** Something a character walks around: a tree trunk, a rock pile, a sign post. */
 export interface Obstacle {
@@ -91,6 +92,7 @@ const FOOTPRINTS: Partial<Record<PropKind, number>> = {
   palm: 0.3,
   beachChair: 0.45,
   rockPile: 0.65,
+  rock: 0.3,
 };
 /** A rock pile stands this far in front of its slot (see the `rockPile` prop). */
 const PILE_AHEAD = 0.95;
@@ -98,17 +100,19 @@ const PILE_AHEAD = 0.95;
 /** Everything on an island a character walks around, from its definition. */
 export function islandObstacles(definition: WorldDefinition): Obstacle[] {
   const obstacles: Obstacle[] = [];
-  const add = (kind: PropKind, slot: WorldSlot) => {
-    const radius = FOOTPRINTS[kind];
-    if (radius === undefined) return;
+  const add = (kind: PropKind, slot: Pick<WorldSlot, "position" | "facing">, scale = 1) => {
+    const footprint = FOOTPRINTS[kind];
+    if (footprint === undefined) return;
     const ahead = kind === "rockPile" ? PILE_AHEAD : 0;
     obstacles.push({
       x: slot.position[0] + Math.sin(slot.facing) * ahead,
       z: slot.position[2] + Math.cos(slot.facing) * ahead,
-      radius,
+      radius: footprint * scale,
     });
   };
-  for (const prop of definition.props) add(prop.kind, prop);
+  for (const prop of [...definition.props, ...islandScenery(definition)]) {
+    add(prop.kind, prop, prop.scale);
+  }
   for (const area of Object.values(definition.areas)) {
     if (area.kind !== "fixed") continue;
     for (const slot of area.slots) {

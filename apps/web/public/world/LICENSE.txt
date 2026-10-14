@@ -4,3 +4,11 @@ view uses, without its props, and with a grayscale texture.
 
 Source: https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0
 License: Creative Commons Zero (CC0), http://creativecommons.org/publicdomain/zero/1.0/
+
+nature.glb holds small rocks and grass from KayKit : Forest Nature
+Pack (1.0), free tier, by Kay Lousberg (www.kaylousberg.com): the models the
+world view uses, merged into one file without materials or the texture. The
+texture's gradient bands live on as each vertex's UV, which the world recolours.
+
+Source: https://kaylousberg.itch.io/kaykit-forest
+License: Creative Commons Zero (CC0), http://creativecommons.org/publicdomain/zero/1.0/
