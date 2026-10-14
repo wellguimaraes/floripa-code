@@ -25,6 +25,7 @@ import { KeepColorContext, keepColors } from "./contrast";
 import { LitMaterial } from "./lighting";
 import { palette } from "./palette";
 import { SelectionRing } from "./SelectionRing";
+import type { Ground } from "./shadows";
 
 export type { FamilyShades } from "./palette";
 import type { FamilyShades } from "./palette";
@@ -60,6 +61,8 @@ export function Character(props: {
   readonly hat: number | null;
   /** What to walk around on the way to a new spot. */
   readonly obstacles: ReadonlyArray<Obstacle>;
+  /** The island's ground height, so a character on the lawn stands on it. */
+  readonly ground: Ground;
   readonly movement: WorldMovement;
   readonly selected: boolean;
   readonly onSelect: (character: WorldCharacter) => void;
@@ -74,7 +77,7 @@ export function Character(props: {
   /** Screen point to anchor a label at, or null when the pointer leaves. */
   readonly onHover: (character: WorldCharacter, point: { x: number; y: number } | null) => void;
 }) {
-  const { character, shades, hat, obstacles, movement, selected, onRoot, onHover } = props;
+  const { character, shades, hat, obstacles, ground, movement, selected, onRoot, onHover } = props;
   const { onSelect, onOpen, onPick, onMenu } = props;
   const { facts, placement, activity, intent } = character;
   // On a seat, beach poses become sitting back, and a wave becomes both arms raised.
@@ -190,7 +193,8 @@ export function Character(props: {
     }
     // Climbs onto a seat on arrival, and off it before walking away.
     const lift = walking ? 0 : (placement.seat ?? 0);
-    group.position.set(current.position[0], current.position[1] + lift, current.position[2]);
+    const [x, y, z] = current.position;
+    group.position.set(x, y + lift + ground(x, z), z);
     group.rotation.y = current.route.length > 0 ? current.heading : placement.facing;
     if (rod.current !== null) rod.current.visible = !walking;
     if (hitbox.current !== null) {

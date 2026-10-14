@@ -13,6 +13,9 @@ export const palette = {
   lagoon: "#1b7bb1",
   sand: "#fff3c3",
   grass: "#65c272",
+  grassBank: "#55ad63",
+  /** Bands on the lawn from its edge in, each a little lighter (see `Island`). */
+  lawnBands: ["#6cc878", "#74ce7e", "#7cd384"],
   path: "#d9c7a0",
   shadow: "#0f172a",
   selection: "#ffffff",

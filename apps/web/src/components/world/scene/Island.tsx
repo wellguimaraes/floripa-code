@@ -21,14 +21,20 @@ import {
 import { sceneryGeometry, useNatureModels } from "./nature";
 import { palette } from "./palette";
 import { Ripple } from "./Ripple";
-import { castShadows, SHADOW_STENCIL, shadowOf } from "./shadows";
-import { roundPatchGeometry, sandGrainTexture, shallowsEdge, shallowsGeometry } from "./terrain";
+import { castShadows, type Ground, SHADOW_STENCIL, shadowOf } from "./shadows";
+import {
+  groundHeight,
+  roundPatchGeometry,
+  sandGrainTexture,
+  wavyDiscEdge,
+  wavyDiscGeometry,
+  TERRAIN_TOP,
+} from "./terrain";
 
-const TERRAIN: Record<TerrainKind, { readonly color: string; readonly top: number }> = {
-  // Stacked a hair apart so overlapping patches never z-fight.
-  sand: { color: palette.sand, top: 0 },
-  grass: { color: palette.grass, top: 0.01 },
-  path: { color: palette.path, top: 0.02 },
+const TERRAIN_COLOR: Record<TerrainKind, string> = {
+  sand: palette.sand,
+  grass: palette.grass,
+  path: palette.path,
 };
 const TERRAIN_DEPTH = 0.6;
 
@@ -38,6 +44,9 @@ export interface FurnitureSpot {
   readonly facing: number;
   readonly scale: number;
 }
+
+/** Each of `palette.lawnBands`' radius, as a share of the lawn's. */
+const LAWN_BANDS = [0.8, 0.58, 0.34];
 
 /** How far the outer shallows reach past a sand patch's edge. */
 const LAGOON_REACH = 2.1;
@@ -54,7 +63,7 @@ function rippleShore(definition: WorldDefinition): {
   const sand = definition.terrain.find((patch) => patch.shape === "disc" && patch.kind === "sand");
   if (sand !== undefined && sand.shape === "disc") {
     const radius = sand.radius + LAGOON_REACH;
-    return { center: sand.center, radius, edge: shallowsEdge(radius) };
+    return { center: sand.center, radius, edge: wavyDiscEdge(radius) };
   }
   const bounds = islandBounds(definition);
   return {
@@ -72,18 +81,18 @@ export function Island(props: {
   const { definition, furniture, ripple } = props;
   const faded = useContext(FadedContext);
   const shore = useMemo(() => rippleShore(definition), [definition]);
+  const ground = groundHeight(definition);
   return (
     <group>
       {ripple ? <Ripple center={shore.center} radius={shore.radius} edge={shore.edge} /> : null}
       {definition.terrain.map((patch) => {
-        const style = TERRAIN[patch.kind];
-        const y = style.top - TERRAIN_DEPTH / 2;
+        const top = TERRAIN_TOP[patch.kind];
         return patch.shape === "disc" ? (
           <group
             key={`${patch.kind}:${patch.center.join(",")}:${patch.radius}`}
             position={[patch.center[0], 0, patch.center[1]]}
           >
-            <mesh geometry={roundPatchGeometry(patch.kind, patch.radius, style.top, faded)}>
+            <mesh geometry={roundPatchGeometry(patch.kind, patch.radius, top, faded)}>
               <meshLambertMaterial
                 vertexColors
                 {...(patch.kind === "sand" ? { map: sandGrainTexture() } : {})}
@@ -94,27 +103,39 @@ export function Island(props: {
               // paler water over the sand close in. Gone on an empty island,
               // where they'd read as rings of darker sea.
               <>
-                <mesh geometry={shallowsGeometry(patch.radius + LAGOON_REACH)} position-y={-0.24}>
+                <mesh geometry={wavyDiscGeometry(patch.radius + LAGOON_REACH)} position-y={-0.24}>
                   <LitMaterial color={palette.lagoon} />
                 </mesh>
-                <mesh geometry={shallowsGeometry(patch.radius + 0.9)} position-y={-0.23}>
+                <mesh geometry={wavyDiscGeometry(patch.radius + 0.9)} position-y={-0.23}>
                   <LitMaterial color={palette.shallows} />
                 </mesh>
               </>
             ) : null}
+            {patch.kind === "grass"
+              ? // Bands of lighter green toward the middle, each a hair above the last.
+                palette.lawnBands.map((color, index) => (
+                  <mesh
+                    key={color}
+                    geometry={wavyDiscGeometry(patch.radius * LAWN_BANDS[index]!)}
+                    position-y={top + 0.003 * (index + 1)}
+                  >
+                    <LitMaterial color={color} />
+                  </mesh>
+                ))
+              : null}
           </group>
         ) : (
           <mesh
             key={`${patch.kind}:${patch.center.join(",")}:${patch.size.join(",")}`}
             geometry={geometry.box}
-            position={[patch.center[0], y, patch.center[1]]}
+            position={[patch.center[0], top - TERRAIN_DEPTH / 2, patch.center[1]]}
             scale={[patch.size[0], TERRAIN_DEPTH, patch.size[1]]}
           >
-            <LitMaterial color={style.color} />
+            <LitMaterial color={TERRAIN_COLOR[patch.kind]} />
           </mesh>
         );
       })}
-      <GroundShadow geometry={islandShadows(definition, furniture)} />
+      <GroundShadow geometry={islandShadows(definition, furniture, ground)} />
       <Suspense fallback={null}>
         <Scenery definition={definition} />
       </Suspense>
@@ -125,6 +146,7 @@ export function Island(props: {
             key={`${prop.kind}:${prop.position.join(",")}`}
             kind={prop.kind}
             position={prop.position}
+            ground={ground}
             facing={prop.facing}
             length={prop.length}
           />
@@ -134,6 +156,7 @@ export function Island(props: {
           key={`${spot.kind}-${spot.position.join(",")}`}
           kind={spot.kind}
           position={spot.position}
+          ground={ground}
           facing={spot.facing}
           scale={spot.scale}
         />
@@ -145,13 +168,14 @@ export function Island(props: {
 /** The island's pebbles and grass tufts, as one mesh. */
 function Scenery({ definition }: { readonly definition: WorldDefinition }) {
   const baked = sceneryGeometry(useNatureModels(), definition, useContext(FadedContext));
+  const ground = groundHeight(definition);
   if (baked === null) return null;
   return (
     <>
       <mesh geometry={baked}>
         <meshLambertMaterial vertexColors />
       </mesh>
-      <GroundShadow geometry={shadowOf(baked)} />
+      <GroundShadow geometry={shadowOf(baked, ground)} />
     </>
   );
 }
@@ -168,6 +192,7 @@ interface Placed {
 function islandShadows(
   definition: WorldDefinition,
   furniture: ReadonlyArray<FurnitureSpot>,
+  ground: Ground,
 ): BufferGeometry | null {
   const casters: Placed[] = [
     ...definition.props.filter((prop) => !isScenery(prop.kind)),
@@ -176,25 +201,29 @@ function islandShadows(
   const key = casters
     .map((prop) => `${prop.kind}:${prop.position.join(",")}:${prop.facing}:${prop.scale ?? 1}`)
     .join("|");
-  return castShadows(key, () =>
-    casters.flatMap((prop) => {
-      const frame = chain(
-        translate(...prop.position),
-        rotateY(prop.facing),
-        scale(prop.scale ?? 1),
-      );
-      return propParts(prop.kind, prop.length ?? 1, seedOf(prop)).map((part) => ({
-        geometry: part.geometry,
-        matrix: frame,
-      }));
-    }),
+  return castShadows(
+    key,
+    () =>
+      casters.flatMap((prop) => {
+        const [x, y, z] = prop.position;
+        const frame = chain(
+          translate(x, y + ground(x, z), z),
+          rotateY(prop.facing),
+          scale(prop.scale ?? 1),
+        );
+        return propParts(prop.kind, prop.length ?? 1, seedOf(prop)).map((part) => ({
+          geometry: part.geometry,
+          matrix: frame,
+        }));
+      }),
+    ground,
   );
 }
 
 function GroundShadow({ geometry: shadow }: { readonly geometry: BufferGeometry | null }) {
   if (shadow === null) return null;
   return (
-    // On the lawn, just under the characters' own shadows.
+    // Just above the ground, under the characters' own shadows.
     <mesh geometry={shadow} position-y={0.011} renderOrder={1}>
       <meshBasicMaterial
         color={palette.shadow}
@@ -214,13 +243,15 @@ const seedOf = (prop: Pick<Placed, "position">) => hashString(prop.position.join
 function Prop(props: {
   readonly kind: PropKind;
   readonly position: readonly [number, number, number];
+  readonly ground: Ground;
   readonly facing: number;
   readonly scale?: number;
   readonly length?: number | undefined;
 }) {
+  const [x, y, z] = props.position;
   return (
     <group
-      position={props.position as [number, number, number]}
+      position={[x, y + props.ground(x, z), z]}
       rotation-y={props.facing}
       scale={props.scale ?? 1}
     >

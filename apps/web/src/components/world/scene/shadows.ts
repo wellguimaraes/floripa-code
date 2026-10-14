@@ -29,6 +29,10 @@ export interface Caster {
   readonly matrix: Matrix4;
 }
 
+/** The ground's height at (x, z); flat by default. */
+export type Ground = (x: number, z: number) => number;
+const flat: Ground = () => 0;
+
 const cache = new Map<string, BufferGeometry | null>();
 
 /**
@@ -39,10 +43,11 @@ const cache = new Map<string, BufferGeometry | null>();
 export function castShadows(
   key: string,
   casters: () => ReadonlyArray<Caster>,
+  ground: Ground = flat,
 ): BufferGeometry | null {
   const cached = cache.get(key);
   if (cached !== undefined) return cached;
-  const shadows = casters().map((caster) => flatten(caster.geometry, caster.matrix));
+  const shadows = casters().map((caster) => flatten(caster.geometry, ground, caster.matrix));
   const merged = shadows.length === 0 ? null : mergeGeometries(shadows);
   for (const shadow of shadows) shadow.dispose();
   cache.set(key, merged);
@@ -52,10 +57,10 @@ export function castShadows(
 const ownShadows = new WeakMap<BufferGeometry, BufferGeometry>();
 
 /** The shadow of a geometry already placed on the island, e.g. its merged scenery. */
-export function shadowOf(geometry: BufferGeometry): BufferGeometry {
+export function shadowOf(geometry: BufferGeometry, ground: Ground = flat): BufferGeometry {
   let shadow = ownShadows.get(geometry);
   if (shadow === undefined) {
-    shadow = flatten(geometry);
+    shadow = flatten(geometry, ground);
     ownShadows.set(geometry, shadow);
   }
   return shadow;
@@ -65,8 +70,10 @@ export function shadowOf(geometry: BufferGeometry): BufferGeometry {
  * The geometry's sunlit faces pressed flat onto the ground along the sun's
  * rays: together they cover its whole shadow, and the faces turned away would
  * only draw over them again. Anything below the ground stays where it is.
+ * Heights count from the ground under each point, and the shadow lies on the
+ * ground where it lands.
  */
-function flatten(geometry: BufferGeometry, matrix?: Matrix4): BufferGeometry {
+function flatten(geometry: BufferGeometry, ground: Ground, matrix?: Matrix4): BufferGeometry {
   const source = geometry.getAttribute("position");
   const points = Array.from({ length: source.count }, (_, index) => {
     const point = new Vector3().fromBufferAttribute(source, index);
@@ -85,11 +92,10 @@ function flatten(geometry: BufferGeometry, matrix?: Matrix4): BufferGeometry {
   }
   const positions = new Float32Array(points.length * 3);
   points.forEach((point, index) => {
-    const height = Math.max(point.y, 0);
-    positions.set(
-      [point.x - (SUN.x / SUN.y) * height, 0, point.z - (SUN.z / SUN.y) * height],
-      index * 3,
-    );
+    const height = Math.max(point.y - ground(point.x, point.z), 0);
+    const x = point.x - (SUN.x / SUN.y) * height;
+    const z = point.z - (SUN.z / SUN.y) * height;
+    positions.set([x, ground(x, z), z], index * 3);
   });
   const shadow = new BufferGeometry();
   shadow.setAttribute("position", new Float32BufferAttribute(positions, 3));

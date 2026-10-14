@@ -9,7 +9,7 @@ import {
   Vector2,
 } from "three";
 
-import type { TerrainKind } from "../definition/types";
+import type { TerrainKind, WorldDefinition } from "../definition/types";
 import { hashString } from "../engine/hash";
 import { toFaded } from "./lighting";
 import { palette } from "./palette";
@@ -19,6 +19,14 @@ const SEGMENTS = 96;
 const WOBBLE: Record<TerrainKind, number> = { sand: 0.18, grass: 0.32, path: 0 };
 /** Sand down the shoulder darkens toward this, like sand the waves keep wet. */
 const WET_SAND = "#e6d196";
+/** How far below its top a patch's edge reaches its darkest. */
+const SHADE_DEPTH: Record<TerrainKind, number> = { sand: 0.2, grass: 0.15, path: 1 };
+
+/**
+ * Each terrain's surface height. Patches stack a hair apart so overlaps never
+ * z-fight; the lawn stands a step above the sand.
+ */
+export const TERRAIN_TOP: Record<TerrainKind, number> = { sand: 0, grass: 0.15, path: 0.02 };
 /** Grains per world unit along each axis of the sand's noise texture. */
 const GRAIN_DENSITY = 24;
 const GRAIN_SIZE = 128;
@@ -40,13 +48,25 @@ function profile(kind: TerrainKind, radius: number, top: number): Vector2[] {
       [radius - 0.2, top - 0.6],
     ].map(([x, y]) => new Vector2(x, y));
   }
-  // The lawn only rounds off at its edge, where it meets the sand.
+  // The lawn stands a step above the sand, its edge a soft rounded bank.
   return [
     [0, top],
-    [radius - 0.3, top],
-    [radius - 0.1, top - 0.006],
-    [radius, top - 0.02],
+    [radius - 0.45, top],
+    [radius - 0.25, top - 0.015],
+    [radius - 0.12, top - 0.05],
+    [radius - 0.04, top - 0.11],
+    [radius, -0.01],
   ].map(([x, y]) => new Vector2(x, y));
+}
+
+/** How much the wobbling outline pushes a patch's edge out at `angle`. */
+function wobbleAt(kind: TerrainKind, radius: number, top: number): (angle: number) => number {
+  const seed = hashString(`${kind}:${radius}:${top}`) % 1000;
+  const wobble = WOBBLE[kind];
+  return (angle) => {
+    const wave = Math.sin(3 * angle + seed) * 0.6 + Math.sin(5 * angle + seed * 2) * 0.4;
+    return 1 + (wobble * wave) / radius;
+  };
 }
 
 const cache = new Map<string, LatheGeometry>();
@@ -67,14 +87,13 @@ export function roundPatchGeometry(
   // Lathe faces point outward when the section runs bottom to top.
   const points = profile(kind, radius, top).toReversed();
   const lathe = new LatheGeometry(points, SEGMENTS);
-  const seed = hashString(`${kind}:${radius}:${top}`) % 1000;
-  const wobble = WOBBLE[kind];
+  const wobble = wobbleAt(kind, radius, top);
   const positions = lathe.getAttribute("position");
   const colors: number[] = [];
   const uvs: number[] = [];
   const shade = (color: string) => new Color(faded ? toFaded(color) : color);
   const dry = shade(kind === "sand" ? palette.sand : palette.grass);
-  const wet = shade(kind === "sand" ? WET_SAND : palette.grass);
+  const wet = shade(kind === "sand" ? WET_SAND : palette.grassBank);
   const color = new Color();
   for (let index = 0; index < positions.count; index += 1) {
     const x = positions.getX(index);
@@ -82,9 +101,7 @@ export function roundPatchGeometry(
     const y = positions.getY(index);
     const distance = Math.hypot(x, z);
     if (distance > 0) {
-      const angle = Math.atan2(x, z);
-      const wave = Math.sin(3 * angle + seed) * 0.6 + Math.sin(5 * angle + seed * 2) * 0.4;
-      const scale = 1 + (wobble * wave) / radius;
+      const scale = wobble(Math.atan2(x, z));
       positions.setXYZ(index, x * scale, y, z * scale);
     }
     // Laid flat over the patch, so grains keep one size from centre to shore.
@@ -92,8 +109,9 @@ export function roundPatchGeometry(
       (positions.getX(index) * GRAIN_DENSITY) / GRAIN_SIZE,
       (positions.getZ(index) * GRAIN_DENSITY) / GRAIN_SIZE,
     );
-    // Darken with depth below the top, so the shoulder shades into wet sand.
-    color.copy(dry).lerp(wet, Math.min(1, (top - y) / 0.2));
+    // Darken with depth below the top, so the shoulder shades into wet sand
+    // and the lawn's bank into deeper green.
+    color.copy(dry).lerp(wet, Math.min(1, (top - y) / SHADE_DEPTH[kind]));
     colors.push(color.r, color.g, color.b);
   }
   lathe.setAttribute("color", new Float32BufferAttribute(colors, 3));
@@ -101,6 +119,44 @@ export function roundPatchGeometry(
   lathe.computeVertexNormals();
   cache.set(key, lathe);
   return lathe;
+}
+
+const grounds = new WeakMap<WorldDefinition, (x: number, z: number) => number>();
+
+/**
+ * The height of an island's ground at (x, z), following its round patches'
+ * surfaces (lawn top, banks and all), so whatever stands there sits on it.
+ */
+export function groundHeight(definition: WorldDefinition): (x: number, z: number) => number {
+  let ground = grounds.get(definition);
+  if (ground !== undefined) return ground;
+  const surfaces = definition.terrain.flatMap((patch) => {
+    if (patch.shape !== "disc" || TERRAIN_TOP[patch.kind] <= 0) return [];
+    const top = TERRAIN_TOP[patch.kind];
+    const wobble = wobbleAt(patch.kind, patch.radius, top);
+    const section = profile(patch.kind, patch.radius, top);
+    return [{ center: patch.center, wobble, section }];
+  });
+  ground = (x, z) => {
+    let height = 0;
+    for (const { center, wobble, section } of surfaces) {
+      const dx = x - center[0];
+      const dz = z - center[1];
+      // Back to the circle the outline was wobbled from, then up the section.
+      const along = Math.hypot(dx, dz) / wobble(Math.atan2(dx, dz));
+      for (let index = 1; index < section.length; index += 1) {
+        const from = section[index - 1]!;
+        const to = section[index]!;
+        if (along > to.x) continue;
+        const t = (along - from.x) / (to.x - from.x);
+        height = Math.max(height, from.y + (to.y - from.y) * Math.max(0, t));
+        break;
+      }
+    }
+    return height;
+  };
+  grounds.set(definition, ground);
+  return ground;
 }
 
 let grain: DataTexture | undefined;
@@ -135,16 +191,17 @@ export function sandGrainTexture(): DataTexture {
 }
 
 /**
- * A flat disc with a gently wandering edge, lying on the water: the bands of
- * clear shallow water around an island. Built once per size and shared.
+ * A flat disc with a gently wandering edge: the bands of clear shallow water
+ * around an island, and the bands of green on its lawn. Built once per size
+ * and shared.
  */
-export function shallowsGeometry(radius: number): CircleGeometry {
+export function wavyDiscGeometry(radius: number): CircleGeometry {
   const key = `shallows:${radius}`;
   const cached = flatCache.get(key);
   if (cached !== undefined) return cached;
   const disc = new CircleGeometry(radius, SEGMENTS);
   disc.rotateX(-Math.PI / 2);
-  const edge = shallowsEdge(radius);
+  const edge = wavyDiscEdge(radius);
   const positions = disc.getAttribute("position");
   for (let index = 1; index < positions.count; index += 1) {
     const x = positions.getX(index);
@@ -160,10 +217,10 @@ export function shallowsGeometry(radius: number): CircleGeometry {
 const flatCache = new Map<string, CircleGeometry>();
 
 /**
- * How far the edge of `shallowsGeometry(radius)` sits outside its circle at
+ * How far the edge of `wavyDiscGeometry(radius)` sits outside its circle at
  * `angle` (measured from +z toward +x), so other shapes can follow it.
  */
-export function shallowsEdge(radius: number): (angle: number) => number {
+export function wavyDiscEdge(radius: number): (angle: number) => number {
   const seed = hashString(`shallows:${radius}`) % 1000;
   return (angle) =>
     0.35 * (Math.sin(4 * angle + seed) * 0.5 + Math.sin(7 * angle + seed * 3) * 0.5);

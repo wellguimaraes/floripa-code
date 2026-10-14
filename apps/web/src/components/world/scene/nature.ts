@@ -9,6 +9,8 @@ import { islandScenery, isScenery, SCENERY_SIZE } from "../engine/scenery";
 import { toFaded } from "./lighting";
 import { chain, rotateY, scale, translate } from "./merged";
 import { palette } from "./palette";
+import type { Ground } from "./shadows";
+import { groundHeight } from "./terrain";
 
 // KayKit Forest Nature Pack (CC0), trimmed to these models; see public/world/LICENSE.txt.
 const NATURE_URL = `${import.meta.env.BASE_URL}world/nature.glb`;
@@ -91,7 +93,8 @@ export function sceneryGeometry(
       ];
     },
   );
-  const merged = placements.length === 0 ? null : bake(models, placements, faded);
+  const merged =
+    placements.length === 0 ? null : bake(models, placements, groundHeight(definition), faded);
   if (merged !== null) byFaded.set(faded, merged);
   return merged;
 }
@@ -100,6 +103,7 @@ export function sceneryGeometry(
 function bake(
   models: NatureModels,
   placements: ReadonlyArray<Placement>,
+  ground: Ground,
   faded: boolean,
 ): BufferGeometry {
   const parts = placements.map((placement) => {
@@ -109,7 +113,7 @@ function bake(
     // Measured from the ground: stones sunk halfway in count only what shows.
     const size = placement.height / source.boundingBox!.max.y;
     const matrix: Matrix4 = chain(
-      translate(placement.x, 0, placement.z),
+      translate(placement.x, ground(placement.x, placement.z), placement.z),
       rotateY(placement.facing),
       scale(size),
     );
