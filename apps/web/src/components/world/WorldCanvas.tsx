@@ -301,7 +301,7 @@ export default function WorldCanvas(props: {
     setListenKey(null);
     // With a chat open, a click switches the chat to that character instead.
     if (selectedKey !== null) {
-      switchChat(character);
+      switchChat(character.facts);
       return;
     }
     // Opening a character's bubble drops a new-agent bubble nothing was typed into.
@@ -324,7 +324,7 @@ export default function WorldCanvas(props: {
   };
   const openChat = (character: WorldCharacter) => {
     setBubbleKey(null);
-    switchChat(character);
+    switchChat(character.facts);
   };
   // The ring moves to the clicked character (and its bubble closes) at once;
   // the chat, heavier to mount or swap, follows once that has been drawn.
@@ -335,8 +335,7 @@ export default function WorldCanvas(props: {
     pendingChat.current?.();
     pendingChat.current = null;
   }, []);
-  const switchChat = (character: WorldCharacter) => {
-    const key = character.facts.key;
+  const switchChat = ({ key, ref }: { readonly key: string; readonly ref: ScopedThreadRef }) => {
     dropPendingChat();
     if (key === selectedKey) {
       setSwitchingTo(null);
@@ -345,7 +344,7 @@ export default function WorldCanvas(props: {
     setSwitchingTo(key);
     pendingChat.current = afterPaint(() => {
       pendingChat.current = null;
-      void onExpand(character.facts.ref).finally(() =>
+      void onExpand(ref).finally(() =>
         setSwitchingTo((current) => (current === key ? null : current)),
       );
     });
@@ -981,6 +980,8 @@ export default function WorldCanvas(props: {
                   }),
                 );
                 setNewAgent(null);
+                // An open chat moves on to the new agent.
+                if (selectedKey !== null) switchChat(thread);
               }}
             />
           </div>

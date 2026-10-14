@@ -42,7 +42,7 @@ const workspaceValue = (workspace: WorldAgentWorkspace) =>
 /**
  * Starts an agent from an empty spot on an island. Enter sends the text as the
  * first message of a new thread in that project, with any attached, dropped,
- * or pasted files, using the defaults a fresh draft would; the chat stays closed.
+ * or pasted files, using the defaults a fresh draft would; an open chat switches to it.
  * In a repo it first asks where the agent works: the main worktree, a new worktree,
  * or another existing one, starting on the one the project's latest thread uses.
  * The model, its traits, permissions and plan mode use the chat's own pickers;

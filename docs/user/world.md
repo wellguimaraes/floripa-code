@@ -96,7 +96,7 @@ should do, pick its colour (it starts on one nobody on that island wears), and
 press `Enter`. Paste, drop, or use the paperclip to attach images or files too.
 A new thread starts in that project
 with your text and files as its first message, using the project's default model
-and permissions, and the new agent mines that pile. The chat stays closed. The colour is
+and permissions, and the new agent mines that pile. A closed chat stays closed; an open one switches to the new agent. The colour is
 remembered in this browser, and so is where it worked.
 
 `mod+n` does the same from the keyboard. It asks which island, with one big
