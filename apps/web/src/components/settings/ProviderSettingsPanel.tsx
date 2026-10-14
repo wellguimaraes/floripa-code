@@ -361,7 +361,8 @@ function ProviderSettingsPanelContent(target: ProviderSettingsTarget) {
       (searchTargetId === searchableSetting("provider-health-check-interval").id ||
         searchTargetId === searchableSetting("usage-providers").id ||
         searchTargetId === searchableSetting("voice-openrouter-key").id ||
-        searchTargetId === searchableSetting("voice-transcription-model").id) &&
+        searchTargetId === searchableSetting("voice-transcription-model").id ||
+        searchTargetId === searchableSetting("auto-retitle-threads").id) &&
       !selectedEnvironmentCanRenderSettings &&
       searchableEnvironmentId !== undefined
     ) {

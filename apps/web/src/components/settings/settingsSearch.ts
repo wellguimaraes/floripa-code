@@ -662,7 +662,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "OpenRouter API key",
     to: "/settings/providers",
     providerSettingsOnly: true,
-    searchTerms: ["voice input microphone speech transcription dictation mic"],
+    searchTerms: ["voice input microphone speech transcription dictation mic thread title jev"],
   },
   {
     id: "voice-transcription-model",
@@ -670,6 +670,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/providers",
     providerSettingsOnly: true,
     searchTerms: ["voice input speech to text whisper voxtral scribe elevenlabs openrouter"],
+  },
+  {
+    id: "auto-retitle-threads",
+    title: "Retitle threads when the task changes",
+    to: "/settings/providers",
+    providerSettingsOnly: true,
+    searchTerms: ["automatic thread title rename regenerate topic drift jev openrouter"],
   },
   {
     id: "agent-browser-access",
