@@ -327,7 +327,9 @@ export const ChatHeader = memo(function ChatHeader({
           hat={worldLook.hat}
         />
       ) : null}
-      <div className="flex min-w-0 flex-1 flex-col">
+      {/* In the world the regenerate button makes the title row taller than its text, so
+          the stack sits lower to leave even room over the chip and under the title. */}
+      <div className={cn("flex min-w-0 flex-1 flex-col", worldLook !== null && "pt-1.5")}>
         {/* The project title is often just a folder name, so the sidebar's
             label for it sits above, matching the sidebar row. */}
         {worldLook === null &&
