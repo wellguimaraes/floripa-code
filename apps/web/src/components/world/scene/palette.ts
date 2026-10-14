@@ -25,8 +25,6 @@ export const palette = {
   cloud: "#6b7280",
   towel: "#f87171",
   towelStripe: "#fef2f2",
-  pole: "#e5e7eb",
-  canopy: "#fb923c",
   palmTrunk: "#a16207",
   palmTrunkDark: "#854d0e",
   palmLeaf: "#16a34a",

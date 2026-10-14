@@ -166,11 +166,6 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
       prop("palm", -0.8, -9, 3.6),
       prop("palm", -2.3, 8.7, 5),
       prop("palm", -8.6, -1.2, 2.9),
-      // Beside the beach spots, never in front of one: a canopy hides whoever is under it.
-      ...[
-        ...arc({ radius: 7.6 * scale, degrees: [-30] }),
-        ...arc({ radius: 7.2 * scale, degrees: [88] }),
-      ].map((slot) => ({ kind: "umbrella" as const, position: slot.position, facing: 0 })),
       { kind: "pier", position: onPier(0, 0), facing: PIER_FACING, length: PIER_LENGTH },
     ],
     areas: {

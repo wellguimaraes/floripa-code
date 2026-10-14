@@ -13,7 +13,6 @@ const CASTERS: Partial<
   // Its crown, which leans out from the trunk.
   palm: { height: 2.6, radius: 1.15 },
   tree: { height: 1.25, radius: 0.8 },
-  umbrella: { height: 2.1, radius: 1.05 },
   // The pile sits in front of its slot, where the parent mines it.
   rockPile: { height: 0.3, radius: 0.7, ahead: 0.95 },
 };
@@ -23,7 +22,7 @@ const PALM_LEAN = 0.65;
 const cache = new Map<string, BufferGeometry | null>();
 
 /**
- * Soft round shadows under an island's trees, palms, umbrellas and rock piles,
+ * Soft round shadows under an island's trees, palms and rock piles,
  * cast away from the sun, baked into one flat mesh so they cost a single draw.
  */
 export function propShadows(

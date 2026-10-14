@@ -87,9 +87,8 @@ function distance(a: Vec3, b: Vec3): number {
 /** How much room each kind of prop takes at walking height. */
 const FOOTPRINTS: Partial<Record<PropKind, number>> = {
   tree: 0.45,
-  // Trunks only: crowns and canopies are overhead.
+  // Trunk only: the crown is overhead.
   palm: 0.3,
-  umbrella: 0.15,
   beachChair: 0.45,
   rockPile: 0.65,
 };

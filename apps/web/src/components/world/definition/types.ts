@@ -27,7 +27,7 @@ export interface WorldSlot {
   readonly ledge?: boolean;
 }
 
-export type PropKind = "towel" | "beachChair" | "pier" | "umbrella" | "palm" | "tree" | "rockPile";
+export type PropKind = "towel" | "beachChair" | "pier" | "palm" | "tree" | "rockPile";
 
 export interface WorldProp {
   readonly kind: PropKind;

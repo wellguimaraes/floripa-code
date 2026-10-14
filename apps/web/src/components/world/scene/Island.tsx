@@ -210,15 +210,6 @@ function PropModel({
       return <MergedMeshes parts={mergedParts("beachChair", loungerParts)} />;
     case "pier":
       return <MergedMeshes parts={mergedParts(`pier:${length}`, () => pierParts(length))} />;
-    case "umbrella":
-      return (
-        <>
-          <Cylinder radius={0.03} height={2} at={[0, 1, 0]} color={palette.pole} />
-          <mesh geometry={geometry.cone} position-y={2.1} scale={[1.1, 0.45, 1.1]}>
-            <LitMaterial color={palette.canopy} />
-          </mesh>
-        </>
-      );
     case "palm":
       return <Palm seed={seed} />;
     case "tree":
