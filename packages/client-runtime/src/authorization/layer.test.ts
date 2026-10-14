@@ -212,7 +212,7 @@ const makeHarness = Effect.fn("TestRemoteAuthorization.makeHarness")(function* (
           ClientCapabilities.ClientPresentation,
           ClientCapabilities.ClientPresentation.of({
             metadata: {
-              label: "Atoll Code Test",
+              label: "Floripa Code Test",
               deviceType: "mobile",
               os: "test",
             },
@@ -563,7 +563,7 @@ describe("RemoteEnvironmentAuthorization", () => {
         for (const [, init] of exchanges) {
           expect(Object.fromEntries(tokenFields(init))).toMatchObject({
             subject_token: BOOTSTRAP.credential,
-            client_label: "Atoll Code Test",
+            client_label: "Floripa Code Test",
             client_device_type: "mobile",
             client_os: "test",
           });

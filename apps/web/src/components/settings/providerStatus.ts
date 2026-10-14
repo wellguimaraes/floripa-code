@@ -45,7 +45,7 @@ export function getProviderSummary(provider: ServerProvider | undefined) {
       headline: "Disabled",
       detail:
         provider.message ??
-        "This provider is installed but disabled for new sessions in Atoll Code.",
+        "This provider is installed but disabled for new sessions in Floripa Code.",
     };
   }
   if (!provider.installed) {

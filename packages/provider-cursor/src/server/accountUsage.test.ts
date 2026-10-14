@@ -328,7 +328,7 @@ describe("readCursorAccountUsage", () => {
         accountKey: null,
         records: [],
         missing: false,
-        error: "Allow Keychain access on the Mac running Atoll Code, then refresh.",
+        error: "Allow Keychain access on the Mac running Floripa Code, then refresh.",
       });
     }).pipe(Effect.provide(NodeServices.layer)),
   );

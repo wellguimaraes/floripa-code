@@ -25,7 +25,7 @@ export function runServicePreflight(input: {
       status: "blocked",
       version,
       reason:
-        "This release requires a newer Atoll Code service launcher. Update it on the server machine.",
+        "This release requires a newer Floripa Code service launcher. Update it on the server machine.",
     };
   }
 

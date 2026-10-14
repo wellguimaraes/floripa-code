@@ -107,7 +107,7 @@ export function npmPlatformPackageManifest(
   return {
     name: npmPlatformPackageName(platformKey),
     version,
-    description: `Atoll Code CLI executable for ${platformKey}`,
+    description: `Floripa Code CLI executable for ${platformKey}`,
     license: serverPackageJson.license,
     repository: serverPackageJson.repository,
     os: [os],
@@ -155,7 +155,7 @@ export function npmPlatformPackageReadme(platformKey: CliArchivePlatformKey): st
   return [
     `# ${npmPlatformPackageName(platformKey)}`,
     "",
-    `The Atoll Code CLI executable for ${platformKey}. Do not install this package directly:`,
+    `The Floripa Code CLI executable for ${platformKey}. Do not install this package directly:`,
     `it is an optional dependency of \`${NPM_LAUNCHER_PACKAGE_NAME}\`, which picks the package for the`,
     "current platform and runs the executable inside it.",
     "",
@@ -176,7 +176,7 @@ export function npmLauncherPackageManifest(
   return {
     name: NPM_LAUNCHER_PACKAGE_NAME,
     version,
-    description: "Atoll Code CLI. Installs the self-contained executable for this platform.",
+    description: "Floripa Code CLI. Installs the self-contained executable for this platform.",
     license: serverPackageJson.license,
     repository: serverPackageJson.repository,
     bin: { t3: "./bin/t3.js" },
@@ -207,7 +207,7 @@ try {
 } catch {
   process.stderr.write(
     [
-      "t3: no Atoll Code CLI build is available for this platform (" + key + ").",
+      "t3: no Floripa Code CLI build is available for this platform (" + key + ").",
       "Supported platforms: " + SUPPORTED.join(", ") + ".",
       "If yours is listed, reinstall t3 so npm fetches its optional dependency.",
       "The desktop app and release archives are at https://github.com/pingdotgg/t3code/releases",

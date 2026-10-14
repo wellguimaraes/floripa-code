@@ -3215,7 +3215,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           notification: {
             source: { kind: "system" as const },
             outcome: "updated" as const,
-            summary: "Atoll Code restarted and resumed this turn",
+            summary: "Floripa Code restarted and resumed this turn",
             detail: "Continue where you left off.",
           },
           attachments: [],
@@ -3237,7 +3237,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           continuationItems.flatMap((item) =>
             item.type === "notification" ? [[item.summary, item.detail]] : [],
           ),
-          ["Atoll Code restarted and resumed this turn", "Continue where you left off."],
+          ["Floripa Code restarted and resumed this turn", "Continue where you left off."],
         );
         // A differently identified stale delivery still must not create another run.
         yield* orchestrator.dispatch({

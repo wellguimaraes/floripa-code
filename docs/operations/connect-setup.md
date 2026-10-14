@@ -119,15 +119,15 @@ actual web and server ports. For example, with the default ports:
 ```sh
 VITE_DEV_SERVER_URL=http://127.0.0.1:5733 \
 T3CODE_PORT=13773 \
-  "/Applications/Atoll Code (Alpha).app/Contents/MacOS/Atoll Code (Alpha)"
+  "/Applications/Floripa Code (Alpha).app/Contents/MacOS/Floripa Code (Alpha)"
 ```
 
 Rebuild the signed app after native dependency, main-process, preload, entitlement, provisioning,
 or signing changes. Renderer edits can reuse it. Verify the installed bundle before testing:
 
 ```sh
-codesign --verify --deep --strict "/Applications/Atoll Code (Alpha).app"
-codesign -d --entitlements :- "/Applications/Atoll Code (Alpha).app"
+codesign --verify --deep --strict "/Applications/Floripa Code (Alpha).app"
+codesign -d --entitlements :- "/Applications/Floripa Code (Alpha).app"
 ```
 
 ## Restricting sign-ups

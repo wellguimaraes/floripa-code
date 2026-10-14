@@ -131,7 +131,7 @@ export const makeAcpMcpOverAcpBridge = Effect.fn("AcpMcpOverAcpBridge.make")(fun
           );
           return yield* Effect.fail(
             new AcpMcpOverAcpError(
-              `Atoll Code MCP endpoint responded with HTTP ${response.status}.`,
+              `Floripa Code MCP endpoint responded with HTTP ${response.status}.`,
             ),
           );
         }
@@ -169,7 +169,7 @@ export const makeAcpMcpOverAcpBridge = Effect.fn("AcpMcpOverAcpBridge.make")(fun
         if (!response.ok && response.status !== 404) {
           return yield* Effect.fail(
             new AcpMcpOverAcpError(
-              `Atoll Code MCP endpoint rejected disconnect with HTTP ${response.status}.`,
+              `Floripa Code MCP endpoint rejected disconnect with HTTP ${response.status}.`,
             ),
           );
         }

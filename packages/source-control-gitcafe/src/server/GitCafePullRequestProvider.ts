@@ -722,7 +722,7 @@ export const make = Effect.gen(function* () {
           return;
         }
         default:
-          return yield* failure(input.action, `GitCafe cannot ${input.action} from Atoll Code.`);
+          return yield* failure(input.action, `GitCafe cannot ${input.action} from Floripa Code.`);
       }
     }),
     updateChangeRequest: Effect.fn("GitCafePullRequestProvider.updateChangeRequest")(

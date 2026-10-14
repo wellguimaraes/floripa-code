@@ -111,7 +111,7 @@ export function callAcpMcpTool(
           yield* discardResponseBody(response);
           return yield* Effect.fail(
             new AcpMcpBridgeError(
-              `Atoll Code MCP endpoint responded with HTTP ${response.status}.`,
+              `Floripa Code MCP endpoint responded with HTTP ${response.status}.`,
             ),
           );
         }
@@ -136,7 +136,7 @@ export function callAcpMcpTool(
     const initializeResponse = initialized.find((entry) => asEnvelope(entry)?.id === initializeId);
     if (initializeResponse === undefined || asEnvelope(initializeResponse)?.error !== undefined) {
       return yield* Effect.fail(
-        new AcpMcpBridgeError("Atoll Code MCP endpoint rejected initialization."),
+        new AcpMcpBridgeError("Floripa Code MCP endpoint rejected initialization."),
       );
     }
     yield* send({ jsonrpc: "2.0", method: "notifications/initialized" });
@@ -153,7 +153,7 @@ export function callAcpMcpTool(
     if (envelope === null || envelope.error !== undefined) {
       return yield* Effect.fail(
         new AcpMcpBridgeError(
-          `Atoll Code MCP tool call failed${envelope?.error === undefined ? "." : `: ${JSON.stringify(envelope.error)}`}`,
+          `Floripa Code MCP tool call failed${envelope?.error === undefined ? "." : `: ${JSON.stringify(envelope.error)}`}`,
         ),
       );
     }
@@ -217,7 +217,7 @@ export function runAcpMcpStdioBridge(options: AcpMcpStdioBridgeOptions): Effect.
           if (envelope.id !== undefined) {
             yield* respondWithError(
               envelope.id,
-              `Atoll Code MCP endpoint responded with HTTP ${response.status}.`,
+              `Floripa Code MCP endpoint responded with HTTP ${response.status}.`,
             );
           }
           return yield* discardResponseBody(response);
@@ -229,7 +229,7 @@ export function runAcpMcpStdioBridge(options: AcpMcpStdioBridgeOptions): Effect.
           const error = Cause.squash(cause);
           return respondWithError(
             envelope.id,
-            `Atoll Code MCP bridge request failed: ${error instanceof Error ? error.message : String(error)}`,
+            `Floripa Code MCP bridge request failed: ${error instanceof Error ? error.message : String(error)}`,
           );
         }),
       );

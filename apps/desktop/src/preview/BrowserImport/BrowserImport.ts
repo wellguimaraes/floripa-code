@@ -1,6 +1,6 @@
 /**
  * Browser import service - lists importable sources and writes their cookies
- * into a Atoll Code browser profile's Electron partition.
+ * into a Floripa Code browser profile's Electron partition.
  *
  * @module BrowserImport
  */

@@ -63,7 +63,7 @@ vi.mock("electron", () => ({
     getSystemLocale: getSystemLocaleMock,
     getVersion: getVersionMock,
     isPackaged: true,
-    name: "Atoll Code",
+    name: "Floripa Code",
     on: onMock,
     quit: quitMock,
     relaunch: relaunchMock,

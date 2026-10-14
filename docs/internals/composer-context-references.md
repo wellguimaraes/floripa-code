@@ -1,6 +1,6 @@
 # Composer context references
 
-> For maintainers. Using Atoll Code? See [docs/user](../user/).
+> For maintainers. Using Floripa Code? See [docs/user](../user/).
 
 Inline context references let a user message point at a typed payload from an exact position in
 its prose: an image, a file, a terminal excerpt, a picked page element, a preview annotation, a

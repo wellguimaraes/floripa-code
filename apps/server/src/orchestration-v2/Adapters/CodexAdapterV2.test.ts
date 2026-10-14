@@ -1568,7 +1568,7 @@ function codexReplayPreamble(input: {
         id: 1,
         method: "initialize",
         params: {
-          clientInfo: { name: "Atoll Code", title: "Atoll Code", version: packageJson.version },
+          clientInfo: { name: "Floripa Code", title: "Floripa Code", version: packageJson.version },
           capabilities: {
             experimentalApi: true,
             optOutNotificationMethods: ["turn/diff/updated"],
@@ -1585,7 +1585,7 @@ function codexReplayPreamble(input: {
       frame: {
         id: 1,
         result: {
-          userAgent: "Atoll Code/0.156.1",
+          userAgent: "Floripa Code/0.156.1",
           codexHome: "/tmp/codex-home",
           platformFamily: "unix",
           platformOs: "macos",
@@ -2165,7 +2165,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       // version, so pin the whole value here.
       assert.deepEqual(initializeParams, [
         {
-          clientInfo: { name: "Atoll Code", title: "Atoll Code", version: packageJson.version },
+          clientInfo: { name: "Floripa Code", title: "Floripa Code", version: packageJson.version },
           capabilities: {
             experimentalApi: true,
             optOutNotificationMethods: ["turn/diff/updated"],

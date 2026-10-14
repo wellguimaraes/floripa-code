@@ -1,6 +1,6 @@
 /** Shows startup failures before React can replace the boot splash. */
 export function showBootError(error: unknown) {
-  console.error("Atoll Code failed to start.", error);
+  console.error("Floripa Code failed to start.", error);
   const bootShell = document.getElementById("boot-shell");
   if (!bootShell) return;
 
@@ -9,7 +9,7 @@ export function showBootError(error: unknown) {
   content.setAttribute("role", "alert");
 
   const message = document.createElement("p");
-  message.textContent = "Atoll Code could not load.";
+  message.textContent = "Floripa Code could not load.";
   content.append(message);
 
   if (import.meta.env.DEV && error instanceof Error) {

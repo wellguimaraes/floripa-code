@@ -140,10 +140,10 @@ function HostedStaticOnboardingState() {
               <div className="mx-auto mb-5 flex size-11 items-center justify-center rounded-xl border border-border/70 bg-background/70 text-muted-foreground">
                 <LinkIcon className="size-5" />
               </div>
-              <EmptyTitle>Connect to a computer running Atoll Code</EmptyTitle>
+              <EmptyTitle>Connect to a computer running Floripa Code</EmptyTitle>
               <EmptyDescription>
-                This app connects to Atoll Code running on your computer or a server. Start the
-                Atoll Code desktop app or command-line server on that machine and keep it running.
+                This app connects to Floripa Code running on your computer or a server. Start the
+                Floripa Code desktop app or command-line server on that machine and keep it running.
               </EmptyDescription>
               <EmptyDescription>{description}</EmptyDescription>
               <div className="mt-6 flex justify-center">

@@ -45,7 +45,7 @@ function threadShowingBrowser(
 }
 
 /**
- * Opens each web link or HTML file the OS hands Atoll Code as the default browser
+ * Opens each web link or HTML file the OS hands Floripa Code as the default browser
  * (macOS). With a browser panel on screen the page opens as a new tab there;
  * otherwise it starts a thread without a project, its browser panel maximized.
  */

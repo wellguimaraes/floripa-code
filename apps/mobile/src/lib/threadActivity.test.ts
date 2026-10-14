@@ -85,20 +85,20 @@ it("shows only the structured path in expanded mobile read details", () => {
   expect(withoutPath?.canExpand).toBe(false);
 });
 
-it("expands a Atoll Code notice to the prompt the agent got", () => {
+it("expands a Floripa Code notice to the prompt the agent got", () => {
   const item = {
     ...base("restart-notice", "2026-06-20T00:00:03.000Z", 2),
     type: "notification",
     source: { kind: "system" },
     outcome: "updated",
-    summary: "Atoll Code restarted and resumed this turn",
+    summary: "Floripa Code restarted and resumed this turn",
     detail: "Continue where you left off.",
   } as OrchestrationV2TurnItem;
   const [activity] = buildThreadFeed([projected(item, 0)]).flatMap((entry) =>
     entry.type === "activity-group" ? entry.activities : [],
   );
 
-  expect(activity?.summary).toBe("Atoll Code restarted and resumed this turn");
+  expect(activity?.summary).toBe("Floripa Code restarted and resumed this turn");
   expect(activity?.canExpand).toBe(true);
   expect(activity?.getFullDetail()).toBe("Continue where you left off.");
 });

@@ -40,7 +40,7 @@ export function createUpdateProgress(
         const labels = {
           download: "Downloading...",
           verify: "Verifying the download...",
-          extract: "Extracting Atoll Code...",
+          extract: "Extracting Floripa Code...",
           validate: "Checking the new executable...",
           cached: "Using the downloaded release...",
         };

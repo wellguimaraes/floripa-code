@@ -77,7 +77,7 @@ const state: RelayAgentActivityState = {
 };
 
 const aggregate: RelayAgentActivityAggregateState = {
-  title: "Atoll Code",
+  title: "Floripa Code",
   subtitle: "Agent work in progress",
   activeCount: 1,
   updatedAt: state.updatedAt,

@@ -1,6 +1,6 @@
 # Relay observability
 
-> For maintainers. Using Atoll Code? See [docs/user](../user/).
+> For maintainers. Using Floripa Code? See [docs/user](../user/).
 
 The relay Alchemy stack owns a shared Axiom trace setup:
 

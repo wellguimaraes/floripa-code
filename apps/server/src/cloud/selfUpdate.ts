@@ -204,12 +204,12 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
         return yield* desktopAppUpdate.run(reportProgress);
       }
       return yield* failWith(
-        "This server is managed by the Atoll Code desktop app on its machine; update the desktop app to update it.",
+        "This server is managed by the Floripa Code desktop app on its machine; update the desktop app to update it.",
       );
     }
     if (capability === null) {
       return yield* failWith(
-        "Remote updates require the Atoll Code background service. Run `t3 service install` on the server machine.",
+        "Remote updates require the Floripa Code background service. Run `t3 service install` on the server machine.",
       );
     }
 

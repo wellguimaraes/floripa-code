@@ -4,9 +4,11 @@ import { captureDestinationFrame, findCaptureDestination } from "./feedbackGeome
 const window = (pid, title) => ({ get_pid: () => pid, get_title: () => title });
 
 it("activates only a window of the process authenticated by D-Bus", () => {
-  const target = window(42, "Atoll Code");
-  expect(findCaptureDestination([window(99, "Atoll Code"), target], 42, "Atoll Code")).toBe(target);
-  expect(findCaptureDestination([window(99, "Atoll Code")], 42, "Atoll Code")).toBeUndefined();
+  const target = window(42, "Floripa Code");
+  expect(findCaptureDestination([window(99, "Floripa Code"), target], 42, "Floripa Code")).toBe(
+    target,
+  );
+  expect(findCaptureDestination([window(99, "Floripa Code")], 42, "Floripa Code")).toBeUndefined();
   expect(findCaptureDestination([target], 42, "Title before navigation")).toBe(target);
 });
 

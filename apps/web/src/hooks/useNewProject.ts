@@ -101,7 +101,7 @@ export function useNewProject() {
       }
 
       const { projectId, workspaceRoot, commitError } = result.value;
-      // The folder sits in Atoll Code's data directory, so always say where.
+      // The folder sits in Floripa Code's data directory, so always say where.
       toastManager.add(
         stackedThreadToast(
           commitError === undefined

@@ -57,9 +57,9 @@ describe("T3 orchestration provider instructions", () => {
       state: { interactionMode: "default", hasT3Mcp: true },
     });
 
-    assert.include(injected, "Atoll Code interaction mode: Default");
-    assert.include(injected, "Atoll Code collaborative browser");
-    assert.include(injected, "Atoll Code orchestration");
+    assert.include(injected, "Floripa Code interaction mode: Default");
+    assert.include(injected, "Floripa Code collaborative browser");
+    assert.include(injected, "Floripa Code orchestration");
     assert.include(injected, "<user_request>\nInspect the repository.\n</user_request>");
   });
 
@@ -77,14 +77,14 @@ describe("T3 orchestration provider instructions", () => {
         state: { ...defaultState, interactionMode: "plan" },
         previousState: defaultState,
       }),
-      "Atoll Code interaction mode: Plan",
+      "Floripa Code interaction mode: Plan",
     );
     const withoutMcp = t3AcpPromptWithInstructions({
       prompt,
       state: { interactionMode: "default", hasT3Mcp: false },
     });
-    assert.include(withoutMcp, "Atoll Code interaction mode: Default");
-    assert.notInclude(withoutMcp, "Atoll Code collaborative browser");
-    assert.notInclude(withoutMcp, "Atoll Code orchestration");
+    assert.include(withoutMcp, "Floripa Code interaction mode: Default");
+    assert.notInclude(withoutMcp, "Floripa Code collaborative browser");
+    assert.notInclude(withoutMcp, "Floripa Code orchestration");
   });
 });

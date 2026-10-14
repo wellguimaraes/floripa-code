@@ -11,7 +11,7 @@ describe("SnapShotAttachmentDetails", () => {
       kind: "snap-shot" as const,
       capturedAt: "2026-08-27T00:00:00.000Z",
       appName: "Safari",
-      windowTitle: "Atoll Code",
+      windowTitle: "Floripa Code",
     };
 
     expect(snapShotIncludesAccessibility(source)).toBe(false);
@@ -23,7 +23,7 @@ describe("SnapShotAttachmentDetails", () => {
       kind: "snap-shot" as const,
       capturedAt: "2026-08-27T00:00:00.000Z",
       appName: "Safari",
-      windowTitle: "Atoll Code",
+      windowTitle: "Floripa Code",
       accessibility: {
         format: "element-tree" as const,
         coordinateSpace: "captured-image" as const,
@@ -31,7 +31,7 @@ describe("SnapShotAttachmentDetails", () => {
         truncated: false,
         root: {
           role: "window",
-          name: "Atoll Code",
+          name: "Floripa Code",
           bounds: { x: 0, y: 0, width: 800, height: 600 },
           children: [
             {
@@ -57,8 +57,8 @@ describe("SnapShotAttachmentDetails", () => {
       kind: "snap-shot" as const,
       capturedAt: "2026-08-27T00:00:00.000Z",
       appName: "Safari",
-      windowTitle: "Atoll Code",
-      accessibleText: "Atoll Code\nSave",
+      windowTitle: "Floripa Code",
+      accessibleText: "Floripa Code\nSave",
       accessibility: {
         format: "element-tree" as const,
         coordinateSpace: "captured-image" as const,
@@ -66,7 +66,7 @@ describe("SnapShotAttachmentDetails", () => {
         truncated: false,
         root: {
           role: "window",
-          name: "Atoll Code",
+          name: "Floripa Code",
           bounds: { x: 0, y: 0, width: 800, height: 600 },
           children: [],
         },

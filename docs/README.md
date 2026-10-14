@@ -1,8 +1,8 @@
-# Atoll Code docs
+# Floripa Code docs
 
-## Using Atoll Code
+## Using Floripa Code
 
-- [Install Atoll Code](./user/install.md)
+- [Install Floripa Code](./user/install.md)
 - [Messages and context](./user/composer.md)
 - [Working with threads](./user/thread-sidebar.md)
 - [World view (experimental)](./user/world.md)
@@ -15,19 +15,19 @@
 - [SnapShots](./user/snap-shot.md)
 - [Visual replies](./user/html-renders.md)
 - [Import browser sessions](./user/browser-import.md)
-- [Use Atoll Code as your default browser](./user/default-browser.md)
+- [Use Floripa Code as your default browser](./user/default-browser.md)
 - [Devices](./user/devices.md)
 - [Usage and limits](./user/usage.md)
 - [Product usage data](./user/telemetry.md)
 - [Remote access](./user/remote-access.md)
 - [Outside agents (MCP)](./user/outside-agents.md)
 - [Running in the background](./user/background-service.md)
-- [Updating Atoll Code](./user/updating.md)
+- [Updating Floripa Code](./user/updating.md)
 - Provider guides: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md) · [OpenCode](./user/providers-opencode.md) · [Antigravity](./user/providers-antigravity.md) · [Pi](./user/providers-pi.md) · [Muse Code](./user/providers-muse.md)
 
 ---
 
-## Working on Atoll Code
+## Working on Floripa Code
 
 Start with the [development runbook](./operations/development.md) and
 [contribution policy](../CONTRIBUTING.md).

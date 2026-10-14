@@ -173,7 +173,7 @@ export async function startDesktopAppControlServer(input: {
         finish(
           invalidResponse(
             parsed.requestId,
-            "Atoll Code could not process the desktop app request.",
+            "Floripa Code could not process the desktop app request.",
           ),
         );
       });

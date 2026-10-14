@@ -338,7 +338,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
 
       Alert.alert(
         "Disable notifications",
-        "Open system Settings to disable notifications for Atoll Code.",
+        "Open system Settings to disable notifications for Floripa Code.",
         [
           { text: "Cancel", style: "cancel" },
           { text: "Open Settings", onPress: () => void Linking.openSettings() },
@@ -492,7 +492,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
                 void openAndroidLiveUpdateSettings().catch(() => {
                   Alert.alert(
                     "Couldn't open Settings",
-                    "Open Android Settings, select Atoll Code, then enable Live Updates in Notifications.",
+                    "Open Android Settings, select Floripa Code, then enable Live Updates in Notifications.",
                   );
                 });
               }}

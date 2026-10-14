@@ -1,13 +1,13 @@
 # Open source licenses
 
-Atoll Code includes third-party software and adapted assets. To read their license and attribution
+Floripa Code includes third-party software and adapted assets. To read their license and attribution
 notices:
 
 - On web and desktop, open **Settings → General**, find **Open source licenses** under **About**,
   and select **View licenses**.
-- On mobile, open **Settings → About Atoll Code → Open source licenses**.
+- On mobile, open **Settings → About Floripa Code → Open source licenses**.
 
-The page lists the version when available, license identifier, and the parts of Atoll Code that include
-or use the item. This also covers optional device tools that Atoll Code installs on demand instead of
+The page lists the version when available, license identifier, and the parts of Floripa Code that include
+or use the item. This also covers optional device tools that Floripa Code installs on demand instead of
 bundling. Select a row to read the complete notice text. Use the search field to find a package,
 version, license, or app component.

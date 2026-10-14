@@ -80,7 +80,7 @@ export const makeProviderAuthService = Effect.gen(function* () {
         instanceId,
         operation,
         detail: instance
-          ? "This provider does not support sign-in in Atoll Code."
+          ? "This provider does not support sign-in in Floripa Code."
           : "This provider instance is no longer available.",
       });
     }

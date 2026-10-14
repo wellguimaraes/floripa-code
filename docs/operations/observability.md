@@ -1,8 +1,8 @@
 # Observability
 
-> For maintainers. Using Atoll Code? See [docs/user](../user/).
+> For maintainers. Using Floripa Code? See [docs/user](../user/).
 
-Atoll Code has one server-side observability model:
+Floripa Code has one server-side observability model:
 
 - pretty logs go to stdout for humans
 - completed spans go to a local NDJSON trace file
@@ -216,7 +216,7 @@ macOS app bundle example:
 T3CODE_OTLP_TRACES_URL=http://localhost:4318/v1/traces \
 T3CODE_OTLP_METRICS_URL=http://localhost:4318/v1/metrics \
 T3CODE_OTLP_LOGS_URL=http://localhost:4318/v1/logs \
-"/Applications/Atoll Code.app/Contents/MacOS/Atoll Code"
+"/Applications/Floripa Code.app/Contents/MacOS/Floripa Code"
 ```
 
 Direct binary example:
@@ -668,7 +668,7 @@ pid="$(jq .pid "${T3CODE_HOME:-$HOME/.t3}/userdata/server-runtime.json")"
 ps -p "$pid" -o command=
 ```
 
-If `ps` shows the Atoll Code server, send the signal:
+If `ps` shows the Floripa Code server, send the signal:
 
 ```bash
 kill -USR2 "$pid"

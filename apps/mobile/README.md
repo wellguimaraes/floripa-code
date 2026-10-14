@@ -1,7 +1,7 @@
-# Atoll Code Mobile
+# Floripa Code Mobile
 
 > [!WARNING]
-> Atoll Code Mobile is currently in development and is not distributed yet. If you want to try it out, you can build it from source.
+> Floripa Code Mobile is currently in development and is not distributed yet. If you want to try it out, you can build it from source.
 
 ## Quickstart
 
@@ -10,9 +10,9 @@
 
 This app has three variants:
 
-- `development`: Expo dev client, installable side-by-side as `Atoll Code Dev`
-- `preview`: persistent internal preview build, installable side-by-side as `Atoll Code Preview`
-- `production`: store/release build as `Atoll Code`
+- `development`: Expo dev client, installable side-by-side as `Floripa Code Dev`
+- `preview`: persistent internal preview build, installable side-by-side as `Floripa Code Preview`
+- `production`: store/release build as `Floripa Code`
 
 Run commands from `apps/mobile`.
 

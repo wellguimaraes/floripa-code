@@ -747,13 +747,13 @@ it.effect("tells a turn cut mid-way about the background work it lost", () =>
   }),
 );
 
-it.effect("shows a continuation as a Atoll Code notice whose detail is the prompt", () =>
+it.effect("shows a continuation as a Floripa Code notice whose detail is the prompt", () =>
   Effect.gen(function* () {
     const [resumed] = yield* continuationDispatches(cutMidTurn());
     assert.deepEqual(resumed?.notification, {
       source: { kind: "system" },
       outcome: "updated",
-      summary: "Atoll Code restarted and resumed this turn",
+      summary: "Floripa Code restarted and resumed this turn",
       detail: "Continue where you left off.",
     });
   }),

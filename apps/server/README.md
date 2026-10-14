@@ -1,3 +1,3 @@
 # Server
 
-Node.js WebSocket server for the Atoll Code app.
+Node.js WebSocket server for the Floripa Code app.
