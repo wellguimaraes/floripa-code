@@ -6,12 +6,13 @@ export const palette = {
   sky: "#8fd3f4",
   skyLight: "#ffffff",
   groundLight: "#7fae7a",
-  water: "#3a8bbd",
-  // Clear Caribbean water over sand: pale by the shore, turquoise further out.
-  shallows: "#a6eee4",
-  lagoon: "#4fd3cf",
-  sand: "#f3dfa4",
-  grass: "#8fcf72",
+  // Sea, lagoon, shallows, sand, and grass follow the Atoll logo's rings.
+  water: "#0c5b87",
+  // Clear water over sand: pale cyan by the shore, brighter blue further out.
+  shallows: "#7ee9f0",
+  lagoon: "#1b7bb1",
+  sand: "#fff3c3",
+  grass: "#65c272",
   path: "#d9c7a0",
   shadow: "#0f172a",
   selection: "#ffffff",

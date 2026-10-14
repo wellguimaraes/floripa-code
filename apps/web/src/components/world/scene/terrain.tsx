@@ -1,4 +1,13 @@
-import { CircleGeometry, Color, Float32BufferAttribute, LatheGeometry, Vector2 } from "three";
+import {
+  CircleGeometry,
+  Color,
+  DataTexture,
+  Float32BufferAttribute,
+  LatheGeometry,
+  LinearMipmapLinearFilter,
+  RepeatWrapping,
+  Vector2,
+} from "three";
 
 import type { TerrainKind } from "../definition/types";
 import { hashString } from "../engine/hash";
@@ -9,7 +18,10 @@ const SEGMENTS = 96;
 /** How far the shore wanders in and out of its circle, in world units. */
 const WOBBLE: Record<TerrainKind, number> = { sand: 0.18, grass: 0.32, path: 0 };
 /** Sand down the shoulder darkens toward this, like sand the waves keep wet. */
-const WET_SAND = "#d9bd7c";
+const WET_SAND = "#e6d196";
+/** Grains per world unit along each axis of the sand's noise texture. */
+const GRAIN_DENSITY = 24;
+const GRAIN_SIZE = 128;
 
 /**
  * Half-section of a round patch, from its centre out and down: a flat top
@@ -59,6 +71,7 @@ export function roundPatchGeometry(
   const wobble = WOBBLE[kind];
   const positions = lathe.getAttribute("position");
   const colors: number[] = [];
+  const uvs: number[] = [];
   const shade = (color: string) => new Color(faded ? toFaded(color) : color);
   const dry = shade(kind === "sand" ? palette.sand : palette.grass);
   const wet = shade(kind === "sand" ? WET_SAND : palette.grass);
@@ -74,14 +87,51 @@ export function roundPatchGeometry(
       const scale = 1 + (wobble * wave) / radius;
       positions.setXYZ(index, x * scale, y, z * scale);
     }
+    // Laid flat over the patch, so grains keep one size from centre to shore.
+    uvs.push(
+      (positions.getX(index) * GRAIN_DENSITY) / GRAIN_SIZE,
+      (positions.getZ(index) * GRAIN_DENSITY) / GRAIN_SIZE,
+    );
     // Darken with depth below the top, so the shoulder shades into wet sand.
     color.copy(dry).lerp(wet, Math.min(1, (top - y) / 0.2));
     colors.push(color.r, color.g, color.b);
   }
   lathe.setAttribute("color", new Float32BufferAttribute(colors, 3));
+  lathe.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
   lathe.computeVertexNormals();
   cache.set(key, lathe);
   return lathe;
+}
+
+let grain: DataTexture | undefined;
+
+/**
+ * Tiling greyscale noise that darkens the sand grain by grain, used as the
+ * sand's `map` over its vertex colours. Seeded, so every island looks the same.
+ */
+export function sandGrainTexture(): DataTexture {
+  if (grain !== undefined) return grain;
+  const data = new Uint8Array(GRAIN_SIZE * GRAIN_SIZE * 4);
+  let seed = 0x5eed;
+  const random = () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 0x1_0000_0000;
+  };
+  for (let index = 0; index < GRAIN_SIZE * GRAIN_SIZE; index += 1) {
+    // Mostly fine variation, with the odd darker speck.
+    const speck = random() < 0.06 ? 0.12 : 0;
+    const value = Math.round(255 * (1 - 0.14 * random() - speck));
+    data.set([value, value, value, 255], index * 4);
+  }
+  grain = new DataTexture(data, GRAIN_SIZE, GRAIN_SIZE);
+  grain.wrapS = RepeatWrapping;
+  grain.wrapT = RepeatWrapping;
+  // Crisp grains up close, averaged out from afar instead of shimmering.
+  grain.minFilter = LinearMipmapLinearFilter;
+  grain.generateMipmaps = true;
+  grain.anisotropy = 4;
+  grain.needsUpdate = true;
+  return grain;
 }
 
 /**

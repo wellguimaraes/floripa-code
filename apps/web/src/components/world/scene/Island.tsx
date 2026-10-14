@@ -20,7 +20,7 @@ import {
 import { palette } from "./palette";
 import { Ripple } from "./Ripple";
 import { propShadows } from "./shadows";
-import { roundPatchGeometry, shallowsEdge, shallowsGeometry } from "./terrain";
+import { roundPatchGeometry, sandGrainTexture, shallowsEdge, shallowsGeometry } from "./terrain";
 
 const TERRAIN: Record<TerrainKind, { readonly color: string; readonly top: number }> = {
   // Stacked a hair apart so overlapping patches never z-fight.
@@ -82,7 +82,10 @@ export function Island(props: {
             position={[patch.center[0], 0, patch.center[1]]}
           >
             <mesh geometry={roundPatchGeometry(patch.kind, patch.radius, style.top, faded)}>
-              <meshLambertMaterial vertexColors />
+              <meshLambertMaterial
+                vertexColors
+                {...(patch.kind === "sand" ? { map: sandGrainTexture() } : {})}
+              />
             </mesh>
             {patch.kind === "sand" && !faded ? (
               // Just above the sea, under the island's rim: turquoise, then
