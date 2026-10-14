@@ -69,7 +69,6 @@ import { useIslandPullRequests } from "./useIslandPullRequests";
 import { useWorldHueStore } from "./worldHueStore";
 import { useWorldLookStore, type WorldLook } from "./worldLookStore";
 import { useWorldArrangementStore } from "./worldArrangementStore";
-import { useWorldIslandSizeStore } from "./worldIslandSizeStore";
 import { useWorldModeStore } from "./worldModeStore";
 import { useWorldVisibilityStore } from "./worldVisibilityStore";
 import { AddProjectButton } from "./AddProjectButton";
@@ -161,12 +160,6 @@ export default function WorldCanvas(props: {
   );
   const pullRequestCounts = useIslandPullRequests(visibleMembers, projects);
   const arrangement = useWorldArrangementStore((state) => state.arrangement);
-  const sizes = useWorldIslandSizeStore((state) => state.sizes);
-  const setIslandSize = useWorldIslandSizeStore((state) => state.setSize);
-  const sizeOf = useCallback(
-    (key: string) => Math.min(sizes[key] ?? 0, definitions.length - 1),
-    [sizes, definitions],
-  );
   const [memory] = useState(createArchipelagoMemory);
   // Piles picked for agents started from them, by the thread they will become.
   const [requested, setRequested] = useState<ReadonlyMap<string, SlotRequest>>(new Map());
@@ -182,7 +175,7 @@ export default function WorldCanvas(props: {
       memory.resolve({
         facts: visibleFacts,
         definition,
-        definitionOf: (key) => definitions[sizeOf(key)]!,
+        sizes: definitions,
         projectOrder: visibleOrder,
         hueCount: palette.families.length,
         hatCount: HAT_COUNT,
@@ -196,7 +189,6 @@ export default function WorldCanvas(props: {
       visibleFacts,
       definition,
       definitions,
-      sizeOf,
       visibleOrder,
       clock,
       requested,
@@ -436,7 +428,6 @@ export default function WorldCanvas(props: {
   const showIslandMenu = async (key: string, point: { x: number; y: number }) => {
     const api = readLocalApi();
     if (api === undefined) return;
-    const size = sizeOf(key);
     const idle =
       islands
         .find((island) => island.key === key)
@@ -445,13 +436,6 @@ export default function WorldCanvas(props: {
       [
         { id: "only", label: "Show only this island" },
         { id: "hide", label: "Hide this island" },
-        {
-          id: "grow",
-          label: "Grow island",
-          disabled: size === definitions.length - 1,
-          separatorBefore: true,
-        },
-        { id: "shrink", label: "Shrink island", disabled: size === 0 },
         { id: "zoom", label: "Zoom to this island", separatorBefore: true },
         {
           id: "archive-idle",
@@ -465,8 +449,6 @@ export default function WorldCanvas(props: {
     );
     if (clicked === "only") showOnlyIsland(key, projectOrder);
     else if (clicked === "hide") hideIsland(key);
-    else if (clicked === "grow") setIslandSize(key, size + 1);
-    else if (clicked === "shrink") setIslandSize(key, size - 1);
     else if (clicked === "zoom") setZoomTo({ key });
     else if (clicked === "archive-idle") void archiveAll(idle);
     else if (clicked === "restore-archived") setRestoringOn(key);
@@ -1848,7 +1830,7 @@ function createArchipelagoMemory() {
     resolve(input: {
       readonly facts: ReadonlyArray<CharacterFacts>;
       readonly definition: WorldDefinition;
-      readonly definitionOf: (key: string) => WorldDefinition;
+      readonly sizes: ReadonlyArray<WorldDefinition>;
       readonly projectOrder: ReadonlyArray<string>;
       readonly hueCount: number;
       readonly hatCount: number;

@@ -1,7 +1,7 @@
 import type { Vec3, WorldDefinition } from "../definition/types";
 import type { CharacterFacts } from "./facts";
 import { hashString } from "./hash";
-import { matchesFacts } from "./rules";
+import { matchesFacts, resolveIntent } from "./rules";
 import type { Placement, SlotRequest } from "./slots";
 import { resolveWorld, type WorldCharacter } from "./world";
 
@@ -48,8 +48,11 @@ export const EMPTY_ARCHIPELAGO_MEMORY: ArchipelagoMemory = {
 export function resolveArchipelago(input: {
   readonly facts: ReadonlyArray<CharacterFacts>;
   readonly definition: WorldDefinition;
-  /** The template of each island, by project key; `definition` when left out. */
-  readonly definitionOf?: (key: string) => WorldDefinition;
+  /**
+   * The island's sizes, smallest first: each island takes the one that fits
+   * its characters (see `fittingSize`). Every island is `definition` when left out.
+   */
+  readonly sizes?: ReadonlyArray<WorldDefinition>;
   /** Every known project key in a stable order, e.g. by creation time. */
   readonly projectOrder: ReadonlyArray<string>;
   /** How many family colours the renderer has. */
@@ -94,7 +97,11 @@ export function resolveArchipelago(input: {
   }
 
   const definitions = new Map(
-    keys.map((key) => [key, input.definitionOf?.(key) ?? definition] as const),
+    keys.map((key) => {
+      const sized =
+        input.sizes === undefined ? definition : fittingSize(input.sizes, byProject.get(key) ?? []);
+      return [key, sized] as const;
+    }),
   );
   const offsets = islandOffsets({
     islands: keys.map((key) => ({
@@ -145,6 +152,32 @@ export function resolveArchipelago(input: {
     };
   });
   return { islands, memory: { cells, placements, hues, hats } };
+}
+
+/**
+ * The smallest size that leaves a slot free in every area with props at its
+ * slots (the rock piles, the towels): an island grows once one fills up, and
+ * shrinks back once the smaller size would have room again. The biggest when
+ * none does.
+ */
+export function fittingSize(
+  sizes: ReadonlyArray<WorldDefinition>,
+  facts: ReadonlyArray<CharacterFacts>,
+): WorldDefinition {
+  const fits = (size: WorldDefinition) => {
+    const wanted = new Map<string, number>();
+    for (const character of facts) {
+      const area = resolveIntent(character, size).go;
+      wanted.set(area, (wanted.get(area) ?? 0) + 1);
+    }
+    return Object.entries(size.areas).every(
+      ([id, area]) =>
+        area.kind !== "fixed" ||
+        area.slotProp === undefined ||
+        (wanted.get(id) ?? 0) < area.slots.length,
+    );
+  };
+  return sizes.find(fits) ?? sizes.at(-1)!;
 }
 
 /**

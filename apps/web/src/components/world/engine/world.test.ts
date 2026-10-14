@@ -10,6 +10,7 @@ import {
   islandRadius,
   resolveArchipelago,
   arrangementColumns,
+  fittingSize,
   type IslandArrangement,
   suggestHue,
 } from "./archipelago";
@@ -528,24 +529,58 @@ describe("resolveArchipelago", () => {
   });
 
   it("lays each island out at its own size", () => {
-    const big: WorldDefinition = {
+    const desks = testWorld.areas.desks as FixedArea;
+    const small: WorldDefinition = {
       ...testWorld,
-      terrain: [{ shape: "box", kind: "grass", center: [5, 0], size: [20, 12] }],
+      areas: { ...testWorld.areas, desks: { ...desks, slotProp: "rockPile" } },
     };
+    const big: WorldDefinition = {
+      ...small,
+      terrain: [{ shape: "box", kind: "grass", center: [5, 0], size: [20, 12] }],
+      areas: {
+        ...small.areas,
+        desks: {
+          ...desks,
+          slotProp: "rockPile",
+          slots: [0, 1, 2, 3, 4].map((x) => ({ position: [x, 0, 0] as const, facing: 0 })),
+        },
+      },
+    };
+    // Project b fills every desk on the small island, so it takes the big one.
     const result = resolveArchipelago({
-      facts: [character({ projectKey: "a" }), character({ projectKey: "b" })],
-      definition: testWorld,
-      definitionOf: (key) => (key === "b" ? big : testWorld),
+      facts: [
+        character({ projectKey: "a" }),
+        ...[1, 2, 3].map(() => character({ projectKey: "b" })),
+      ],
+      definition: small,
+      sizes: [small, big],
       projectOrder: ["a", "b"],
       hueCount: 3,
       hatCount: 3,
       previous: EMPTY_ARCHIPELAGO_MEMORY,
     });
     const [a, b] = result.islands;
+    expect(a!.definition).toBe(small);
     expect(b!.definition).toBe(big);
     expect(Math.hypot(b!.offset[0] - a!.offset[0], b!.offset[2] - a!.offset[2])).toBeCloseTo(
-      islandRadius(testWorld) + islandRadius(big) + testWorld.archipelago.gap,
+      islandRadius(small) + islandRadius(big) + testWorld.archipelago.gap,
     );
+  });
+
+  it("grows an island once its piles or towels fill up, and shrinks it once a smaller one has room", () => {
+    const sizeOf = (facts: CharacterFacts[]) =>
+      islandWorlds.indexOf(fittingSize(islandWorlds, facts));
+    const miners = (count: number) => Array.from({ length: count }, () => character());
+    const resters = (count: number) =>
+      Array.from({ length: count }, () => character({ status: "ready" }));
+    const [smallest, middle] = ISLAND_SIZES;
+    expect(sizeOf([])).toBe(0);
+    expect(sizeOf(miners(smallest!.piles - 1))).toBe(0);
+    expect(sizeOf(miners(smallest!.piles))).toBe(1);
+    expect(sizeOf(resters(smallest!.restSpots))).toBe(1);
+    expect(sizeOf(miners(middle!.piles))).toBe(2);
+    // Past the biggest size, it stays the biggest.
+    expect(sizeOf(miners(100))).toBe(islandWorlds.length - 1);
   });
 
   it("lines islands up down the screen, along it, or in a square grid", () => {
