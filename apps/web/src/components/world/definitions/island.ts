@@ -88,7 +88,7 @@ const PILES: ReadonlyArray<ReadonlyArray<readonly [number, number]>> = [
 /**
  * What each island size holds, smallest first: every step up adds half the
  * smallest island's rock piles and spots on the beach. Every size also has
- * the pier's chairs (see `PIER_SEATS`).
+ * the pier's seats (see `PIER_SEATS`).
  */
 export const ISLAND_SIZES = [
   { piles: 8, restSpots: 9 },
@@ -101,7 +101,7 @@ const LOUNGER_SEAT = 0.4;
 
 // The pier runs out from the right end of the beach, square to the camera's
 // view, so it crosses the screen sideways and hides no one. Its seats line the
-// camera's side, facing it, rods out over the water.
+// camera's side, facing it: agents sit on the edge, legs and rods over the water.
 const PIER_ANGLE = (-45 * Math.PI) / 180;
 const PIER_FACING = Math.PI / 2 - PIER_ANGLE;
 const PIER_LENGTH = 7;
@@ -109,10 +109,13 @@ const PIER_LENGTH = 7;
 const PIER_LANDING = 1;
 /** Along the pier from its foot: the first stretch stays on the sand. */
 const PIER_SEATS = [2.2, 3.5, 4.8, 6.1];
-/** Off the deck's middle toward the camera's side (local -x). */
-const PIER_SEAT_SIDE = 0.45;
-// Seat height of the folding chairs on the pier (see the `fishingChair` prop).
-const FISHING_SEAT = 0.3;
+/**
+ * Off the deck's middle toward the camera's side (local -x): the deck is 1.8
+ * wide (see the `pier` prop), so a sitter's knees reach just past its edge.
+ */
+const PIER_SEAT_SIDE = 0.6;
+/** The top of the pier's deck. */
+const PIER_DECK = 0.02;
 
 /** Lying along the shore rather than across it, so arms spread out don't reach the lawn. */
 const alongShore = (slot: WorldSlot): WorldSlot => ({ ...slot, facing: slot.facing + Math.PI / 2 });
@@ -144,8 +147,8 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
     position: onPier(along, -PIER_SEAT_SIDE),
     // Square to the pier, toward the camera's side.
     facing: PIER_FACING - Math.PI / 2,
-    prop: "fishingChair",
-    seat: FISHING_SEAT,
+    seat: PIER_DECK,
+    ledge: true,
     via: pierFoot,
     fishing: true,
   }));
@@ -197,7 +200,7 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
         // also means higher on screen, so the front row hides no one.
         spillover: arc({ radius: 6.5 * scale, degrees: spread(60, 0, 8) }),
       },
-      // Agents idle for over a day go fishing: the pier's chairs first, then
+      // Agents idle for over a day go fishing: off the pier's edge first, then
       // the far shore, sitting on the sand between the trees and palms.
       pier: {
         kind: "fixed",
@@ -287,7 +290,7 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
       celebrate: { pose: "wave", ambientFps: 12 },
       sit: { pose: "slump" },
       sleep: { pose: "lie" },
-      // Sits on the sand where there is no chair; the spot hands over the rod.
+      // Sits on the sand off the pier; the spot hands over the rod.
       fish: { pose: "slump" },
       stranded: { pose: "slump" },
       dead: { pose: "dead" },

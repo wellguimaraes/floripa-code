@@ -73,11 +73,13 @@ export function CharacterModel(props: {
   readonly raiseHand?: boolean;
   /** Holds the right arm out ahead while standing still, e.g. to hold a fishing rod. */
   readonly reachHand?: boolean;
+  /** Sitting, hangs the legs down over a drop ahead, e.g. off a pier's edge. */
+  readonly dangleLegs?: boolean;
   /** Receives the right hand, so the caller can tie things to it. */
   readonly handRef?: React.RefObject<Object3D | null>;
 }) {
   const { pose, shades, isWalking, handItem, headItem, handRef } = props;
-  const { raiseHand = false, reachHand = false } = props;
+  const { raiseHand = false, reachHand = false, dangleLegs = false } = props;
   const gltf = useLoader(GLTFLoader, MODEL_URL);
   const invalidate = useThree((state) => state.invalidate);
 
@@ -112,6 +114,10 @@ export function CharacterModel(props: {
       crown: head === null ? null : crownSeat(scene, head),
       arm: bones(scene, ["upperarm.r", "lowerarm.r", "wrist.r"]),
       armLeft: bones(scene, ["upperarm.l", "lowerarm.l", "wrist.l"]),
+      legs: [
+        bones(scene, ["upperleg.l", "lowerleg.l", "foot.l"]),
+        bones(scene, ["upperleg.r", "lowerleg.r", "foot.r"]),
+      ],
     };
   }, [gltf]);
 
@@ -185,6 +191,9 @@ export function CharacterModel(props: {
       foldArm(rig.armLeft, false);
     } else if (raiseHand) raiseArm(rig.arm);
     else if (reachHand && !isWalking()) reachArm(rig.arm);
+    if (dangleLegs && pose === "slump" && !isWalking()) {
+      for (const leg of rig.legs) dangleLeg(leg, rig.scene);
+    }
   });
 
   useLayoutEffect(() => {
@@ -319,7 +328,7 @@ function raiseArm(arm: ReadonlyArray<Object3D | null>): void {
   forward.set(0, 0, 1).applyQuaternion(upper.parent.getWorldQuaternion(parentWorld));
   reach.addScaledVector(forward, 0.35);
   reach.y = 1.5;
-  pointArm(arm, reach.normalize());
+  pointLimb(arm, reach.normalize());
 }
 
 /** Points the arm ahead, a little outward and down, e.g. to hold a rod out. */
@@ -337,7 +346,7 @@ function reachArm(arm: ReadonlyArray<Object3D | null>): void {
   forward.y = 0;
   reach.add(forward.normalize());
   reach.y = -0.3;
-  pointArm(arm, reach.normalize());
+  pointLimb(arm, reach.normalize());
 }
 
 /**
@@ -361,7 +370,7 @@ function foldArm(arm: ReadonlyArray<Object3D | null>, front: boolean): void {
     .addScaledVector(forward, front ? 0.45 : 0.25)
     .setY(front ? 0.3 : 0.15)
     .normalize();
-  pointArm(arm, reach, across);
+  pointLimb(arm, reach, across);
 }
 
 /** Flings the arm out sideways along the ground, a little toward the head, for lying flat. */
@@ -374,16 +383,26 @@ function spreadArm(arm: ReadonlyArray<Object3D | null>, head: Object3D | null): 
   head.getWorldPosition(forward).sub(torso).normalize();
   reach.subVectors(shoulder, torso).normalize().addScaledVector(forward, 0.4);
   reach.y = 0;
-  pointArm(arm, reach.normalize());
+  pointLimb(arm, reach.normalize());
+}
+
+/** Thigh out ahead, shin hanging down: sitting on an edge, from the floor-sitting clip. */
+function dangleLeg(leg: ReadonlyArray<Object3D | null>, body: Object3D): void {
+  forward.set(0, 0, 1).applyQuaternion(body.getWorldQuaternion(parentWorld));
+  forward.y = 0;
+  forward.normalize();
+  reach.copy(forward).setY(-0.2).normalize();
+  across.copy(forward).multiplyScalar(0.25).setY(-1).normalize();
+  pointLimb(leg, reach, across);
 }
 
 /**
- * Turns each bone, after the clip has posed it, so the next joint sits
- * straight along `direction` (in world space), or the forearm along
- * `forearm` when given. Works from joint positions, so it needs no knowledge
- * of the rig's bone axes.
+ * Turns each bone of an arm or leg, after the clip has posed it, so the next
+ * joint sits straight along `direction` (in world space), or the forearm or
+ * shin along `forearm` when given. Works from joint positions, so it needs no
+ * knowledge of the rig's bone axes.
  */
-function pointArm(
+function pointLimb(
   arm: ReadonlyArray<Object3D | null>,
   direction: Vector3,
   forearm: Vector3 = direction,

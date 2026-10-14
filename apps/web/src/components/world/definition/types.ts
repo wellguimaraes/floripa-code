@@ -23,17 +23,11 @@ export interface WorldSlot {
   readonly via?: Vec3;
   /** The occupant holds a rod out over the water while resting here. */
   readonly fishing?: boolean;
+  /** On the `seat`, sits at a drop with legs hanging over it, e.g. a pier's side. */
+  readonly ledge?: boolean;
 }
 
-export type PropKind =
-  | "towel"
-  | "beachChair"
-  | "pier"
-  | "fishingChair"
-  | "umbrella"
-  | "palm"
-  | "tree"
-  | "rockPile";
+export type PropKind = "towel" | "beachChair" | "pier" | "umbrella" | "palm" | "tree" | "rockPile";
 
 export interface WorldProp {
   readonly kind: PropKind;

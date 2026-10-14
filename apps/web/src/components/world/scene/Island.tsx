@@ -208,8 +208,6 @@ function PropModel({
       return <MergedMeshes parts={mergedParts("towel", towelParts)} />;
     case "beachChair":
       return <MergedMeshes parts={mergedParts("beachChair", loungerParts)} />;
-    case "fishingChair":
-      return <MergedMeshes parts={mergedParts("fishingChair", fishingChairParts)} />;
     case "pier":
       return <MergedMeshes parts={mergedParts(`pier:${length}`, () => pierParts(length))} />;
     case "umbrella":
@@ -336,18 +334,6 @@ function loungerParts(): Part[] {
     block([0.54, 0.06, 1.04], [0, 0.37, 0.2], palette.chairCushion),
     block([0.62, 0.05, 0.7], [0, 0, -0.35], palette.chairFrame, backrest),
     block([0.54, 0.06, 0.66], [0, 0.05, -0.35], palette.chairCushion, backrest),
-  ];
-}
-
-/** A folding chair, low and small: seat at 0.3, facing +z. */
-function fishingChairParts(): Part[] {
-  const backrest = chain(translate(0, 0.3, -0.22), rotateX(-0.25));
-  return [
-    ...[-0.22, 0.22].flatMap((x) =>
-      [-0.18, 0.18].map((z) => block([0.04, 0.28, 0.04], [x, 0.14, z], palette.chairFrame)),
-    ),
-    block([0.48, 0.04, 0.44], [0, 0.29, 0], palette.chairCushion),
-    block([0.48, 0.36, 0.04], [0, 0.18, 0], palette.chairCushion, backrest),
   ];
 }
 

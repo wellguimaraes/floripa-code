@@ -271,6 +271,7 @@ export function Character(props: {
             isWalking={() => motion.current.route.length > 0}
             raiseHand={intent.balloon !== undefined || (seated && activity.pose === "wave")}
             reachHand={placement.fishing === true}
+            dangleLegs={placement.ledge === true}
             handRef={hand}
             handItem={
               activity.pose === "mine" || activity.pose === "ponder" ? <ModelPickaxe /> : undefined

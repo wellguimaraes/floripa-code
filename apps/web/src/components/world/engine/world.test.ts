@@ -599,7 +599,7 @@ describe("validateWorldDefinition", () => {
     for (const island of islandWorlds) expect(validateWorldDefinition(island)).toEqual([]);
   });
 
-  it("gives every island size its rock piles, beach spots and pier chairs", () => {
+  it("gives every island size its rock piles, beach spots and pier seats", () => {
     const counts = islandWorlds.map((island) => {
       const { mine, beach, pier } = island.areas as Record<string, FixedArea>;
       const fishing = pier!.slots.filter((slot) => slot.fishing === true).length;

@@ -14,6 +14,8 @@ export interface Placement {
   readonly via?: Vec3;
   /** See `WorldSlot.fishing`. */
   readonly fishing?: boolean;
+  /** See `WorldSlot.ledge`. */
+  readonly ledge?: boolean;
   /** Road node a character walks through to reach this spot. */
   readonly entry: string;
 }
