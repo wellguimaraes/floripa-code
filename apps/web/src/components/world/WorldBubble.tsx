@@ -400,7 +400,7 @@ export function WorldBubble(props: {
               {/* The agent's answer: its opening and closing lines, the middle folded away. */}
               {typing || preview !== null ? (
                 <div
-                  className="mr-auto flex max-w-[85%] min-w-0 flex-col rounded-2xl rounded-bl-md bg-accent px-3 py-1.5 text-foreground dark:bg-background"
+                  className="mr-auto flex max-w-[85%] min-w-0 flex-col rounded-2xl rounded-bl-md bg-emerald-600 px-3 py-1.5 text-white"
                   aria-label="Agent's last reply"
                 >
                   <RollingSwap swapKey={typing ? "typing" : (lastReply?.id ?? "typing")}>
@@ -414,7 +414,7 @@ export function WorldBubble(props: {
                           </span>
                         ))}
                         {preview.skipped > 0 ? (
-                          <span className="text-muted-foreground">
+                          <span className="text-white/70">
                             … {preview.skipped} more {preview.skipped === 1 ? "line" : "lines"}
                           </span>
                         ) : null}
