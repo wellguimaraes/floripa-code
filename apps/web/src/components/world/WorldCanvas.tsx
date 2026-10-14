@@ -63,6 +63,7 @@ import { SharkSightings } from "./scene/Sharks";
 import { SIGN_TOP, Sign, signTextColor } from "./scene/Sign";
 import { NewAgentBubble } from "./NewAgentBubble";
 import { NewAgentProjectPicker } from "./NewAgentProjectPicker";
+import { useIslandPullRequests } from "./useIslandPullRequests";
 import { useWorldHueStore } from "./worldHueStore";
 import { useWorldLookStore, type WorldLook } from "./worldLookStore";
 import { useWorldArrangementStore } from "./worldArrangementStore";
@@ -152,6 +153,11 @@ export default function WorldCanvas(props: {
     () => islandFacts.filter((f) => !hidden[f.projectKey]),
     [islandFacts, hidden],
   );
+  const visibleMembers = useMemo(
+    () => new Map(visibleOrder.map((key) => [key, projectMembers.get(key) ?? []])),
+    [visibleOrder, projectMembers],
+  );
+  const pullRequestCounts = useIslandPullRequests(visibleMembers, projects);
   const arrangement = useWorldArrangementStore((state) => state.arrangement);
   const sizes = useWorldIslandSizeStore((state) => state.sizes);
   const setIslandSize = useWorldIslandSizeStore((state) => state.setSize);
@@ -857,6 +863,7 @@ export default function WorldCanvas(props: {
                   slot={island.definition.archipelago.sign}
                   text={projectTitles.get(island.key) ?? "Project"}
                   color={faded ? toFaded(plate) : plate}
+                  pullRequests={pullRequestCounts.get(island.key) ?? 0}
                 />
                 {island.characters
                   .filter((character) => !abducted.has(character.facts.key))
