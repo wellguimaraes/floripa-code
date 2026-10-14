@@ -74,7 +74,7 @@ export function BubbleComposer(props: {
   readonly submitLabel: string;
   readonly speakLabel: string;
   /** The status line when nothing else is going on, such as "Enter to send". */
-  readonly hint?: string;
+  readonly hint?: ReactNode;
   /** Owned by the bubble, so its own failures and the composer's share one line. */
   readonly error: string | null;
   readonly onError: (message: string | null) => void;

@@ -23,7 +23,7 @@ import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "../chat/composerPromptHistory"
 import { BubbleComposer } from "./BubbleComposer";
 import type { CharacterFacts } from "./engine/facts";
 import { HuePicker } from "./HuePicker";
-import { palette } from "./scene/palette";
+import { type FamilyShades as Shades, palette } from "./scene/palette";
 import { useBubbleAttachments } from "./useBubbleAttachments";
 import { ARCHIVE_SHORTCUT, useArchiveShortcut } from "./useArchiveShortcut";
 import { replyPreview } from "./lastExchange";
@@ -55,8 +55,6 @@ const NO_MODIFIERS = {
 };
 // Handled by the composer's Enter key.
 const EXPAND_SHORTCUT = formatShortcutLabel({ ...NO_MODIFIERS, key: "enter", modKey: true });
-// Spelled out for the footer hint: "⌘ + Enter" / "Ctrl + Enter".
-const EXPAND_HINT = EXPAND_SHORTCUT.replace(/^\u2318/, "\u2318+").replaceAll("+", " + ");
 
 /**
  * A quick reply box beside a character: send a message without leaving the
@@ -260,7 +258,13 @@ export function WorldBubble(props: {
       inputLabel={`Message ${facts.title || "this agent"}`}
       submitLabel="Send"
       speakLabel="Speak a message"
-      hint={`Enter to send · ${EXPAND_HINT} to open full chat`}
+      hint={
+        <>
+          <Kbd variant="outline">Enter</Kbd> to send
+          <span className="mx-2">·</span>
+          <Kbd variant="outline">{EXPAND_SHORTCUT}</Kbd> to open full chat
+        </>
+      }
       error={state.phase === "error" ? state.message : null}
       onError={showError}
       busy={state.phase === "sending"}
@@ -270,7 +274,7 @@ export function WorldBubble(props: {
       listenOnOpen={listen}
       header={
         <>
-          <div className="-mx-2.5 flex justify-end gap-2 border-b border-border px-2.5 pb-2">
+          <div className="-mx-2.5 flex items-center gap-2 border-b border-border px-2.5 pb-2">
             {/* Subagents share the family colour, so a kid repaints its parent and siblings too. */}
             <Popover open={pickingHue} onOpenChange={setPickingHue}>
               <PopoverTrigger
@@ -280,15 +284,10 @@ export function WorldBubble(props: {
                     size="xs"
                     aria-label="Change color"
                     title="Change color"
-                    className="mr-auto"
                   />
                 }
               >
-                <span className="text-muted-foreground">Color</span>
-                <span
-                  className="size-3 rounded-full"
-                  style={{ backgroundColor: palette.families[hue]?.base }}
-                />
+                <FamilyShades shades={palette.families[hue]} />
               </PopoverTrigger>
               <PopoverPopup side="bottom" align="start" padding="compact">
                 <HuePicker
@@ -301,18 +300,14 @@ export function WorldBubble(props: {
                 />
               </PopoverPopup>
             </Popover>
-            {isStoppable(facts) ? (
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                aria-label="Stop this run"
-                title="Stop this run"
-                disabled={state.phase === "stopping"}
-                onClick={() => void stop()}
-              >
-                <SquareIcon className="fill-destructive text-destructive" />
-              </Button>
-            ) : null}
+            <span
+              className={cn(
+                "min-w-0 flex-1 truncate text-sm font-medium",
+                regeneratingTitle && "opacity-55",
+              )}
+            >
+              {facts.title || "Untitled thread"}
+            </span>
             {readEnvironmentSupportsTitleRegeneration(facts.ref.environmentId) ? (
               <Button
                 variant="ghost"
@@ -323,6 +318,18 @@ export function WorldBubble(props: {
                 onClick={() => void regenerateTitle()}
               >
                 <RefreshCwIcon className={cn(regeneratingTitle && "animate-spin")} />
+              </Button>
+            ) : null}
+            {isStoppable(facts) ? (
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                aria-label="Stop this run"
+                title="Stop this run"
+                disabled={state.phase === "stopping"}
+                onClick={() => void stop()}
+              >
+                <SquareIcon className="fill-destructive text-destructive" />
               </Button>
             ) : null}
             <Tooltip>
@@ -370,20 +377,14 @@ export function WorldBubble(props: {
               <XIcon />
             </Button>
           </div>
-          {/* Below the actions, so the title gets the bubble's full width. */}
-          <span
-            className={cn("text-sm font-medium break-words", regeneratingTitle && "opacity-55")}
-          >
-            {facts.title || "Untitled thread"}
-          </span>
           {/* The last exchange as a messaging-app thread: yours on the right, the agent's on the left. */}
           {lastSent !== null || preview !== null || typing ? (
-            // The title's line-height leaves 3px of slack under its glyphs; pull up by that much so
-            // the gap above matches the gap below.
-            <div className="-mt-[3px] flex flex-col gap-1 text-xs">
+            <div className="my-1 flex flex-col gap-2 text-xs">
               {lastSent !== null ? (
                 <div
-                  className="ml-auto max-w-[85%] rounded-2xl rounded-br-md bg-primary px-3 py-1.5 break-words text-primary-foreground"
+                  className="ml-auto max-w-[85%] rounded-lg px-3 py-2 break-words"
+                  // Light in every app theme, so the text stays dark on them.
+                  style={{ backgroundColor: palette.bubbleSent, color: palette.bubbleText }}
                   aria-label="Your last message"
                 >
                   {/* Clamp on an inner span: overflow clips at the padding edge, so clamping the padded
@@ -400,7 +401,8 @@ export function WorldBubble(props: {
               {/* The agent's answer: its opening and closing lines, the middle folded away. */}
               {typing || preview !== null ? (
                 <div
-                  className="mr-auto flex max-w-[85%] min-w-0 flex-col rounded-2xl rounded-bl-md bg-emerald-600 px-3 py-1.5 text-white"
+                  className="mr-auto flex max-w-[85%] min-w-0 flex-col rounded-lg px-3 py-2"
+                  style={{ backgroundColor: palette.bubbleReply, color: palette.bubbleText }}
                   aria-label="Agent's last reply"
                 >
                   <RollingSwap swapKey={typing ? "typing" : (lastReply?.id ?? "typing")}>
@@ -414,7 +416,7 @@ export function WorldBubble(props: {
                           </span>
                         ))}
                         {preview.skipped > 0 ? (
-                          <span className="text-white/70">
+                          <span className="opacity-60">
                             … {preview.skipped} more {preview.skipped === 1 ? "line" : "lines"}
                           </span>
                         ) : null}
@@ -433,5 +435,17 @@ export function WorldBubble(props: {
         </>
       }
     />
+  );
+}
+
+/** A family's three shades side by side in a pill: head, body, legs. */
+function FamilyShades({ shades }: { readonly shades: Shades | undefined }) {
+  if (shades === undefined) return null;
+  return (
+    <span className="flex h-3 w-6 overflow-hidden rounded-full">
+      {[shades.light, shades.base, shades.dark].map((shade) => (
+        <span key={shade} className="flex-1" style={{ backgroundColor: shade }} />
+      ))}
+    </span>
   );
 }

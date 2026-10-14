@@ -22,6 +22,10 @@ export const palette = {
   approval: "#f59e0b",
   question: "#38bdf8",
   balloonText: "#0f172a",
+  /** The chat bubble's last exchange: yours in light blue, the agent's in light grey. */
+  bubbleSent: "#d4e8f5",
+  bubbleReply: "#e9ebee",
+  bubbleText: "#0f172a",
   balloonRim: "#ffffff",
   balloonString: "#334155",
   eye: "#111827",
