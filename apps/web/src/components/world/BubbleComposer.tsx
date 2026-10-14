@@ -367,6 +367,7 @@ export function BubbleComposer(props: {
                 ? undefined
                 : composerSuggestionOptionId(suggestionListId, suggestions.activeItem.id)
             }
+            containerClassName="text-[13px]"
             className="max-h-40 min-h-12 overflow-y-auto"
             onChange={(nextValue, nextCursor, expandedCursor, besideChip) => {
               latestText.current = nextValue;

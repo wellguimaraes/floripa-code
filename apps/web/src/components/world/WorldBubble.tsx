@@ -54,6 +54,8 @@ const NO_MODIFIERS = {
 };
 // Handled by the composer's Enter key.
 const EXPAND_SHORTCUT = formatShortcutLabel({ ...NO_MODIFIERS, key: "enter", modKey: true });
+// Spelled out for the footer hint: "⌘ + Enter" / "Ctrl + Enter".
+const EXPAND_HINT = EXPAND_SHORTCUT.replace(/^\u2318/, "\u2318+").replaceAll("+", " + ");
 
 /**
  * A quick reply box beside a character: send a message without leaving the
@@ -255,7 +257,7 @@ export function WorldBubble(props: {
       inputLabel={`Message ${facts.title || "this agent"}`}
       submitLabel="Send"
       speakLabel="Speak a message"
-      hint={`Enter to send · ${EXPAND_SHORTCUT} to open full chat`}
+      hint={`Enter to send · ${EXPAND_HINT} to open full chat`}
       error={state.phase === "error" ? state.message : null}
       onError={showError}
       busy={state.phase === "sending"}
