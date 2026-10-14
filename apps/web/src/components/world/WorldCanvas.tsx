@@ -1,10 +1,11 @@
-import { Canvas, type ThreeEvent, useFrame, useThree } from "@react-three/fiber";
+import { Canvas, events, type ThreeEvent, useFrame, useThree } from "@react-three/fiber";
 import { PlusIcon } from "lucide-react";
 import { scopedProjectKey } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
+  type Camera,
   CustomToneMapping,
   type Object3D,
   OrthographicCamera,
@@ -787,6 +788,7 @@ export default function WorldCanvas(props: {
         gl={{ antialias: true, toneMapping: CustomToneMapping }}
         orthographic
         camera={{ position: [18, 20, 18], zoom: 42, near: -1000, far: 2000 }}
+        events={nearPlaneEvents}
         onPointerDown={(event) => {
           pressedAt.current = { x: event.clientX, y: event.clientY };
         }}
@@ -1216,6 +1218,30 @@ function PointTracker(props: {
 const ISLAND_HOVER_MARGIN = 3.5;
 const seaLevel = new Plane(new Vector3(0, 1, 0), 0);
 
+/**
+ * Aims `raycaster` through `pointer` (in normalized device coordinates) from
+ * the camera's near plane. three starts an orthographic ray in the camera's
+ * own plane, but this camera draws from far behind it (a negative near), so
+ * zoomed out, everything far enough down the screen would sit behind the ray
+ * and could not be hovered or clicked.
+ */
+function castFromNearPlane(raycaster: Raycaster, pointer: Vector2, camera: Camera): void {
+  raycaster.setFromCamera(pointer, camera);
+  raycaster.ray.origin.set(pointer.x, pointer.y, -1).unproject(camera);
+}
+
+/** The canvas's pointer events, with their rays cast from the near plane too. */
+function nearPlaneEvents(store: Parameters<typeof events>[0]): ReturnType<typeof events> {
+  const manager = events(store);
+  return {
+    ...manager,
+    compute: (event, state, previous) => {
+      manager.compute?.(event, state, previous);
+      castFromNearPlane(state.raycaster, state.pointer, state.camera);
+    },
+  };
+}
+
 /** An island's middle in world space and how far its ground reaches from it. */
 interface IslandSpot {
   readonly key: string;
@@ -1258,9 +1284,7 @@ function IslandHoverTracker(props: {
         ((event.clientX - rect.left) / rect.width) * 2 - 1,
         -((event.clientY - rect.top) / rect.height) * 2 + 1,
       );
-      raycaster.setFromCamera(pointer, camera);
-      // Start above the scene: an orthographic ray can begin below sea level.
-      raycaster.ray.origin.addScaledVector(raycaster.ray.direction, -1000);
+      castFromNearPlane(raycaster, pointer, camera);
       if (raycaster.ray.intersectPlane(seaLevel, hit) === null) {
         report(null);
         return;
@@ -1430,10 +1454,7 @@ function WorldControls({
         ((event.clientX - rect.left) / rect.width) * 2 - 1,
         -((event.clientY - rect.top) / rect.height) * 2 + 1,
       );
-      raycaster.setFromCamera(pointer, camera);
-      // An orthographic ray starts inside the view volume, which can be below
-      // sea level; start it well above the scene instead.
-      raycaster.ray.origin.addScaledVector(raycaster.ray.direction, -1000);
+      castFromNearPlane(raycaster, pointer, camera);
       const ground = raycaster.ray.intersectPlane(seaLevel, hit);
       const index = ground === null ? -1 : islands.findIndex((island) => isOverIsland(hit, island));
       const island = bounds[index];
