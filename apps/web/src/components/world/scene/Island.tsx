@@ -1,10 +1,10 @@
 import { Suspense, useContext, useMemo } from "react";
-import { type BufferGeometry, Matrix4 } from "three";
+import { type BufferGeometry, DoubleSide, Matrix4 } from "three";
 
 import type { PropKind, TerrainKind, Vec3, WorldDefinition } from "../definition/types";
 import { islandBounds } from "../engine/archipelago";
 import { hashString } from "../engine/hash";
-import { islandScenery, isScenery } from "../engine/scenery";
+import { isScenery } from "../engine/scenery";
 import { geometry } from "./geometries";
 import { FadedContext, LitMaterial } from "./lighting";
 import {
@@ -21,7 +21,7 @@ import {
 import { sceneryGeometry, useNatureModels } from "./nature";
 import { palette } from "./palette";
 import { Ripple } from "./Ripple";
-import { propShadows } from "./shadows";
+import { castShadows, SHADOW_STENCIL, shadowOf } from "./shadows";
 import { roundPatchGeometry, sandGrainTexture, shallowsEdge, shallowsGeometry } from "./terrain";
 
 const TERRAIN: Record<TerrainKind, { readonly color: string; readonly top: number }> = {
@@ -114,9 +114,7 @@ export function Island(props: {
           </mesh>
         );
       })}
-      <PropShadows
-        geometry={propShadows([...definition.props, ...islandScenery(definition), ...furniture])}
-      />
+      <GroundShadow geometry={islandShadows(definition, furniture)} />
       <Suspense fallback={null}>
         <Scenery definition={definition} />
       </Suspense>
@@ -149,21 +147,69 @@ function Scenery({ definition }: { readonly definition: WorldDefinition }) {
   const baked = sceneryGeometry(useNatureModels(), definition, useContext(FadedContext));
   if (baked === null) return null;
   return (
-    <mesh geometry={baked}>
-      <meshLambertMaterial vertexColors />
+    <>
+      <mesh geometry={baked}>
+        <meshLambertMaterial vertexColors />
+      </mesh>
+      <GroundShadow geometry={shadowOf(baked)} />
+    </>
+  );
+}
+
+interface Placed {
+  readonly kind: PropKind;
+  readonly position: Vec3;
+  readonly facing: number;
+  readonly scale?: number | undefined;
+  readonly length?: number | undefined;
+}
+
+/** Every prop's shadow on the island, scenery aside, as one mesh. */
+function islandShadows(
+  definition: WorldDefinition,
+  furniture: ReadonlyArray<FurnitureSpot>,
+): BufferGeometry | null {
+  const casters: Placed[] = [
+    ...definition.props.filter((prop) => !isScenery(prop.kind)),
+    ...furniture,
+  ];
+  const key = casters
+    .map((prop) => `${prop.kind}:${prop.position.join(",")}:${prop.facing}:${prop.scale ?? 1}`)
+    .join("|");
+  return castShadows(key, () =>
+    casters.flatMap((prop) => {
+      const frame = chain(
+        translate(...prop.position),
+        rotateY(prop.facing),
+        scale(prop.scale ?? 1),
+      );
+      return propParts(prop.kind, prop.length ?? 1, seedOf(prop)).map((part) => ({
+        geometry: part.geometry,
+        matrix: frame,
+      }));
+    }),
+  );
+}
+
+function GroundShadow({ geometry: shadow }: { readonly geometry: BufferGeometry | null }) {
+  if (shadow === null) return null;
+  return (
+    // On the lawn, just under the characters' own shadows.
+    <mesh geometry={shadow} position-y={0.011} renderOrder={1}>
+      <meshBasicMaterial
+        color={palette.shadow}
+        transparent
+        opacity={0.16}
+        depthWrite={false}
+        side={DoubleSide}
+        {...SHADOW_STENCIL}
+      />
     </mesh>
   );
 }
 
-function PropShadows({ geometry: shadows }: { readonly geometry: BufferGeometry | null }) {
-  if (shadows === null) return null;
-  return (
-    // On the lawn, just under the characters' own shadows.
-    <mesh geometry={shadows} position-y={0.011} renderOrder={1}>
-      <meshBasicMaterial color={palette.shadow} transparent opacity={0.14} depthWrite={false} />
-    </mesh>
-  );
-}
+/** Stable per placement, so props that vary (rock piles, palms) differ from their neighbours. */
+const seedOf = (prop: Pick<Placed, "position">) => hashString(prop.position.join(","));
 
 function Prop(props: {
   readonly kind: PropKind;
@@ -178,74 +224,68 @@ function Prop(props: {
       rotation-y={props.facing}
       scale={props.scale ?? 1}
     >
-      <PropModel
-        kind={props.kind}
-        length={props.length ?? 1}
-        seed={hashString(props.position.join(","))}
-      />
+      <MergedMeshes parts={propParts(props.kind, props.length ?? 1, seedOf(props))} />
     </group>
   );
 }
 
 /**
- * Each model is built around its slot: local +z is the way the occupant faces,
- * and the thing they work at stands in front of them. Long props (the
- * pier) run `length` units along +z.
+ * A prop's pieces, merged by colour. Each is built around its slot: local +z
+ * is the way the occupant faces, and the thing they work at stands in front
+ * of them. Long props (the pier) run `length` units along +z.
  */
-function PropModel({
-  kind,
-  length,
-  seed,
-}: {
-  readonly kind: PropKind;
-  readonly length: number;
-  /** Stable per placement, so props that vary (rock piles) differ from their neighbours. */
-  readonly seed: number;
-}) {
+function propParts(kind: PropKind, length: number, seed: number): ReadonlyArray<MergedPart> {
   switch (kind) {
     case "rockPile":
-      // One family's pile, in front of the parent; its kids mine it from the sides.
-      return (
-        <group position-z={0.95} scale={0.55} rotation-y={(seed % 360) * (Math.PI / 180)}>
-          <MergedMeshes
-            parts={mergedParts(`rocks:${seed}`, () =>
-              rockPile(seed).map((rock) => ({
-                geometry: geometry.foliage,
-                matrix: chain(
-                  translate(...rock.position),
-                  rotateX(rock.rotation[0]),
-                  rotateY(rock.rotation[1]),
-                  scale(...rock.scale),
-                ),
-                color: rock.color,
-              })),
-            )}
-            flatShading
-          />
-        </group>
-      );
+      return mergedParts(`rocks:${seed}`, () => pileParts(seed));
     case "towel":
-      return <MergedMeshes parts={mergedParts("towel", towelParts)} />;
+      return mergedParts("towel", towelParts);
     case "beachChair":
-      return <MergedMeshes parts={mergedParts("beachChair", loungerParts)} />;
+      return mergedParts("beachChair", loungerParts);
     case "pier":
-      return <MergedMeshes parts={mergedParts(`pier:${length}`, () => pierParts(length))} />;
+      return mergedParts(`pier:${length}`, () => pierParts(length));
     case "palm":
-      return <Palm seed={seed} />;
+      return mergedParts(`palm:${seed % 70}`, () => palmParts(seed));
+    case "tree":
+      return mergedParts("tree", treeParts);
     case "rock":
     case "grass":
       // Drawn together with the rest of the island's scenery; see `Scenery`.
-      return null;
-    case "tree":
-      return (
-        <>
-          <Cylinder radius={0.12} height={0.7} at={[0, 0.35, 0]} color={palette.treeTrunk} />
-          <mesh geometry={geometry.foliage} position-y={1.25} scale={0.75}>
-            <LitMaterial color={palette.treeLeaf} flatShading />
-          </mesh>
-        </>
-      );
+      return [];
   }
+}
+
+function treeParts(): Part[] {
+  return [
+    {
+      geometry: geometry.cylinder,
+      matrix: chain(translate(0, 0.35, 0), scale(0.12, 0.7, 0.12)),
+      color: palette.treeTrunk,
+    },
+    {
+      geometry: geometry.foliage,
+      matrix: chain(translate(0, 1.25, 0), scale(0.75)),
+      color: palette.treeLeaf,
+      flat: true,
+    },
+  ];
+}
+
+/** One family's pile, in front of the parent; its kids mine it from the sides. */
+function pileParts(seed: number): Part[] {
+  const frame = chain(translate(0, 0, 0.95), rotateY((seed % 360) * (Math.PI / 180)), scale(0.55));
+  return rockPile(seed).map((rock) => ({
+    geometry: geometry.foliage,
+    matrix: chain(
+      frame,
+      translate(...rock.position),
+      rotateX(rock.rotation[0]),
+      rotateY(rock.rotation[1]),
+      scale(...rock.scale),
+    ),
+    color: rock.color,
+    flat: true,
+  }));
 }
 
 const PALM_SEGMENTS = 7;
@@ -256,10 +296,6 @@ const PALM_FRONDS = 8;
  * drooping two-part fronds and a cluster of coconuts. Height and bend come
  * from the seed; the prop's facing sets which way it leans.
  */
-function Palm({ seed }: { readonly seed: number }) {
-  return <MergedMeshes parts={mergedParts(`palm:${seed % 70}`, () => palmParts(seed))} />;
-}
-
 function palmParts(seed: number): Part[] {
   const height = 2.3 + (seed % 7) * 0.12;
   const bend = 0.45 + (seed % 5) * 0.1;
@@ -386,13 +422,10 @@ function pierParts(length: number): Part[] {
   return parts;
 }
 
-function MergedMeshes(props: {
-  readonly parts: ReadonlyArray<MergedPart>;
-  readonly flatShading?: boolean;
-}) {
+function MergedMeshes(props: { readonly parts: ReadonlyArray<MergedPart> }) {
   return props.parts.map((part) => (
-    <mesh key={part.color} geometry={part.geometry}>
-      <LitMaterial color={part.color} flatShading={props.flatShading ?? false} />
+    <mesh key={`${part.color}:${part.flat}`} geometry={part.geometry}>
+      <LitMaterial color={part.color} flatShading={part.flat} />
     </mesh>
   ));
 }
@@ -445,21 +478,4 @@ function rockPile(seed: number): PileRock[] {
     });
   }
   return rocks;
-}
-
-function Cylinder(props: {
-  readonly radius: number;
-  readonly height: number;
-  readonly at: readonly [number, number, number];
-  readonly color: string;
-}) {
-  return (
-    <mesh
-      geometry={geometry.cylinder}
-      position={props.at as [number, number, number]}
-      scale={[props.radius, props.height, props.radius]}
-    >
-      <LitMaterial color={props.color} />
-    </mesh>
-  );
 }

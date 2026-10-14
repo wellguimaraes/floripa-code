@@ -784,7 +784,8 @@ export default function WorldCanvas(props: {
         frameloop="demand"
         dpr={[1, 1.5]}
         // CustomToneMapping is ACES plus the contrast slider; see scene/contrast.
-        gl={{ antialias: true, toneMapping: CustomToneMapping }}
+        // The stencil keeps overlapping ground shadows from stacking; see SHADOW_STENCIL.
+        gl={{ antialias: true, toneMapping: CustomToneMapping, stencil: true }}
         orthographic
         camera={{ position: [18, 20, 18], zoom: 42, near: -1000, far: 2000 }}
         events={nearPlaneEvents}

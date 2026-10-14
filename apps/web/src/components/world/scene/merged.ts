@@ -5,17 +5,20 @@ export interface Part {
   readonly geometry: BufferGeometry;
   readonly matrix: Matrix4;
   readonly color: string;
+  /** Faceted, e.g. a rock or a crown of leaves. */
+  readonly flat?: boolean;
 }
 
 export interface MergedPart {
   readonly geometry: BufferGeometry;
   readonly color: string;
+  readonly flat: boolean;
 }
 
 const cache = new Map<string, ReadonlyArray<MergedPart>>();
 
 /**
- * Bakes many small parts into one mesh per colour, built once per `key` and
+ * Bakes many small parts into one mesh per colour and shading, built once per `key` and
  * shared. A prop made of dozens of pieces (a palm, a rock pile) then costs a
  * draw call per colour instead of one per piece.
  */
@@ -25,15 +28,17 @@ export function mergedParts(
 ): ReadonlyArray<MergedPart> {
   const cached = cache.get(key);
   if (cached !== undefined) return cached;
-  const byColor = new Map<string, BufferGeometry[]>();
+  const groups = new Map<string, { color: string; flat: boolean; pieces: BufferGeometry[] }>();
   for (const part of build()) {
-    const geometry = part.geometry.clone().applyMatrix4(part.matrix);
-    byColor.set(part.color, [...(byColor.get(part.color) ?? []), geometry]);
+    const flat = part.flat ?? false;
+    const group = groups.get(`${part.color}:${flat}`) ?? { color: part.color, flat, pieces: [] };
+    group.pieces.push(part.geometry.clone().applyMatrix4(part.matrix));
+    groups.set(`${part.color}:${flat}`, group);
   }
-  const merged = [...byColor].map(([color, geometries]) => {
-    const geometry = mergeGeometries(geometries)!;
-    for (const piece of geometries) piece.dispose();
-    return { color, geometry };
+  const merged = [...groups.values()].map(({ color, flat, pieces }) => {
+    const geometry = mergeGeometries(pieces)!;
+    for (const piece of pieces) piece.dispose();
+    return { color, flat, geometry };
   });
   cache.set(key, merged);
   return merged;

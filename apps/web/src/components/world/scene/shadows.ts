@@ -1,67 +1,98 @@
-import { type BufferGeometry, CircleGeometry } from "three";
+import {
+  BufferGeometry,
+  Float32BufferAttribute,
+  type Matrix4,
+  NotEqualStencilFunc,
+  ReplaceStencilOp,
+  Vector3,
+} from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
-import type { PropKind } from "../definition/types";
+/** Where the sun is, as in WorldCanvas's directional light. */
+const SUN = new Vector3(6, 14, 9);
 
-/** How far a shadow moves along the ground per unit of height, away from the sun. */
-const SUN: readonly [x: number, z: number] = [-6 / 14, -9 / 14];
+/**
+ * Ground shadows darken a pixel once, however many overlap there: the first
+ * marks the stencil buffer, and the rest skip marked pixels. The canvas needs
+ * a stencil buffer for this.
+ */
+export const SHADOW_STENCIL = {
+  stencilWrite: true,
+  stencilRef: 1,
+  stencilFunc: NotEqualStencilFunc,
+  stencilZPass: ReplaceStencilOp,
+} as const;
 
-/** What casts a shadow, and from where: the height of its bulk and its size there. */
-const CASTERS: Partial<
-  Record<PropKind, { readonly height: number; readonly radius: number; readonly ahead?: number }>
-> = {
-  // Its crown, which leans out from the trunk.
-  palm: { height: 2.6, radius: 1.15 },
-  tree: { height: 1.25, radius: 0.8 },
-  // The pile sits in front of its slot, where the parent mines it.
-  rockPile: { height: 0.3, radius: 0.7, ahead: 0.95 },
-  rock: { height: 0.1, radius: 0.3 },
-};
-/** How far a palm's crown leans out from its foot, on average. */
-const PALM_LEAN = 0.65;
+export interface Caster {
+  readonly geometry: BufferGeometry;
+  /** Places the geometry on the island. */
+  readonly matrix: Matrix4;
+}
 
 const cache = new Map<string, BufferGeometry | null>();
 
 /**
- * Soft round shadows under an island's trees, palms and rock piles,
- * cast away from the sun, baked into one flat mesh so they cost a single draw.
+ * The casters' shadows on the ground, merged into one flat mesh so they cost
+ * a single draw: each shape squashed onto the ground along the sun's rays.
+ * Built once per `key`.
  */
-export function propShadows(
-  props: ReadonlyArray<{
-    readonly kind: PropKind;
-    readonly position: readonly [number, number, number];
-    readonly facing: number;
-    readonly scale?: number | undefined;
-  }>,
+export function castShadows(
+  key: string,
+  casters: () => ReadonlyArray<Caster>,
 ): BufferGeometry | null {
-  const key = props
-    .filter((prop) => CASTERS[prop.kind] !== undefined)
-    .map((prop) => `${prop.kind}:${prop.position.join(",")}:${prop.facing}:${prop.scale ?? 1}`)
-    .join("|");
   const cached = cache.get(key);
   if (cached !== undefined) return cached;
-  const discs = props.flatMap((prop) => {
-    const caster = CASTERS[prop.kind];
-    if (caster === undefined) return [];
-    const scale = prop.scale ?? 1;
-    let x = prop.position[0] + SUN[0] * caster.height * scale;
-    let z = prop.position[2] + SUN[1] * caster.height * scale;
-    // A facing of f looks toward (sin f, cos f); a palm leans along its local +x.
-    if (caster.ahead !== undefined) {
-      x += Math.sin(prop.facing) * caster.ahead * scale;
-      z += Math.cos(prop.facing) * caster.ahead * scale;
-    }
-    if (prop.kind === "palm") {
-      x += Math.cos(prop.facing) * PALM_LEAN;
-      z -= Math.sin(prop.facing) * PALM_LEAN;
-    }
-    const disc = new CircleGeometry(caster.radius * scale, 20);
-    disc.rotateX(-Math.PI / 2);
-    disc.translate(x, 0, z);
-    return [disc];
-  });
-  const merged = discs.length === 0 ? null : mergeGeometries(discs);
-  for (const disc of discs) disc.dispose();
+  const shadows = casters().map((caster) => flatten(caster.geometry, caster.matrix));
+  const merged = shadows.length === 0 ? null : mergeGeometries(shadows);
+  for (const shadow of shadows) shadow.dispose();
   cache.set(key, merged);
   return merged;
+}
+
+const ownShadows = new WeakMap<BufferGeometry, BufferGeometry>();
+
+/** The shadow of a geometry already placed on the island, e.g. its merged scenery. */
+export function shadowOf(geometry: BufferGeometry): BufferGeometry {
+  let shadow = ownShadows.get(geometry);
+  if (shadow === undefined) {
+    shadow = flatten(geometry);
+    ownShadows.set(geometry, shadow);
+  }
+  return shadow;
+}
+
+/**
+ * The geometry's sunlit faces pressed flat onto the ground along the sun's
+ * rays: together they cover its whole shadow, and the faces turned away would
+ * only draw over them again. Anything below the ground stays where it is.
+ */
+function flatten(geometry: BufferGeometry, matrix?: Matrix4): BufferGeometry {
+  const source = geometry.getAttribute("position");
+  const points = Array.from({ length: source.count }, (_, index) => {
+    const point = new Vector3().fromBufferAttribute(source, index);
+    return matrix === undefined ? point : point.applyMatrix4(matrix);
+  });
+  const corners = geometry.index?.array ?? points.map((_, index) => index);
+  const toSun = SUN.clone().normalize();
+  const edge = new Vector3();
+  const other = new Vector3();
+  const lit: number[] = [];
+  for (let index = 0; index + 2 < corners.length; index += 3) {
+    const [a, b, c] = [corners[index]!, corners[index + 1]!, corners[index + 2]!];
+    edge.subVectors(points[b]!, points[a]!);
+    other.subVectors(points[c]!, points[a]!);
+    if (edge.cross(other).dot(toSun) > 0) lit.push(a, b, c);
+  }
+  const positions = new Float32Array(points.length * 3);
+  points.forEach((point, index) => {
+    const height = Math.max(point.y, 0);
+    positions.set(
+      [point.x - (SUN.x / SUN.y) * height, 0, point.z - (SUN.z / SUN.y) * height],
+      index * 3,
+    );
+  });
+  const shadow = new BufferGeometry();
+  shadow.setAttribute("position", new Float32BufferAttribute(positions, 3));
+  shadow.setIndex(lit);
+  return shadow;
 }
