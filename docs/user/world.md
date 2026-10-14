@@ -61,7 +61,7 @@ with `Escape` (on the map or inside the chat), and the map goes back to where it
 
 Right-click a character for **Open chat**, **Send voice command**,
 **Regenerate title**, **Stop** and **Archive**. Stop ends the agent's current run, like the stop button in the
-chat; the reply bubble has the same button while the agent is busy. A voice command opens the reply bubble already listening and sends
+chat; the reply bubble has the same button while the agent is busy. Archiving a busy agent, or one waiting on a question, stops its run first. A voice command opens the reply bubble already listening and sends
 what you say once you stop talking; the bubble's microphone fills the message
 box without sending. Click the microphone to listen until you pause, or hold it
 down to talk and let go to finish. Holding `⌘⇧` (`Ctrl+Shift` on Windows and

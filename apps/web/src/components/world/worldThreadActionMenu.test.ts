@@ -16,7 +16,6 @@ describe("worldThreadActionMenuItems", () => {
         isSnoozed: false,
         canSnoozeNow: true,
         isRegeneratingTitle: false,
-        isRunning: false,
         supports: {
           settlement: true,
           autoSettleOptOut: true,

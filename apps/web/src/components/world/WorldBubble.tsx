@@ -221,9 +221,7 @@ export function WorldBubble(props: {
       setState({
         phase: "error",
         message:
-          error instanceof Error && error.message !== ""
-            ? error.message
-            : "Could not archive. Stop the run first.",
+          error instanceof Error && error.message !== "" ? error.message : "Could not archive.",
       });
       return;
     }

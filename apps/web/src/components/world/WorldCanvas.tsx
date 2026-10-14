@@ -417,7 +417,7 @@ export default function WorldCanvas(props: {
         description:
           first.error instanceof Error && first.error.message !== ""
             ? first.error.message
-            : "Stop the run first.",
+            : "Try again.",
       });
     }
   };

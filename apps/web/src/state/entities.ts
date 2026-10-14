@@ -4,6 +4,7 @@ import type {
   EnvironmentThread,
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
+import { threadRuntimeCanArchive } from "@t3tools/client-runtime/state/models";
 import {
   EMPTY_THREAD_HISTORY_META,
   type EnvironmentThreadStatus,
@@ -203,6 +204,16 @@ export function waitForThreadShell(ref: ScopedThreadRef, timeoutMs = 5_000): Pro
     registry: appAtomRegistry,
     atom: environmentThreadShells.threadShellAtom(ref),
     predicate: (thread) => thread !== null,
+    timeoutMs,
+  });
+}
+
+/** Resolves true once no run holds the thread's provider (or the thread is gone). */
+export function waitForThreadArchivable(ref: ScopedThreadRef, timeoutMs = 10_000) {
+  return waitForAtomValue({
+    registry: appAtomRegistry,
+    atom: environmentThreadShells.threadShellAtom(ref),
+    predicate: (thread) => thread === null || threadRuntimeCanArchive(thread.runtime),
     timeoutMs,
   });
 }

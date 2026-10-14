@@ -16,7 +16,6 @@ const baseState: ThreadActionMenuState = {
   isSnoozed: false,
   canSnoozeNow: true,
   isRegeneratingTitle: false,
-  isRunning: false,
   supports: {
     settlement: true,
     autoSettleOptOut: true,
@@ -214,13 +213,6 @@ describe("buildThreadActionMenuItems", () => {
         },
       }),
     ).toContain("archive");
-  });
-
-  it("disables archive while the thread is running", () => {
-    const archiveItem = buildThreadActionMenuItems({ ...baseState, isRunning: true }).find(
-      (item) => item.id === "archive",
-    );
-    expect(archiveItem?.disabled).toBe(true);
   });
 });
 

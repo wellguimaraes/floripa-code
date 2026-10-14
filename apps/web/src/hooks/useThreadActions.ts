@@ -48,6 +48,7 @@ import {
   readProject,
   readThreadShell,
   readThreadShells,
+  waitForThreadArchivable,
 } from "../state/entities";
 import { useUiStateStore } from "../uiStateStore";
 import { clearThreadPreviewState } from "../previewStateStore";
@@ -70,7 +71,7 @@ export class ThreadArchiveBlockedError extends Schema.TaggedError<ThreadArchiveB
   },
 ) {
   override get message(): string {
-    return "Cannot archive while the provider is active.";
+    return "The run did not stop in time. Try archiving again.";
   }
 }
 
@@ -275,6 +276,9 @@ export function useThreadActions() {
   const unarchiveThreadMutation = useOrchestrationCommand(threadEnvironment.unarchive, {
     reportFailure: false,
   });
+  const interruptTurnMutation = useOrchestrationCommand(threadEnvironment.interruptTurn, {
+    reportFailure: false,
+  });
   const deleteThreadMutation = useOrchestrationCommand(threadEnvironment.delete, {
     reportFailure: false,
   });
@@ -378,15 +382,24 @@ export function useThreadActions() {
       const resolved = resolveThreadTarget(target);
       if (!resolved) return AsyncResult.success(undefined);
       const { thread, threadRef } = resolved;
+      // A run still holds the provider (often waiting on a question): stop it,
+      // then archive once the provider lets go.
       if (!threadRuntimeCanArchive(thread.runtime)) {
-        return AsyncResult.failure(
-          Cause.fail(
-            new ThreadArchiveBlockedError({
-              environmentId: threadRef.environmentId,
-              threadId: threadRef.threadId,
-            }),
-          ),
-        );
+        const interruptResult = await interruptTurnMutation({
+          environmentId: threadRef.environmentId,
+          input: { threadId: threadRef.threadId },
+        });
+        if (interruptResult._tag === "Failure") return interruptResult;
+        if (!(await waitForThreadArchivable(threadRef))) {
+          return AsyncResult.failure(
+            Cause.fail(
+              new ThreadArchiveBlockedError({
+                environmentId: threadRef.environmentId,
+                threadId: threadRef.threadId,
+              }),
+            ),
+          );
+        }
       }
 
       const currentRouteThreadRef = getCurrentRouteThreadRef();
@@ -430,6 +443,7 @@ export function useThreadActions() {
     },
     [
       archiveThreadMutation,
+      interruptTurnMutation,
       getCurrentRouteThreadRef,
       markThreadVisited,
       resolveThreadTarget,

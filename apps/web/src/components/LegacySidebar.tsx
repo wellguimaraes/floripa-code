@@ -69,7 +69,6 @@ import {
   settlePromise,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { threadRuntimeCanArchive } from "@t3tools/client-runtime/state/models";
 import { useNavigate, useParams, useRouter } from "@tanstack/react-router";
 import {
   MAX_SIDEBAR_THREAD_PREVIEW_COUNT,
@@ -486,7 +485,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     },
     [canOperatePreview, discoveredPorts, navigateToThread, openPreview, threadRef],
   );
-  const isThreadRunning = !threadRuntimeCanArchive(thread.runtime);
   const threadStatus = resolveThreadStatusPill({
     thread: {
       ...thread,
@@ -507,11 +505,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     : null;
   const prStatus = prStatusIndicator(pr, linkedPullRequestStatus?.sourceControlProvider);
   const terminalStatus = terminalStatusFromRunningIds(runningTerminalIds);
-  const isConfirmingArchive =
-    canOperateThread && confirmingArchiveThreadKey === threadKey && !isThreadRunning;
+  const isConfirmingArchive = canOperateThread && confirmingArchiveThreadKey === threadKey;
   const threadMetaClassName = isConfirmingArchive
     ? "pointer-events-none opacity-0"
-    : canOperateThread && !isThreadRunning
+    : canOperateThread
       ? "pointer-events-none transition-opacity duration-150 max-sm:pr-6 group-hover/menu-sub-item:opacity-0 group-focus-within/menu-sub-item:opacity-0"
       : "pointer-events-none";
   const clearConfirmingArchive = useCallback(() => {
@@ -886,7 +883,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               >
                 Confirm
               </button>
-            ) : canOperateThread && !isThreadRunning ? (
+            ) : canOperateThread ? (
               appSettingsConfirmThreadArchive ? (
                 <div className="pointer-events-none absolute top-1/2 right-0.5 -translate-y-1/2 opacity-0 transition-opacity duration-150 max-sm:pointer-events-auto max-sm:opacity-100 group-hover/menu-sub-item:pointer-events-auto group-hover/menu-sub-item:opacity-100 group-focus-within/menu-sub-item:pointer-events-auto group-focus-within/menu-sub-item:opacity-100">
                   <button
@@ -1941,15 +1938,12 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         const thread = threadRef ? readThreadShell(threadRef) : null;
         return threadRef && thread ? [{ threadKey, threadRef, thread }] : [];
       });
-      const hasRunningThread = selectedThreadEntries.some(
-        ({ thread }) => !threadRuntimeCanArchive(thread.runtime),
-      );
       const canOperateSelection = selectedThreadEntries.every(({ threadRef }) =>
         readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope),
       );
 
       const clicked = await api.contextMenu.show(
-        buildMultiSelectThreadContextMenuItems({ count, hasRunningThread }).map((item) =>
+        buildMultiSelectThreadContextMenuItems({ count }).map((item) =>
           item.id === "archive" || item.id === "delete"
             ? { ...item, disabled: item.disabled || !canOperateSelection }
             : item,

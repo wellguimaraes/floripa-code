@@ -69,8 +69,7 @@ export const WorldArchiveButton = memo(function WorldArchiveButton({
       toastManager.add({
         type: "error",
         title: "Failed to archive thread",
-        description:
-          error instanceof Error && error.message !== "" ? error.message : "Stop the run first.",
+        description: error instanceof Error && error.message !== "" ? error.message : "Try again.",
       });
     }
   };

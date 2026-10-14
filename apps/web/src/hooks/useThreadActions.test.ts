@@ -47,7 +47,7 @@ describe("ThreadArchiveBlockedError", () => {
       environmentId: "environment-1",
       threadId: "thread-1",
     });
-    expect(error.message).toBe("Cannot archive while the provider is active.");
+    expect(error.message).toBe("The run did not stop in time. Try archiving again.");
   });
 });
 
