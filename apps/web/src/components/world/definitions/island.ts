@@ -24,21 +24,24 @@ const spread = (from: number, to: number, count: number): number[] =>
 // Mining sites on the lawn, one family per site. The parent stands behind its
 // rock pile facing the camera (+x/+z) so its face shows; its kids work the
 // same pile from the sides and front (see the `helpers` offsets).
+// Bigger islands have bigger piles, `pileScale` times the usual size, and
+// everyone working one stands back by as much.
 const PILE_DISTANCE = 0.95;
 const FACE_CAMERA = Math.PI / 4;
-const site = (pileX: number, pileZ: number): WorldSlot => ({
+const site = (pileX: number, pileZ: number, pileScale: number): WorldSlot => ({
   position: [
-    pileX - Math.sin(FACE_CAMERA) * PILE_DISTANCE,
+    pileX - Math.sin(FACE_CAMERA) * PILE_DISTANCE * pileScale,
     0,
-    pileZ - Math.cos(FACE_CAMERA) * PILE_DISTANCE,
+    pileZ - Math.cos(FACE_CAMERA) * PILE_DISTANCE * pileScale,
   ],
   facing: FACE_CAMERA,
 });
 
 // Rock piles on the lawn, one layout per island size (see `ISLAND_SIZES`),
-// each spread evenly over that size's lawn. Bigger sizes scale these up with
-// the island. A pile keeps its index (and its miner) through every size, so
-// each layout lists first the piles nearest the smaller size's ones.
+// laid out on the smallest lawn with neighbours about 4 apart; bigger sizes
+// scale them up with the island, so they spread out as it grows. A pile keeps
+// its index (and its miner) through every size, so each layout lists first
+// the piles nearest the smaller size's ones.
 const PILES: ReadonlyArray<ReadonlyArray<readonly [number, number]>> = [
   [
     [-5.8, -2.8],
@@ -87,14 +90,10 @@ const PILES: ReadonlyArray<ReadonlyArray<readonly [number, number]>> = [
 
 /**
  * What each island size holds, smallest first: every step up adds half the
- * smallest island's rock piles and spots on the beach. Every size also has
- * the pier's seats (see `PIER_SEATS`).
+ * smallest island's rock piles, and the beach has a spot per pile. Every size
+ * also has the pier's seats (see `PIER_SEATS`).
  */
-export const ISLAND_SIZES = [
-  { piles: 8, restSpots: 9 },
-  { piles: 12, restSpots: 14 },
-  { piles: 16, restSpots: 18 },
-] as const;
+export const ISLAND_SIZES = [8, 12, 16].map((piles) => ({ piles, restSpots: piles }));
 
 // Seat height of the loungers on the beach (see the `beachChair` prop).
 const LOUNGER_SEAT = 0.4;
@@ -123,10 +122,14 @@ const alongShore = (slot: WorldSlot): WorldSlot => ({ ...slot, facing: slot.faci
 /**
  * A round sand island with a round lawn pushed toward the mining side, which
  * leaves a crescent of beach facing the camera. Bigger sizes stretch the
- * whole island, keeping the lawn's ground per rock pile about the same.
+ * whole island just enough to keep the beach's spots as far apart as on the
+ * smallest one, and the rock piles spread out with it (see `PILES`).
  */
 function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDefinition {
-  const scale = Math.sqrt(size.piles / ISLAND_SIZES[0].piles);
+  const smallest = ISLAND_SIZES[0]!;
+  const scale = (size.restSpots - 1) / (smallest.restSpots - 1);
+  // How much further apart neighbouring piles stand than the layouts' 4.
+  const pileSpread = scale / Math.sqrt(size.piles / smallest.piles);
   const at = (x: number, z: number): readonly [number, number] => [x * scale, z * scale];
   const prop = (kind: WorldProp["kind"], x: number, z: number, facing = 0): WorldProp => ({
     kind,
@@ -183,9 +186,12 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
         kind: "fixed",
         entry: "lawn-gate",
         slotProp: "rockPile",
-        // Neighbouring piles are about 4 apart at every size; the next ring out is 5.4+.
-        worktreeReach: 5.2,
-        slots: PILES[sizeIndex]!.map(([x, z]) => site(x * scale, z * scale)),
+        // Reaches neighbouring piles (about 4 apart, spread out) but not the
+        // next ring out (5.4+).
+        worktreeReach: 5.2 * pileSpread,
+        // Piles grow with the gaps between them.
+        slotPropScale: pileSpread,
+        slots: PILES[sizeIndex]!.map(([x, z]) => site(x * scale, z * scale, pileSpread)),
       },
       beach: {
         kind: "fixed",
@@ -232,9 +238,9 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
         kind: "anchored",
         anchor: "parent",
         offsets: [
-          { position: [-0.9, 0, PILE_DISTANCE], facing: Math.PI / 2 },
-          { position: [0.9, 0, PILE_DISTANCE], facing: -Math.PI / 2 },
-          { position: [0, 0, PILE_DISTANCE * 2], facing: Math.PI },
+          { position: [-0.9 * pileSpread, 0, PILE_DISTANCE * pileSpread], facing: Math.PI / 2 },
+          { position: [0.9 * pileSpread, 0, PILE_DISTANCE * pileSpread], facing: -Math.PI / 2 },
+          { position: [0, 0, PILE_DISTANCE * 2 * pileSpread], facing: Math.PI },
         ],
       },
     },
@@ -324,7 +330,7 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
         fps: 20,
       },
       // Over the rock pile in front of each mining spot.
-      newAgents: { area: "mine", marker: [0, 1.3, PILE_DISTANCE] },
+      newAgents: { area: "mine", marker: [0, 1.3 * pileSpread, PILE_DISTANCE * pileSpread] },
       sharks: { intervalSeconds: [20, 45], surfaceSeconds: 4, offshore: [1.5, 4], fps: 24 },
     },
   };

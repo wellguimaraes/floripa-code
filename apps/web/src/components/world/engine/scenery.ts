@@ -121,7 +121,7 @@ function spotKeepouts(definition: WorldDefinition, spots: ReadonlyArray<Vec3>): 
     if (area.kind !== "fixed") continue;
     for (const slot of area.slots) {
       // A lying agent reaches past its slot both ways; a rock pile stands ahead of it.
-      keepouts.push(along(slot.position, slot.facing, -1.2, 1.2, SPOT));
+      keepouts.push(along(slot.position, slot.facing, -1.2, 1.2 * (area.slotPropScale ?? 1), SPOT));
       if (slot.via !== undefined) keepouts.push(segment(slot.via, slot.position, ROAD));
     }
   }

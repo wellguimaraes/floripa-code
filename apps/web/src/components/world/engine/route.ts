@@ -103,7 +103,7 @@ export function islandObstacles(definition: WorldDefinition): Obstacle[] {
   const add = (kind: PropKind, slot: Pick<WorldSlot, "position" | "facing">, scale = 1) => {
     const footprint = FOOTPRINTS[kind];
     if (footprint === undefined) return;
-    const ahead = kind === "rockPile" ? PILE_AHEAD : 0;
+    const ahead = kind === "rockPile" ? PILE_AHEAD * scale : 0;
     obstacles.push({
       x: slot.position[0] + Math.sin(slot.facing) * ahead,
       z: slot.position[2] + Math.cos(slot.facing) * ahead,
@@ -117,7 +117,7 @@ export function islandObstacles(definition: WorldDefinition): Obstacle[] {
     if (area.kind !== "fixed") continue;
     for (const slot of area.slots) {
       const kind = slot.prop ?? area.slotProp;
-      if (kind !== undefined) add(kind, slot);
+      if (kind !== undefined) add(kind, slot, area.slotPropScale);
     }
   }
   // The sign's post.

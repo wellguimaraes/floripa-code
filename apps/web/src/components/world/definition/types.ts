@@ -64,6 +64,8 @@ export interface FixedArea {
   readonly slots: ReadonlyArray<WorldSlot>;
   /** Placed at every slot, e.g. a rock pile per mining site. */
   readonly slotProp?: PropKind;
+  /** Grows the props at the slots, e.g. bigger rock piles on a bigger island. */
+  readonly slotPropScale?: number;
   /**
    * Extra spots without a prop, filled in order once every slot is taken and
    * before anyone queues at the entry, e.g. lying on the sand past the towels.

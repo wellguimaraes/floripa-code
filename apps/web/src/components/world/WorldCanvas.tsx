@@ -1890,7 +1890,12 @@ function buildFurniture(
     for (const slot of area.slots) {
       const kind = slot.prop ?? area.slotProp;
       if (kind === undefined) continue;
-      spots.push({ kind, position: slot.position, facing: slot.facing, scale: 1 });
+      spots.push({
+        kind,
+        position: slot.position,
+        facing: slot.facing,
+        scale: area.slotPropScale ?? 1,
+      });
     }
   }
   for (const character of characters) {
