@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import type { WorldDefinition } from "../definition/types";
-import { groundHeight, TERRAIN_TOP } from "./terrain";
+import { groundHeight, surfaceAt, TERRAIN_TOP } from "./terrain";
 
 describe("groundHeight", () => {
   const definition = {
@@ -28,5 +28,20 @@ describe("groundHeight", () => {
       expect(heights[index]!).toBeLessThanOrEqual(heights[index - 1]!);
     }
     expect(heights[0]!).toBeGreaterThan(0);
+  });
+});
+
+describe("surfaceAt", () => {
+  const surface = surfaceAt({
+    terrain: [
+      { shape: "disc", kind: "sand", center: [0, 0], radius: 9.5 },
+      { shape: "disc", kind: "grass", center: [-2, 0], radius: 7.2 },
+    ],
+  } as unknown as WorldDefinition);
+
+  it("finds the lawn over the sand, the sand around it, and nothing off the island", () => {
+    expect(surface(-2, 0)).toBe("grass");
+    expect(surface(7.5, 0)).toBe("sand");
+    expect(surface(30, 0)).toBeNull();
   });
 });

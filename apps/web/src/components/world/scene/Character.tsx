@@ -12,7 +12,7 @@ import {
   Vector3,
 } from "three";
 
-import type { Pose, Vec3, WorldMovement } from "../definition/types";
+import type { Pose, TerrainKind, Vec3, WorldMovement } from "../definition/types";
 import { type Obstacle, planRoute } from "../engine/route";
 import type { Placement } from "../engine/slots";
 import type { WorldCharacter } from "../engine/world";
@@ -63,6 +63,8 @@ export function Character(props: {
   readonly obstacles: ReadonlyArray<Obstacle>;
   /** The island's ground height, so a character on the lawn stands on it. */
   readonly ground: Ground;
+  /** Which ground shows at a spot on the island, so the selection ring can suit it. */
+  readonly surface: (x: number, z: number) => TerrainKind | null;
   readonly movement: WorldMovement;
   readonly selected: boolean;
   readonly onSelect: (character: WorldCharacter) => void;
@@ -77,7 +79,18 @@ export function Character(props: {
   /** Screen point to anchor a label at, or null when the pointer leaves. */
   readonly onHover: (character: WorldCharacter, point: { x: number; y: number } | null) => void;
 }) {
-  const { character, shades, hat, obstacles, ground, movement, selected, onRoot, onHover } = props;
+  const {
+    character,
+    shades,
+    hat,
+    obstacles,
+    ground,
+    surface,
+    movement,
+    selected,
+    onRoot,
+    onHover,
+  } = props;
   const { onSelect, onOpen, onPick, onMenu } = props;
   const { facts, placement, activity, intent } = character;
   // On a seat, beach poses become sitting back, and a wave becomes both arms raised.
@@ -259,7 +272,15 @@ export function Character(props: {
         <mesh geometry={geometry.shadow} rotation-x={-Math.PI / 2} position-y={0.012}>
           <meshBasicMaterial color={palette.shadow} transparent opacity={0.18} depthWrite={false} />
         </mesh>
-        {selected ? <SelectionRing fps={movement.walkFps} /> : null}
+        {selected ? (
+          <SelectionRing
+            fps={movement.walkFps}
+            onSand={() => {
+              const [x, , z] = motion.current.position;
+              return surface(x, z) === "sand";
+            }}
+          />
+        ) : null}
         <Suspense
           fallback={
             // The shape-built figure stands in while the model downloads.

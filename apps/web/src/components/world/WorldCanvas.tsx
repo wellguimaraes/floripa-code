@@ -61,7 +61,7 @@ import { SceneContrast } from "./scene/contrast";
 import { FadedContext, toFaded } from "./scene/lighting";
 import { palette } from "./scene/palette";
 import { SharkSightings } from "./scene/Sharks";
-import { groundHeight } from "./scene/terrain";
+import { groundHeight, surfaceAt } from "./scene/terrain";
 import { SIGN_TOP, Sign, signTextColor } from "./scene/Sign";
 import { NewAgentBubble } from "./NewAgentBubble";
 import { NewAgentProjectPicker } from "./NewAgentProjectPicker";
@@ -866,6 +866,7 @@ export default function WorldCanvas(props: {
                       }
                       obstacles={obstacles.get(island.definition)!}
                       ground={groundHeight(island.definition)}
+                      surface={surfaceAt(island.definition)}
                       movement={definition.movement}
                       selected={
                         character.facts.key === (bubble?.facts.key ?? chatKey) ||

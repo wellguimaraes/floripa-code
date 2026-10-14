@@ -159,6 +159,39 @@ export function groundHeight(definition: WorldDefinition): (x: number, z: number
   return ground;
 }
 
+const surfaces = new WeakMap<WorldDefinition, (x: number, z: number) => TerrainKind | null>();
+
+/**
+ * Which ground shows at (x, z) on an island, following its patches' wobbling
+ * outlines: the highest patch there, or none off the island.
+ */
+export function surfaceAt(
+  definition: WorldDefinition,
+): (x: number, z: number) => TerrainKind | null {
+  let surface = surfaces.get(definition);
+  if (surface !== undefined) return surface;
+  const patches = definition.terrain.toSorted((a, b) => TERRAIN_TOP[b.kind] - TERRAIN_TOP[a.kind]);
+  const inside = patches.map((patch) => {
+    if (patch.shape === "box") {
+      return (x: number, z: number) =>
+        Math.abs(x - patch.center[0]) <= patch.size[0] / 2 &&
+        Math.abs(z - patch.center[1]) <= patch.size[1] / 2;
+    }
+    const wobble = wobbleAt(patch.kind, patch.radius, TERRAIN_TOP[patch.kind]);
+    return (x: number, z: number) => {
+      const dx = x - patch.center[0];
+      const dz = z - patch.center[1];
+      return Math.hypot(dx, dz) <= patch.radius * wobble(Math.atan2(dx, dz));
+    };
+  });
+  surface = (x, z) => {
+    const index = inside.findIndex((contains) => contains(x, z));
+    return index === -1 ? null : patches[index]!.kind;
+  };
+  surfaces.set(definition, surface);
+  return surface;
+}
+
 let grain: DataTexture | undefined;
 
 /**
