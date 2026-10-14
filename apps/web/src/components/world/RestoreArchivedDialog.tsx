@@ -8,7 +8,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, ScopedProjectRef } from "@t3tools/contracts";
-import { ArchiveRestoreIcon } from "lucide-react";
+import { ArchiveIcon, ArchiveRestoreIcon, type LucideIcon, MessageSquareIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { useThreadActions } from "../../hooks/useThreadActions";
@@ -19,6 +19,7 @@ import { Button } from "../ui/button";
 import { Dialog, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "../ui/dialog";
 import { Spinner } from "../ui/spinner";
 import { toastManager } from "../ui/toast";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { signTextColor } from "./scene/Sign";
 
 /**
@@ -32,6 +33,28 @@ function lastMessageAt(thread: EnvironmentThreadShell): string {
     (value): value is string => value != null,
   );
   return candidates.toSorted().at(-1) ?? thread.createdAt;
+}
+
+/** A relative time behind an icon that says what happened then; hovering spells it out. */
+function TimeLabel(props: {
+  readonly icon: LucideIcon;
+  readonly label: string;
+  readonly at: string;
+}) {
+  const { icon: Icon, label, at } = props;
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span className="flex items-center gap-1" aria-label={label}>
+            <Icon className="size-3" />
+            {formatRelativeTimeLabel(at)}
+          </span>
+        }
+      />
+      <TooltipPopup>{label}</TooltipPopup>
+    </Tooltip>
+  );
 }
 
 export function RestoreArchivedDialog(props: {
@@ -128,8 +151,15 @@ export function RestoreArchivedDialog(props: {
                   >
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm">{thread.title || "Untitled thread"}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatRelativeTimeLabel(lastMessageAt(thread))}
+                      <p className="flex items-center gap-3 text-xs text-muted-foreground">
+                        <TimeLabel
+                          icon={MessageSquareIcon}
+                          label="Last message"
+                          at={lastMessageAt(thread)}
+                        />
+                        {thread.archivedAt ? (
+                          <TimeLabel icon={ArchiveIcon} label="Archived" at={thread.archivedAt} />
+                        ) : null}
                       </p>
                     </div>
                     <Button
