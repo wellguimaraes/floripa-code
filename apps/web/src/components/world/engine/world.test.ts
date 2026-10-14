@@ -464,12 +464,13 @@ describe("validateWorldDefinition", () => {
     for (const island of islandWorlds) expect(validateWorldDefinition(island)).toEqual([]);
   });
 
-  it("gives every island size its rock piles and beach spots", () => {
+  it("gives every island size its rock piles, beach spots and pier chairs", () => {
     const counts = islandWorlds.map((island) => {
       const { mine, beach } = island.areas as Record<string, FixedArea>;
-      return { piles: mine!.slots.length, restSpots: beach!.slots.length };
+      const fishing = beach!.slots.filter((slot) => slot.fishing === true).length;
+      return { piles: mine!.slots.length, restSpots: beach!.slots.length - fishing, fishing };
     });
-    expect(counts).toEqual(ISLAND_SIZES);
+    expect(counts).toEqual(ISLAND_SIZES.map((size) => ({ ...size, fishing: 4 })));
   });
 
   it("names broken references and disconnected areas", () => {

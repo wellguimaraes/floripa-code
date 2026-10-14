@@ -101,6 +101,7 @@ export function Character(props: {
     [string],
   );
   const hitbox = useRef<Mesh>(null);
+  const rod = useRef<Group>(null);
   const body = useRef<Group>(null);
   const head = useRef<Group>(null);
   const armLeft = useRef<Group>(null);
@@ -124,7 +125,17 @@ export function Character(props: {
     lastPlacement.current = placement;
     if (previous === null || samePlacement(previous, placement)) return;
     const current = motion.current;
-    current.route = planRoute({ from: current.position, to: placement.position, obstacles });
+    // Off a pier through its foot, and onto one the same way; along the deck, straight.
+    const alongDeck = previous.via !== undefined && sameVec(previous.via, placement.via);
+    const stops = alongDeck
+      ? []
+      : [previous.via, placement.via].filter((stop): stop is Vec3 => stop !== undefined);
+    let from: Vec3 = [...current.position];
+    current.route = [];
+    for (const to of [...stops, placement.position]) {
+      current.route.push(...planRoute({ from, to, obstacles }));
+      from = to;
+    }
     invalidate();
   }, [placement, obstacles, invalidate]);
 
@@ -180,9 +191,10 @@ export function Character(props: {
     const lift = walking ? 0 : (placement.seat ?? 0);
     group.position.set(current.position[0], current.position[1] + lift, current.position[2]);
     group.rotation.y = current.route.length > 0 ? current.heading : placement.facing;
+    if (rod.current !== null) rod.current.visible = !walking;
     if (hitbox.current !== null) {
       // Lying down, the model stretches back along -z at about knee height.
-      const lying = !walking && pose === "lie";
+      const lying = !walking && (pose === "lie" || pose === "dead");
       hitbox.current.rotation.x = lying ? Math.PI / 2 : 0;
       hitbox.current.position.set(0, lying ? 0.3 : HITBOX_CENTER_Y, lying ? -0.35 : 0);
     }
@@ -268,6 +280,9 @@ export function Character(props: {
         {activity.pose === "mine" || activity.pose === "ponder" ? (
           <NuggetPile count={facts.beat % (NUGGET_SPOTS.length + 1)} />
         ) : null}
+        {placement.fishing === true ? (
+          <FishingRod ref={rod} seat={placement.seat ?? 0} scale={scale} />
+        ) : null}
         {intent.effect === "cloud" ? <Cloud /> : null}
         {intent.balloon !== undefined ? (
           <>
@@ -337,6 +352,58 @@ function ModelPickaxe() {
       </mesh>
     </group>
   );
+}
+
+/** The rod's length and its tilt forward from upright. */
+const ROD_LENGTH = 1.4;
+const ROD_TILT = 0.95;
+const WATER_Y = -0.25;
+
+/**
+ * Propped beside the right knee and leaning out over the water ahead, its
+ * line dropping to a bobber. Rides on the character, so it is only there
+ * while someone sits fishing. `seat` and `scale` place the character above
+ * the water, so the line ends at the surface.
+ */
+function FishingRod({
+  ref,
+  seat,
+  scale,
+}: {
+  readonly ref: React.Ref<Group>;
+  readonly seat: number;
+  readonly scale: number;
+}) {
+  const tipY = 0.1 + Math.cos(ROD_TILT) * ROD_LENGTH;
+  const tipZ = 0.3 + Math.sin(ROD_TILT) * ROD_LENGTH;
+  // In the character's own units, which are scaled; the water's height is not.
+  const lineLength = tipY - (WATER_Y - seat) / scale;
+  return (
+    <group ref={ref}>
+      <mesh
+        geometry={geometry.cylinder}
+        position={[0.3, 0.1 + (tipY - 0.1) / 2, 0.3 + (tipZ - 0.3) / 2]}
+        rotation-x={ROD_TILT}
+        scale={[0.02, ROD_LENGTH, 0.02]}
+      >
+        <LitMaterial color={palette.rod} />
+      </mesh>
+      <mesh
+        geometry={geometry.cylinder}
+        position={[0.3, tipY - lineLength / 2, tipZ]}
+        scale={[0.006, lineLength, 0.006]}
+      >
+        <meshBasicMaterial color={palette.fishingLine} />
+      </mesh>
+      <mesh geometry={geometry.puff} position={[0.3, tipY - lineLength, tipZ]} scale={0.35}>
+        <LitMaterial color={palette.bobber} />
+      </mesh>
+    </group>
+  );
+}
+
+function sameVec(a: Vec3, b: Vec3 | undefined): boolean {
+  return b !== undefined && a.every((value, index) => value === b[index]);
 }
 
 function samePlacement(a: Placement, b: Placement): boolean {
@@ -497,6 +564,13 @@ function applyPose(pose: Pose | "walk", time: number, rig: PoseRig) {
       // Head toward the chair's back (-z), feet toward its foot.
       body.rotation.x = -Math.PI / 2 + 0.3;
       body.position.set(0, 0.32, 0.5);
+      break;
+    case "dead":
+      // Flat on the sand, arms flung out.
+      body.rotation.x = -Math.PI / 2;
+      body.position.set(0, 0.15, 0.5);
+      armLeft.rotation.z = -Math.PI / 2;
+      armRight.rotation.z = Math.PI / 2;
       break;
     case "stand":
       break;

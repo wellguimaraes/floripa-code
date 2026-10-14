@@ -21,14 +21,6 @@ const arc = (input: {
 const spread = (from: number, to: number, count: number): number[] =>
   Array.from({ length: count }, (_, index) => from + ((to - from) * index) / (count - 1));
 
-/** A rope lying from `from` to `to`, e.g. tying the raft to a tree. */
-const rope = (from: readonly [number, number], to: readonly [number, number]): WorldProp => ({
-  kind: "rope",
-  position: [from[0], 0.08, from[1]],
-  facing: Math.atan2(to[0] - from[0], to[1] - from[1]),
-  length: Math.hypot(to[0] - from[0], to[1] - from[1]),
-});
-
 // Mining sites on the lawn, one family per site. The parent stands behind its
 // rock pile facing the camera (+x/+z) so its face shows; its kids work the
 // same pile from the sides and front (see the `helpers` offsets).
@@ -95,7 +87,8 @@ const PILES: ReadonlyArray<ReadonlyArray<readonly [number, number]>> = [
 
 /**
  * What each island size holds, smallest first: every step up adds half the
- * smallest island's rock piles and spots on the beach.
+ * smallest island's rock piles and spots on the beach. Every size also has
+ * the pier's chairs (see `PIER_SEATS`).
  */
 export const ISLAND_SIZES = [
   { piles: 8, restSpots: 9 },
@@ -106,17 +99,23 @@ export const ISLAND_SIZES = [
 // Seat height of the loungers on the beach (see the `beachChair` prop).
 const LOUNGER_SEAT = 0.4;
 
-const RAFT_FACING_SHORE = Math.atan2(1, -1);
-const RAFT_FACING = Math.PI / 4;
-/** The point on a tree trunk's bark facing `from`. */
-const towardTrunk = (
-  tree: readonly [number, number],
-  from: readonly [number, number],
-): readonly [number, number] => {
-  const distance = Math.hypot(from[0] - tree[0], from[1] - tree[1]);
-  const bark = 0.12 / distance;
-  return [tree[0] + (from[0] - tree[0]) * bark, tree[1] + (from[1] - tree[1]) * bark];
-};
+// The pier runs out from the right end of the beach, square to the camera's
+// view, so it crosses the screen sideways and hides no one. Its seats line the
+// camera's side, facing it, rods out over the water.
+const PIER_ANGLE = (-45 * Math.PI) / 180;
+const PIER_FACING = Math.PI / 2 - PIER_ANGLE;
+const PIER_LENGTH = 7;
+/** How far up the sand the pier starts, from the shore. */
+const PIER_LANDING = 1;
+/** Along the pier from its foot: the first stretch stays on the sand. */
+const PIER_SEATS = [2.2, 3.5, 4.8, 6.1];
+/** Off the deck's middle toward the camera's side (local -x). */
+const PIER_SEAT_SIDE = 0.45;
+// Seat height of the folding chairs on the pier (see the `fishingChair` prop).
+const FISHING_SEAT = 0.3;
+
+/** Lying along the shore rather than across it, so arms spread out don't reach the lawn. */
+const alongShore = (slot: WorldSlot): WorldSlot => ({ ...slot, facing: slot.facing + Math.PI / 2 });
 
 /**
  * A round sand island with a round lawn pushed toward the mining side, which
@@ -133,14 +132,23 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
   });
   const node = (x: number, z: number): Vec3 => [x * scale, 0, z * scale];
 
-  // The raft floats off the front-left shore, tied to the lawn's front tree.
-  const raft = at(-8.4, 8.4);
-  const raftTree = at(-7, 4);
-  /** The end of the raft's shoreward crossbar (see the raft prop), where the rope is tied. */
-  const raftCleat: readonly [number, number] = [
-    raft[0] + 0.75 * Math.cos(RAFT_FACING) - Math.sin(RAFT_FACING),
-    raft[1] - 0.75 * Math.sin(RAFT_FACING) - Math.cos(RAFT_FACING),
+  // A point `along` the pier from its foot and `side` units to its right (local +x).
+  const shore = 9.5 * scale - PIER_LANDING;
+  const onPier = (along: number, side: number): Vec3 => [
+    shore * Math.cos(PIER_ANGLE) + along * Math.sin(PIER_FACING) + side * Math.cos(PIER_FACING),
+    0,
+    shore * Math.sin(PIER_ANGLE) + along * Math.cos(PIER_FACING) - side * Math.sin(PIER_FACING),
   ];
+  const pierFoot = onPier(0.5, 0);
+  const pierSeats: WorldSlot[] = PIER_SEATS.map((along) => ({
+    position: onPier(along, -PIER_SEAT_SIDE),
+    // Square to the pier, toward the camera's side.
+    facing: PIER_FACING - Math.PI / 2,
+    prop: "fishingChair",
+    seat: FISHING_SEAT,
+    via: pierFoot,
+    fishing: true,
+  }));
 
   return {
     terrain: [
@@ -151,20 +159,16 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
       prop("tree", -7, 4),
       prop("tree", -3.2, -5.8),
       prop("palm", 3.4, -8.2, 0.4),
-      // Off the right end of the beach: in front of the towels its crown hid them.
-      prop("palm", 6.6, -6.2, 2.2),
       prop("palm", 4.6, -7.6, 1.3),
       prop("palm", -0.8, -9, 3.6),
       prop("palm", -2.3, 8.7, 5),
-      // Up the left shore, clear of the line from the raft to its tree.
       prop("palm", -8.6, -1.2, 2.9),
       // Beside the beach spots, never in front of one: a canopy hides whoever is under it.
       ...[
         ...arc({ radius: 7.6 * scale, degrees: [-30] }),
         ...arc({ radius: 7.2 * scale, degrees: [88] }),
       ].map((slot) => ({ kind: "umbrella" as const, position: slot.position, facing: 0 })),
-      { kind: "raft", position: [raft[0], -0.2, raft[1]], facing: RAFT_FACING },
-      rope(raftCleat, towardTrunk(raftTree, raftCleat)),
+      { kind: "pier", position: onPier(0, 0), facing: PIER_FACING, length: PIER_LENGTH },
     ],
     areas: {
       mine: {
@@ -179,26 +183,28 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
         slotProp: "towel",
         // Towels with a lounger every third spot, spread across the front of the
         // island: where the shore runs away from the camera they would hide each other.
-        slots: arc({ radius: 8.2 * scale, degrees: spread(-15, 95, size.restSpots) }).map(
-          (slot, index) =>
-            index % 3 === 1 ? { ...slot, prop: "beachChair" as const, seat: LOUNGER_SEAT } : slot,
-        ),
+        // Then the pier's chairs: whoever lands on one goes fishing instead.
+        slots: [
+          ...arc({ radius: 8.2 * scale, degrees: spread(-15, 95, size.restSpots) }).map(
+            (slot, index) =>
+              index % 3 === 1 ? { ...slot, prop: "beachChair" as const, seat: LOUNGER_SEAT } : slot,
+          ),
+          ...pierSeats,
+        ],
         // A row behind the towels, where the shore faces the camera: there, behind
         // also means higher on screen, so the front row hides no one.
         spillover: arc({ radius: 6.5 * scale, degrees: spread(0, 60, 8) }),
       },
-      raft: {
+      // The wide sand behind the beach, between the palms and the lawn, clear of
+      // the walk out to the pier.
+      dunes: {
         kind: "fixed",
-        entry: "raft-landing",
-        slots: [
-          [-0.5, -0.5],
-          [0.5, -0.5],
-          [-0.5, 0.5],
-          [0.5, 0.5],
-        ].map(([dx, dz]) => ({
-          position: [raft[0] + dx!, -0.05, raft[1] + dz!] as const,
-          facing: RAFT_FACING_SHORE,
-        })),
+        entry: "dunes-path",
+        slots: arc({ radius: 7.9 * scale, degrees: spread(-105, -62, 4) }).map(alongShore),
+        spillover: [
+          ...arc({ radius: 6.4 * scale, degrees: [-35, -50] }),
+          ...arc({ radius: 8.75 * scale, degrees: [-120] }),
+        ].map(alongShore),
       },
       // Around the parent's pile: its left, its right, then the near side.
       helpers: {
@@ -216,14 +222,12 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
         "lawn-gate": node(-1.4, 0.6),
         plaza: node(1, 0.6),
         "beach-path": node(5.4, 0.6),
-        "lawn-south": node(-2, 5),
-        "raft-landing": node(-6.2, 6.2),
+        "dunes-path": node(2.4, -5.4),
       },
       edges: [
         ["lawn-gate", "plaza"],
         ["plaza", "beach-path"],
-        ["lawn-gate", "lawn-south"],
-        ["lawn-south", "raft-landing"],
+        ["plaza", "dunes-path"],
       ],
     },
     rules: [
@@ -241,7 +245,9 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
       // No new output for a while: keep swinging, slowly.
       { when: { status: "working", quiet: true }, go: "mine", do: "ponder" },
       { when: { status: "working" }, go: "mine", do: "mine" },
-      { when: { status: ["failed", "limited"] }, go: "raft", do: "stranded", effect: "cloud" },
+      // Out of quota: flat out on the sand until the limit resets.
+      { when: { status: "limited" }, go: "dunes", do: "dead" },
+      { when: { status: "failed" }, go: "dunes", do: "stranded", effect: "cloud" },
       // Waiting is a finished turn whose session stays open: done, as far as the world goes.
       { when: { status: ["ready", "waiting"], unread: true }, go: "beach", do: "wave" },
       { when: { status: ["ready", "waiting"] }, go: "beach", do: "sleep" },
@@ -255,6 +261,7 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
       wave: { pose: "wave", ambientFps: 12 },
       sleep: { pose: "lie" },
       stranded: { pose: "slump" },
+      dead: { pose: "dead" },
     },
     movement: {
       walkSpeed: 3,

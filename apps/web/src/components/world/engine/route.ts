@@ -91,6 +91,8 @@ const FOOTPRINTS: Partial<Record<PropKind, number>> = {
   palm: 0.3,
   umbrella: 0.15,
   beachChair: 0.45,
+  // Small, so walkers step around it and stay on the pier's deck.
+  fishingChair: 0.2,
   rockPile: 0.65,
 };
 /** A rock pile stands this far in front of its slot (see the `rockPile` prop). */

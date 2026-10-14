@@ -49,9 +49,11 @@ export const palette = {
   stoneLight: "#a3a7ae",
   sharkFin: "#3f4c5a",
   gold: "#facc15",
-  log: "#a0703f",
-  rope: "#e8d5a3",
   rod: "#5b3a1e",
+  plank: "#c08a55",
+  plankDark: "#8a5a32",
+  fishingLine: "#e2e8f0",
+  bobber: "#ef4444",
   /**
    * Character colours, one per family: head in the light shade, body and arms
    * in the base, legs in the dark. Hues are far apart so families read at a glance.

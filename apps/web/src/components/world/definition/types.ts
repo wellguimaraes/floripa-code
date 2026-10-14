@@ -19,23 +19,27 @@ export interface WorldSlot {
    * and sits back instead of lying down, and waves with a raised arm.
    */
   readonly seat?: number;
+  /** Walked through on the way to the slot and on the way off it, e.g. the foot of a pier. */
+  readonly via?: Vec3;
+  /** The occupant holds a rod out over the water while resting here. */
+  readonly fishing?: boolean;
 }
 
 export type PropKind =
   | "towel"
   | "beachChair"
+  | "pier"
+  | "fishingChair"
   | "umbrella"
   | "palm"
   | "tree"
-  | "raft"
-  | "rope"
   | "rockPile";
 
 export interface WorldProp {
   readonly kind: PropKind;
   readonly position: Vec3;
   readonly facing: number;
-  /** Stretches the prop along its facing, e.g. a rope's length. */
+  /** Stretches the prop along its facing, e.g. a pier's length. */
   readonly length?: number;
 }
 
@@ -100,7 +104,7 @@ export interface WorldRule extends WorldIntent {
 }
 
 /** Poses are the renderer's vocabulary; activities name a pose plus timing. */
-export type Pose = "stand" | "lie" | "wave" | "slump" | "mine" | "ponder";
+export type Pose = "stand" | "lie" | "dead" | "wave" | "slump" | "mine" | "ponder";
 
 export interface WorldActivity {
   readonly pose: Pose;

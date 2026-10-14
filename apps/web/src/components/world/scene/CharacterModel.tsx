@@ -4,6 +4,7 @@ import {
   type AnimationAction,
   AnimationMixer,
   Box3,
+  Color,
   type Group,
   type Material,
   Matrix4,
@@ -20,7 +21,9 @@ import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js
 import type { Pose } from "../definition/types";
 import { keepColors } from "./contrast";
 import { drawSoon } from "./frames";
-import type { FamilyShades } from "./palette";
+import { geometry } from "./geometries";
+import { LitMaterial } from "./lighting";
+import { type FamilyShades, palette } from "./palette";
 
 // KayKit "Rogue" (CC0), trimmed to these clips; see public/world/LICENSE.txt.
 const MODEL_URL = `${import.meta.env.BASE_URL}world/character.glb`;
@@ -39,6 +42,7 @@ const CLIPS: Record<Pose | "walk", string> = {
   mine: "1H_Melee_Attack_Chop",
   wave: "Cheer",
   lie: "Lie_Idle",
+  dead: "Lie_Idle",
   slump: "Sit_Floor_Idle",
 };
 
@@ -101,9 +105,8 @@ export function CharacterModel(props: {
       hand: scene.getObjectByName(PropertyBinding.sanitizeNodeName("handslot.r")) ?? null,
       head,
       crown: head === null ? null : crownSeat(scene, head),
-      arm: ["upperarm.r", "lowerarm.r", "wrist.r"].map(
-        (name) => scene.getObjectByName(PropertyBinding.sanitizeNodeName(name)) ?? null,
-      ),
+      arm: bones(scene, ["upperarm.r", "lowerarm.r", "wrist.r"]),
+      armLeft: bones(scene, ["upperarm.l", "lowerarm.l", "wrist.l"]),
     };
   }, [gltf]);
 
@@ -124,6 +127,7 @@ export function CharacterModel(props: {
   // every frame checks it is still on the bone, before anything is drawn.
   const handGroup = useRef<Group>(null);
   const headGroup = useRef<Group>(null);
+  const deadEyes = useRef<Group>(null);
   useLayoutEffect(() => {
     const items = [handGroup.current, headGroup.current];
     seatOn(rig.hand, items[0]!);
@@ -166,7 +170,12 @@ export function CharacterModel(props: {
     // Draw the fade through, then let the scene go still again.
     if (performance.now() < fadeUntil.current) drawSoon(state.invalidate, FADE_FPS);
     rig.mixer.update(Math.min(delta, 0.1));
-    if (raiseHand) raiseArm(rig.arm);
+    const dead = pose === "dead" && !isWalking();
+    if (deadEyes.current !== null) deadEyes.current.visible = dead;
+    if (dead) {
+      spreadArm(rig.arm, rig.head);
+      spreadArm(rig.armLeft, rig.head);
+    } else if (raiseHand) raiseArm(rig.arm);
   });
 
   useLayoutEffect(() => {
@@ -191,6 +200,7 @@ export function CharacterModel(props: {
           scale={rig.crown.scale}
         >
           {headItem}
+          {pose === "dead" ? <DeadEyes ref={deadEyes} face={shades.light} /> : null}
         </group>
       ) : null}
     </>
@@ -223,6 +233,54 @@ function crownSeat(scene: Object3D, head: Object3D) {
   return { position, quaternion, scale };
 }
 
+function bones(scene: Object3D, names: ReadonlyArray<string>): Array<Object3D | null> {
+  // The loader strips dots from names: "upperarm.r" becomes "upperarmr".
+  return names.map((name) => scene.getObjectByName(PropertyBinding.sanitizeNodeName(name)) ?? null);
+}
+
+// The model's eyes, measured from its head mesh, in head units from the crown
+// (see `crownSeat`): x right, y up, z toward the face.
+const EYES = [-0.193, 0.179];
+const EYE_Y = -0.526;
+const EYE_FRONT = 0.4;
+const EYE_SIZE = 0.115;
+/** How much the head's texture darkens its colour around the eyes. */
+const FACE_SHADE = 0.55;
+
+/**
+ * Crosses over the eyes of an agent out of quota: a patch of face hides each
+ * eye and an × is drawn on it. Toggled per frame, so it only shows once the
+ * agent lies down.
+ */
+function DeadEyes({ ref, face }: { readonly ref: React.Ref<Group>; readonly face: string }) {
+  const skin = useMemo(
+    () => `#${new Color(face).multiplyScalar(FACE_SHADE).getHexString()}`,
+    [face],
+  );
+  return (
+    <group ref={ref} visible={false}>
+      {EYES.map((x) => (
+        <group key={x} position={[x, EYE_Y, EYE_FRONT]}>
+          <mesh geometry={geometry.box} scale={[EYE_SIZE * 1.4, EYE_SIZE * 1.4, 0.02]}>
+            <LitMaterial color={skin} />
+          </mesh>
+          {[Math.PI / 4, -Math.PI / 4].map((angle) => (
+            <mesh
+              key={angle}
+              geometry={geometry.box}
+              position-z={0.015}
+              rotation-z={angle}
+              scale={[EYE_SIZE * 1.5, EYE_SIZE * 0.32, 0.02]}
+            >
+              <meshBasicMaterial color={palette.eye} />
+            </mesh>
+          ))}
+        </group>
+      ))}
+    </group>
+  );
+}
+
 /** Moves `item` onto `bone`, unless it is already there. */
 function seatOn(bone: Object3D | null, item: Object3D | null): void {
   if (bone !== null && item !== null && item.parent !== bone) bone.add(item);
@@ -237,14 +295,10 @@ const torso = new Vector3();
 const reach = new Vector3();
 const forward = new Vector3();
 
-/**
- * Points the arm up and a little outward, after the clip has posed it: each
- * bone turns so the next joint sits straight along `reach`. Works from joint
- * positions, so it needs no knowledge of the rig's bone axes.
- */
+/** Points the arm up and a little outward, e.g. to hold a balloon. */
 function raiseArm(arm: ReadonlyArray<Object3D | null>): void {
-  const [upper, lower, wrist] = arm;
-  if (!upper || !lower || !wrist || !upper.parent) return;
+  const upper = arm[0];
+  if (!upper?.parent) return;
   upper.updateWorldMatrix(true, true);
   upper.getWorldPosition(shoulder);
   upper.parent.getWorldPosition(torso);
@@ -254,14 +308,37 @@ function raiseArm(arm: ReadonlyArray<Object3D | null>): void {
   forward.set(0, 0, 1).applyQuaternion(upper.parent.getWorldQuaternion(parentWorld));
   reach.addScaledVector(forward, 0.35);
   reach.y = 1.5;
-  reach.normalize();
+  pointArm(arm, reach.normalize());
+}
+
+/** Flings the arm out sideways along the ground, a little toward the head, for lying flat. */
+function spreadArm(arm: ReadonlyArray<Object3D | null>, head: Object3D | null): void {
+  const upper = arm[0];
+  if (!upper?.parent || head === null) return;
+  upper.updateWorldMatrix(true, true);
+  upper.getWorldPosition(shoulder);
+  upper.parent.getWorldPosition(torso);
+  head.getWorldPosition(forward).sub(torso).normalize();
+  reach.subVectors(shoulder, torso).normalize().addScaledVector(forward, 0.4);
+  reach.y = 0;
+  pointArm(arm, reach.normalize());
+}
+
+/**
+ * Turns each bone, after the clip has posed it, so the next joint sits
+ * straight along `direction` (in world space). Works from joint positions,
+ * so it needs no knowledge of the rig's bone axes.
+ */
+function pointArm(arm: ReadonlyArray<Object3D | null>, direction: Vector3): void {
+  const [upper, lower, wrist] = arm;
+  if (!upper || !lower || !wrist) return;
   for (const [bone, child] of [
     [upper, lower],
     [lower, wrist],
   ] as const) {
     bone.updateWorldMatrix(true, false);
     along.copy(child.position).normalize().applyQuaternion(bone.getWorldQuaternion(boneWorld));
-    turn.setFromUnitVectors(along, reach).multiply(boneWorld);
+    turn.setFromUnitVectors(along, direction).multiply(boneWorld);
     bone.parent!.getWorldQuaternion(parentWorld);
     bone.quaternion.copy(parentWorld.invert().multiply(turn));
   }

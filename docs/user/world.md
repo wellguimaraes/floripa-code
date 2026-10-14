@@ -12,9 +12,11 @@ Where a character is and what it does tells you the thread's state at a glance:
 - **Swinging the pickaxe slowly**: still working, but nothing new has come out
   for a while. It may be thinking or stuck.
 - **Standing with a `!` or `?` balloon**: it needs your approval or has a question.
-- **On the beach, cheering** (or with an arm up, on a lounger): it finished and
-  you have not read the reply yet. Once you have, it rests on a towel or a lounger.
-- **On the raft under a grey cloud**: the run failed or hit a usage limit.
+- **On the beach, cheering** (or with an arm up, on a lounger or a pier chair): it
+  finished and you have not read the reply yet. Once you have, it rests on a towel
+  or a lounger, or fishes from a chair on the pier.
+- **Sitting on the sand behind the beach, under a grey cloud**: the run failed.
+- **Flat out on the sand with × eyes**: the agent hit its usage limit.
 
 Each agent has its own colour, shared with its subagents. To change it, click
 the agent, then the colour dot at the top left of its bubble, or click the agent's
@@ -73,7 +75,8 @@ to it, or the sea to see every island. Right-click an island to show only that
 island, hide it, grow or shrink it, zoom to it, or archive every agent resting
 on its beach. **Restore archived agent…** lists the island's archived agents,
 newest first; click **Restore** on one to bring it back. An island comes in three
-sizes: 8 rock piles and 9 beach spots, 12 and 14, or 16 and 18. The eye button
+sizes: 8 rock piles and 9 beach spots, 12 and 14, or 16 and 18, plus 4 chairs on
+the pier. The eye button
 at the top left lists every project; click one to show or hide its island. The
 button beside it lines the islands up vertically, in a grid, or horizontally.
 What you hide, how big each island is, and how you arrange the islands are

@@ -166,8 +166,8 @@ function Prop(props: {
 
 /**
  * Each model is built around its slot: local +z is the way the occupant faces,
- * and the thing they work at stands in front of them. Long props (rope)
- * run `length` units along +z.
+ * and the thing they work at stands in front of them. Long props (the
+ * pier) run `length` units along +z.
  */
 function PropModel({
   kind,
@@ -180,24 +180,6 @@ function PropModel({
   readonly seed: number;
 }) {
   switch (kind) {
-    case "raft":
-      return (
-        <>
-          {[-0.6, -0.3, 0, 0.3, 0.6].map((x) => (
-            <mesh
-              key={x}
-              geometry={geometry.cylinder}
-              position={[x, 0, 0]}
-              rotation-x={Math.PI / 2}
-              scale={[0.15, 2.6, 0.15]}
-            >
-              <LitMaterial color={palette.log} />
-            </mesh>
-          ))}
-          <Block size={[1.6, 0.06, 0.12]} at={[0, 0.13, -1]} color={palette.rope} />
-          <Block size={[1.6, 0.06, 0.12]} at={[0, 0.13, 1]} color={palette.rope} />
-        </>
-      );
     case "rockPile":
       // One family's pile, in front of the parent; its kids mine it from the sides.
       return (
@@ -219,21 +201,14 @@ function PropModel({
           />
         </group>
       );
-    case "rope":
-      return (
-        <mesh
-          geometry={geometry.cylinder}
-          position={[0, 0, length / 2]}
-          rotation-x={Math.PI / 2}
-          scale={[0.03, length, 0.03]}
-        >
-          <LitMaterial color={palette.rope} />
-        </mesh>
-      );
     case "towel":
       return <MergedMeshes parts={mergedParts("towel", towelParts)} />;
     case "beachChair":
       return <MergedMeshes parts={mergedParts("beachChair", loungerParts)} />;
+    case "fishingChair":
+      return <MergedMeshes parts={mergedParts("fishingChair", fishingChairParts)} />;
+    case "pier":
+      return <MergedMeshes parts={mergedParts(`pier:${length}`, () => pierParts(length))} />;
     case "umbrella":
       return (
         <>
@@ -361,6 +336,52 @@ function loungerParts(): Part[] {
   ];
 }
 
+/** A folding chair, low and small: seat at 0.3, facing +z. */
+function fishingChairParts(): Part[] {
+  const backrest = chain(translate(0, 0.3, -0.22), rotateX(-0.25));
+  return [
+    ...[-0.22, 0.22].flatMap((x) =>
+      [-0.18, 0.18].map((z) => block([0.04, 0.28, 0.04], [x, 0.14, z], palette.chairFrame)),
+    ),
+    block([0.48, 0.04, 0.44], [0, 0.29, 0], palette.chairCushion),
+    block([0.48, 0.36, 0.04], [0, 0.18, 0], palette.chairCushion, backrest),
+  ];
+}
+
+const PIER_WIDTH = 1.8;
+
+/**
+ * A plank deck running `length` units along +z, its top just above the sand,
+ * on posts where it stands over the water.
+ */
+function pierParts(length: number): Part[] {
+  const planks = Math.round(length / 0.32);
+  const pitch = length / planks;
+  const parts: Part[] = Array.from({ length: planks }, (_, index) =>
+    block(
+      [PIER_WIDTH, 0.08, pitch - 0.04],
+      [0, -0.02, (index + 0.5) * pitch],
+      index % 2 === 0 ? palette.plank : palette.plankDark,
+    ),
+  );
+  // Rails along both sides tie the planks together.
+  const edge = PIER_WIDTH / 2 - 0.05;
+  for (const x of [-edge, edge]) {
+    parts.push(block([0.1, 0.1, length], [x, -0.08, length / 2], palette.plankDark));
+  }
+  // Posts only past the first stretch, which lies on the sand.
+  for (let z = 1.4; z < length; z += 1.5) {
+    for (const x of [-edge, edge]) {
+      parts.push({
+        geometry: geometry.cylinder,
+        matrix: chain(translate(x, -0.45, z), scale(0.08, 0.8, 0.08)),
+        color: palette.plankDark,
+      });
+    }
+  }
+  return parts;
+}
+
 function MergedMeshes(props: {
   readonly parts: ReadonlyArray<MergedPart>;
   readonly flatShading?: boolean;
@@ -420,22 +441,6 @@ function rockPile(seed: number): PileRock[] {
     });
   }
   return rocks;
-}
-
-function Block(props: {
-  readonly size: readonly [number, number, number];
-  readonly at: readonly [number, number, number];
-  readonly color: string;
-}) {
-  return (
-    <mesh
-      geometry={geometry.box}
-      position={props.at as [number, number, number]}
-      scale={props.size as [number, number, number]}
-    >
-      <LitMaterial color={props.color} />
-    </mesh>
-  );
 }
 
 function Cylinder(props: {
