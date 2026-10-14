@@ -958,7 +958,9 @@ it.layer(layerTest)("OrchestrationV2LayerLive", (it) => {
         run.id,
       );
       assert.deepEqual(
-        (yield* outbox.listByCommandId(steerCommandId)).map((effect) => effect.request),
+        (yield* outbox.listByCommandId(steerCommandId))
+          .map((effect) => effect.request)
+          .filter((request) => request.type !== "thread-title.generate"),
         [
           {
             type: "provider-turn.steer",
@@ -1011,7 +1013,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive", (it) => {
       );
       assert.deepEqual(
         (yield* outbox.listByCommandId(nextCommandId)).map((effect) => effect.request.type),
-        ["provider-turn.start"],
+        ["provider-turn.start", "thread-title.generate"],
       );
     }),
   );

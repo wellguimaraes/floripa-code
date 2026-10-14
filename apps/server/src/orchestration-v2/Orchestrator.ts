@@ -499,7 +499,8 @@ function pendingThreadTitleGenerationEffect(
   threadId: ThreadId,
   kind:
     | { readonly type: "initial"; readonly messageId: MessageId }
-    | { readonly type: "regenerate" },
+    | { readonly type: "regenerate" }
+    | { readonly type: "drift-check"; readonly messageId: MessageId },
 ): PendingOrchestrationEffectV2 {
   return {
     id: `effect:${commandId}:thread-title.generate`,
@@ -2989,6 +2990,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               : command.regenerateTitle === false || command.title !== undefined
                 ? { titleRegeneration: null }
                 : {}),
+            // A typed title sticks; asking for a generated one hands it back.
+            ...(command.title !== undefined
+              ? { titleManual: true }
+              : command.regenerateTitle === true
+                ? { titleManual: false }
+                : {}),
             updatedAt: now,
           };
         }
@@ -4661,6 +4668,19 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           }),
         ]);
         projection = yield* getProjectionWithPendingEvents(command.threadId, events);
+      } else if (
+        command.createdBy === "user" &&
+        !isNativeMaintenanceCommand(command) &&
+        projection.thread.titleManual !== true &&
+        userMessages.some((message) => !isNativeMaintenanceCommand(message))
+      ) {
+        yield* Ref.update(effects, (existing) => [
+          ...existing,
+          pendingThreadTitleGenerationEffect(command.commandId, command.threadId, {
+            type: "drift-check",
+            messageId: command.messageId,
+          }),
+        ]);
       }
       const modelSelection = command.modelSelection ?? projection.thread.modelSelection;
       let dispatchMode = resolveMessageDispatchIntent(

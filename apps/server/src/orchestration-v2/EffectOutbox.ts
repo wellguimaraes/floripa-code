@@ -110,6 +110,8 @@ export const OrchestrationEffectRequestV2 = Schema.Union([
     kind: Schema.Union([
       Schema.Struct({ type: Schema.Literal("initial"), messageId: MessageId }),
       Schema.Struct({ type: Schema.Literal("regenerate") }),
+      /** A follow-up message may have moved the thread on; regenerate only if it did. */
+      Schema.Struct({ type: Schema.Literal("drift-check"), messageId: MessageId }),
     ]),
   }),
   /** Follows a Stop: sends `thread.stop` to every delegated task under the stopped thread. */

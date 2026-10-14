@@ -20,6 +20,7 @@ import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
+import * as ThreadTitleDrift from "../textGeneration/ThreadTitleDrift.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as EffectOutbox from "./EffectOutbox.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
@@ -45,6 +46,7 @@ const adapter = {
 function makeHarness(
   options: {
     readonly generateTitle?: TextGeneration.TextGeneration["Service"]["generateThreadTitle"];
+    readonly shouldRetitle?: ThreadTitleDrift.ThreadTitleDrift["Service"]["shouldRetitle"];
   } = {},
 ) {
   const layerDatabase = SqlitePersistence.layerMemory;
@@ -59,6 +61,7 @@ function makeHarness(
   const generateThreadTitle = vi.fn(
     options.generateTitle ?? (() => Effect.succeed({ title: "Generated title" })),
   );
+  const shouldRetitle = vi.fn(options.shouldRetitle ?? (() => Effect.succeed(false)));
   const layerProjectedProjects = Layer.mock(ProjectStore.ProjectStoreV2)({
     get: (requestedProjectId) =>
       Effect.succeed(
@@ -86,6 +89,7 @@ function makeHarness(
         layerThreadManagement,
         layerProjectedProjects,
         Layer.mock(TextGeneration.TextGeneration)({ generateThreadTitle }),
+        Layer.mock(ThreadTitleDrift.ThreadTitleDrift)({ shouldRetitle }),
         ServerSettings.layerTest({}),
       ),
     ),
@@ -98,6 +102,7 @@ function makeHarness(
       layerDatabase,
     ),
     generateThreadTitle,
+    shouldRetitle,
   };
 }
 
@@ -438,6 +443,152 @@ describe("ThreadTitleRegenerationService", () => {
         const projection = yield* threads.getThreadProjection(threadId);
         assert.equal(projection.thread.title, "Seed title");
         assert.isNotOk(projection.thread.titleRegeneration);
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect("checks follow-up messages for drift until someone names the thread", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness();
+      yield* Effect.gen(function* () {
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        const outbox = yield* EffectOutbox.EffectOutboxV2;
+        const titleEffects = (command: string) =>
+          outbox
+            .listByCommandId(CommandId.make(command))
+            .pipe(
+              Effect.map((effects) =>
+                effects
+                  .map((effect) => effect.request)
+                  .filter((request) => request.type === "thread-title.generate"),
+              ),
+            );
+        const threadId = yield* createThread({
+          command: "command:title:drift-arm:create",
+          thread: "thread:title:drift-arm",
+        });
+
+        yield* dispatchUserMessage({
+          command: "command:title:drift-arm:1",
+          threadId,
+          text: "Investigate the flaky login test",
+        });
+        assert.deepEqual(yield* titleEffects("command:title:drift-arm:1"), []);
+
+        yield* dispatchUserMessage({
+          command: "command:title:drift-arm:2",
+          threadId,
+          text: "Now add dark mode to the settings page",
+        });
+        assert.deepEqual(yield* titleEffects("command:title:drift-arm:2"), [
+          {
+            type: "thread-title.generate",
+            kind: {
+              type: "drift-check",
+              messageId: MessageId.make("command:title:drift-arm:2:message"),
+            },
+          },
+        ]);
+
+        yield* threads.dispatch({
+          type: "thread.metadata.update",
+          commandId: CommandId.make("command:title:drift-arm:rename"),
+          threadId,
+          title: "Login and dark mode",
+        });
+        assert.isTrue((yield* threads.getThreadProjection(threadId)).thread.titleManual);
+        yield* dispatchUserMessage({
+          command: "command:title:drift-arm:3",
+          threadId,
+          text: "Then document the new theme tokens",
+        });
+        assert.deepEqual(yield* titleEffects("command:title:drift-arm:3"), []);
+
+        yield* armRegeneration({ command: "command:title:drift-arm:regenerate", threadId });
+        assert.isFalse((yield* threads.getThreadProjection(threadId)).thread.titleManual);
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect("asks for a regenerated title when a follow-up starts a new task", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ shouldRetitle: () => Effect.succeed(true) });
+      yield* Effect.gen(function* () {
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        const outbox = yield* EffectOutbox.EffectOutboxV2;
+        const titleRegeneration = yield* ThreadTitleRegeneration.ThreadTitleRegenerationService;
+        const threadId = yield* createThread({
+          command: "command:title:drift:create",
+          thread: "thread:title:drift",
+        });
+        yield* dispatchUserMessage({
+          command: "command:title:drift:1",
+          threadId,
+          text: "Investigate the flaky login test",
+        });
+        yield* dispatchUserMessage({
+          command: "command:title:drift:2",
+          threadId,
+          text: "Now add dark mode to the settings page",
+        });
+
+        yield* titleRegeneration.execute({
+          threadId,
+          requestId: CommandId.make("command:title:drift:2"),
+          kind: {
+            type: "drift-check",
+            messageId: MessageId.make("command:title:drift:2:message"),
+          },
+        });
+
+        assert.deepEqual(harness.shouldRetitle.mock.calls[0]?.[0], {
+          title: "Seed title",
+          earlierMessages: ["Investigate the flaky login test"],
+          latestMessage: "Now add dark mode to the settings page",
+        });
+        const requestId = CommandId.make("command:title:drift:2:title-drift");
+        const projection = yield* threads.getThreadProjection(threadId);
+        assert.equal(projection.thread.titleRegeneration?.requestId, requestId);
+        assert.deepEqual(
+          (yield* outbox.listByCommandId(requestId)).map((effect) => effect.request),
+          [{ type: "thread-title.generate", kind: { type: "regenerate" } }],
+        );
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect("skips the drift check for short replies", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ shouldRetitle: () => Effect.succeed(true) });
+      yield* Effect.gen(function* () {
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        const titleRegeneration = yield* ThreadTitleRegeneration.ThreadTitleRegenerationService;
+        const threadId = yield* createThread({
+          command: "command:title:drift-short:create",
+          thread: "thread:title:drift-short",
+        });
+        yield* dispatchUserMessage({
+          command: "command:title:drift-short:1",
+          threadId,
+          text: "Investigate the flaky login test",
+        });
+        yield* dispatchUserMessage({
+          command: "command:title:drift-short:2",
+          threadId,
+          text: "ok go",
+        });
+
+        yield* titleRegeneration.execute({
+          threadId,
+          requestId: CommandId.make("command:title:drift-short:2"),
+          kind: {
+            type: "drift-check",
+            messageId: MessageId.make("command:title:drift-short:2:message"),
+          },
+        });
+
+        assert.equal(harness.shouldRetitle.mock.calls.length, 0);
+        assert.isNotOk((yield* threads.getThreadProjection(threadId)).thread.titleRegeneration);
       }).pipe(Effect.provide(harness.layer));
     }),
   );

@@ -50,6 +50,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as ScheduledTasks from "../scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
+import * as ThreadTitleDrift from "../textGeneration/ThreadTitleDrift.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as CommandReceiptStore from "./CommandReceiptStore.ts";
 import * as EffectOutbox from "./EffectOutbox.ts";
@@ -184,6 +185,9 @@ function makeHarness(options: HarnessOptions = {}) {
     Layer.mock(TextGeneration.TextGeneration)({
       generateThreadTitle,
       generateBranchName,
+    }),
+    Layer.mock(ThreadTitleDrift.ThreadTitleDrift)({
+      shouldRetitle: () => Effect.succeed(false),
     }),
     ServerSettings.layerTest(options.serverSettings),
     ProviderRegistryMock.layer(options.providers),
