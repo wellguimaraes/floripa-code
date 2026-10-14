@@ -55,8 +55,8 @@ export const palette = {
   sharkFin: "#3f4c5a",
   gold: "#facc15",
   rod: "#5b3a1e",
-  plank: "#c08a55",
-  plankDark: "#8a5a32",
+  plank: "#a58a70",
+  plankDark: "#745c48",
   fishingLine: "#e2e8f0",
   bobber: "#ef4444",
   /**
