@@ -24,6 +24,8 @@ export const geometry = {
   eye: new SphereGeometry(0.03, 6, 4),
   shadow: new CircleGeometry(0.34, 16),
   ring: new RingGeometry(0.4, 0.6, 32),
+  /** A thin unit ring's half on the -y side, which lies toward +z once turned flat. */
+  halfRing: new RingGeometry(0.8, 1, 16, 1, Math.PI, Math.PI),
   puff: new SphereGeometry(0.13, 8, 6),
   /** The top half of a unit sphere, flat side down at y = 0. */
   dome: new SphereGeometry(1, 14, 6, 0, Math.PI * 2, 0, Math.PI / 2),

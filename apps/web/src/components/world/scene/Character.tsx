@@ -77,7 +77,7 @@ export function Character(props: {
   const { character, shades, hat, obstacles, movement, selected, onRoot, onHover } = props;
   const { onSelect, onOpen, onPick, onMenu } = props;
   const { facts, placement, activity, intent } = character;
-  // On a seat, beach poses become sitting back, and a wave becomes a raised arm.
+  // On a seat, beach poses become sitting back, and a wave becomes both arms raised.
   const seated = placement.seat !== undefined;
   const pose = seated ? "slump" : activity.pose;
   const invalidate = useThree((state) => state.invalidate);
@@ -102,6 +102,7 @@ export function Character(props: {
   );
   const hitbox = useRef<Mesh>(null);
   const rod = useRef<Group>(null);
+  const bobber = useRef<Mesh>(null);
   const body = useRef<Group>(null);
   const head = useRef<Group>(null);
   const armLeft = useRef<Group>(null);
@@ -208,10 +209,10 @@ export function Character(props: {
     });
   });
 
-  const select = (event: ThreeEvent<MouseEvent>) => {
+  const select = (event: ThreeEvent<MouseEvent>, open = event.nativeEvent.altKey) => {
     if (event.delta > DRAG_CLICK_TOLERANCE_PX) return;
     event.stopPropagation();
-    if (event.nativeEvent.altKey) onOpen(character);
+    if (open) onOpen(character);
     else if (event.nativeEvent.metaKey || event.nativeEvent.ctrlKey) onPick(character);
     else onSelect(character);
   };
@@ -269,9 +270,11 @@ export function Character(props: {
             pose={pose}
             shades={shades}
             isWalking={() => motion.current.route.length > 0}
-            raiseHand={intent.balloon !== undefined || (seated && activity.pose === "wave")}
+            raiseHand={intent.balloon !== undefined}
+            raiseHands={seated && activity.pose === "wave"}
             reachHand={placement.fishing === true}
             dangleLegs={placement.ledge === true}
+            watch={placement.fishing === true ? bobber : undefined}
             handRef={hand}
             handItem={
               activity.pose === "mine" || activity.pose === "ponder" ? <ModelPickaxe /> : undefined
@@ -283,13 +286,28 @@ export function Character(props: {
           <NuggetPile count={facts.beat % (NUGGET_SPOTS.length + 1)} />
         ) : null}
         {placement.fishing === true ? (
-          <FishingRod ref={rod} hand={hand} seat={placement.seat ?? 0} scale={scale} />
+          <FishingRod
+            ref={rod}
+            bobber={bobber}
+            hand={hand}
+            seat={placement.seat ?? 0}
+            scale={scale}
+          />
         ) : null}
         {intent.effect === "cloud" ? <Cloud /> : null}
         {intent.balloon !== undefined ? (
           <>
             <primitive object={string} />
-            <sprite ref={balloon} name={BALLOON_NAME} renderOrder={10} {...pointer}>
+            <sprite
+              ref={balloon}
+              name={BALLOON_NAME}
+              renderOrder={10}
+              {...pointer}
+              // A question needs an answer, so its balloon goes straight to the chat.
+              onClick={(event) =>
+                select(event, intent.balloon === "question" || event.nativeEvent.altKey)
+              }
+            >
               <spriteMaterial
                 map={balloonTexture(intent.balloon)}
                 depthTest={false}
@@ -364,29 +382,36 @@ const ROD_TIP_Z = Math.sin(ROD_TILT) * ROD_LENGTH;
 /** How much farther out than the tip the line meets the water. */
 const LINE_REACH = 1.8;
 const WATER_Y = -0.25;
+/** The foam arc round the line, just over the water (and the shore's ripples). */
+const ARC_Y = WATER_Y + 0.01;
+const ARC_RADIUS = 0.12;
 /** Where the hand holds the rod before the model loads, in the character's own units. */
 const FALLBACK_GRIP: readonly [number, number, number] = [0.27, 0.6, 0.35];
 const gripPoint = new Vector3();
+const viewPoint = new Vector3();
 
 /**
  * Held in the right hand and leaning out over the water ahead, its line
  * running out to a bobber. Rides on the character, so it is only there while
  * someone sits fishing. `seat` and `scale` place the character above the
- * water, so the line ends at the surface.
+ * water, so the line ends at the surface, in a half ring of foam on the
+ * camera's side.
  */
 function FishingRod({
   ref,
+  bobber,
   hand,
   seat,
   scale,
 }: {
   readonly ref: React.Ref<Group>;
+  readonly bobber: React.RefObject<Mesh | null>;
   readonly hand: React.RefObject<Object3D | null>;
   readonly seat: number;
   readonly scale: number;
 }) {
   const rod = useRef<Group>(null);
-  const bobber = useRef<Mesh>(null);
+  const arc = useRef<Group>(null);
   const line = useMemo(() => {
     const created = new Line(
       new BufferGeometry().setAttribute("position", new BufferAttribute(new Float32Array(6), 3)),
@@ -404,10 +429,11 @@ function FishingRod({
   );
   // In the character's own units, which are scaled; the water's height is not.
   const waterY = (WATER_Y - seat) / scale;
+  const arcY = (ARC_Y - seat) / scale;
   // The hand moves with the animation, so the rod follows it every frame.
-  useFrame(() => {
+  useFrame((state) => {
     const group = rod.current?.parent;
-    if (rod.current === null || bobber.current === null || !group) return;
+    if (rod.current === null || bobber.current === null || arc.current === null || !group) return;
     if (hand.current === null) gripPoint.set(...FALLBACK_GRIP);
     else group.worldToLocal(hand.current.getWorldPosition(gripPoint));
     rod.current.position.copy(gripPoint);
@@ -415,6 +441,10 @@ function FishingRod({
     const tipY = gripPoint.y + ROD_TIP_Y;
     const tipZ = gripPoint.z + ROD_TIP_Z;
     bobber.current.position.set(tipX, waterY, tipZ + LINE_REACH);
+    // The arc's open side faces away from the camera, wherever the character faces.
+    group.worldToLocal(viewPoint.copy(state.camera.position));
+    arc.current.position.set(tipX, arcY, tipZ + LINE_REACH);
+    arc.current.rotation.y = Math.atan2(viewPoint.x - tipX, viewPoint.z - tipZ - LINE_REACH);
     const ends = line.geometry.getAttribute("position") as BufferAttribute;
     ends.setXYZ(0, tipX, tipY, tipZ);
     ends.setXYZ(1, tipX, waterY, tipZ + LINE_REACH);
@@ -436,6 +466,11 @@ function FishingRod({
       <mesh ref={bobber} geometry={geometry.puff} scale={0.35}>
         <LitMaterial color={palette.bobber} />
       </mesh>
+      <group ref={arc}>
+        <mesh geometry={geometry.halfRing} rotation-x={-Math.PI / 2} scale={ARC_RADIUS}>
+          <meshBasicMaterial color={palette.foam} transparent opacity={0.9} depthWrite={false} />
+        </mesh>
+      </group>
     </group>
   );
 }

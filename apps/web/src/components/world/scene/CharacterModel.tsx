@@ -7,6 +7,7 @@ import {
   Color,
   type Group,
   type Material,
+  MathUtils,
   Matrix4,
   type Mesh,
   MeshLambertMaterial,
@@ -71,15 +72,19 @@ export function CharacterModel(props: {
   readonly headItem?: React.ReactNode;
   /** Holds the right arm straight up, whatever the clip does, e.g. to hold a balloon. */
   readonly raiseHand?: boolean;
+  /** Holds both arms up, whatever the clip does, e.g. cheering from a seat. */
+  readonly raiseHands?: boolean;
   /** Holds the right arm out ahead while standing still, e.g. to hold a fishing rod. */
   readonly reachHand?: boolean;
-  /** Sitting, hangs the legs down over a drop ahead, e.g. off a pier's edge. */
+  /** Sitting, hangs the legs down over a drop ahead and swings them, e.g. off a pier's edge. */
   readonly dangleLegs?: boolean;
+  /** Keeps the head turned toward this, glancing around now and then, e.g. a fishing bobber. */
+  readonly watch?: React.RefObject<Object3D | null> | undefined;
   /** Receives the right hand, so the caller can tie things to it. */
   readonly handRef?: React.RefObject<Object3D | null>;
 }) {
-  const { pose, shades, isWalking, handItem, headItem, handRef } = props;
-  const { raiseHand = false, reachHand = false, dangleLegs = false } = props;
+  const { pose, shades, isWalking, handItem, headItem, handRef, watch } = props;
+  const { raiseHand = false, raiseHands = false, reachHand = false, dangleLegs = false } = props;
   const gltf = useLoader(GLTFLoader, MODEL_URL);
   const invalidate = useThree((state) => state.invalidate);
 
@@ -112,6 +117,10 @@ export function CharacterModel(props: {
       hand: scene.getObjectByName(PropertyBinding.sanitizeNodeName("handslot.r")) ?? null,
       head,
       crown: head === null ? null : crownSeat(scene, head),
+      // The head's turn facing ahead, in the rest pose: the base for `watchTarget`.
+      headRest: head?.getWorldQuaternion(new Quaternion()) ?? null,
+      // Keeps characters out of step with each other.
+      seed: scene.id * 3.7,
       arm: bones(scene, ["upperarm.r", "lowerarm.r", "wrist.r"]),
       armLeft: bones(scene, ["upperarm.l", "lowerarm.l", "wrist.l"]),
       legs: [
@@ -189,10 +198,22 @@ export function CharacterModel(props: {
     } else if (pose === "crossArms" && !isWalking()) {
       foldArm(rig.arm, true);
       foldArm(rig.armLeft, false);
+    } else if (raiseHands) {
+      raiseArm(rig.arm);
+      raiseArm(rig.armLeft);
     } else if (raiseHand) raiseArm(rig.arm);
     else if (reachHand && !isWalking()) reachArm(rig.arm);
+    const time = state.clock.elapsedTime + rig.seed;
     if (dangleLegs && pose === "slump" && !isWalking()) {
-      for (const leg of rig.legs) dangleLeg(leg, rig.scene);
+      rig.legs.forEach((leg, index) => {
+        // The legs kick in turn.
+        const kick = Math.sin((time / KICK_SECONDS) * Math.PI * 2 + index * Math.PI);
+        dangleLeg(leg, rig.scene, kick);
+      });
+    }
+    const target = watch?.current;
+    if (target && rig.head !== null && rig.headRest !== null && !isWalking()) {
+      watchTarget(rig.head, rig.headRest, target, time);
     }
   });
 
@@ -386,14 +407,66 @@ function spreadArm(arm: ReadonlyArray<Object3D | null>, head: Object3D | null): 
   pointLimb(arm, reach.normalize());
 }
 
-/** Thigh out ahead, shin hanging down: sitting on an edge, from the floor-sitting clip. */
-function dangleLeg(leg: ReadonlyArray<Object3D | null>, body: Object3D): void {
+/** Seconds for one swing of a dangling leg, out and back. */
+const KICK_SECONDS = 1.8;
+
+/**
+ * Thigh out ahead, shin hanging down: sitting on an edge, from the
+ * floor-sitting clip. `kick`, from -1 to 1, swings the shin back and out.
+ */
+function dangleLeg(leg: ReadonlyArray<Object3D | null>, body: Object3D, kick: number): void {
   forward.set(0, 0, 1).applyQuaternion(body.getWorldQuaternion(parentWorld));
   forward.y = 0;
   forward.normalize();
   reach.copy(forward).setY(-0.2).normalize();
-  across.copy(forward).multiplyScalar(0.25).setY(-1).normalize();
+  across
+    .copy(forward)
+    .multiplyScalar(0.25 + 0.3 * kick)
+    .setY(-1)
+    .normalize();
   pointLimb(leg, reach, across);
+}
+
+/** Seconds between chances to look away from what the head watches. */
+const GLANCE_EVERY = 7;
+/** How far a glance turns the head aside, in radians. */
+const GLANCE_ANGLE = 0.9;
+const UP = new Vector3(0, 1, 0);
+const ORIGIN = new Vector3();
+const gaze = new Vector3();
+const headAt = new Vector3();
+const look = new Matrix4();
+
+/**
+ * How far aside the head is turned at `time`, from -1 (left) to 1 (right):
+ * now and then, for a couple of seconds, it looks off to one side and back.
+ */
+function glance(time: number): number {
+  const round = Math.floor(time / GLANCE_EVERY);
+  const into = time - round * GLANCE_EVERY;
+  const roll = MathUtils.euclideanModulo(Math.sin(round * 12.9898) * 43758.5453, 1);
+  if (roll > 0.6) return 0;
+  const side = roll < 0.3 ? 1 : -1;
+  return side * MathUtils.smoothstep(into, 4, 4.6) * (1 - MathUtils.smoothstep(into, 6.2, 6.9));
+}
+
+/**
+ * Turns the head to face `target`, and away from it now and then (see
+ * `glance`), looking up toward the horizon as it does. Built from the head's
+ * rest turn each frame, so it holds whether or not the clip moves the head.
+ */
+function watchTarget(head: Object3D, rest: Quaternion, target: Object3D, time: number): void {
+  target.getWorldPosition(gaze);
+  head.getWorldPosition(headAt);
+  gaze.sub(headAt).normalize();
+  const aside = glance(time);
+  gaze.y *= 1 - Math.abs(aside) * 0.8;
+  gaze.applyAxisAngle(UP, aside * GLANCE_ANGLE).normalize();
+  // The rest pose faces +z: turn +z onto the gaze, upright.
+  turn.setFromRotationMatrix(look.lookAt(gaze, ORIGIN, UP)).multiply(rest);
+  head.parent!.getWorldQuaternion(parentWorld);
+  head.quaternion.copy(parentWorld.invert().multiply(turn));
+  head.updateWorldMatrix(false, true);
 }
 
 /**
