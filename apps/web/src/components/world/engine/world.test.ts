@@ -126,6 +126,17 @@ describe("resolveIntent", () => {
       }),
     ).toEqual(["beach:celebrate", "beach:sit", "beach:sleep", "pier:fish"]);
   });
+
+  it("waits at the pile for a background command, but digs beside a working subagent", () => {
+    const [island] = islandWorlds;
+    const waiting = { status: "waiting" as const, backgroundTask: true };
+    expect(resolveIntent(character(waiting), island!)).toMatchObject({ go: "mine", do: "wait" });
+    expect(island!.activities.wait?.pose).toBe("crossArms");
+    expect(resolveIntent(character({ ...waiting, hasWorkingKids: true }), island!)).toMatchObject({
+      go: "mine",
+      do: "mine",
+    });
+  });
 });
 
 describe("resolveWorld", () => {

@@ -253,8 +253,8 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
       { when: { status: "input" }, go: "mine", do: "idle", balloon: "question" },
       // The run ended but a subagent it started is still at it: dig alongside it.
       { when: { status: "waiting", hasWorkingKids: true }, go: "mine", do: "mine" },
-      // A long command still running in the background: keep digging.
-      { when: { status: "waiting", backgroundTask: true }, go: "mine", do: "mine" },
+      // A long command still running in the background: at the pile, arms crossed, waiting it out.
+      { when: { status: "waiting", backgroundTask: true }, go: "mine", do: "wait" },
       // No new output for a while: keep swinging, slowly.
       { when: { status: "working", quiet: true }, go: "mine", do: "ponder" },
       { when: { status: "working" }, go: "mine", do: "mine" },
@@ -283,6 +283,7 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
       // A slow swing, so it needs frames, but fewer than full-speed mining.
       ponder: { pose: "ponder", ambientFps: 8 },
       idle: { pose: "stand" },
+      wait: { pose: "crossArms" },
       celebrate: { pose: "wave", ambientFps: 12 },
       sit: { pose: "slump" },
       sleep: { pose: "lie" },

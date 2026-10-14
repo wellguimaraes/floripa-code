@@ -278,7 +278,7 @@ export function Character(props: {
             headItem={hat === null ? undefined : <Hat style={hat} />}
           />
         </Suspense>
-        {activity.pose === "mine" || activity.pose === "ponder" ? (
+        {activity.pose === "mine" || activity.pose === "ponder" || activity.pose === "crossArms" ? (
           <NuggetPile count={facts.beat % (NUGGET_SPOTS.length + 1)} />
         ) : null}
         {placement.fishing === true ? (
@@ -591,6 +591,13 @@ function applyPose(pose: Pose | "walk", time: number, rig: PoseRig) {
       armLeft.rotation.z = -0.9;
       head.rotation.z = 0.2;
       head.rotation.x = -0.1;
+      break;
+    case "crossArms":
+      // Arms folded over the chest, waiting on a long command.
+      armRight.rotation.x = -1.2;
+      armRight.rotation.z = -0.8;
+      armLeft.rotation.x = -1.1;
+      armLeft.rotation.z = 0.8;
       break;
     case "slump":
       head.rotation.x = 0.45;

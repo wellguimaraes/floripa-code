@@ -44,6 +44,8 @@ const CLIPS: Record<Pose | "walk", string> = {
   lie: "Lie_Idle",
   dead: "Lie_Idle",
   slump: "Sit_Floor_Idle",
+  // Idle breathing, with both arms folded over it (see `foldArm`).
+  crossArms: "Idle",
 };
 
 /** Which family shade each body part takes, by the model's node names. */
@@ -178,6 +180,9 @@ export function CharacterModel(props: {
     if (dead) {
       spreadArm(rig.arm, rig.head);
       spreadArm(rig.armLeft, rig.head);
+    } else if (pose === "crossArms" && !isWalking()) {
+      foldArm(rig.arm, true);
+      foldArm(rig.armLeft, false);
     } else if (raiseHand) raiseArm(rig.arm);
     else if (reachHand && !isWalking()) reachArm(rig.arm);
   });
@@ -298,6 +303,8 @@ const shoulder = new Vector3();
 const torso = new Vector3();
 const reach = new Vector3();
 const forward = new Vector3();
+const across = new Vector3();
+const outward = new Vector3();
 
 /** Points the arm up and a little outward, e.g. to hold a balloon. */
 function raiseArm(arm: ReadonlyArray<Object3D | null>): void {
@@ -333,6 +340,30 @@ function reachArm(arm: ReadonlyArray<Object3D | null>): void {
   pointArm(arm, reach.normalize());
 }
 
+/**
+ * Folds the arm across the chest: elbow by the side, forearm over to the
+ * other side. With both folded, the `front` one lies over the other.
+ */
+function foldArm(arm: ReadonlyArray<Object3D | null>, front: boolean): void {
+  const upper = arm[0];
+  if (!upper?.parent) return;
+  upper.updateWorldMatrix(true, true);
+  upper.getWorldPosition(shoulder);
+  upper.parent.getWorldPosition(torso);
+  outward.set(shoulder.x - torso.x, 0, shoulder.z - torso.z).normalize();
+  forward.set(0, 0, 1).applyQuaternion(upper.parent.getWorldQuaternion(parentWorld));
+  forward.y = 0;
+  forward.normalize();
+  reach.set(0, -1, 0).addScaledVector(forward, 0.45).addScaledVector(outward, 0.15).normalize();
+  across
+    .copy(outward)
+    .negate()
+    .addScaledVector(forward, front ? 0.45 : 0.25)
+    .setY(front ? 0.3 : 0.15)
+    .normalize();
+  pointArm(arm, reach, across);
+}
+
 /** Flings the arm out sideways along the ground, a little toward the head, for lying flat. */
 function spreadArm(arm: ReadonlyArray<Object3D | null>, head: Object3D | null): void {
   const upper = arm[0];
@@ -348,19 +379,24 @@ function spreadArm(arm: ReadonlyArray<Object3D | null>, head: Object3D | null): 
 
 /**
  * Turns each bone, after the clip has posed it, so the next joint sits
- * straight along `direction` (in world space). Works from joint positions,
- * so it needs no knowledge of the rig's bone axes.
+ * straight along `direction` (in world space), or the forearm along
+ * `forearm` when given. Works from joint positions, so it needs no knowledge
+ * of the rig's bone axes.
  */
-function pointArm(arm: ReadonlyArray<Object3D | null>, direction: Vector3): void {
+function pointArm(
+  arm: ReadonlyArray<Object3D | null>,
+  direction: Vector3,
+  forearm: Vector3 = direction,
+): void {
   const [upper, lower, wrist] = arm;
   if (!upper || !lower || !wrist) return;
-  for (const [bone, child] of [
-    [upper, lower],
-    [lower, wrist],
+  for (const [bone, child, toward] of [
+    [upper, lower, direction],
+    [lower, wrist, forearm],
   ] as const) {
     bone.updateWorldMatrix(true, false);
     along.copy(child.position).normalize().applyQuaternion(bone.getWorldQuaternion(boneWorld));
-    turn.setFromUnitVectors(along, direction).multiply(boneWorld);
+    turn.setFromUnitVectors(along, toward).multiply(boneWorld);
     bone.parent!.getWorldQuaternion(parentWorld);
     bone.quaternion.copy(parentWorld.invert().multiply(turn));
   }

@@ -117,7 +117,7 @@ export interface WorldRule extends WorldIntent {
 }
 
 /** Poses are the renderer's vocabulary; activities name a pose plus timing. */
-export type Pose = "stand" | "lie" | "dead" | "wave" | "slump" | "mine" | "ponder";
+export type Pose = "stand" | "lie" | "dead" | "wave" | "slump" | "mine" | "ponder" | "crossArms";
 
 export interface WorldActivity {
   readonly pose: Pose;
