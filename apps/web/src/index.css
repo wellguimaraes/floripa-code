@@ -75,6 +75,34 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   mix-blend-mode: normal;
 }
 
+/* World chat bubbles: content rolls up out of view while the next rolls up into place. */
+@keyframes world-roll-out {
+  to {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+}
+
+@keyframes world-roll-in {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+}
+
+/* Stepped so the typing dots draw a few frames per cycle, not one per vsync. */
+@keyframes world-typing-dot {
+  0%,
+  20% {
+    opacity: 1;
+    animation-timing-function: steps(2);
+  }
+  50%,
+  100% {
+    opacity: 0.35;
+  }
+}
+
 @keyframes t3-mobile-draft-headline-exit {
   from {
     opacity: 1;
@@ -218,6 +246,9 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
      compositor updates discrete frames instead of every vsync. */
   --animate-status-pulse: status-pulse 2s infinite;
   --animate-status-ping: status-ping 2s infinite;
+  --animate-world-roll-in: world-roll-in 280ms cubic-bezier(0.2, 0, 0, 1) both;
+  --animate-world-roll-out: world-roll-out 280ms cubic-bezier(0.2, 0, 0, 1) both;
+  --animate-world-typing-dot: world-typing-dot 1.2s infinite;
   --color-warning-foreground: var(--warning-foreground);
   --color-warning: var(--warning);
   --color-warning-surface: var(--warning-surface);

@@ -27,6 +27,7 @@ import { palette } from "./scene/palette";
 import { useBubbleAttachments } from "./useBubbleAttachments";
 import { ARCHIVE_SHORTCUT, useArchiveShortcut } from "./useArchiveShortcut";
 import { replyPreview } from "./lastExchange";
+import { RollingSwap, TypingDots } from "./RollingSwap";
 import { useLastExchange } from "./useLastExchange";
 
 /**
@@ -89,6 +90,8 @@ export function WorldBubble(props: {
     null;
   const { sent: lastSent, reply: lastReply } = useLastExchange(facts.ref);
   const preview = lastReply === null ? null : replyPreview(lastReply.text);
+  // While the agent works its bubble shows typing dots; the finished reply rolls in after.
+  const typing = facts.status === "working";
   const startTurn = useOrchestrationCommand(threadEnvironment.startTurn, {
     reportFailure: false,
   });
@@ -374,45 +377,55 @@ export function WorldBubble(props: {
             {facts.title || "Untitled thread"}
           </span>
           {/* The last exchange as a messaging-app thread: yours on the right, the agent's on the left. */}
-          {lastSent !== null || preview !== null ? (
+          {lastSent !== null || preview !== null || typing ? (
             // The title's line-height leaves 3px of slack under its glyphs; pull up by that much so
             // the gap above matches the gap below.
             <div className="-mt-[3px] flex flex-col gap-1 text-xs">
               {lastSent !== null ? (
-                <p
+                <div
                   className="ml-auto max-w-[85%] rounded-2xl rounded-br-md bg-primary px-3 py-1.5 break-words text-primary-foreground"
                   aria-label="Your last message"
                 >
                   {/* Clamp on an inner span: overflow clips at the padding edge, so clamping the padded
                       element lets the third line peek through the bottom padding. */}
-                  <span className="line-clamp-2">
-                    {lastSent.text === ATTACHMENT_ONLY_BOOTSTRAP_PROMPT
-                      ? `${lastSent.attachmentCount} ${lastSent.attachmentCount === 1 ? "attachment" : "attachments"}`
-                      : lastSent.text}
-                  </span>
-                </p>
+                  <RollingSwap swapKey={lastSent.id}>
+                    <span className="line-clamp-2">
+                      {lastSent.text === ATTACHMENT_ONLY_BOOTSTRAP_PROMPT
+                        ? `${lastSent.attachmentCount} ${lastSent.attachmentCount === 1 ? "attachment" : "attachments"}`
+                        : lastSent.text}
+                    </span>
+                  </RollingSwap>
+                </div>
               ) : null}
               {/* The agent's answer: its opening and closing lines, the middle folded away. */}
-              {preview !== null ? (
+              {typing || preview !== null ? (
                 <div
                   className="mr-auto flex max-w-[85%] min-w-0 flex-col rounded-2xl rounded-bl-md bg-accent px-3 py-1.5 text-foreground dark:bg-background"
                   aria-label="Agent's last reply"
                 >
-                  {preview.head.map((line) => (
-                    <span key={line.key} className="truncate">
-                      {line.text}
-                    </span>
-                  ))}
-                  {preview.skipped > 0 ? (
-                    <span className="text-muted-foreground">
-                      … {preview.skipped} more {preview.skipped === 1 ? "line" : "lines"}
-                    </span>
-                  ) : null}
-                  {preview.tail.map((line) => (
-                    <span key={line.key} className="truncate">
-                      {line.text}
-                    </span>
-                  ))}
+                  <RollingSwap swapKey={typing ? "typing" : (lastReply?.id ?? "typing")}>
+                    {typing || preview === null ? (
+                      <TypingDots />
+                    ) : (
+                      <>
+                        {preview.head.map((line) => (
+                          <span key={line.key} className="truncate">
+                            {line.text}
+                          </span>
+                        ))}
+                        {preview.skipped > 0 ? (
+                          <span className="text-muted-foreground">
+                            … {preview.skipped} more {preview.skipped === 1 ? "line" : "lines"}
+                          </span>
+                        ) : null}
+                        {preview.tail.map((line) => (
+                          <span key={line.key} className="truncate">
+                            {line.text}
+                          </span>
+                        ))}
+                      </>
+                    )}
+                  </RollingSwap>
                 </div>
               ) : null}
             </div>
