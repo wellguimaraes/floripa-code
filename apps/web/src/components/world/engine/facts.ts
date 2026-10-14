@@ -17,6 +17,8 @@ export interface CharacterFacts {
   readonly createdAt: string;
   /** When the agent last replied: its latest run's end, else the thread's last update. */
   readonly lastReplyAt: string;
+  /** Seconds since `lastReplyAt`; set by `ageReplies`, which knows the time. */
+  readonly replyAgeSeconds: number;
   readonly status: SidebarThreadStatus;
   readonly unread: boolean;
   /** A subagent whose parent is also in the world. */
@@ -49,6 +51,14 @@ export function isResting(facts: CharacterFacts): boolean {
     !facts.hasWorkingKids &&
     !facts.backgroundTask
   );
+}
+
+/** Fills in `replyAgeSeconds` as of `now`. */
+export function ageReplies(facts: ReadonlyArray<CharacterFacts>, now: number): CharacterFacts[] {
+  return facts.map((fact) => ({
+    ...fact,
+    replyAgeSeconds: Math.max(0, (now - Date.parse(fact.lastReplyAt)) / 1000),
+  }));
 }
 
 const WORLD_CHARACTER_LIMIT = 30;
@@ -84,6 +94,7 @@ export function buildCharacterFacts(input: {
       title: thread.title,
       createdAt: thread.createdAt,
       lastReplyAt: thread.latestRun?.completedAt ?? thread.updatedAt,
+      replyAgeSeconds: 0,
       status: subagentStatus(thread, parent),
       unread: hasUnseenCompletion({ ...thread, lastVisitedAt }),
       kid,

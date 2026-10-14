@@ -175,25 +175,38 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
         kind: "fixed",
         entry: "lawn-gate",
         slotProp: "rockPile",
+        // Neighbouring piles are about 4 apart at every size; the next ring out is 5.4+.
+        worktreeReach: 5.2,
         slots: PILES[sizeIndex]!.map(([x, z]) => site(x * scale, z * scale)),
       },
       beach: {
         kind: "fixed",
         entry: "beach-path",
         slotProp: "towel",
+        // Agents who stopped last sit furthest right, so both lists below run
+        // left to right on screen (falling angles on the arcs).
+        lineUp: true,
         // Towels with a lounger every third spot, spread across the front of the
         // island: where the shore runs away from the camera they would hide each other.
-        // Then the pier's chairs: whoever lands on one goes fishing instead.
-        slots: [
-          ...arc({ radius: 8.2 * scale, degrees: spread(-15, 95, size.restSpots) }).map(
-            (slot, index) =>
-              index % 3 === 1 ? { ...slot, prop: "beachChair" as const, seat: LOUNGER_SEAT } : slot,
-          ),
-          ...pierSeats,
-        ],
+        slots: arc({ radius: 8.2 * scale, degrees: spread(-15, 95, size.restSpots) })
+          .map((slot, index) =>
+            index % 3 === 1 ? { ...slot, prop: "beachChair" as const, seat: LOUNGER_SEAT } : slot,
+          )
+          .toReversed(),
         // A row behind the towels, where the shore faces the camera: there, behind
         // also means higher on screen, so the front row hides no one.
-        spillover: arc({ radius: 6.5 * scale, degrees: spread(0, 60, 8) }),
+        spillover: arc({ radius: 6.5 * scale, degrees: spread(60, 0, 8) }),
+      },
+      // Agents idle for over a day go fishing: the pier's chairs first, then
+      // the far shore, sitting on the sand between the trees and palms.
+      pier: {
+        kind: "fixed",
+        entry: "beach-path",
+        slots: pierSeats,
+        spillover: arc({
+          radius: 8.9 * scale,
+          degrees: [118, 132, 162, 174, 202, 215, 242, 254],
+        }).map((slot) => ({ ...slot, fishing: true })),
       },
       // The wide sand behind the beach, between the palms and the lawn, clear of
       // the walk out to the pier.
@@ -249,8 +262,20 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
       { when: { status: "limited" }, go: "dunes", do: "dead" },
       { when: { status: "failed" }, go: "dunes", do: "stranded", effect: "cloud" },
       // Waiting is a finished turn whose session stays open: done, as far as the world goes.
-      { when: { status: ["ready", "waiting"], unread: true }, go: "beach", do: "wave" },
-      { when: { status: ["ready", "waiting"] }, go: "beach", do: "sleep" },
+      // Resting winds down as the last reply ages, in the steps its tag's colour takes:
+      // celebrating, then sitting, then lying down, and after a day, off fishing.
+      {
+        when: { status: ["ready", "waiting"], repliedWithin: 5 * 60 },
+        go: "beach",
+        do: "celebrate",
+      },
+      { when: { status: ["ready", "waiting"], repliedWithin: 60 * 60 }, go: "beach", do: "sit" },
+      {
+        when: { status: ["ready", "waiting"], repliedWithin: 24 * 60 * 60 },
+        go: "beach",
+        do: "sleep",
+      },
+      { when: { status: ["ready", "waiting"] }, go: "pier", do: "fish" },
     ],
     fallback: { go: "beach", do: "sleep" },
     activities: {
@@ -258,8 +283,11 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
       // A slow swing, so it needs frames, but fewer than full-speed mining.
       ponder: { pose: "ponder", ambientFps: 8 },
       idle: { pose: "stand" },
-      wave: { pose: "wave", ambientFps: 12 },
+      celebrate: { pose: "wave", ambientFps: 12 },
+      sit: { pose: "slump" },
       sleep: { pose: "lie" },
+      // Sits on the sand where there is no chair; the spot hands over the rod.
+      fish: { pose: "slump" },
       stranded: { pose: "slump" },
       dead: { pose: "dead" },
     },

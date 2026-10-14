@@ -41,7 +41,8 @@ const OVERFLOW_SPACING = 0.9;
  * Gives every character a spot in its intended area. A character keeps the
  * slot it already had when it stays in the same area, so arrivals and
  * departures never reshuffle everyone else. New arrivals start from a slot
- * picked by their key, so the same thread tends to get the same spot.
+ * picked by their key, so the same thread tends to get the same spot. Areas
+ * that line up (see `FixedArea.lineUp`) instead close ranks as anyone leaves.
  */
 export function placeCharacters(input: {
   readonly characters: ReadonlyArray<PlacementInput>;
@@ -79,22 +80,11 @@ export function placeCharacters(input: {
     for (const [areaId, members] of groupBy(characters, (c) => c.intent.go)) {
       const area = definition.areas[areaId] as FixedArea;
       const slots = taken(areaId);
-      const spots = area.slots.length + (area.spillover?.length ?? 0);
-      const ordered = stickyFirst(members, areaId, spots, previous);
-      for (const { character, keep } of ordered) {
-        const { key } = character.facts;
-        const asked = input.requested?.get(key);
-        const slotIndex =
-          keep !== null && !slots.has(keep)
-            ? keep
-            : asked !== undefined &&
-                asked.area === areaId &&
-                asked.slotIndex < area.slots.length &&
-                !slots.has(asked.slotIndex)
-              ? asked.slotIndex
-              : freeSlot(slots, area.slots.length, key);
-        slots.add(slotIndex);
-        placed.set(key, {
+      const chosen = area.lineUp
+        ? lineUp(members, area, slots)
+        : settle({ members, areaId, area, slots, previous, requested: input.requested });
+      for (const [character, slotIndex] of chosen) {
+        placed.set(character.facts.key, {
           intent: character.intent,
           placement: fixedPlacement(definition, areaId, area, slotIndex),
         });
@@ -176,6 +166,166 @@ function fixedPlacement(
   };
 }
 
+/**
+ * Lines `members` up by when their agent last replied: the free slots fill in
+ * order, oldest first, and the oldest who do not fit take the spillover.
+ */
+function lineUp(
+  members: ReadonlyArray<PlacementInput>,
+  area: FixedArea,
+  slots: Set<number>,
+): Map<PlacementInput, number> {
+  const line = members.toSorted(
+    (a, b) =>
+      a.facts.lastReplyAt.localeCompare(b.facts.lastReplyAt) ||
+      a.facts.key.localeCompare(b.facts.key),
+  );
+  const front = area.slots.flatMap((_, index) => (slots.has(index) ? [] : [index]));
+  const behind = Math.max(0, line.length - front.length);
+  const chosen = new Map<PlacementInput, number>();
+  let back = area.slots.length;
+  line.forEach((character, index) => {
+    while (slots.has(back)) back += 1;
+    const slotIndex = index < behind ? back : front[index - behind]!;
+    slots.add(slotIndex);
+    chosen.set(character, slotIndex);
+  });
+  return chosen;
+}
+
+/**
+ * Everyone keeps the slot they had while it stays free; newcomers take the
+ * slot they asked for or one picked by their key. With `worktreeReach`,
+ * agents sharing a worktree keep within reach of each other: one cut off from
+ * the rest moves in beside them, and a neighbour outside any worktree moves
+ * aside when no slot there is free.
+ */
+function settle(input: {
+  readonly members: ReadonlyArray<PlacementInput>;
+  readonly areaId: string;
+  readonly area: FixedArea;
+  readonly slots: Set<number>;
+  readonly previous: ReadonlyMap<string, Placement>;
+  readonly requested: ReadonlyMap<string, SlotRequest> | undefined;
+}): Map<PlacementInput, number> {
+  const { area, areaId, slots } = input;
+  const count = area.slots.length;
+  const spots = count + (area.spillover?.length ?? 0);
+  const ordered = stickyFirst(input.members, areaId, spots, input.previous);
+
+  // A worktree only binds agents while two or more of them share it here.
+  const reach = area.worktreeReach;
+  const crewSizes = new Map<string, number>();
+  for (const { facts } of input.members) {
+    if (reach === undefined || facts.worktreePath === null) continue;
+    crewSizes.set(facts.worktreePath, (crewSizes.get(facts.worktreePath) ?? 0) + 1);
+  }
+  const crewOf = (character: PlacementInput) => {
+    const path = character.facts.worktreePath;
+    return path !== null && (crewSizes.get(path) ?? 0) > 1 ? path : null;
+  };
+  const near = (a: number, b: number) => {
+    if (reach === undefined || a >= count || b >= count) return false;
+    const [ax, , az] = area.slots[a]!.position;
+    const [bx, , bz] = area.slots[b]!.position;
+    return Math.hypot(ax - bx, az - bz) <= reach;
+  };
+
+  const chosen = new Map<PlacementInput, number>();
+  const occupants = new Map<number, PlacementInput>();
+  const take = (character: PlacementInput, slotIndex: number) => {
+    slots.add(slotIndex);
+    chosen.set(character, slotIndex);
+    occupants.set(slotIndex, character);
+  };
+
+  const kept = new Map<PlacementInput, number>();
+  const claimed = new Set<number>();
+  for (const { character, keep } of ordered) {
+    if (keep === null || slots.has(keep) || claimed.has(keep)) continue;
+    kept.set(character, keep);
+    claimed.add(keep);
+  }
+  // Of a worktree's agents, only the biggest group within reach stays put.
+  for (const crew of new Set([...kept.keys()].map(crewOf))) {
+    if (crew === null) continue;
+    const crewKept = [...kept].filter(([character]) => crewOf(character) === crew);
+    const cluster = biggestCluster(
+      crewKept.map(([, slotIndex]) => slotIndex),
+      near,
+    );
+    for (const [character, slotIndex] of crewKept) {
+      if (!cluster.has(slotIndex)) kept.delete(character);
+    }
+  }
+  for (const [character, slotIndex] of kept) take(character, slotIndex);
+
+  for (const { character } of ordered) {
+    if (chosen.has(character)) continue;
+    const { key } = character.facts;
+    const asked = input.requested?.get(key);
+    const askedSlot =
+      asked !== undefined &&
+      asked.area === areaId &&
+      asked.slotIndex < count &&
+      !slots.has(asked.slotIndex)
+        ? asked.slotIndex
+        : null;
+    const crew = crewOf(character);
+    const mates = [...chosen].flatMap(([other, slotIndex]) =>
+      crew !== null && crewOf(other) === crew ? [slotIndex] : [],
+    );
+    if (mates.length === 0) {
+      take(character, askedSlot ?? freeSlot(slots, count, key));
+      continue;
+    }
+    const beside = (slotIndex: number) => mates.some((mate) => near(mate, slotIndex));
+    const free =
+      askedSlot !== null && beside(askedSlot)
+        ? askedSlot
+        : freeSlotWhere(slots, count, key, beside);
+    if (free !== null) {
+      take(character, free);
+      continue;
+    }
+    const bystander = [...occupants].find(
+      ([slotIndex, other]) => crewOf(other) === null && beside(slotIndex),
+    );
+    if (bystander === undefined) {
+      take(character, freeSlot(slots, count, key));
+      continue;
+    }
+    const [slotIndex, other] = bystander;
+    take(character, slotIndex);
+    take(other, freeSlot(slots, count, other.facts.key));
+  }
+  return chosen;
+}
+
+/** The biggest group of `slots` linked by `near`, the earliest listed winning ties. */
+function biggestCluster(
+  slots: ReadonlyArray<number>,
+  near: (a: number, b: number) => boolean,
+): Set<number> {
+  let biggest = new Set<number>();
+  const seen = new Set<number>();
+  for (const start of slots) {
+    if (seen.has(start)) continue;
+    const cluster = new Set([start]);
+    const queue = [start];
+    for (let slot = queue.pop(); slot !== undefined; slot = queue.pop()) {
+      for (const other of slots) {
+        if (cluster.has(other) || !near(slot, other)) continue;
+        cluster.add(other);
+        queue.push(other);
+      }
+    }
+    for (const slot of cluster) seen.add(slot);
+    if (cluster.size > biggest.size) biggest = cluster;
+  }
+  return biggest;
+}
+
 function stickyFirst(
   members: ReadonlyArray<PlacementInput>,
   areaId: string,
@@ -201,16 +351,27 @@ function stickyFirst(
 }
 
 function freeSlot(slots: ReadonlySet<number>, slotCount: number, key: string): number {
-  if (slotCount > 0) {
-    const preferred = hashString(key) % slotCount;
-    for (let step = 0; step < slotCount; step += 1) {
-      const candidate = (preferred + step) % slotCount;
-      if (!slots.has(candidate)) return candidate;
-    }
-  }
+  const free = freeSlotWhere(slots, slotCount, key, () => true);
+  if (free !== null) return free;
   let overflow = slotCount;
   while (slots.has(overflow)) overflow += 1;
   return overflow;
+}
+
+/** A free slot passing `allowed`, searched from one picked by `key`; null when none is. */
+function freeSlotWhere(
+  slots: ReadonlySet<number>,
+  slotCount: number,
+  key: string,
+  allowed: (slotIndex: number) => boolean,
+): number | null {
+  if (slotCount === 0) return null;
+  const preferred = hashString(key) % slotCount;
+  for (let step = 0; step < slotCount; step += 1) {
+    const candidate = (preferred + step) % slotCount;
+    if (!slots.has(candidate) && allowed(candidate)) return candidate;
+  }
+  return null;
 }
 
 function firstFree(slots: ReadonlySet<number>): number {

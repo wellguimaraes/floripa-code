@@ -45,7 +45,7 @@ import {
   type WorldIsland,
 } from "./engine/archipelago";
 import { EMPTY_BEAT_GATE, gateBeats } from "./engine/beats";
-import { buildCharacterFacts, type CharacterFacts, isResting } from "./engine/facts";
+import { ageReplies, buildCharacterFacts, type CharacterFacts, isResting } from "./engine/facts";
 import { hashString } from "./engine/hash";
 import { islandObstacles } from "./engine/route";
 import type { SlotRequest } from "./engine/slots";
@@ -170,9 +170,11 @@ export default function WorldCanvas(props: {
   const [requested, setRequested] = useState<ReadonlyMap<string, SlotRequest>>(new Map());
   const chosenHues = useWorldHueStore((state) => state.chosen);
   const chooseHue = useWorldHueStore((state) => state.choose);
-  // Re-check while anyone works, so a thread that goes quiet is noticed.
+  // Re-check while anyone works, so a thread that goes quiet is noticed, and
+  // more slowly while anyone rests, so resters change pose as their reply ages.
   const anyoneWorking = facts.some((f) => f.status === "working");
-  const clock = useClock(anyoneWorking ? QUIET_CHECK_MS : null);
+  const anyoneResting = facts.some(isResting);
+  const clock = useClock(anyoneWorking ? QUIET_CHECK_MS : anyoneResting ? REST_CHECK_MS : null);
   const islands = useMemo(
     () =>
       memory.resolve({
@@ -1775,6 +1777,7 @@ function archipelagoBounds(islands: ReadonlyArray<WorldIsland>): Bounds[] | null
 }
 
 const QUIET_CHECK_MS = 5000;
+const REST_CHECK_MS = 30_000;
 
 /** The current time, refreshed every `intervalMs` while given; null pauses it. */
 function useClock(intervalMs: number | null): number {
@@ -1825,16 +1828,17 @@ function createArchipelagoMemory() {
       readonly hueCount: number;
       readonly hatCount: number;
       readonly chosenHues: Readonly<Record<string, number>>;
-      /** Last clock tick; a new one re-checks pacing and quiet threads. */
+      /** Last clock tick; a new one re-checks pacing, quiet threads and reply ages. */
       readonly checkedAt: number;
       readonly requested: ReadonlyMap<string, SlotRequest>;
       readonly columns: number;
     }): WorldIsland[] {
       const { movement } = input.definition;
+      const now = Math.max(input.checkedAt, Date.now());
       const paced = gateBeats({
-        facts: input.facts,
+        facts: ageReplies(input.facts, now),
         previous: beats,
-        now: Math.max(input.checkedAt, Date.now()),
+        now,
         dwellMs: movement.beatSeconds * 1000,
         quietMs: movement.quietSeconds * 1000,
       });

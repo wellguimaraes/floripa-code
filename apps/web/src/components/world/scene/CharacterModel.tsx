@@ -69,10 +69,13 @@ export function CharacterModel(props: {
   readonly headItem?: React.ReactNode;
   /** Holds the right arm straight up, whatever the clip does, e.g. to hold a balloon. */
   readonly raiseHand?: boolean;
+  /** Holds the right arm out ahead while standing still, e.g. to hold a fishing rod. */
+  readonly reachHand?: boolean;
   /** Receives the right hand, so the caller can tie things to it. */
   readonly handRef?: React.RefObject<Object3D | null>;
 }) {
-  const { pose, shades, isWalking, handItem, headItem, raiseHand = false, handRef } = props;
+  const { pose, shades, isWalking, handItem, headItem, handRef } = props;
+  const { raiseHand = false, reachHand = false } = props;
   const gltf = useLoader(GLTFLoader, MODEL_URL);
   const invalidate = useThree((state) => state.invalidate);
 
@@ -176,6 +179,7 @@ export function CharacterModel(props: {
       spreadArm(rig.arm, rig.head);
       spreadArm(rig.armLeft, rig.head);
     } else if (raiseHand) raiseArm(rig.arm);
+    else if (reachHand && !isWalking()) reachArm(rig.arm);
   });
 
   useLayoutEffect(() => {
@@ -308,6 +312,24 @@ function raiseArm(arm: ReadonlyArray<Object3D | null>): void {
   forward.set(0, 0, 1).applyQuaternion(upper.parent.getWorldQuaternion(parentWorld));
   reach.addScaledVector(forward, 0.35);
   reach.y = 1.5;
+  pointArm(arm, reach.normalize());
+}
+
+/** Points the arm ahead, a little outward and down, e.g. to hold a rod out. */
+function reachArm(arm: ReadonlyArray<Object3D | null>): void {
+  const upper = arm[0];
+  if (!upper?.parent) return;
+  upper.updateWorldMatrix(true, true);
+  upper.getWorldPosition(shoulder);
+  upper.parent.getWorldPosition(torso);
+  reach
+    .set(shoulder.x - torso.x, 0, shoulder.z - torso.z)
+    .normalize()
+    .multiplyScalar(0.25);
+  forward.set(0, 0, 1).applyQuaternion(upper.parent.getWorldQuaternion(parentWorld));
+  forward.y = 0;
+  reach.add(forward.normalize());
+  reach.y = -0.3;
   pointArm(arm, reach.normalize());
 }
 

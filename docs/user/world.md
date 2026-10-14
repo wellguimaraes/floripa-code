@@ -12,9 +12,10 @@ Where a character is and what it does tells you the thread's state at a glance:
 - **Swinging the pickaxe slowly**: still working, but nothing new has come out
   for a while. It may be thinking or stuck.
 - **Standing with a `!` or `?` balloon**: it needs your approval or has a question.
-- **On the beach, cheering** (or with an arm up, on a lounger or a pier chair): it
-  finished and you have not read the reply yet. Once you have, it rests on a towel
-  or a lounger, or fishes from a chair on the pier.
+- **On the beach**: it finished. It cheers for the first 5 minutes after its last
+  reply (on a lounger, it raises an arm), sits for the rest of the hour, then lies
+  down. After a day it goes fishing, from the pier or the far shore. Agents that
+  finished most recently rest furthest right.
 - **Sitting on the sand behind the beach, under a grey cloud**: the run failed.
 - **Flat out on the sand with × eyes**: the agent hit its usage limit.
 

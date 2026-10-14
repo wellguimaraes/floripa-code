@@ -81,6 +81,7 @@ const character = (overrides: Partial<CharacterFacts> = {}): CharacterFacts => {
     title: key,
     createdAt: `2026-01-01T00:00:${String(counter).padStart(2, "0")}.000Z`,
     lastReplyAt: "2026-01-01T00:00:00.000Z",
+    replyAgeSeconds: 0,
     status: "working",
     unread: false,
     kid: false,
@@ -110,6 +111,20 @@ describe("resolveIntent", () => {
     expect(resolveIntent(character({ status: "ready", unread: false }), testWorld)).toEqual(
       testWorld.fallback,
     );
+  });
+
+  it("winds a rester down as its last reply ages: celebrate, sit, lie, then fish", () => {
+    const [island] = islandWorlds;
+    const ages = [60, 30 * 60, 3 * 60 * 60, 2 * 24 * 60 * 60];
+    expect(
+      ages.map((replyAgeSeconds) => {
+        const { go, do: activity } = resolveIntent(
+          character({ status: "ready", replyAgeSeconds }),
+          island!,
+        );
+        return `${go}:${activity}`;
+      }),
+    ).toEqual(["beach:celebrate", "beach:sit", "beach:sleep", "pier:fish"]);
   });
 });
 
@@ -173,6 +188,115 @@ describe("resolveWorld", () => {
     expect(placed(free)).toBe(free);
     // A taken slot is not stolen from the one already there.
     expect(placed(taken)).not.toBe(taken);
+  });
+
+  it("lines resters up by when they stopped, closing the gap when one leaves", () => {
+    const world: WorldDefinition = {
+      ...testWorld,
+      areas: {
+        ...testWorld.areas,
+        beach: {
+          kind: "fixed",
+          entry: "c",
+          lineUp: true,
+          slots: [0, 1, 2].map((x) => ({ position: [x, 0, 10] as const, facing: 0 })),
+          spillover: [{ position: [0, 0, 11], facing: 0 }],
+        },
+      },
+    };
+    const rester = (second: number) =>
+      character({ status: "ready", lastReplyAt: `2026-01-01T00:01:0${second}.000Z` });
+    const [first, second, third, fourth] = [rester(1), rester(2), rester(3), rester(4)];
+    const slotsOf = (facts: CharacterFacts[]) =>
+      resolveWorld({ facts, definition: world, previous: new Map() }).map((c) => [
+        c.facts.key,
+        c.placement.slotIndex,
+      ]);
+
+    expect(slotsOf([third!, first!, second!])).toEqual([
+      [third!.key, 2],
+      [first!.key, 0],
+      [second!.key, 1],
+    ]);
+    expect(slotsOf([first!, third!])).toEqual([
+      [first!.key, 0],
+      [third!.key, 1],
+    ]);
+    // Out of slots, the one who stopped first moves back to the spillover.
+    expect(slotsOf([first!, second!, third!, fourth!]).map(([, slot]) => slot)).toEqual([
+      3, 0, 1, 2,
+    ]);
+  });
+
+  describe("with worktrees", () => {
+    // Four desks in a row, each within reach of only its neighbours.
+    const world: WorldDefinition = {
+      ...testWorld,
+      areas: {
+        ...testWorld.areas,
+        desks: {
+          kind: "fixed",
+          entry: "a",
+          worktreeReach: 1.1,
+          slots: [0, 1, 2, 3].map((x) => ({ position: [x, 0, 0] as const, facing: 0 })),
+        },
+      },
+    };
+    const desk = (slotIndex: number) => ({
+      area: "desks",
+      slotIndex,
+      position: [slotIndex, 0, 0] as const,
+      facing: 0,
+      entry: "a",
+    });
+    const slotsOf = (facts: CharacterFacts[], previous: Map<string, Placement>) =>
+      new Map(
+        resolveWorld({ facts, definition: world, previous }).map((c) => [
+          c.facts.key,
+          c.placement.slotIndex,
+        ]),
+      );
+
+    it("seats agents sharing a worktree side by side", () => {
+      const crew = [0, 1, 2].map(() => character({ worktreePath: "/wt/a" }));
+      const slots = [...slotsOf(crew, new Map()).values()].toSorted();
+      expect(slots[2]! - slots[0]!).toBe(2);
+    });
+
+    it("moves an agent cut off from its worktree in beside the rest", () => {
+      const [left, cutOff, loner] = [
+        character({ worktreePath: "/wt/a" }),
+        character({ worktreePath: "/wt/a" }),
+        character({ worktreePath: "/wt/b" }),
+      ];
+      const previous = new Map([
+        [left!.key, desk(0)],
+        [loner!.key, desk(2)],
+        [cutOff!.key, desk(3)],
+      ]);
+      const slots = slotsOf([left!, cutOff!, loner!], previous);
+      expect(slots.get(left!.key)).toBe(0);
+      expect(slots.get(cutOff!.key)).toBe(1);
+      expect(slots.get(loner!.key)).toBe(2);
+    });
+
+    it("moves a neighbour outside any worktree aside to make room", () => {
+      const [mate, bystander, other, newcomer] = [
+        character({ worktreePath: "/wt/a" }),
+        character(),
+        character(),
+        character({ worktreePath: "/wt/a" }),
+      ];
+      const previous = new Map([
+        [mate!.key, desk(0)],
+        [bystander!.key, desk(1)],
+        [other!.key, desk(3)],
+      ]);
+      const slots = slotsOf([mate!, bystander!, other!, newcomer!], previous);
+      expect(slots.get(newcomer!.key)).toBe(1);
+      expect(slots.get(bystander!.key)).toBe(2);
+      expect(slots.get(other!.key)).toBe(3);
+    });
   });
 
   it("anchors a kid beside its parent's spot", () => {
@@ -466,9 +590,9 @@ describe("validateWorldDefinition", () => {
 
   it("gives every island size its rock piles, beach spots and pier chairs", () => {
     const counts = islandWorlds.map((island) => {
-      const { mine, beach } = island.areas as Record<string, FixedArea>;
-      const fishing = beach!.slots.filter((slot) => slot.fishing === true).length;
-      return { piles: mine!.slots.length, restSpots: beach!.slots.length - fishing, fishing };
+      const { mine, beach, pier } = island.areas as Record<string, FixedArea>;
+      const fishing = pier!.slots.filter((slot) => slot.fishing === true).length;
+      return { piles: mine!.slots.length, restSpots: beach!.slots.length, fishing };
     });
     expect(counts).toEqual(ISLAND_SIZES.map((size) => ({ ...size, fishing: 4 })));
   });

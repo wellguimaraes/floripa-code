@@ -270,6 +270,7 @@ export function Character(props: {
             shades={shades}
             isWalking={() => motion.current.route.length > 0}
             raiseHand={intent.balloon !== undefined || (seated && activity.pose === "wave")}
+            reachHand={placement.fishing === true}
             handRef={hand}
             handItem={
               activity.pose === "mine" || activity.pose === "ponder" ? <ModelPickaxe /> : undefined
@@ -281,7 +282,7 @@ export function Character(props: {
           <NuggetPile count={facts.beat % (NUGGET_SPOTS.length + 1)} />
         ) : null}
         {placement.fishing === true ? (
-          <FishingRod ref={rod} seat={placement.seat ?? 0} scale={scale} />
+          <FishingRod ref={rod} hand={hand} seat={placement.seat ?? 0} scale={scale} />
         ) : null}
         {intent.effect === "cloud" ? <Cloud /> : null}
         {intent.balloon !== undefined ? (
@@ -355,47 +356,83 @@ function ModelPickaxe() {
 }
 
 /** The rod's length and its tilt forward from upright. */
-const ROD_LENGTH = 1.4;
-const ROD_TILT = 0.95;
+const ROD_LENGTH = 1.5;
+const ROD_TILT = 0.9;
+const ROD_TIP_Y = Math.cos(ROD_TILT) * ROD_LENGTH;
+const ROD_TIP_Z = Math.sin(ROD_TILT) * ROD_LENGTH;
+/** How much farther out than the tip the line meets the water. */
+const LINE_REACH = 1.8;
 const WATER_Y = -0.25;
+/** Where the hand holds the rod before the model loads, in the character's own units. */
+const FALLBACK_GRIP: readonly [number, number, number] = [0.27, 0.6, 0.35];
+const gripPoint = new Vector3();
 
 /**
- * Propped beside the right knee and leaning out over the water ahead, its
- * line dropping to a bobber. Rides on the character, so it is only there
- * while someone sits fishing. `seat` and `scale` place the character above
- * the water, so the line ends at the surface.
+ * Held in the right hand and leaning out over the water ahead, its line
+ * running out to a bobber. Rides on the character, so it is only there while
+ * someone sits fishing. `seat` and `scale` place the character above the
+ * water, so the line ends at the surface.
  */
 function FishingRod({
   ref,
+  hand,
   seat,
   scale,
 }: {
   readonly ref: React.Ref<Group>;
+  readonly hand: React.RefObject<Object3D | null>;
   readonly seat: number;
   readonly scale: number;
 }) {
-  const tipY = 0.1 + Math.cos(ROD_TILT) * ROD_LENGTH;
-  const tipZ = 0.3 + Math.sin(ROD_TILT) * ROD_LENGTH;
+  const rod = useRef<Group>(null);
+  const bobber = useRef<Mesh>(null);
+  const line = useMemo(() => {
+    const created = new Line(
+      new BufferGeometry().setAttribute("position", new BufferAttribute(new Float32Array(6), 3)),
+      new LineBasicMaterial({ color: palette.fishingLine }),
+    );
+    created.frustumCulled = false;
+    return created;
+  }, []);
+  useEffect(
+    () => () => {
+      line.geometry.dispose();
+      line.material.dispose();
+    },
+    [line],
+  );
   // In the character's own units, which are scaled; the water's height is not.
-  const lineLength = tipY - (WATER_Y - seat) / scale;
+  const waterY = (WATER_Y - seat) / scale;
+  // The hand moves with the animation, so the rod follows it every frame.
+  useFrame(() => {
+    const group = rod.current?.parent;
+    if (rod.current === null || bobber.current === null || !group) return;
+    if (hand.current === null) gripPoint.set(...FALLBACK_GRIP);
+    else group.worldToLocal(hand.current.getWorldPosition(gripPoint));
+    rod.current.position.copy(gripPoint);
+    const tipX = gripPoint.x;
+    const tipY = gripPoint.y + ROD_TIP_Y;
+    const tipZ = gripPoint.z + ROD_TIP_Z;
+    bobber.current.position.set(tipX, waterY, tipZ + LINE_REACH);
+    const ends = line.geometry.getAttribute("position") as BufferAttribute;
+    ends.setXYZ(0, tipX, tipY, tipZ);
+    ends.setXYZ(1, tipX, waterY, tipZ + LINE_REACH);
+    ends.needsUpdate = true;
+  });
   return (
     <group ref={ref}>
-      <mesh
-        geometry={geometry.cylinder}
-        position={[0.3, 0.1 + (tipY - 0.1) / 2, 0.3 + (tipZ - 0.3) / 2]}
-        rotation-x={ROD_TILT}
-        scale={[0.02, ROD_LENGTH, 0.02]}
-      >
-        <LitMaterial color={palette.rod} />
-      </mesh>
-      <mesh
-        geometry={geometry.cylinder}
-        position={[0.3, tipY - lineLength / 2, tipZ]}
-        scale={[0.006, lineLength, 0.006]}
-      >
-        <meshBasicMaterial color={palette.fishingLine} />
-      </mesh>
-      <mesh geometry={geometry.puff} position={[0.3, tipY - lineLength, tipZ]} scale={0.35}>
+      <group ref={rod}>
+        <mesh
+          geometry={geometry.cylinder}
+          position={[0, ROD_TIP_Y / 2, ROD_TIP_Z / 2]}
+          rotation-x={ROD_TILT}
+          scale={[0.02, ROD_LENGTH, 0.02]}
+        >
+          <LitMaterial color={palette.rod} />
+        </mesh>
+      </group>
+      <primitive object={line} />
+      <mesh ref={bobber} geometry={geometry.puff} scale={0.35}>
         <LitMaterial color={palette.bobber} />
       </mesh>
     </group>

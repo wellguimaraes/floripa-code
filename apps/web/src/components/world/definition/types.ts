@@ -55,6 +55,17 @@ export interface FixedArea {
    * before anyone queues at the entry, e.g. lying on the sand past the towels.
    */
   readonly spillover?: ReadonlyArray<WorldSlot>;
+  /**
+   * Characters line up across the slots by when their agent last replied,
+   * oldest at the first slot, and close the gap when one leaves. Once the
+   * slots run out, the oldest move back to the spillover.
+   */
+  readonly lineUp?: boolean;
+  /**
+   * Agents sharing a worktree take slots no farther apart than this, so they
+   * work side by side. An agent outside any worktree moves aside to make room.
+   */
+  readonly worktreeReach?: number;
 }
 
 /**
@@ -86,6 +97,8 @@ export interface CharacterFactMatch {
   readonly backgroundTask?: boolean;
   /** The thread has produced nothing new for `movement.quietSeconds`. */
   readonly quiet?: boolean;
+  /** The agent last replied no more than this many seconds ago. */
+  readonly repliedWithin?: number;
   readonly provider?: string | ReadonlyArray<string>;
 }
 
