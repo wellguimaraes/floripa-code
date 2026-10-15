@@ -401,12 +401,14 @@ export function WorldBubble(props: {
                   </RollingSwap>
                 </div>
               ) : null}
-              {/* The agent's answer: its opening and closing lines, the middle folded away. */}
+              {/* The agent's answer: its opening and closing lines, the middle folded away.
+                  Clicking it opens the full chat to read the rest. */}
               {typing || preview !== null ? (
-                <div
-                  className="mr-auto flex max-w-[85%] min-w-0 flex-col rounded-lg px-3 py-2"
+                <button
+                  type="button"
+                  className="mr-auto flex max-w-[85%] min-w-0 cursor-pointer flex-col rounded-lg px-3 py-2 text-left hover:brightness-95"
                   style={{ backgroundColor: palette.bubbleReply, color: palette.bubbleText }}
-                  aria-label="Agent's last reply"
+                  onClick={expand}
                 >
                   <RollingSwap swapKey={typing ? "typing" : (lastReply?.id ?? "typing")}>
                     {typing || preview === null ? (
@@ -431,7 +433,7 @@ export function WorldBubble(props: {
                       </>
                     )}
                   </RollingSwap>
-                </div>
+                </button>
               ) : null}
             </div>
           ) : null}
