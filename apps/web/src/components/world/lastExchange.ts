@@ -48,8 +48,8 @@ export function lastExchange(
 const PREVIEW_EDGE_LINES = 2;
 
 /**
- * A reply cut down to its first and last two non-blank lines, with markdown markers
- * dropped. `skipped` counts the lines left out between them.
+ * A reply cut down to its first and last two non-blank lines, each kept as inline
+ * markdown with its block markers dropped. `skipped` counts the lines left out between them.
  */
 export interface PreviewLine {
   /** The line's position among the kept lines; stable for a given reply. */
@@ -67,10 +67,12 @@ export function replyPreview(text: string): {
     .map((line) =>
       line
         .replace(/^\s*(#{1,6}\s+|>\s*|[-*+]\s+(\[[ xX]\]\s+)?)/, "")
-        .replaceAll(/\*\*|__|`/g, "")
-        .trim(),
+        .trim()
+        // Escaped so a numbered line keeps its number instead of parsing as a list.
+        .replace(/^(\d+)([.)])\s/, "$1\\$2 "),
     )
-    .filter((line) => line !== "" && !/^(-{3,}|\|?[\s:|-]+\|[\s:|-]*)$/.test(line))
+    // Code fences have no text of their own; a lone one would render empty.
+    .filter((line) => line !== "" && !/^(-{3,}|`{3,}.*|~{3,}.*|\|?[\s:|-]+\|[\s:|-]*)$/.test(line))
     // Table rows read as their cells.
     .map((line) =>
       line.startsWith("|")

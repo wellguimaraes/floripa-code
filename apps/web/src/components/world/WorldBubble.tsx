@@ -26,6 +26,7 @@ import { HuePicker } from "./HuePicker";
 import { type FamilyShades as Shades, palette } from "./scene/palette";
 import { useBubbleAttachments } from "./useBubbleAttachments";
 import { ARCHIVE_SHORTCUT, useArchiveShortcut } from "./useArchiveShortcut";
+import { BubbleMarkdown } from "./BubbleMarkdown";
 import { replyPreview } from "./lastExchange";
 import { RollingSwap, TypingDots } from "./RollingSwap";
 import { useLastExchange } from "./useLastExchange";
@@ -391,9 +392,11 @@ export function WorldBubble(props: {
                       element lets the third line peek through the bottom padding. */}
                   <RollingSwap swapKey={lastSent.id}>
                     <span className="line-clamp-2">
-                      {lastSent.text === ATTACHMENT_ONLY_BOOTSTRAP_PROMPT
-                        ? `${lastSent.attachmentCount} ${lastSent.attachmentCount === 1 ? "attachment" : "attachments"}`
-                        : lastSent.text}
+                      {lastSent.text === ATTACHMENT_ONLY_BOOTSTRAP_PROMPT ? (
+                        `${lastSent.attachmentCount} ${lastSent.attachmentCount === 1 ? "attachment" : "attachments"}`
+                      ) : (
+                        <BubbleMarkdown text={lastSent.text} />
+                      )}
                     </span>
                   </RollingSwap>
                 </div>
@@ -412,7 +415,7 @@ export function WorldBubble(props: {
                       <>
                         {preview.head.map((line) => (
                           <span key={line.key} className="truncate">
-                            {line.text}
+                            <BubbleMarkdown text={line.text} />
                           </span>
                         ))}
                         {preview.skipped > 0 ? (
@@ -422,7 +425,7 @@ export function WorldBubble(props: {
                         ) : null}
                         {preview.tail.map((line) => (
                           <span key={line.key} className="truncate">
-                            {line.text}
+                            <BubbleMarkdown text={line.text} />
                           </span>
                         ))}
                       </>

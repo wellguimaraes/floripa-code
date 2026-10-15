@@ -25,17 +25,17 @@ describe("replyPreview", () => {
     });
   });
 
-  it("drops markdown markers, table rules and cell pipes", () => {
+  it("drops block markers, table rules, cell pipes and fences but keeps inline markdown", () => {
     expect(
       texts(
         replyPreview(
-          "## Done\n| a | b |\n|---|---|\n- **Fixed** `x`\n---\n> quoted\nnote\n1. kept",
+          "## Done\n| a | b |\n|---|---|\n- **Fixed** `x`\n```ts\ncode\n```\n---\n> quoted\nnote\n1. kept",
         ),
       ),
     ).toEqual({
       head: ["Done", "a · b"],
-      tail: ["note", "1. kept"],
-      skipped: 2,
+      tail: ["note", "1\\. kept"],
+      skipped: 3,
     });
   });
 });
