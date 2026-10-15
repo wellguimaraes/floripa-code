@@ -2,7 +2,7 @@ import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { EnvironmentPullRequestEntry } from "../pullRequest/pullRequestList.logic";
-import { countIslandPullRequests } from "./islandPullRequests";
+import { countIslandPullRequests, countIslandWorktrees } from "./islandPullRequests";
 
 const local = "local" as EnvironmentId;
 const remote = "remote" as EnvironmentId;
@@ -49,5 +49,22 @@ describe("countIslandPullRequests", () => {
     const islands = new Map([["app", [ref(local, "p1")]]]);
     const entries = [entry(local, "p1", 1, "feat/a"), entry(local, "unknown", 2, "feat/a")];
     expect(countIslandPullRequests(islands, entries, new Map()).has("app")).toBe(false);
+  });
+});
+
+describe("countIslandWorktrees", () => {
+  it("counts worktrees once across checkouts, leaving out the projects' own folders", () => {
+    const counts = countIslandWorktrees([
+      {
+        island: "app",
+        roots: ["/repo/app", "/repo"],
+        worktreePaths: ["/repo", "/repo/.worktrees/feature", null],
+      },
+      // A second project in the same repository lists the same worktrees.
+      { island: "app", roots: ["/repo/web"], worktreePaths: ["/repo", "/repo/.worktrees/feature"] },
+      { island: "site", roots: ["/site"], worktreePaths: ["/site"] },
+    ]);
+    expect(counts.get("app")).toBe(1);
+    expect(counts.get("site")).toBe(0);
   });
 });

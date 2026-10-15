@@ -65,7 +65,7 @@ import { groundHeight, surfaceAt } from "./scene/terrain";
 import { SIGN_TOP, Sign, signTextColor } from "./scene/Sign";
 import { NewAgentBubble } from "./NewAgentBubble";
 import { NewAgentProjectPicker } from "./NewAgentProjectPicker";
-import { useIslandPullRequests } from "./useIslandPullRequests";
+import { useIslandSignStats } from "./useIslandSignStats";
 import { useWorldHueStore } from "./worldHueStore";
 import { useWorldLookStore, type WorldLook } from "./worldLookStore";
 import { useWorldArrangementStore } from "./worldArrangementStore";
@@ -74,6 +74,7 @@ import { useWorldVisibilityStore } from "./worldVisibilityStore";
 import { AddProjectButton } from "./AddProjectButton";
 import { IslandArrangementMenu } from "./IslandArrangementMenu";
 import { ProjectVisibilityMenu } from "./ProjectVisibilityMenu";
+import { IslandBranchesDialog } from "./IslandBranchesDialog";
 import { RestoreArchivedDialog } from "./RestoreArchivedDialog";
 import { layoutTags, type ScreenPoint } from "./scene/tagLayout";
 import { isStoppable, WorldBubble } from "./WorldBubble";
@@ -158,7 +159,7 @@ export default function WorldCanvas(props: {
     () => new Map(visibleOrder.map((key) => [key, projectMembers.get(key) ?? []])),
     [visibleOrder, projectMembers],
   );
-  const pullRequestCounts = useIslandPullRequests(visibleMembers, projects);
+  const signStats = useIslandSignStats(visibleMembers, projects);
   const arrangement = useWorldArrangementStore((state) => state.arrangement);
   const [memory] = useState(createArchipelagoMemory);
   // Piles picked for agents started from them, by the thread they will become.
@@ -425,6 +426,7 @@ export default function WorldCanvas(props: {
 
   const [zoomTo, setZoomTo] = useState<{ readonly key: string } | null>(null);
   const [restoringOn, setRestoringOn] = useState<string | null>(null);
+  const [branchesOn, setBranchesOn] = useState<string | null>(null);
   const showIslandMenu = async (key: string, point: { x: number; y: number }) => {
     const api = readLocalApi();
     if (api === undefined) return;
@@ -850,7 +852,10 @@ export default function WorldCanvas(props: {
                   slot={island.definition.archipelago.sign}
                   text={projectTitles.get(island.key) ?? "Project"}
                   color={faded ? toFaded(plate) : plate}
-                  pullRequests={pullRequestCounts.get(island.key) ?? 0}
+                  branches={signStats.get(island.key)?.branches ?? 0}
+                  pullRequests={signStats.get(island.key)?.pullRequests ?? 0}
+                  worktrees={signStats.get(island.key)?.worktrees ?? 0}
+                  onBranchesClick={() => setBranchesOn(island.key)}
                 />
                 {island.characters
                   .filter((character) => !abducted.has(character.facts.key))
@@ -996,6 +1001,14 @@ export default function WorldCanvas(props: {
           color={palette.plates[hashString(restoringOn) % palette.plates.length]!}
           projectRefs={projectMembers.get(restoringOn) ?? []}
           onClose={() => setRestoringOn(null)}
+        />
+      ) : null}
+      {branchesOn !== null ? (
+        <IslandBranchesDialog
+          title={projectTitles.get(branchesOn) ?? "this island"}
+          color={palette.plates[hashString(branchesOn) % palette.plates.length]!}
+          targets={signStats.get(branchesOn)?.targets ?? []}
+          onClose={() => setBranchesOn(null)}
         />
       ) : null}
       {toolbar !== null
