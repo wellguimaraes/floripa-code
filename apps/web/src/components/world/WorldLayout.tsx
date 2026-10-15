@@ -126,9 +126,11 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
 
   useEffect(() => {
     if (target === null) return;
-    // Escape closes the panel unless something in it (a menu, picker, dialog) took it first.
+    // Cmd+Escape (Ctrl+Escape) closes the panel unless something in it (a menu, picker,
+    // dialog) took it first. Plain Escape is left to the chat, so it can't close it by accident.
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.isComposing || event.repeat) return;
+      if (!event.metaKey && !event.ctrlKey) return;
       // The message editor (ProseMirror) prevents every Escape; its menus also stop the event,
       // so one that gets here from the editor was not used.
       const fromEditor = event.target instanceof Element && event.target.closest(".ProseMirror");
@@ -183,7 +185,11 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
             } as CSSProperties
           }
         >
-          <RightPanelResizeHandle handlers={chatWidth.handlers} showIndicator={false} />
+          <RightPanelResizeHandle
+            handlers={chatWidth.handlers}
+            showIndicator={false}
+            onDoubleClick={closePanel}
+          />
           <div className="absolute top-1 -left-10">
             <Button variant="glass" size="icon-sm" aria-label="Close chat" onClick={closePanel}>
               <XIcon />

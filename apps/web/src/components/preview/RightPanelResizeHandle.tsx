@@ -6,6 +6,8 @@ interface Props {
   className?: string;
   /** Floating, rounded panels hide the line; the cursor alone signals the edge. */
   showIndicator?: boolean;
+  /** A double-click on the edge, e.g. to close the panel. */
+  onDoubleClick?: () => void;
 }
 
 /**
@@ -16,7 +18,12 @@ interface Props {
  * - Visual indicator is a 1px line that lights up on hover/active to mirror
  *   VS Code / Cursor.
  */
-export function RightPanelResizeHandle({ handlers, className, showIndicator = true }: Props) {
+export function RightPanelResizeHandle({
+  handlers,
+  className,
+  showIndicator = true,
+  onDoubleClick,
+}: Props) {
   return (
     <div
       role="separator"
@@ -26,6 +33,7 @@ export function RightPanelResizeHandle({ handlers, className, showIndicator = tr
         className,
       )}
       {...handlers}
+      onDoubleClick={onDoubleClick}
     >
       {showIndicator ? (
         <span

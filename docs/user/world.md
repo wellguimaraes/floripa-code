@@ -64,8 +64,8 @@ from the notice that appears, or later from **Settings → Archived**. `Option`-
 (`Alt`-click) a character to skip the bubble and open its chat; the map frames the character's
 island beside the panel. While a chat is open, clicking another character switches the
 chat to it instead of opening a bubble. The chat's footer has the same regenerate-title and
-archive buttons as the bubble, and `Option`+`A` (`Alt`+`A`) archives from the chat too; the chat stays open as the agent leaves. Close the chat with the **×** button beside the panel or
-with `Escape` (on the map or inside the chat), and the map goes back to where it was.
+archive buttons as the bubble, and `Option`+`A` (`Alt`+`A`) archives from the chat too; the chat stays open as the agent leaves. Close the chat with the **×** button beside the panel, by double-clicking its left edge, or
+with `Cmd`+`Escape` (`Ctrl`+`Escape`), and the map goes back to where it was.
 
 Right-click a character for **Open chat**, **Send voice command**,
 **Regenerate title**, **Stop** and **Archive**. Stop ends the agent's current run, like the stop button in the
