@@ -39,12 +39,16 @@ const up = new Vector3(0, 1, 0);
  * A saucer drops in over archived characters, beams them all up at once and
  * flies off. Stand-ins of the same model in each character's colours do the
  * rising, since the real ones are gone the moment their threads are archived.
+ * Arriving, it runs the other way: the stand-ins come down the beam onto their
+ * spots, and `onLanded` tells the real characters to take over from them.
  */
 export function Abduction(props: {
   readonly figures: ReadonlyArray<AbductedFigure>;
+  readonly arriving?: boolean;
+  readonly onLanded?: () => void;
   readonly onDone: () => void;
 }) {
-  const { figures, onDone } = props;
+  const { figures, arriving = false, onLanded, onDone } = props;
   // Hover over the group's middle, high and wide enough to take everyone in.
   const { center, size } = useMemo(() => {
     const middle = new Vector3();
@@ -81,6 +85,7 @@ export function Abduction(props: {
   const figureRefs = useRef<Array<Group | null>>([]);
   const beamRefs = useRef<Array<Mesh | null>>([]);
   const startedAt = useRef<number | null>(null);
+  const landed = useRef(false);
   const invalidate = useThree((state) => state.invalidate);
   // Draw once more on the way out too: the scene only redraws when asked, so
   // without it the last frame, saucer included, would stay on screen.
@@ -120,15 +125,22 @@ export function Abduction(props: {
       (beam.material as MeshBasicMaterial).opacity = opacity;
     }
 
-    // Rise along the beam into the saucer, spinning and shrinking, then vanish inside it.
+    if (arriving && !beaming && t > DESCEND && !landed.current) {
+      landed.current = true;
+      onLanded?.();
+    }
+
+    // Rise along the beam into the saucer, spinning and shrinking, then vanish
+    // inside it; arriving, come out of it and settle facing the way they will stand.
+    const raised = arriving ? 1 - lift : lift;
     figures.forEach((figure, index) => {
       const group = figureRefs.current[index];
       const path = beams[index];
       if (!group || !path) return;
-      group.visible = t < DESCEND + BEAM;
-      group.position.lerpVectors(path.from, path.to, lift);
-      group.rotation.y = figure.facing + lift * Math.PI * 4;
-      group.scale.setScalar(figure.scale * (1 - lift * 0.6));
+      group.visible = arriving ? beaming : t < DESCEND + BEAM;
+      group.position.lerpVectors(path.from, path.to, raised);
+      group.rotation.y = figure.facing + raised * Math.PI * 4;
+      group.scale.setScalar(figure.scale * (1 - raised * 0.6));
     });
 
     drawSoon(state.invalidate, FPS);
@@ -145,6 +157,7 @@ export function Abduction(props: {
           position={beams[index]!.from}
           scale={figure.scale}
           rotation-y={figure.facing}
+          visible={!arriving}
         >
           <Suspense fallback={null}>
             <CharacterModel pose="stand" shades={figure.shades} isWalking={() => false} />

@@ -353,12 +353,14 @@ export default function WorldCanvas(props: {
   const bubbleRef = useRef<HTMLDivElement>(null);
 
   // Archived characters leave by saucer: the real one is hidden at once and
-  // a stand-in of it is beamed up from where it stood.
+  // a stand-in of it is beamed up from where it stood. New agents started here
+  // arrive the same way, hidden until their stand-in has landed on their pile.
   const [abductions, setAbductions] = useState<
     ReadonlyArray<{
       readonly id: number;
       readonly islandKeys: ReadonlyArray<string>;
       readonly figures: ReadonlyArray<AbductedFigure>;
+      readonly arriving?: { readonly landed: boolean };
     }>
   >([]);
   const abductionId = useRef(0);
@@ -389,8 +391,45 @@ export default function WorldCanvas(props: {
       { id: abductionId.current, islandKeys: [...islandKeys], figures },
     ]);
   };
-  const abducted = new Set(abductions.flatMap((a) => a.figures.map((figure) => figure.key)));
-  // An island keeps its colour while a saucer is still carrying its last agents away.
+  /** The saucer brings a new agent down onto its pile. */
+  const arrive = (
+    island: WorldIsland,
+    slotIndex: number,
+    thread: { readonly key: string; readonly hue: number },
+  ) => {
+    const area = island.definition.areas[definition.archipelago.newAgents.area];
+    const slot = area?.kind === "fixed" ? area.slots[slotIndex] : undefined;
+    if (slot === undefined) return;
+    const [x, y, z] = slot.position;
+    abductionId.current += 1;
+    setAbductions((all) => [
+      ...all,
+      {
+        id: abductionId.current,
+        islandKeys: [island.key],
+        figures: [
+          {
+            key: thread.key,
+            position: [
+              island.offset[0] + x,
+              island.offset[1] + y + groundHeight(island.definition)(x, z),
+              island.offset[2] + z,
+            ],
+            scale: definition.movement.characterScale,
+            facing: slot.facing,
+            shades: palette.families[thread.hue]!,
+          },
+        ],
+        arriving: { landed: false },
+      },
+    ]);
+  };
+  const abducted = new Set(
+    abductions.flatMap((a) =>
+      a.arriving?.landed === true ? [] : a.figures.map((figure) => figure.key),
+    ),
+  );
+  // An island keeps its colour while a saucer is over it, taking or bringing agents.
   const leaving = new Set(abductions.flatMap((a) => a.islandKeys));
 
   const { archiveThread } = useThreadActions();
@@ -899,6 +938,12 @@ export default function WorldCanvas(props: {
           <Abduction
             key={abduction.id}
             figures={abduction.figures}
+            arriving={abduction.arriving !== undefined}
+            onLanded={() =>
+              setAbductions((all) =>
+                all.map((a) => (a.id === abduction.id ? { ...a, arriving: { landed: true } } : a)),
+              )
+            }
             onDone={() => setAbductions((all) => all.filter((a) => a.id !== abduction.id))}
           />
         ))}
@@ -968,8 +1013,10 @@ export default function WorldCanvas(props: {
                 palette.families.length,
               )}
               onStarted={(thread) => {
-                const { slotIndex } = newAgent;
+                const { islandKey, slotIndex } = newAgent;
                 chooseHue(thread.ref.threadId, thread.hue);
+                const island = islands.find((i) => i.key === islandKey);
+                if (island !== undefined) arrive(island, slotIndex, thread);
                 setRequested((all) =>
                   new Map(all).set(thread.key, {
                     area: definition.archipelago.newAgents.area,
