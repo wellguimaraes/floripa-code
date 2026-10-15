@@ -106,8 +106,11 @@ const KEYFRAMES: ReadonlyArray<Keyframe> = [
 /** The sun is up from sunrise to sunset; the rest of the time the moon lights the world. */
 export const SUNRISE = 6;
 export const SUNSET = 19;
-/** Lamps come on this long before sunset and stay on until this long after sunrise. */
-const LAMP_MARGIN_HOURS = 30 / 60;
+/**
+ * Lamps (and the characters' glow) come on this long before sunset and stay
+ * on until this long after sunrise.
+ */
+const LAMP_MARGIN_HOURS = 1;
 /** The moon stays put, high and a little left of the camera. */
 const MOON: Direction = normalize([7, 12, 6]);
 /** Light and shadows move in steps this long, so shadows are rebuilt only a few times an hour. */

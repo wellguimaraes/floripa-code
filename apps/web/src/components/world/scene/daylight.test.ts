@@ -11,12 +11,12 @@ describe("daylightAt", () => {
     expect(daylightAt(0).lampsOn).toBe(true);
   });
 
-  it("keeps the lamps on from 30 minutes before sunset to 30 minutes after sunrise", () => {
+  it("keeps the lamps on from an hour before sunset to an hour after sunrise", () => {
     const minutes = (count: number) => count / 60;
-    expect(daylightAt(SUNSET - minutes(31)).lampsOn).toBe(false);
-    expect(daylightAt(SUNSET - minutes(30)).lampsOn).toBe(true);
-    expect(daylightAt(SUNRISE + minutes(29)).lampsOn).toBe(true);
-    expect(daylightAt(SUNRISE + minutes(31)).lampsOn).toBe(false);
+    expect(daylightAt(SUNSET - minutes(61)).lampsOn).toBe(false);
+    expect(daylightAt(SUNSET - minutes(60)).lampsOn).toBe(true);
+    expect(daylightAt(SUNRISE + minutes(59)).lampsOn).toBe(true);
+    expect(daylightAt(SUNRISE + minutes(60)).lampsOn).toBe(false);
   });
 
   it("warms the sun toward evening", () => {

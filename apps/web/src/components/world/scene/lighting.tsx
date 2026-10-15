@@ -38,7 +38,7 @@ export function toFaded(color: string): string {
  * characters glow a little at night, so their colours read in the dark.
  */
 export const GlowContext = createContext(0);
-/** Characters' glow at full night; it fades out toward day. Portraits never glow. */
+/** Characters' glow while the lamps are on, from 18:00 to 07:00. Portraits never glow. */
 const CHARACTER_GLOW = 0.4;
 
 /** What the scene needs from the time of day, besides the lights themselves. */
@@ -96,7 +96,8 @@ export function WorldDaylight(props: { readonly children: ReactNode }) {
   const storm = useWorldWeatherStore(selectStorm);
   const clear = daylightAt(useWorldHour());
   const daylight = overcast(clear, rain);
-  const glow = step(daylight.night * CHARACTER_GLOW, 0.05);
+  // Lights up with the lamps, so characters glow as soon as the poles come up.
+  const glow = daylight.lampsOn ? CHARACTER_GLOW : 0;
   // Fainter in dim light, and nearly gone under rain clouds.
   const shadowOpacity = step(
     0.16 * Math.min(1, Math.max(0.5, clear.keyIntensity / 1.6)) * (1 - 0.75 * rain),
