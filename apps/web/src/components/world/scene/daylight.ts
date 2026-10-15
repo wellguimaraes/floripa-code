@@ -32,10 +32,10 @@ interface Keyframe {
  */
 const NIGHT = {
   key: "#f3857f",
-  keyIntensity: 1.244,
+  keyIntensity: 1.2,
   fillSky: "#867fc3",
   fillGround: "#38395d",
-  fillIntensity: 1.331,
+  fillIntensity: 1.4,
   background: palette.nightSky,
   night: 1,
 } as const;
@@ -81,10 +81,10 @@ const KEYFRAMES: ReadonlyArray<Keyframe> = [
   {
     hour: 17.5,
     key: "#ffb26b",
-    keyIntensity: 2.5,
+    keyIntensity: 2,
     fillSky: "#9fbbe6",
     fillGround: palette.groundLight,
-    fillIntensity: 1.1,
+    fillIntensity: 1.5,
     background: "#f7c9a0",
     night: 0,
   },
@@ -92,10 +92,10 @@ const KEYFRAMES: ReadonlyArray<Keyframe> = [
   {
     hour: 18.75,
     key: "#ff7a4a",
-    keyIntensity: 1.4,
+    keyIntensity: 1.35,
     fillSky: "#8a7fc0",
     fillGround: "#3a3a5e",
-    fillIntensity: 1.3,
+    fillIntensity: 1.45,
     background: "#d9776a",
     night: 0.4,
   },
