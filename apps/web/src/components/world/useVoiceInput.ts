@@ -108,7 +108,8 @@ export function useVoiceInput(
 ) {
   const hasKey = useEnvironmentSettings(
     environmentId,
-    (settings) => settings.voice.openRouterApiKey !== "",
+    (settings) =>
+      settings.voice.openRouterApiKey !== "" || settings.voice.openRouterApiKeyFromEnv === true,
   );
   const transcribe = useAtomCommand(serverEnvironment.transcribeVoice, { reportFailure: false });
   const [phase, setPhase] = useState<VoiceInputPhase>("idle");

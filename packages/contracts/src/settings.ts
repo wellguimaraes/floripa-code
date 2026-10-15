@@ -828,6 +828,8 @@ export const DEFAULT_TRANSCRIPTION_MODEL = "elevenlabs/scribe-v2";
  */
 export const VoiceSettings = Schema.Struct({
   openRouterApiKey: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  /** Set for clients when no key is saved but the server has `OPENROUTER_API_KEY`, which it uses. */
+  openRouterApiKeyFromEnv: Schema.optionalKey(Schema.Boolean),
   transcriptionModel: TrimmedNonEmptyString.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_TRANSCRIPTION_MODEL)),
   ),

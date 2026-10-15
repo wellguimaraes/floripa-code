@@ -108,7 +108,8 @@ To generate a fresh title from the conversation, open a thread's menu and choose
 or when the connected environment needs a server update.
 
 To have titles follow the work, save an OpenRouter API key in **Settings → Providers → OpenRouter**
-and turn on **Retitle threads when the task changes**. When a follow-up message starts a
+(or set `OPENROUTER_API_KEY` where the server runs) and turn on **Retitle threads when the
+task changes**. When a follow-up message starts a
 different task, the thread gets a new title. Your messages are sent to OpenRouter's Jev
 model to make that call. A thread you renamed keeps its name until you choose
 **Regenerate title**.

@@ -72,7 +72,7 @@ const make = Effect.gen(function* () {
     const settings = yield* settingsService.getSettings.pipe(
       Effect.mapError(() => failed("Could not read the settings.")),
     );
-    const apiKey = settings.voice.openRouterApiKey;
+    const apiKey = ServerSettings.resolveOpenRouterApiKey(settings.voice);
     if (!settings.autoRetitleThreads || apiKey === "") return false;
 
     const response = yield* client

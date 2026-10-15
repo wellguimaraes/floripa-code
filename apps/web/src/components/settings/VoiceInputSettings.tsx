@@ -39,6 +39,8 @@ export function VoiceInputSettings({
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const keySaved = voice.openRouterApiKey !== "";
+  // With no saved key the server falls back to its OPENROUTER_API_KEY variable.
+  const hasKey = keySaved || voice.openRouterApiKeyFromEnv === true;
   const newKey = draft.trim();
 
   const saveAutoRetitle = async (enabled: boolean) => {
@@ -103,7 +105,13 @@ export function VoiceInputSettings({
               autoComplete="off"
               size="sm"
               aria-label="OpenRouter API key"
-              placeholder={keySaved ? "Stored secret, enter a new value to replace" : "Not set"}
+              placeholder={
+                keySaved
+                  ? "Stored secret, enter a new value to replace"
+                  : hasKey
+                    ? "Using OPENROUTER_API_KEY from the server"
+                    : "Not set"
+              }
               value={draft}
               disabled={saving || readOnly}
               onChange={(event) => setDraft(event.target.value)}
@@ -169,7 +177,7 @@ export function VoiceInputSettings({
         {...searchableSetting("auto-retitle-threads")}
         serverScoped
         description={
-          keySaved
+          hasKey
             ? "When a follow-up message starts a different task, give the thread a new title. Your messages are sent to OpenRouter's Jev model to decide. Threads you renamed keep their title."
             : "Add an OpenRouter API key to retitle threads when a follow-up message starts a different task."
         }
@@ -177,7 +185,7 @@ export function VoiceInputSettings({
           <Switch
             aria-label="Retitle threads when the task changes"
             checked={autoRetitle}
-            disabled={saving || readOnly || (!keySaved && !autoRetitle)}
+            disabled={saving || readOnly || (!hasKey && !autoRetitle)}
             onCheckedChange={(enabled) => void saveAutoRetitle(enabled)}
           />
         }

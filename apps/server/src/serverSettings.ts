@@ -169,6 +169,11 @@ function gitHubTokenSecretName(host: string): string {
   return `github-token-${Buffer.from(host.trim().toLowerCase(), "utf8").toString("base64url")}`;
 }
 
+/** The OpenRouter key saved in Settings, else the server's `OPENROUTER_API_KEY`. */
+export function resolveOpenRouterApiKey(voice: ServerSettings["voice"]): string {
+  return voice.openRouterApiKey || (process.env.OPENROUTER_API_KEY?.trim() ?? "");
+}
+
 const redactSecret = (value: string) => (value.length > 0 ? SECRET_REDACTED : "");
 
 function redactProviderEnvironmentVariable(
@@ -221,6 +226,9 @@ export function redactServerSettingsForClient(settings: ServerSettings): ServerS
   const voice = {
     ...settings.voice,
     openRouterApiKey: redactSecret(settings.voice.openRouterApiKey),
+    ...(settings.voice.openRouterApiKey === "" && resolveOpenRouterApiKey(settings.voice) !== ""
+      ? { openRouterApiKeyFromEnv: true }
+      : {}),
   };
   return { ...settings, providerInstances, usageLimitSources, bitbucket, github, voice };
 }

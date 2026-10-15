@@ -1587,6 +1587,30 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       }).pipe(Effect.provide(layerServerSettings())),
   );
 
+  it("falls back to OPENROUTER_API_KEY when no OpenRouter key is saved", () => {
+    const previous = process.env.OPENROUTER_API_KEY;
+    process.env.OPENROUTER_API_KEY = " env-key ";
+    try {
+      const unsaved = DEFAULT_SERVER_SETTINGS;
+      const saved = {
+        ...DEFAULT_SERVER_SETTINGS,
+        voice: { ...DEFAULT_SERVER_SETTINGS.voice, openRouterApiKey: "saved-key" },
+      };
+
+      assert.equal(ServerSettingsModule.resolveOpenRouterApiKey(unsaved.voice), "env-key");
+      assert.equal(ServerSettingsModule.resolveOpenRouterApiKey(saved.voice), "saved-key");
+      const unsavedForClient = ServerSettingsModule.redactServerSettingsForClient(unsaved).voice;
+      assert.equal(unsavedForClient.openRouterApiKey, "");
+      assert.equal(unsavedForClient.openRouterApiKeyFromEnv, true);
+      const savedForClient = ServerSettingsModule.redactServerSettingsForClient(saved).voice;
+      assert.notEqual(savedForClient.openRouterApiKey, "saved-key");
+      assert.isUndefined(savedForClient.openRouterApiKeyFromEnv);
+    } finally {
+      if (previous === undefined) delete process.env.OPENROUTER_API_KEY;
+      else process.env.OPENROUTER_API_KEY = previous;
+    }
+  });
+
   it.effect("materializes provider secrets for terminal environment resolution", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;

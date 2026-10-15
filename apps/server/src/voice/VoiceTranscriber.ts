@@ -54,7 +54,8 @@ const make = Effect.gen(function* () {
     const { voice } = yield* settingsService.getSettings.pipe(
       Effect.mapError(() => failed("Could not read the voice settings.")),
     );
-    if (voice.openRouterApiKey === "") {
+    const apiKey = Settings.resolveOpenRouterApiKey(voice);
+    if (apiKey === "") {
       return yield* new VoiceTranscriptionError({
         reason: "missingKey",
         detail: "Add an OpenRouter API key to use voice input.",
@@ -63,7 +64,7 @@ const make = Effect.gen(function* () {
     const response = yield* client
       .execute(
         HttpClientRequest.post(`${OPENROUTER_API}/audio/transcriptions`).pipe(
-          HttpClientRequest.setHeader("Authorization", `Bearer ${voice.openRouterApiKey}`),
+          HttpClientRequest.setHeader("Authorization", `Bearer ${apiKey}`),
           HttpClientRequest.bodyJsonUnsafe({
             model: voice.transcriptionModel,
             input_audio: { data: input.audio, format: input.format },
