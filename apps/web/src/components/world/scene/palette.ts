@@ -5,20 +5,19 @@
 export const palette = {
   sky: "#8fd3f4",
   skyLight: "#ffffff",
-  groundLight: "#7fae7a",
+  groundLight: "#7aae81",
   // Sea, lagoon, shallows, sand, and grass follow the Atoll logo's rings.
   water: "#0c5b87",
   // Clear water over sand: pale cyan by the shore, brighter blue further out.
   shallows: "#7ee9f0",
   lagoon: "#1b7bb1",
   sand: "#fff3c3",
-  // Every green (lawn, leaves, tufts) reads as one hue and varies only in shade.
-  // Leaves catch the green ground light on their sides, which pushes them
-  // toward blue on screen, so the lawn, lit from above, starts bluer to match.
-  grass: "#6bc265",
-  grassBank: "#5bad55",
+  // Every green (lawn, leaves, tufts, ground light) shares hue 128° and varies
+  // only in saturation and lightness.
+  grass: "#65c271",
+  grassBank: "#55ad61",
   /** Bands on the lawn from its edge in, each a little lighter (see `Island`). */
-  lawnBands: ["#72c86c", "#7ace74", "#82d37c"],
+  lawnBands: ["#6cc878", "#74ce80", "#7cd388"],
   path: "#d9c7a0",
   shadow: "#0f172a",
   selection: "#ffffff",
@@ -37,16 +36,16 @@ export const palette = {
   towelStripe: "#fef2f2",
   palmTrunk: "#a8692f",
   palmTrunkDark: "#8a5226",
-  palmLeaf: "#68a04b",
-  palmLeafDark: "#54803e",
+  palmLeaf: "#43a850",
+  palmLeafDark: "#368841",
   coconut: "#6b4226",
   chairFrame: "#f5f5f4",
   chairCushion: "#38bdf8",
   treeTrunk: "#7a4a2a",
-  treeLeaf: "#639649",
+  treeLeaf: "#409f4c",
   // Sand scenery from the KayKit pack, shaded light at the top to dark below (see `nature.ts`).
-  leafLight: "#83d35b",
-  leafDark: "#4d8b2e",
+  leafLight: "#5bd36b",
+  leafDark: "#2e8b3a",
   signPost: "#7c4a21",
   signTextDark: "#1f1408",
   signTextLight: "#ffffff",

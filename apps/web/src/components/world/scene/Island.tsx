@@ -332,7 +332,7 @@ const canopy = (() => {
 function treeParts(seed: number): Part[] {
   const random = seededRandom(hashString(`tree:${seed}`));
   const shape = seed % 3;
-  const trunkHeight = shape === 2 ? 1.25 : 1.1;
+  const trunkHeight = shape === 2 ? 1.75 : 1.55;
   const parts: Part[] = [
     {
       geometry: trunkSegment,
