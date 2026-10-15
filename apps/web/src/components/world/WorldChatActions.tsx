@@ -53,7 +53,7 @@ export const WorldArchiveButton = memo(function WorldArchiveButton({
   const [archiving, setArchiving] = useState(false);
 
   // Archive, not delete: it can be undone from the toast or Settings → Archived. The world's
-  // own archive plays the agent's exit, leaving the chat open; it reports its own failures.
+  // own archive plays the agent's exit and reports its own failures. Either way the chat closes.
   const archive = async () => {
     if (chat === null || archiving) return;
     setArchiving(true);
@@ -74,7 +74,7 @@ export const WorldArchiveButton = memo(function WorldArchiveButton({
     }
   };
 
-  // The chat stays open once its agent is archived, with nothing left to archive.
+  // A chat opened on an archived agent has nothing left to archive.
   const archivable = chat !== null && chat.thread.archivedAt == null;
   useArchiveShortcut(archive, archivable);
   if (!archivable) return null;

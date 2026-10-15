@@ -362,7 +362,7 @@ export default function WorldCanvas(props: {
     }>
   >([]);
   const abductionId = useRef(0);
-  /** One saucer takes everyone archived together. An open chat stays open. */
+  /** One saucer takes everyone archived together. */
   const abduct = (characters: ReadonlyArray<WorldCharacter>) => {
     const islandKeys = new Set<string>();
     const figures = characters.flatMap((character): AbductedFigure[] => {

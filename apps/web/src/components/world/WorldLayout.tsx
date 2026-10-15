@@ -16,6 +16,7 @@ import {
 import { isElectron } from "../../env";
 import { RESIZABLE_WIDTH_PROPERTY, useResizableWidth } from "../../hooks/useResizableWidth";
 import { cn } from "../../lib/utils";
+import { useThreadShell } from "../../state/entities";
 import { buildThreadRouteParams, type ThreadRouteTarget } from "../../threadRoutes";
 import { RightPanelResizeHandle } from "../preview/RightPanelResizeHandle";
 import { ThreadRouteView } from "../ThreadRouteView";
@@ -74,6 +75,22 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
   const closePanel = () => {
     void navigate({ to: "/" });
   };
+
+  // The chat closes once its agent is archived, from here or anywhere else. One opened
+  // already archived (from Settings → Archived, say) stays open.
+  const chatThread = useThreadShell(target?.kind === "server" ? target.threadRef : null);
+  const chatArchived = chatThread !== null && chatThread.archivedAt != null;
+  const chatWasArchived = useRef<{ key: string | null; archived: boolean }>({
+    key: null,
+    archived: false,
+  });
+  useEffect(() => {
+    const was = chatWasArchived.current;
+    chatWasArchived.current = { key: selectedKey, archived: chatArchived };
+    if (selectedKey !== null && was.key === selectedKey && !was.archived && chatArchived) {
+      void navigate({ to: "/" });
+    }
+  }, [chatArchived, navigate, selectedKey]);
 
   // The world takes the whole window: the sidebar folds away while it shows
   // and comes back, if it was open, when the world closes.
