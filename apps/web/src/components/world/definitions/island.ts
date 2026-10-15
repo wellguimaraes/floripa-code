@@ -166,6 +166,8 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
     props: [
       prop("tree", -7, 4),
       prop("tree", -3.2, -5.8),
+      // The lawn's far-left edge, behind the miners, where it hides no one.
+      prop("tree", -7.5, -4.4),
       prop("palm", 3.4, -8.2, 0.4),
       prop("palm", 4.6, -7.6, 1.3),
       prop("palm", -0.8, -9, 3.6),
@@ -322,7 +324,7 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
       // One island per row: a single column running down the screen.
       columns: 1,
       // The camera tilt squashes rows on screen; this keeps each sign clear of the beach above.
-      gap: 11,
+      gap: 14,
       // Turned a little off the camera so the board's depth shows.
       sign: { position: node(-5.4, -6.4), facing: Math.PI / 4 - 0.35 },
       ripple: {

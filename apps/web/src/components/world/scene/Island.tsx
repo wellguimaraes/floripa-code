@@ -1,9 +1,17 @@
 import { Suspense, useContext, useMemo } from "react";
-import { type BufferGeometry, DoubleSide, Matrix4 } from "three";
+import {
+  BufferGeometry,
+  CylinderGeometry,
+  DoubleSide,
+  Float32BufferAttribute,
+  IcosahedronGeometry,
+  Matrix4,
+  Vector3,
+} from "three";
 
 import type { PropKind, TerrainKind, Vec3, WorldDefinition } from "../definition/types";
 import { islandBounds } from "../engine/archipelago";
-import { hashString } from "../engine/hash";
+import { hashString, seededRandom } from "../engine/hash";
 import { isScenery } from "../engine/scenery";
 import { geometry } from "./geometries";
 import { FadedContext, LitMaterial } from "./lighting";
@@ -276,9 +284,9 @@ function propParts(kind: PropKind, length: number, seed: number): ReadonlyArray<
     case "pier":
       return mergedParts(`pier:${length}`, () => pierParts(length));
     case "palm":
-      return mergedParts(`palm:${seed % 70}`, () => palmParts(seed));
+      return mergedParts(`palm:${seed % 70}`, () => palmParts(seed % 70));
     case "tree":
-      return mergedParts("tree", treeParts);
+      return mergedParts(`tree:${seed % 30}`, () => treeParts(seed % 30));
     case "rock":
     case "grass":
       // Drawn together with the rest of the island's scenery; see `Scenery`.
@@ -286,25 +294,94 @@ function propParts(kind: PropKind, length: number, seed: number): ReadonlyArray<
   }
 }
 
-function treeParts(): Part[] {
-  return [
+/**
+ * A lumpy, faceted crown of leaves: a twice-split icosahedron with every
+ * corner pushed in or out a little. Corners are moved by where they sit, so
+ * faces that share one stay joined.
+ */
+const canopy = (() => {
+  const shape = new IcosahedronGeometry(1, 1);
+  const position = shape.getAttribute("position");
+  const corner = new Vector3();
+  for (let index = 0; index < position.count; index += 1) {
+    corner.fromBufferAttribute(position, index);
+    const at = [corner.x, corner.y, corner.z].map((value) => Math.round(value * 1000));
+    corner.multiplyScalar(0.86 + (hashString(at.join(",")) % 1000) * 0.00028);
+    position.setXYZ(index, corner.x, corner.y, corner.z);
+  }
+  shape.computeVertexNormals();
+  return shape;
+})();
+
+/**
+ * A low-poly tree in one of three shapes, picked by the seed: one round
+ * crown, a crown with two smaller ones on side branches, or a tall lumpy one.
+ * A tapered trunk holds it up, and the seed turns and stretches each crown.
+ */
+function treeParts(seed: number): Part[] {
+  const random = seededRandom(hashString(`tree:${seed}`));
+  const shape = seed % 3;
+  const trunkHeight = shape === 2 ? 1.25 : 1.1;
+  const parts: Part[] = [
     {
-      geometry: geometry.cylinder,
-      matrix: chain(translate(0, 0.35, 0), scale(0.12, 0.7, 0.12)),
+      geometry: trunkSegment,
+      matrix: chain(
+        translate(0, trunkHeight / 2, 0),
+        rotateY(random() * Math.PI),
+        scale(0.12, trunkHeight, 0.12),
+      ),
       color: palette.treeTrunk,
-    },
-    {
-      geometry: geometry.foliage,
-      matrix: chain(translate(0, 1.25, 0), scale(0.75)),
-      color: palette.treeLeaf,
       flat: true,
     },
   ];
+  /** A thin branch leaning `tilt` off upright toward `heading`; returns where its tip ends. */
+  const branch = (heading: number, tilt: number, length: number, from: number): Vec3 => {
+    parts.push({
+      geometry: trunkSegment,
+      matrix: chain(
+        translate(0, from, 0),
+        rotateY(heading),
+        rotateZ(-tilt),
+        translate(0, length / 2, 0),
+        scale(0.045, length, 0.045),
+      ),
+      color: palette.treeTrunk,
+      flat: true,
+    });
+    const reach = Math.sin(tilt) * length;
+    return [Math.cos(heading) * reach, from + Math.cos(tilt) * length, -Math.sin(heading) * reach];
+  };
+  /** A crown of leaves. */
+  const crown = (x: number, y: number, z: number, size: number, stretch = 1) => {
+    const leaves = chain(
+      translate(x, y, z),
+      rotateY(random() * Math.PI * 2),
+      rotateX((random() - 0.5) * 0.6),
+      scale(size, size * stretch * (0.85 + random() * 0.2), size),
+    );
+    parts.push({ geometry: canopy, matrix: leaves, color: palette.treeLeaf, flat: true });
+  };
+  if (shape === 0) {
+    crown(0, trunkHeight + 0.5, 0, 0.82);
+    // A bare twig poking out under the crown.
+    branch(random() * Math.PI * 2, 0.9, 0.45, trunkHeight * 0.55);
+  } else if (shape === 1) {
+    crown(0, trunkHeight + 0.4, 0, 0.6);
+    const heading = random() * Math.PI;
+    for (const side of [0, Math.PI]) {
+      const [x, y, z] = branch(heading + side, 0.9, 0.75, trunkHeight * 0.6);
+      crown(x, y + 0.05, z, 0.38);
+    }
+  } else {
+    crown(0, trunkHeight + 0.75, 0, 0.55, 1.6);
+    crown(0.18, trunkHeight + 1.35, 0.05, 0.4, 1.3);
+  }
+  return parts;
 }
 
 /** One family's pile, in front of the parent; its kids mine it from the sides. */
 function pileParts(seed: number): Part[] {
-  const frame = chain(translate(0, 0, 0.95), rotateY((seed % 360) * (Math.PI / 180)), scale(0.55));
+  const frame = chain(translate(0, 0, 0.95), rotateY((seed % 360) * (Math.PI / 180)), scale(0.64));
   return rockPile(seed).map((rock) => ({
     geometry: geometry.foliage,
     matrix: chain(
@@ -319,65 +396,108 @@ function pileParts(seed: number): Part[] {
   }));
 }
 
-const PALM_SEGMENTS = 7;
-const PALM_FRONDS = 8;
+const PALM_SEGMENTS = 8;
+const PALM_FRONDS = 9;
+
+/** A trunk piece: six-sided and narrower at the top, so stacked ones step in like rings. */
+const trunkSegment = new CylinderGeometry(0.72, 1, 1, 6);
 
 /**
- * A coconut palm: a ringed trunk curving away from upright, a crown of
- * drooping two-part fronds and a cluster of coconuts. Height and bend come
- * from the seed; the prop's facing sets which way it leans.
+ * One palm frond, a unit long along +x: a blade folded down from its midrib,
+ * widest a third of the way out and tapering to a point, rising from the
+ * crown and drooping toward the tip. Drawn on both sides, since the camera
+ * sees under the drooping ones.
+ */
+const palmFrond = (() => {
+  const stations: ReadonlyArray<readonly [x: number, width: number]> = [
+    [0, 0.02],
+    [0.18, 0.13],
+    [0.4, 0.15],
+    [0.65, 0.11],
+    [0.85, 0.06],
+    [1, 0],
+  ];
+  const positions: number[] = [];
+  for (const [x, width] of stations) {
+    const y = 0.4 * x - 0.8 * x * x;
+    // Edge, midrib, edge: the edges hang below the midrib, folding the blade.
+    positions.push(x, y - width * 0.5, -width, x, y, 0, x, y - width * 0.5, width);
+  }
+  const front: number[] = [];
+  for (let index = 0; index + 1 < stations.length; index += 1) {
+    const [a, b] = [index * 3, (index + 1) * 3];
+    front.push(a, b, a + 1, a + 1, b, b + 1, a + 1, b + 1, a + 2, a + 2, b + 1, b + 2);
+  }
+  const back = front.map((_, index) => front[front.length - 1 - index]!);
+  const frond = new BufferGeometry();
+  frond.setAttribute("position", new Float32BufferAttribute(positions, 3));
+  frond.setIndex([...front, ...back]);
+  frond.computeVertexNormals();
+  return frond;
+})();
+
+/**
+ * A low-poly coconut palm: a trunk of stacked, faceted segments curving away
+ * from upright, a cluster of coconuts and a crown of folded fronds, some
+ * reaching up and some drooping. Shape comes from the seed; the prop's
+ * facing sets which way it leans.
  */
 function palmParts(seed: number): Part[] {
-  const height = 2.3 + (seed % 7) * 0.12;
-  const bend = 0.45 + (seed % 5) * 0.1;
+  const random = seededRandom(hashString(`palm:${seed}`));
+  const height = 2.4 + random() * 0.9;
+  const bend = 0.3 + random() * 0.45;
   const segment = height / PALM_SEGMENTS;
   // The trunk follows x = bend * t², so it leans more toward the top.
   const at = (t: number) => bend * t * t;
   const parts: Part[] = [];
   for (let index = 0; index < PALM_SEGMENTS; index += 1) {
     const t = (index + 0.5) / PALM_SEGMENTS;
-    const radius = 0.15 - t * 0.06;
+    // A flared foot, then a steady taper.
+    const radius = (index === 0 ? 0.2 : 0.16) - t * 0.06;
     parts.push({
-      geometry: geometry.cylinder,
+      geometry: trunkSegment,
       matrix: chain(
         translate(at(t), (index + 0.5) * segment, 0),
         rotateZ(-Math.atan((2 * bend * t) / height)),
-        scale(radius, segment * 1.04, radius),
+        // Each segment turned a little, so the facets don't line up.
+        rotateY(random() * Math.PI),
+        scale(radius, segment * 1.08, radius),
       ),
       color: index % 2 === 0 ? palette.palmTrunk : palette.palmTrunkDark,
+      flat: true,
     });
   }
-  for (let index = 0; index < 3; index += 1) {
-    const angle = (index / 3) * Math.PI * 2 + 0.4;
+  const crown = translate(at(1), height, 0);
+  for (let index = 0; index < 4; index += 1) {
+    const angle = (index / 4) * Math.PI * 2 + random();
     parts.push({
-      geometry: geometry.puff,
-      matrix: translate(at(1) + Math.cos(angle) * 0.13, height - 0.12, Math.sin(angle) * 0.13),
-      color: palette.coconut,
-    });
-  }
-  for (let index = 0; index < PALM_FRONDS; index += 1) {
-    const color = index % 2 === 0 ? palette.palmLeaf : palette.palmLeafDark;
-    // Rising from the crown, then drooping toward the tip.
-    const frond = chain(
-      translate(at(1), height, 0),
-      rotateY((index / PALM_FRONDS) * Math.PI * 2 + (seed % 10) * 0.07),
-      rotateZ(index % 2 === 0 ? 0.4 : 0.2),
-    );
-    parts.push({
-      geometry: geometry.box,
-      matrix: chain(frond, translate(0.42, 0, 0), scale(0.85, 0.04, 0.34)),
-      color,
-    });
-    parts.push({
-      geometry: geometry.box,
+      geometry: geometry.foliage,
       matrix: chain(
-        frond,
-        translate(0.82, 0, 0),
-        rotateZ(-0.85),
-        translate(0.36, 0, 0),
-        scale(0.75, 0.035, 0.24),
+        crown,
+        translate(Math.cos(angle) * 0.12, -0.13 - (index % 2) * 0.05, Math.sin(angle) * 0.12),
+        rotateX(random() * 3),
+        scale(0.11),
       ),
-      color,
+      color: palette.coconut,
+      flat: true,
+    });
+  }
+  const turn = random() * Math.PI * 2;
+  for (let index = 0; index < PALM_FRONDS; index += 1) {
+    // Every third frond reaches up; the rest arch out and droop.
+    const pitch = index % 3 === 0 ? 0.75 + random() * 0.25 : 0.1 + random() * 0.3;
+    const length = 1.25 + random() * 0.45;
+    parts.push({
+      geometry: palmFrond,
+      matrix: chain(
+        crown,
+        rotateY(turn + ((index + random() * 0.4) / PALM_FRONDS) * Math.PI * 2),
+        rotateZ(pitch),
+        rotateX((random() - 0.5) * 0.5),
+        scale(length, length, length * 1.1),
+      ),
+      color: index % 2 === 0 ? palette.palmLeaf : palette.palmLeafDark,
+      flat: true,
     });
   }
   return parts;
@@ -477,14 +597,7 @@ const ROCK_TONES = [palette.stone, palette.stoneDark, palette.stoneLight];
  * same on every visit. Greys only, so piles never compete with characters.
  */
 function rockPile(seed: number): PileRock[] {
-  let state = seed || 1;
-  const random = () => {
-    // xorshift32: cheap, stable across platforms.
-    state ^= state << 13;
-    state ^= state >>> 17;
-    state ^= state << 5;
-    return (state >>> 0) / 4294967296;
-  };
+  const random = seededRandom(seed);
   const core = 0.7 + random() * 0.35;
   const rocks: PileRock[] = [
     {
@@ -498,7 +611,8 @@ function rockPile(seed: number): PileRock[] {
   const count = 4 + Math.floor(random() * 3);
   for (let index = 0; index < count; index += 1) {
     const angle = (index / count) * Math.PI * 2 + random() * 0.6;
-    const distance = 0.55 + random() * 0.3;
+    // Close in around the big one, so the pile grows taller without crowding its miners.
+    const distance = 0.5 + random() * 0.25;
     const size = 0.3 + random() * 0.3;
     rocks.push({
       key: index + 1,
