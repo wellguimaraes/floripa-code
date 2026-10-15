@@ -580,7 +580,7 @@ export default function WorldCanvas(props: {
     }
   };
 
-  // Hovering an island tags every character on it with its thread title;
+  // Hovering an island tags its characters with their thread titles;
   // the one under the pointer comes to the front. Clicking it shows the full title.
   // The character whose chat is open keeps its tag, a bigger one, hovered or not.
   const [hoveredIsland, setHoveredIsland] = useState<string | null>(null);
@@ -606,8 +606,11 @@ export default function WorldCanvas(props: {
     setArchiveChatAgent(() => archiveChat.current());
     return () => setArchiveChatAgent(null);
   }, [archiveChat, chatCharacterKey]);
+  // Subagents tag only under the pointer, so they don't crowd their parent's tag.
   const tagged = [
-    ...(islands.find((island) => island.key === hoveredIsland)?.characters ?? []),
+    ...(islands.find((island) => island.key === hoveredIsland)?.characters ?? []).filter(
+      (character) => !character.facts.kid || character.facts.key === hoveredKey,
+    ),
     ...(chatCharacter !== undefined && chatCharacter.facts.projectKey !== hoveredIsland
       ? [chatCharacter]
       : []),
