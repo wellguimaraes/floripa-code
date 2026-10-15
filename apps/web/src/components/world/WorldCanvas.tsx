@@ -31,6 +31,7 @@ import {
   readThreadShell,
   useProjects,
   useThreadShells,
+  waitForThreadShell,
 } from "../../state/entities";
 import { useUiStateStore } from "../../uiStateStore";
 import { toastManager } from "../ui/toast";
@@ -1026,8 +1027,13 @@ export default function WorldCanvas(props: {
                   }),
                 );
                 setNewAgent(null);
-                // An open chat moves on to the new agent.
-                if (selectedKey !== null) switchChat(thread);
+                // An open chat moves on to the new agent, once the client has its
+                // thread: the chat route closes on a thread it hasn't heard of.
+                if (selectedKey !== null) {
+                  void waitForThreadShell(thread.ref).then((found) => {
+                    if (found) switchChat(thread);
+                  });
+                }
               }}
             />
           </div>
