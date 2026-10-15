@@ -1,4 +1,5 @@
 import {
+  BufferGeometry,
   CircleGeometry,
   Color,
   DataTexture,
@@ -10,7 +11,7 @@ import {
 } from "three";
 
 import type { TerrainKind, WorldDefinition } from "../definition/types";
-import { hashString } from "../engine/hash";
+import { hashString, seededRandom } from "../engine/hash";
 import { toFaded } from "./lighting";
 import { palette } from "./palette";
 
@@ -257,4 +258,45 @@ export function wavyDiscEdge(radius: number): (angle: number) => number {
   const seed = hashString(`shallows:${radius}`) % 1000;
   return (angle) =>
     0.35 * (Math.sin(4 * angle + seed) * 0.5 + Math.sin(7 * angle + seed * 3) * 0.5);
+}
+
+/** Segments round the foam at the shore; few enough that its edge reads as low-poly. */
+const FOAM_SEGMENTS = 56;
+
+const foamCache = new Map<number, BufferGeometry>();
+
+/**
+ * A flat band of foam where a round sand patch of `radius` meets the water,
+ * following the sand's wobbling outline. Its inner edge tucks under the
+ * sand; its outer edge zigzags in and out, like surf breaking on the beach.
+ */
+export function shoreFoamGeometry(radius: number): BufferGeometry {
+  const cached = foamCache.get(radius);
+  if (cached !== undefined) return cached;
+  // The sand's shoulder meets the shallows at about its radius (see `profile`).
+  const wobble = wobbleAt("sand", radius, TERRAIN_TOP.sand);
+  const random = seededRandom(hashString(`foam:${radius}`));
+  const reaches = Array.from({ length: FOAM_SEGMENTS }, () => 0.12 + 0.2 * random());
+  const positions: number[] = [];
+  const indices: number[] = [];
+  for (let index = 0; index <= FOAM_SEGMENTS; index += 1) {
+    const angle = (index / FOAM_SEGMENTS) * Math.PI * 2;
+    const shore = radius * wobble(angle);
+    const inner = shore - 0.15;
+    // The seam repeats the first point, so the band closes.
+    const outer = shore + reaches[index % FOAM_SEGMENTS]!;
+    const sin = Math.sin(angle);
+    const cos = Math.cos(angle);
+    positions.push(sin * inner, 0, cos * inner, sin * outer, 0, cos * outer);
+    if (index < FOAM_SEGMENTS) {
+      const at = index * 2;
+      indices.push(at, at + 1, at + 2, at + 1, at + 3, at + 2);
+    }
+  }
+  const band = new BufferGeometry();
+  band.setAttribute("position", new Float32BufferAttribute(positions, 3));
+  band.setIndex(indices);
+  band.computeVertexNormals();
+  foamCache.set(radius, band);
+  return band;
 }

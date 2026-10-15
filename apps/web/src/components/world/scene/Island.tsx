@@ -38,6 +38,7 @@ import {
   groundHeight,
   roundPatchGeometry,
   sandGrainTexture,
+  shoreFoamGeometry,
   wavyDiscEdge,
   wavyDiscGeometry,
   TERRAIN_TOP,
@@ -61,13 +62,15 @@ export interface FurnitureSpot {
 const LAWN_BANDS = [0.8, 0.58, 0.34];
 
 /**
- * The shallows around an empty island: in its sea shades like the rest of it,
- * a little lighter, so they still read as water around the dimmed sand.
+ * Water round an empty island: in its sea shades like the rest of it, `lift`
+ * lighter, so it still reads as water around the dimmed sand.
  */
-const IDLE_SHALLOWS = (() => {
-  const shade = new Color(toFaded(palette.shallows)).getHSL({ h: 0, s: 0, l: 0 }, SRGBColorSpace);
-  return `#${new Color().setHSL(shade.h, shade.s, shade.l + 0.06, SRGBColorSpace).getHexString()}`;
-})();
+function idleWater(color: string, lift: number): string {
+  const shade = new Color(toFaded(color)).getHSL({ h: 0, s: 0, l: 0 }, SRGBColorSpace);
+  return `#${new Color().setHSL(shade.h, shade.s, shade.l + lift, SRGBColorSpace).getHexString()}`;
+}
+const IDLE_SHALLOWS = idleWater(palette.shallows, 0.06);
+const IDLE_FOAM = idleWater(palette.foam, 0.2);
 
 /** How far the outer shallows reach past a sand patch's edge. */
 const LAGOON_REACH = 2.1;
@@ -130,6 +133,10 @@ export function Island(props: {
                 </mesh>
                 <mesh geometry={wavyDiscGeometry(patch.radius + 0.9)} position-y={-0.23}>
                   <LitMaterial color={faded ? IDLE_SHALLOWS : palette.shallows} />
+                </mesh>
+                {/* Surf where the sand meets the water, over the shallows. */}
+                <mesh geometry={shoreFoamGeometry(patch.radius)} position-y={-0.225}>
+                  <LitMaterial color={faded ? IDLE_FOAM : palette.foam} />
                 </mesh>
               </FadedContext>
             ) : null}
