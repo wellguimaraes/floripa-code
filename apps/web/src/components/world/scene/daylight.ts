@@ -3,8 +3,8 @@ import { Color, MathUtils } from "three";
 import { palette } from "./palette";
 
 /**
- * The world's light through the day, from the hour (0 to 24, local time): night
- * in moonlight, a golden sunrise, plain daylight, a golden afternoon, a red
+ * The world's light through the day, from the hour (0 to 24, local time): a
+ * warm dusk-lit night, a golden sunrise, plain daylight, a golden afternoon, a red
  * sunset, and night again. Pure, so the scene and the tests read the same day.
  */
 
@@ -26,12 +26,16 @@ interface Keyframe {
   readonly night: number;
 }
 
+/**
+ * Night keeps early dusk's light, a dim warm glow just past sunset, rather
+ * than going cold and blue; only the sky goes dark.
+ */
 const NIGHT = {
-  key: "#9fb4ff",
-  keyIntensity: 0.4,
-  fillSky: "#6a7fd0",
-  fillGround: "#28305a",
-  fillIntensity: 1.5,
+  key: "#f3857f",
+  keyIntensity: 1.244,
+  fillSky: "#867fc3",
+  fillGround: "#38395d",
+  fillIntensity: 1.331,
   background: palette.nightSky,
   night: 1,
 } as const;
