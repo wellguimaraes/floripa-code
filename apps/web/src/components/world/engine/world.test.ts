@@ -66,6 +66,7 @@ const testWorld: WorldDefinition = {
     columns: 2,
     gap: 2,
     sign: { position: [0, 0, 0], facing: 0 },
+    manager: { position: [0, 0, 0], facing: 0 },
     ripple: { when: [{ status: "approval" }], fps: 20 },
     newAgents: { area: "desks", marker: [0, 1, 0] },
     sharks: { intervalSeconds: [20, 45], surfaceSeconds: 4, offshore: [1, 2], fps: 24 },

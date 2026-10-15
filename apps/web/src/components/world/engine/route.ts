@@ -127,12 +127,13 @@ export function islandObstacles(definition: WorldDefinition): Obstacle[] {
       if (kind !== undefined) add(kind, slot, area.slotPropScale);
     }
   }
-  // The sign's post.
-  obstacles.push({
-    x: definition.archipelago.sign.position[0],
-    z: definition.archipelago.sign.position[2],
-    radius: 0.4,
-  });
+  // The sign's post, and the manager.
+  for (const [slot, radius] of [
+    [definition.archipelago.sign, 0.4],
+    [definition.archipelago.manager, 0.65],
+  ] as const) {
+    obstacles.push({ x: slot.position[0], z: slot.position[2], radius });
+  }
   obstacleCache.set(definition, obstacles);
   return obstacles;
 }

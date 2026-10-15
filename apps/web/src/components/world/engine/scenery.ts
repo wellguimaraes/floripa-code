@@ -128,7 +128,7 @@ function spotKeepouts(definition: WorldDefinition, spots: ReadonlyArray<Vec3>): 
   return keepouts;
 }
 
-/** The props and the sign. */
+/** The props, the sign and the manager. */
 function layoutKeepouts(definition: WorldDefinition): Keepout[] {
   const keepouts: Keepout[] = [];
   for (const prop of definition.props) {
@@ -139,6 +139,7 @@ function layoutKeepouts(definition: WorldDefinition): Keepout[] {
     );
   }
   keepouts.push(point(definition.archipelago.sign.position, 1.1));
+  keepouts.push(point(definition.archipelago.manager.position, 0.9));
   return keepouts;
 }
 

@@ -200,6 +200,8 @@ export interface WorldArchipelago {
   readonly wander?: number;
   /** Where the project's name sign stands on each island. */
   readonly sign: WorldSlot;
+  /** Where the island's manager stands, who forwards your messages to its agents. */
+  readonly manager: WorldSlot;
   /**
    * The water ripples around an island while any character on it matches one
    * of these, e.g. one waiting on your answer. Animates at `fps` only then.

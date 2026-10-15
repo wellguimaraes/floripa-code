@@ -54,8 +54,10 @@ export function useBubbleSuggestions(input: {
   readonly provider: ServerProvider | null;
   readonly slashCommands: ReadonlyArray<BubbleSlashCommand>;
   readonly onSlashCommand: (command: ComposerSlashCommand) => void;
+  /** False never offers `/` commands or `$` skills, e.g. before it's known who gets the message. */
+  readonly commands: boolean;
 }) {
-  const { environmentId, cwd, provider, slashCommands, onSlashCommand } = input;
+  const { environmentId, cwd, provider, slashCommands, onSlashCommand, commands } = input;
   const showSkillsInSlashMenu = useEnvironmentSettings(
     environmentId,
     (settings) => settings.showSkillsInSlashMenu,
@@ -161,7 +163,8 @@ export function useBubbleSuggestions(input: {
   const open =
     trigger !== null &&
     trigger.kind !== "pull-request" &&
-    (trigger.kind !== "path" || cwd !== null);
+    (trigger.kind !== "path" || cwd !== null) &&
+    (commands || (trigger.kind !== "slash-command" && trigger.kind !== "skill"));
   const searchKey =
     trigger === null ? null : `${trigger.kind}:${trigger.query.trim().toLowerCase()}`;
   const activeItemId = resolveComposerMenuActiveItemId({

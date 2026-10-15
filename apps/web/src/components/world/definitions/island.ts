@@ -138,7 +138,7 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
   });
   const node = (x: number, z: number): Vec3 => [x * scale, 0, z * scale];
   const perArea = (count: number) => Math.round(count * scale * scale);
-  const dunes = { center: at(2.5, -6), radius: 3 * scale };
+  const dunes = { center: at(1.5, -6.8), radius: 3 * scale };
 
   // A point `along` the pier from its foot and `side` units to its right (local +x).
   const shore = 9.5 * scale - PIER_LANDING;
@@ -242,9 +242,10 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
       dunes: {
         kind: "fixed",
         entry: "dunes-path",
-        slots: arc({ radius: 7.9 * scale, degrees: spread(-105, -62, 4) }).map(alongShore),
+        // Clear of the manager, who stands at -55 degrees.
+        slots: arc({ radius: 7.9 * scale, degrees: spread(-118, -80, 4) }).map(alongShore),
         spillover: [
-          ...arc({ radius: 6.4 * scale, degrees: [-35, -50] }),
+          ...arc({ radius: 6.4 * scale, degrees: [-35, -75] }),
           ...arc({ radius: 8.75 * scale, degrees: [-120] }),
         ].map(alongShore),
       },
@@ -342,6 +343,12 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
       wander: 3,
       // Turned a little off the camera so the board's depth shows.
       sign: { position: node(-5.4, -6.4), facing: Math.PI / 4 - 0.35 },
+      // On the sand between the pier's walk and the back palms, watching the
+      // miners, turned enough toward the camera to show his face.
+      manager: {
+        position: node(7 * Math.cos((-55 * Math.PI) / 180), 7 * Math.sin((-55 * Math.PI) / 180)),
+        facing: -0.45,
+      },
       ripple: {
         when: [{ status: ["approval", "input"] }],
         fps: 20,

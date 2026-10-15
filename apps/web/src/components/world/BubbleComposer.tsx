@@ -61,6 +61,8 @@ export function BubbleComposer(props: {
   /** Built-in `/` commands the bubble handles itself, such as `/plan`. */
   readonly slashCommands?: ReadonlyArray<BubbleSlashCommand>;
   readonly onSlashCommand?: (command: ComposerSlashCommand) => void;
+  /** False never offers `/` commands or `$` skills; on unless set. */
+  readonly commands?: boolean;
   readonly attachments: ReturnType<typeof useBubbleAttachments>;
   readonly text: string;
   readonly onTextChange: (text: string) => void;
@@ -129,6 +131,7 @@ export function BubbleComposer(props: {
     provider: props.provider,
     slashCommands: props.slashCommands ?? NO_SLASH_COMMANDS,
     onSlashCommand: (command) => props.onSlashCommand?.(command),
+    commands: props.commands ?? true,
   });
   // Below the text field when there's room, else above; picked when the list opens so it
   // doesn't jump while narrowing.

@@ -482,7 +482,7 @@ function watchTarget(head: Object3D, rest: Quaternion, target: Object3D, time: n
  * shin along `forearm` when given. Works from joint positions, so it needs no
  * knowledge of the rig's bone axes.
  */
-function pointLimb(
+export function pointLimb(
   arm: ReadonlyArray<Object3D | null>,
   direction: Vector3,
   forearm: Vector3 = direction,

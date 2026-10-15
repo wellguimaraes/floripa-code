@@ -12,3 +12,11 @@ texture's gradient bands live on as each vertex's UV, which the world recolours.
 
 Source: https://kaylousberg.itch.io/kaykit-forest
 License: Creative Commons Zero (CC0), http://creativecommons.org/publicdomain/zero/1.0/
+
+manager.glb is the "Ranger" from KayKit : Adventurers Character Pack (2.0),
+free tier, by Kay Lousberg (www.kaylousberg.com), without his quiver, with
+the Idle_A and Interact animations from the pack's Rig_Medium_General. It
+keeps its own texture.
+
+Source: https://kaylousberg.itch.io/kaykit-adventurers
+License: Creative Commons Zero (CC0), http://creativecommons.org/publicdomain/zero/1.0/

@@ -1,6 +1,6 @@
 import { Canvas, events, type ThreeEvent, useFrame, useThree } from "@react-three/fiber";
 import { PlusIcon } from "lucide-react";
-import { scopedProjectKey } from "@t3tools/client-runtime/environment";
+import { scopedProjectKey, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -60,15 +60,18 @@ import { Island, type FurnitureSpot } from "./scene/Island";
 import { afterPaint, whenIdle } from "./scene/frames";
 import { FadedContext, WorldDaylight } from "./scene/lighting";
 import { palette } from "./scene/palette";
+import { Manager } from "./scene/Manager";
 import { SharkSightings } from "./scene/Sharks";
 import { groundHeight, surfaceAt } from "./scene/terrain";
 import { SIGN_TOP, Sign, signTextColor } from "./scene/Sign";
+import { ManagerBubble, type ManagerStatus } from "./ManagerBubble";
 import { NewAgentBubble } from "./NewAgentBubble";
 import { NewAgentProjectPicker } from "./NewAgentProjectPicker";
 import { useIslandSignStats } from "./useIslandSignStats";
 import { useWorldHueStore } from "./worldHueStore";
 import { useWorldLookStore, type WorldLook } from "./worldLookStore";
 import { useWorldArrangementStore } from "./worldArrangementStore";
+import { useWorldManagerStore } from "./worldManagerStore";
 import { useWorldModeStore } from "./worldModeStore";
 import { useWorldVisibilityStore } from "./worldVisibilityStore";
 import { AddProjectButton } from "./AddProjectButton";
@@ -313,8 +316,49 @@ export default function WorldCanvas(props: {
     }
     // Opening a character's bubble drops a new-agent bubble nothing was typed into.
     if (bubbleKey !== character.facts.key) dropUntypedNewAgent();
+    closeManager();
     setBubbleKey((current) => (current === character.facts.key ? null : character.facts.key));
   };
+  // One island's manager popover at a time. Closed while he is thinking or
+  // waiting on an answer, it stays mounted but hidden, so the question waits
+  // and his balloon shows; clicking him brings it back.
+  const [manager, setManager] = useState<{
+    readonly islandKey: string;
+    readonly open: boolean;
+  } | null>(null);
+  const [managerStatus, setManagerStatus] = useState<ManagerStatus>("idle");
+  // The top bar's megaphone toggle hides every manager, and drops a talk in progress.
+  const managersOn = useWorldManagerStore((state) => state.enabled);
+  useEffect(() => {
+    if (managersOn) return;
+    setManager(null);
+    setCalling(null);
+  }, [managersOn]);
+  // Who he is calling a message over to, for a few seconds after you send it.
+  const [calling, setCalling] = useState<{
+    readonly islandKey: string;
+    readonly agentKey: string | null;
+  } | null>(null);
+  useEffect(() => {
+    if (calling === null) return;
+    const id = setTimeout(() => setCalling(null), MANAGER_CALL_MS);
+    return () => clearTimeout(id);
+  }, [calling]);
+  const closeManager = () =>
+    setManager((current) =>
+      current === null || managerStatus === "idle" ? null : { ...current, open: false },
+    );
+  const toggleManager = (islandKey: string) => {
+    setBubbleKey(null);
+    setPicked(new Set());
+    dropUntypedNewAgent();
+    if (manager?.islandKey === islandKey && manager.open) closeManager();
+    else setManager({ islandKey, open: true });
+  };
+  const managerKeys = useMemo(
+    () => (manager?.open === true ? [`manager:${manager.islandKey}`] : []),
+    [manager],
+  );
   const togglePicked = (character: WorldCharacter) => {
     // The character already singled out (its bubble or open chat) starts the selection.
     const anchor = bubble?.facts.key ?? chatKey;
@@ -622,6 +666,7 @@ export default function WorldCanvas(props: {
       setBubbleKey(null);
       setPicked(new Set());
       dropUntypedNewAgent();
+      closeManager();
     }
   };
 
@@ -739,6 +784,13 @@ export default function WorldCanvas(props: {
       newAgentRef.current.style.transform = `translate(${point.x}px, ${point.y}px)`;
     }
   }, []);
+  const managerRef = useRef<HTMLDivElement>(null);
+  const moveManager = useCallback((points: ReadonlyArray<ScreenPoint>) => {
+    const point = points[0];
+    if (point !== undefined && managerRef.current !== null) {
+      managerRef.current.style.transform = `translate(${point.x}px, ${point.y}px)`;
+    }
+  }, []);
   const containerRef = useRef<HTMLDivElement>(null);
   // The map zooms on wheel; overlays pass it on so that keeps working under the pointer.
   const forwardWheel = (event: React.WheelEvent) =>
@@ -793,6 +845,37 @@ export default function WorldCanvas(props: {
     return () => document.removeEventListener("pointerdown", closeOutside, true);
   }, [newAgentOpen]);
 
+  // And the manager's, which keeps a question it is waiting on (see closeManager).
+  const managerOpen = manager?.open === true;
+  const closeManagerOutside = useEffectEvent(() => closeManager());
+  useEffect(() => {
+    if (!managerOpen) return;
+    const closeOutside = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target === null || managerRef.current?.contains(target)) return;
+      if (
+        target instanceof Element &&
+        target.closest(
+          '[data-slot="popover-positioner"], [data-slot="dialog-viewport"], [data-slot="dialog-backdrop"]',
+        )
+      ) {
+        return;
+      }
+      if (containerRef.current?.querySelector("canvas")?.contains(target)) return;
+      closeManagerOutside();
+    };
+    document.addEventListener("pointerdown", closeOutside, true);
+    return () => document.removeEventListener("pointerdown", closeOutside, true);
+  }, [managerOpen]);
+
+  // The hovered island's manager gets a tag too, unless his popover is open over him.
+  const managerTagKey =
+    !managersOn ||
+    hoveredIsland === null ||
+    hoveredLeaving ||
+    (manager?.islandKey === hoveredIsland && manager.open)
+      ? null
+      : `manager:${hoveredIsland}`;
   const tagRefs = useRef(new Map<string, HTMLDivElement>());
   const moveTags = useCallback((points: ReadonlyArray<ScreenPoint>) => {
     const sizes = new Map<string, { width: number; height: number }>();
@@ -847,10 +930,14 @@ export default function WorldCanvas(props: {
           />
           <FollowTracker
             roots={roots}
-            keys={tagged.map((c) => c.facts.key)}
+            keys={[
+              ...tagged.map((c) => c.facts.key),
+              ...(managerTagKey === null ? [] : [managerTagKey]),
+            ]}
             hatted={hatted}
             onMove={moveTags}
           />
+          <FollowTracker roots={roots} keys={managerKeys} hatted={NO_HATS} onMove={moveManager} />
           <PointTracker points={newAgentSpots} onMove={moveSpots} />
           <PointTracker
             points={newAgent === null ? [] : [{ key: "new-agent", position: newAgent.position }]}
@@ -907,6 +994,34 @@ export default function WorldCanvas(props: {
                       onBranchesClick={() => setBranchesOn(island.key)}
                     />
                   </FadedContext>
+                  {/* Like the sign, he keeps his colours on an empty island. */}
+                  {managersOn ? (
+                    <FadedContext value={false}>
+                      <Manager
+                        definition={island.definition}
+                        ground={groundHeight(island.definition)}
+                        scale={definition.movement.characterScale}
+                        thinking={manager?.islandKey === island.key && managerStatus === "thinking"}
+                        asking={
+                          manager?.islandKey === island.key &&
+                          !manager.open &&
+                          managerStatus === "asking"
+                        }
+                        hair={plate}
+                        callTarget={
+                          calling?.islandKey === island.key
+                            ? () =>
+                                calling.agentKey === null
+                                  ? null
+                                  : (roots.current.get(calling.agentKey) ?? null)
+                            : null
+                        }
+                        onSelect={() => toggleManager(island.key)}
+                        rootKey={`manager:${island.key}`}
+                        onRoot={registerRoot}
+                      />
+                    </FadedContext>
+                  ) : null}
                   {island.characters
                     .filter((character) => !abducted.has(character.facts.key))
                     .map((character) => (
@@ -992,6 +1107,7 @@ export default function WorldCanvas(props: {
           onWheel={forwardWheel}
           onClick={() => {
             setBubbleKey(null);
+            closeManager();
             newAgentDraft.current = "";
             setNewAgent({
               islandKey: spot.islandKey,
@@ -1039,6 +1155,71 @@ export default function WorldCanvas(props: {
                     if (found) switchChat(thread);
                   });
                 }
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
+      {manager !== null ? (
+        // Positioned by FollowTracker over the manager's head; hidden, not
+        // unmounted, while he waits on an answer with the popover closed.
+        <div
+          ref={managerRef}
+          className={cn(
+            "pointer-events-none absolute top-0 left-0 z-30",
+            !manager.open && "hidden",
+          )}
+        >
+          <div className="pointer-events-auto -translate-x-1/2 -translate-y-[calc(100%+0.75rem)]">
+            <ManagerBubble
+              key={manager.islandKey}
+              islandName={projectTitles.get(manager.islandKey) ?? "this island"}
+              project={projectRefs.get(manager.islandKey)!}
+              agents={(
+                islands.find((island) => island.key === manager.islandKey)?.characters ?? []
+              ).flatMap((character) =>
+                character.facts.kid ||
+                character.facts.ref.environmentId !==
+                  projectRefs.get(manager.islandKey)?.environmentId
+                  ? []
+                  : [
+                      {
+                        key: character.facts.key,
+                        ref: character.facts.ref,
+                        title: character.facts.title,
+                        worktreePath: character.facts.worktreePath,
+                        lastReplyAt: character.facts.lastReplyAt,
+                        working: character.facts.status === "working",
+                      },
+                    ],
+              )}
+              suggestedHue={suggestHue(
+                islands.find((island) => island.key === manager.islandKey) ?? { hues: new Map() },
+                palette.families.length,
+              )}
+              onStatus={setManagerStatus}
+              onClose={closeManager}
+              onCancel={() => setManager(null)}
+              onCall={(agentKey) => setCalling({ islandKey: manager.islandKey, agentKey })}
+              onStarted={(thread) => {
+                chooseHue(thread.ref.threadId, thread.hue);
+                const island = islands.find((i) => i.key === manager.islandKey);
+                const pile = island === undefined ? undefined : freePiles(island, definition)[0];
+                if (island === undefined || pile === undefined) return;
+                arrive(island, pile.slotIndex, thread);
+                setRequested((all) =>
+                  new Map(all).set(thread.key, {
+                    area: definition.archipelago.newAgents.area,
+                    slotIndex: pile.slotIndex,
+                  }),
+                );
+              }}
+              onOpenChat={(ref) => {
+                setManager(null);
+                // A new agent's thread reaches the client a moment after it starts.
+                void waitForThreadShell(ref).then((found) => {
+                  if (found) switchChat({ key: scopedThreadKey(ref), ref });
+                });
               }}
             />
           </div>
@@ -1093,6 +1274,26 @@ export default function WorldCanvas(props: {
             toolbar,
           )
         : null}
+      {managerTagKey !== null && hoveredIsland !== null ? (
+        // Positioned by FollowTracker with the other tags, above his head.
+        <div
+          key={managerTagKey}
+          ref={(tag) => {
+            if (tag === null) tagRefs.current.delete(managerTagKey);
+            else tagRefs.current.set(managerTagKey, tag);
+          }}
+          className="pointer-events-none absolute top-0 left-0 z-10"
+        >
+          <button
+            type="button"
+            onWheel={forwardWheel}
+            onClick={() => toggleManager(hoveredIsland)}
+            className="-translate-x-1/2 -translate-y-full pointer-events-auto flex cursor-pointer items-center rounded bg-popover/80 px-1.5 py-0.5 text-3xs leading-tight text-popover-foreground/90 shadow-sm"
+          >
+            Manager
+          </button>
+        </div>
+      ) : null}
       {tagged.map((character) => {
         const focused = character.facts.key === hoveredKey;
         const chatting = character.facts.key === chatKey;
@@ -1201,6 +1402,10 @@ function hitsCharacter(event: ThreeEvent<MouseEvent>): boolean {
 }
 
 const FOLLOW_HEIGHT = 1.6;
+/** How long the manager holds up his megaphone after you send a message. */
+const MANAGER_CALL_MS = 3000;
+/** The manager wears no hat. */
+const NO_HATS: ReadonlySet<string> = new Set();
 /** Extra height over a hatted head: the tallest hats rise about this far. */
 const HAT_LIFT = 0.35;
 /** Room between a balloon's top and the overlay above it. */
