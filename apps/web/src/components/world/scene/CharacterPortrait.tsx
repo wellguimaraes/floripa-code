@@ -55,26 +55,29 @@ export default function CharacterPortrait(props: {
 
 /**
  * Frames the figure from its feet to the top of its head (or hat), so it
- * fills the portrait's height exactly at any size.
+ * fills the portrait's height exactly at any size; shrunk to fit when the
+ * portrait is too narrow for it, so the arms and hair are never cut off.
  */
 function FitFigure(props: { readonly figure: React.RefObject<Group | null> }) {
   const { figure } = props;
   const get = useThree((state) => state.get);
-  const height = useThree((state) => state.size.height);
+  const { width, height } = useThree((state) => state.size);
   useLayoutEffect(() => {
     const group = figure.current;
-    if (group === null || height === 0) return;
+    if (group === null || width === 0 || height === 0) return;
     group.updateWorldMatrix(true, true);
     // Skinned vertices are measured through their bones, which only settle on render.
     group.traverse((object) => (object as SkinnedMesh).skeleton?.update());
     const bounds = new Box3().setFromObject(group, true);
-    const size = bounds.getSize(new Vector3()).y;
-    if (size === 0) return;
+    const size = bounds.getSize(new Vector3());
+    if (size.x === 0 || size.y === 0) return;
     const { camera, invalidate } = get();
-    camera.position.y = bounds.getCenter(new Vector3()).y;
-    camera.zoom = height / size;
+    const center = bounds.getCenter(new Vector3());
+    camera.position.x = center.x;
+    camera.position.y = center.y;
+    camera.zoom = Math.min(height / size.y, width / size.x);
     camera.updateProjectionMatrix();
     invalidate();
-  }, [figure, get, height]);
+  }, [figure, get, width, height]);
   return null;
 }

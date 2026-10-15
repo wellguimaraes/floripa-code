@@ -127,7 +127,7 @@ export const WorldChatCharacter = memo(function WorldChatCharacter({
     </Suspense>
   );
   if (chat === null || recolor === null) {
-    return <div className="w-8 shrink-0 self-stretch">{portrait}</div>;
+    return <div className="w-10 shrink-0 self-stretch">{portrait}</div>;
   }
 
   return (
@@ -142,7 +142,7 @@ export const WorldChatCharacter = memo(function WorldChatCharacter({
                   type="button"
                   aria-label="Change color"
                   className={cn(
-                    "w-8 shrink-0 cursor-pointer self-stretch rounded-md outline-none",
+                    "w-10 shrink-0 cursor-pointer self-stretch rounded-md outline-none",
                     "focus-visible:ring-2 focus-visible:ring-ring",
                   )}
                 />
