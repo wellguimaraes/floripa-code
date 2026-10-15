@@ -18,7 +18,7 @@ import { palette } from "./palette";
 /** The lantern's middle, where the light comes from. */
 const LANTERN_Y = 2.75;
 /** How far the lamp's pool of light reaches across the ground. */
-const POOL_RADIUS = 2.5;
+const POOL_RADIUS = 3.2;
 /** Down in the ground by day, roof and all; the island's sand and the sea hide it there. */
 const SUNK = -3.4;
 const RISE_MS = 1400;
@@ -142,13 +142,13 @@ export function Lamp(props: { readonly seed: number }) {
         >
           <meshBasicMaterial ref={lantern} color={palette.lampPost} onUpdate={keepColors} />
         </mesh>
-        <sprite ref={halo} position-y={LANTERN_Y} scale={1.6} raycast={noRaycast} visible={false}>
+        <sprite ref={halo} position-y={LANTERN_Y} scale={2} raycast={noRaycast} visible={false}>
           <spriteMaterial
             map={glowTexture()}
             color={palette.lampLight}
             blending={AdditiveBlending}
             transparent
-            opacity={0.6}
+            opacity={0.85}
             depthWrite={false}
             onUpdate={keepColors}
           />
@@ -168,7 +168,7 @@ export function Lamp(props: { readonly seed: number }) {
           color={palette.lampLight}
           blending={AdditiveBlending}
           transparent
-          opacity={0.5}
+          opacity={0.8}
           depthWrite={false}
           onUpdate={keepColors}
         />

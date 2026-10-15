@@ -19,7 +19,7 @@ const CAP_TOP = BOARD_LIFT + BOARD_HEIGHT + FRAME + 0.2;
 /** How high the sign reaches, lamps included, so the camera can fit it in. */
 export const SIGN_TOP = CAP_TOP + 0.6;
 /** The lamps' brightness; with `decay` 1 it fades with distance, not its square. */
-const LAMP_INTENSITY = 14;
+const LAMP_INTENSITY = 24;
 /** The lamps tip forward this far from level, to shine down on the island. */
 const LAMP_TILT = 0.6;
 /** Where the lamps' light lands: the island's middle, in front of the sign. */
