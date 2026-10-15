@@ -178,18 +178,23 @@ export function useWorldAgentWorkspaces(projectRef: ScopedProjectRef) {
   // The project can be a folder inside the repo, so its root isn't always the checkout's.
   const repoRoot = project?.repositoryIdentity?.rootPath ?? workspaceRoot;
   // A live query, not a one-shot read: ref lists are streams that stay open,
-  // so awaiting a settled result would never resolve.
+  // so awaiting a settled result would never resolve. `refresh` reads Git
+  // afresh rather than the server's recent snapshot.
   const refsAtom = useMemo(
     () =>
       workspaceRoot === null
         ? null
         : vcsEnvironment.listRefs({
             environmentId,
-            input: { cwd: workspaceRoot, limit: 200 },
+            input: { cwd: workspaceRoot, limit: 200, refresh: true },
           }),
     [environmentId, workspaceRoot],
   );
   const refs = useEnvironmentQuery(refsAtom);
+  // Branches and worktrees also change outside the app, e.g. in a terminal, so
+  // the picker reads them again every time it opens.
+  const { refresh: refreshRefs } = refs;
+  useEffect(() => refreshRefs(), [refreshRefs]);
   const isRepo = refs.failure === null && (refs.data?.isRepo ?? true);
   const worktrees = useMemo(
     () =>
