@@ -21,7 +21,7 @@ export function TimeSlider() {
         type="range"
         min={0}
         max={24}
-        step={0.25}
+        step={0.5}
         value={hour}
         onChange={(event) => setHour(event.currentTarget.valueAsNumber)}
         aria-label="Time of day"
