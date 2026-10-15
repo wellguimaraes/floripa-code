@@ -2,9 +2,11 @@ import { createContext, type ReactNode, useContext, useMemo } from "react";
 import { Color, SRGBColorSpace } from "three";
 
 import { useWorldHour } from "../worldTimeStore";
+import { useRainAmount } from "../worldWeatherStore";
 import { KeepColorContext, keepColors, SceneContrast } from "./contrast";
-import { type Daylight, daylightAt, type Direction, lightDirection } from "./daylight";
+import { type Daylight, daylightAt, type Direction, lightDirection, overcast } from "./daylight";
 import { palette } from "./palette";
+import { Rain } from "./Rain";
 
 /** True inside an island nobody is on any more: it shows in dark shades of the sea. */
 export const FadedContext = createContext(false);
@@ -89,9 +91,15 @@ export function LitMaterial(props: {
  * scene below re-renders when the context does, a few times an hour at most.
  */
 export function WorldDaylight(props: { readonly children: ReactNode }) {
-  const daylight = daylightAt(useWorldHour());
+  const rain = useRainAmount();
+  const clear = daylightAt(useWorldHour());
+  const daylight = overcast(clear, rain);
   const glow = step(daylight.night * CHARACTER_GLOW, 0.05);
-  const shadowOpacity = step(0.16 * Math.min(1, Math.max(0.5, daylight.keyIntensity / 1.6)), 0.02);
+  // Fainter in dim light, and nearly gone under rain clouds.
+  const shadowOpacity = step(
+    0.16 * Math.min(1, Math.max(0.5, clear.keyIntensity / 1.6)) * (1 - 0.75 * rain),
+    0.02,
+  );
   const [x, y, z] = daylight.direction;
   const timeOfDay = useMemo<TimeOfDay>(
     () => ({ light: [x, y, z], lampsOn: daylight.lampsOn, glow, shadowOpacity }),
@@ -101,6 +109,7 @@ export function WorldDaylight(props: { readonly children: ReactNode }) {
     <TimeOfDayContext value={timeOfDay}>
       <SceneContrast sky={daylight.background} />
       <WorldLights daylight={daylight} />
+      <Rain amount={rain} />
       {props.children}
     </TimeOfDayContext>
   );

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { daylightAt, lightDirection, SUNRISE, SUNSET } from "./daylight";
+import { daylightAt, lightDirection, overcast, SUNRISE, SUNSET } from "./daylight";
 import { palette } from "./palette";
 
 describe("daylightAt", () => {
@@ -52,5 +52,23 @@ describe("lightDirection", () => {
   it("moves in half-hour steps, so shadows are rebuilt only now and then", () => {
     expect(lightDirection(10.1)).toEqual(lightDirection(10));
     expect(lightDirection(10.3)).not.toEqual(lightDirection(10));
+  });
+});
+
+describe("overcast", () => {
+  it("leaves clear weather as it is", () => {
+    const noon = daylightAt(12);
+    expect(overcast(noon, 0)).toBe(noon);
+  });
+
+  it("softens the sun and greys the sky in full rain", () => {
+    const evening = daylightAt(17.5);
+    const rainy = overcast(evening, 1);
+    expect(rainy.keyIntensity).toBeLessThan(evening.keyIntensity);
+    expect(rainy.fillIntensity).toBeGreaterThan(evening.fillIntensity);
+    const spread = (color: { r: number; g: number; b: number }) =>
+      Math.max(color.r, color.g, color.b) - Math.min(color.r, color.g, color.b);
+    expect(spread(rainy.background)).toBeLessThan(spread(evening.background));
+    expect(spread(rainy.key)).toBeLessThan(spread(evening.key));
   });
 });

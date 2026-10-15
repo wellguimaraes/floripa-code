@@ -152,6 +152,32 @@ export function daylightAt(hour: number): Daylight {
 }
 
 /**
+ * `daylight` under rain clouds, `amount` of the way (0 clear, 1 full rain):
+ * the sun softens behind them and the brighter sky light makes up most of
+ * it, so the world stays about as bright; colours wash out toward grey, and
+ * the sky greys over.
+ */
+export function overcast(daylight: Daylight, amount: number): Daylight {
+  if (amount <= 0) return daylight;
+  const grey = (color: Color, washOut: number, darken = 0) => {
+    const level = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
+    return color
+      .clone()
+      .lerp(new Color(level, level, level), washOut * amount)
+      .multiplyScalar(1 - darken * amount);
+  };
+  return {
+    ...daylight,
+    key: grey(daylight.key, 0.6),
+    keyIntensity: daylight.keyIntensity * (1 - 0.45 * amount),
+    fillSky: grey(daylight.fillSky, 0.5),
+    fillGround: grey(daylight.fillGround, 0.4),
+    fillIntensity: daylight.fillIntensity * (1 + 0.2 * amount),
+    background: grey(daylight.background, 0.7, 0.08),
+  };
+}
+
+/**
  * Toward the light at this hour. By day the sun arcs from the camera's left at
  * sunrise, over behind the camera at midday, to its right at sunset, so the
  * island stays lit from the front; at night, the moon.

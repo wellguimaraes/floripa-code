@@ -58,6 +58,7 @@ export const palette = {
   signTextDark: "#1f1408",
   signTextLight: "#ffffff",
   foam: "#ffffff",
+  rain: "#d6e6ff",
   ufoHull: "#4a5059",
   ufoDome: "#7dd3fc",
   ufoLight: "#fde047",
