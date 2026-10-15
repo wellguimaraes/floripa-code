@@ -22,7 +22,7 @@ import { drawSoon } from "./frames";
 import { geometry } from "./geometries";
 import { Hat } from "./Hat";
 import { KeepColorContext, keepColors } from "./contrast";
-import { LitMaterial } from "./lighting";
+import { CharacterGlow, LitMaterial } from "./lighting";
 import { palette } from "./palette";
 import { SelectionRing } from "./SelectionRing";
 import type { Ground } from "./shadows";
@@ -258,91 +258,103 @@ export function Character(props: {
   return (
     // Position and heading are written by the frame loop, never by props, so a
     // re-render cannot snap a walking character to its destination.
-    // Everything it wears and carries keeps its colours at any contrast.
+    // Everything it wears and carries keeps its colours at any contrast, and
+    // glows a little, so the colours read at night.
     <KeepColorContext value>
-      <group ref={root} scale={scale}>
-        <mesh
-          ref={hitbox}
-          name={HITBOX_NAME}
-          geometry={geometry.hitbox}
-          position-y={HITBOX_CENTER_Y}
-          visible={false}
-          {...pointer}
-        />
-        <mesh geometry={geometry.shadow} rotation-x={-Math.PI / 2} position-y={0.012}>
-          <meshBasicMaterial color={palette.shadow} transparent opacity={0.18} depthWrite={false} />
-        </mesh>
-        {selected ? (
-          <SelectionRing
-            fps={movement.walkFps}
-            sandColor={shades.base}
-            onSand={() => {
-              const [x, , z] = motion.current.position;
-              return surface(x, z) === "sand";
-            }}
+      <CharacterGlow>
+        <group ref={root} scale={scale}>
+          <mesh
+            ref={hitbox}
+            name={HITBOX_NAME}
+            geometry={geometry.hitbox}
+            position-y={HITBOX_CENTER_Y}
+            visible={false}
+            {...pointer}
           />
-        ) : null}
-        <Suspense
-          fallback={
-            // The shape-built figure stands in while the model downloads.
-            <ShapeBody
-              rig={{ body, head, armLeft, armRight, legLeft, legRight }}
-              shades={shades}
-              pose={pose}
+          <mesh geometry={geometry.shadow} rotation-x={-Math.PI / 2} position-y={0.012}>
+            <meshBasicMaterial
+              color={palette.shadow}
+              transparent
+              opacity={0.18}
+              depthWrite={false}
             />
-          }
-        >
-          <CharacterModel
-            pose={pose}
-            shades={shades}
-            isWalking={() => motion.current.route.length > 0}
-            raiseHand={intent.balloon !== undefined}
-            raiseHands={seated && activity.pose === "wave"}
-            reachHand={placement.fishing === true}
-            dangleLegs={placement.ledge === true}
-            watch={placement.fishing === true ? bobber : undefined}
-            handRef={hand}
-            handItem={
-              activity.pose === "mine" || activity.pose === "ponder" ? <ModelPickaxe /> : undefined
-            }
-            headItem={hat === null ? undefined : <Hat style={hat} />}
-          />
-        </Suspense>
-        {activity.pose === "mine" || activity.pose === "ponder" || activity.pose === "crossArms" ? (
-          <NuggetPile count={facts.beat % (NUGGET_SPOTS.length + 1)} />
-        ) : null}
-        {placement.fishing === true ? (
-          <FishingRod
-            ref={rod}
-            bobber={bobber}
-            hand={hand}
-            seat={placement.seat ?? 0}
-            scale={scale}
-          />
-        ) : null}
-        {intent.effect === "cloud" ? <Cloud /> : null}
-        {intent.balloon !== undefined ? (
-          <>
-            <primitive object={string} />
-            <sprite
-              ref={balloon}
-              name={BALLOON_NAME}
-              renderOrder={10}
-              {...pointer}
-              // A question needs an answer, so its balloon goes straight to the chat.
-              onClick={(event) =>
-                select(event, intent.balloon === "question" || event.nativeEvent.altKey)
-              }
-            >
-              <spriteMaterial
-                map={balloonTexture(intent.balloon)}
-                depthTest={false}
-                onUpdate={keepColors}
+          </mesh>
+          {selected ? (
+            <SelectionRing
+              fps={movement.walkFps}
+              sandColor={shades.base}
+              onSand={() => {
+                const [x, , z] = motion.current.position;
+                return surface(x, z) === "sand";
+              }}
+            />
+          ) : null}
+          <Suspense
+            fallback={
+              // The shape-built figure stands in while the model downloads.
+              <ShapeBody
+                rig={{ body, head, armLeft, armRight, legLeft, legRight }}
+                shades={shades}
+                pose={pose}
               />
-            </sprite>
-          </>
-        ) : null}
-      </group>
+            }
+          >
+            <CharacterModel
+              pose={pose}
+              shades={shades}
+              isWalking={() => motion.current.route.length > 0}
+              raiseHand={intent.balloon !== undefined}
+              raiseHands={seated && activity.pose === "wave"}
+              reachHand={placement.fishing === true}
+              dangleLegs={placement.ledge === true}
+              watch={placement.fishing === true ? bobber : undefined}
+              handRef={hand}
+              handItem={
+                activity.pose === "mine" || activity.pose === "ponder" ? (
+                  <ModelPickaxe />
+                ) : undefined
+              }
+              headItem={hat === null ? undefined : <Hat style={hat} />}
+            />
+          </Suspense>
+          {activity.pose === "mine" ||
+          activity.pose === "ponder" ||
+          activity.pose === "crossArms" ? (
+            <NuggetPile count={facts.beat % (NUGGET_SPOTS.length + 1)} />
+          ) : null}
+          {placement.fishing === true ? (
+            <FishingRod
+              ref={rod}
+              bobber={bobber}
+              hand={hand}
+              seat={placement.seat ?? 0}
+              scale={scale}
+            />
+          ) : null}
+          {intent.effect === "cloud" ? <Cloud /> : null}
+          {intent.balloon !== undefined ? (
+            <>
+              <primitive object={string} />
+              <sprite
+                ref={balloon}
+                name={BALLOON_NAME}
+                renderOrder={10}
+                {...pointer}
+                // A question needs an answer, so its balloon goes straight to the chat.
+                onClick={(event) =>
+                  select(event, intent.balloon === "question" || event.nativeEvent.altKey)
+                }
+              >
+                <spriteMaterial
+                  map={balloonTexture(intent.balloon)}
+                  depthTest={false}
+                  onUpdate={keepColors}
+                />
+              </sprite>
+            </>
+          ) : null}
+        </group>
+      </CharacterGlow>
     </KeepColorContext>
   );
 }

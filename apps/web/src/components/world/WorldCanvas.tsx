@@ -57,8 +57,7 @@ import { geometry } from "./scene/geometries";
 import { HAT_COUNT } from "./scene/Hat";
 import { Island, type FurnitureSpot } from "./scene/Island";
 import { afterPaint, whenIdle } from "./scene/frames";
-import { SceneContrast } from "./scene/contrast";
-import { FadedContext } from "./scene/lighting";
+import { FadedContext, WorldDaylight } from "./scene/lighting";
 import { palette } from "./scene/palette";
 import { SharkSightings } from "./scene/Sharks";
 import { groundHeight, surfaceAt } from "./scene/terrain";
@@ -821,132 +820,135 @@ export default function WorldCanvas(props: {
         }}
         onPointerMissed={clickGround}
       >
-        <SceneContrast />
-        <WorldControls
-          bounds={bounds}
-          islands={islandSpots}
-          panel={panel}
-          focusKey={selectedKey}
-          roots={roots}
-          zoomTo={zoomTo}
-          reveal={reveal}
-          arrangement={arrangement}
-        />
-        <FollowTracker
-          roots={roots}
-          keys={bubble === null ? [] : [bubble.facts.key]}
-          hatted={hatted}
-          onMove={moveBubble}
-        />
-        <FollowTracker
-          roots={roots}
-          keys={tagged.map((c) => c.facts.key)}
-          hatted={hatted}
-          onMove={moveTags}
-        />
-        <PointTracker points={newAgentSpots} onMove={moveSpots} />
-        <PointTracker
-          points={newAgent === null ? [] : [{ key: "new-agent", position: newAgent.position }]}
-          onMove={moveNewAgent}
-        />
-        <IslandHoverTracker
-          target={containerRef}
-          islands={islandSpots}
-          onChange={setHoveredIsland}
-        />
-        <hemisphereLight args={[palette.skyLight, palette.groundLight, 1.7]} />
-        <directionalLight position={[6, 14, 9]} intensity={1.6} />
-        <AmbientTicker fps={ambientFps} />
-        {/* Far wider than any archipelago, so the water never ends on screen. */}
-        <mesh geometry={geometry.plane} rotation-x={-Math.PI / 2} position-y={-0.25} scale={4000}>
-          <meshLambertMaterial color={palette.water} />
-        </mesh>
-        <SharkSightings islands={islandSpots} config={definition.archipelago.sharks} />
-        {islands.map((island) => {
-          // Everyone there archived: once the saucer has left, the island stays
-          // washed out until new work lands.
-          const faded = island.characters.length === 0 && !leaving.has(island.key);
-          const plate = palette.plates[hashString(island.key) % palette.plates.length]!;
-          return (
-            <FadedContext key={island.key} value={faded}>
-              <group
-                position={island.offset as [number, number, number]}
-                // A prop or limb in front of a character is hit first; the character still wins.
-                onClick={(event) => {
-                  if (!hitsCharacter(event)) clickGround(event.nativeEvent);
-                }}
-                onContextMenu={(event) => {
-                  if (hitsCharacter(event)) return;
-                  event.stopPropagation();
-                  event.nativeEvent.preventDefault();
-                  void showIslandMenu(island.key, {
-                    x: event.nativeEvent.clientX,
-                    y: event.nativeEvent.clientY,
-                  });
-                }}
-              >
-                <Island
-                  definition={island.definition}
-                  furniture={buildFurniture(island.definition, island.characters)}
-                  ripple={island.ripple}
-                />
-                {/* The sign names the project, so it keeps its colours on an empty island. */}
-                <FadedContext value={false}>
-                  <Sign
-                    slot={island.definition.archipelago.sign}
-                    text={projectTitles.get(island.key) ?? "Project"}
-                    color={plate}
-                    branches={signStats.get(island.key)?.branches ?? 0}
-                    pullRequests={signStats.get(island.key)?.pullRequests ?? 0}
-                    worktrees={signStats.get(island.key)?.worktrees ?? 0}
-                    onBranchesClick={() => setBranchesOn(island.key)}
-                  />
-                </FadedContext>
-                {island.characters
-                  .filter((character) => !abducted.has(character.facts.key))
-                  .map((character) => (
-                    <Character
-                      key={character.facts.key}
-                      character={character}
-                      shades={palette.families[island.hues.get(character.facts.lookSeed) ?? 0]!}
-                      hat={
-                        character.facts.worktreePath === null
-                          ? null
-                          : (island.hats.get(character.facts.worktreePath) ?? null)
-                      }
-                      obstacles={obstacles.get(island.definition)!}
-                      ground={groundHeight(island.definition)}
-                      surface={surfaceAt(island.definition)}
-                      movement={definition.movement}
-                      selected={
-                        character.facts.key === (bubble?.facts.key ?? chatKey) ||
-                        picked.has(character.facts.key)
-                      }
-                      onSelect={toggleBubble}
-                      onOpen={openChat}
-                      onPick={togglePicked}
-                      onMenu={(target, point) => void showMenu(target, point)}
-                      onRoot={registerRoot}
-                      onHover={onHover}
-                    />
-                  ))}
-              </group>
-            </FadedContext>
-          );
-        })}
-        {abductions.map((abduction) => (
-          <Abduction
-            key={abduction.id}
-            figures={abduction.figures}
-            arriving={abduction.arriving !== undefined}
-            onLanded={() =>
-              setAbductions((all) =>
-                all.map((a) => (a.id === abduction.id ? { ...a, arriving: { landed: true } } : a)),
-              )
-            }
-            onDone={() => setAbductions((all) => all.filter((a) => a.id !== abduction.id))}
+        {/* The time of day: lights, sky, and when lamps come on (see scene/daylight). */}
+        <WorldDaylight>
+          <WorldControls
+            bounds={bounds}
+            islands={islandSpots}
+            panel={panel}
+            focusKey={selectedKey}
+            roots={roots}
+            zoomTo={zoomTo}
+            reveal={reveal}
+            arrangement={arrangement}
           />
-        ))}
+          <FollowTracker
+            roots={roots}
+            keys={bubble === null ? [] : [bubble.facts.key]}
+            hatted={hatted}
+            onMove={moveBubble}
+          />
+          <FollowTracker
+            roots={roots}
+            keys={tagged.map((c) => c.facts.key)}
+            hatted={hatted}
+            onMove={moveTags}
+          />
+          <PointTracker points={newAgentSpots} onMove={moveSpots} />
+          <PointTracker
+            points={newAgent === null ? [] : [{ key: "new-agent", position: newAgent.position }]}
+            onMove={moveNewAgent}
+          />
+          <IslandHoverTracker
+            target={containerRef}
+            islands={islandSpots}
+            onChange={setHoveredIsland}
+          />
+          <AmbientTicker fps={ambientFps} />
+          {/* Far wider than any archipelago, so the water never ends on screen. */}
+          <mesh geometry={geometry.plane} rotation-x={-Math.PI / 2} position-y={-0.25} scale={4000}>
+            <meshLambertMaterial color={palette.water} />
+          </mesh>
+          <SharkSightings islands={islandSpots} config={definition.archipelago.sharks} />
+          {islands.map((island) => {
+            // Everyone there archived: once the saucer has left, the island stays
+            // washed out until new work lands.
+            const faded = island.characters.length === 0 && !leaving.has(island.key);
+            const plate = palette.plates[hashString(island.key) % palette.plates.length]!;
+            return (
+              <FadedContext key={island.key} value={faded}>
+                <group
+                  position={island.offset as [number, number, number]}
+                  // A prop or limb in front of a character is hit first; the character still wins.
+                  onClick={(event) => {
+                    if (!hitsCharacter(event)) clickGround(event.nativeEvent);
+                  }}
+                  onContextMenu={(event) => {
+                    if (hitsCharacter(event)) return;
+                    event.stopPropagation();
+                    event.nativeEvent.preventDefault();
+                    void showIslandMenu(island.key, {
+                      x: event.nativeEvent.clientX,
+                      y: event.nativeEvent.clientY,
+                    });
+                  }}
+                >
+                  <Island
+                    definition={island.definition}
+                    furniture={buildFurniture(island.definition, island.characters)}
+                    ripple={island.ripple}
+                  />
+                  {/* The sign names the project, so it keeps its colours on an empty island. */}
+                  <FadedContext value={false}>
+                    <Sign
+                      slot={island.definition.archipelago.sign}
+                      text={projectTitles.get(island.key) ?? "Project"}
+                      color={plate}
+                      branches={signStats.get(island.key)?.branches ?? 0}
+                      pullRequests={signStats.get(island.key)?.pullRequests ?? 0}
+                      worktrees={signStats.get(island.key)?.worktrees ?? 0}
+                      occupied={!faded}
+                      onBranchesClick={() => setBranchesOn(island.key)}
+                    />
+                  </FadedContext>
+                  {island.characters
+                    .filter((character) => !abducted.has(character.facts.key))
+                    .map((character) => (
+                      <Character
+                        key={character.facts.key}
+                        character={character}
+                        shades={palette.families[island.hues.get(character.facts.lookSeed) ?? 0]!}
+                        hat={
+                          character.facts.worktreePath === null
+                            ? null
+                            : (island.hats.get(character.facts.worktreePath) ?? null)
+                        }
+                        obstacles={obstacles.get(island.definition)!}
+                        ground={groundHeight(island.definition)}
+                        surface={surfaceAt(island.definition)}
+                        movement={definition.movement}
+                        selected={
+                          character.facts.key === (bubble?.facts.key ?? chatKey) ||
+                          picked.has(character.facts.key)
+                        }
+                        onSelect={toggleBubble}
+                        onOpen={openChat}
+                        onPick={togglePicked}
+                        onMenu={(target, point) => void showMenu(target, point)}
+                        onRoot={registerRoot}
+                        onHover={onHover}
+                      />
+                    ))}
+                </group>
+              </FadedContext>
+            );
+          })}
+          {abductions.map((abduction) => (
+            <Abduction
+              key={abduction.id}
+              figures={abduction.figures}
+              arriving={abduction.arriving !== undefined}
+              onLanded={() =>
+                setAbductions((all) =>
+                  all.map((a) =>
+                    a.id === abduction.id ? { ...a, arriving: { landed: true } } : a,
+                  ),
+                )
+              }
+              onDone={() => setAbductions((all) => all.filter((a) => a.id !== abduction.id))}
+            />
+          ))}
+        </WorldDaylight>
       </Canvas>
       {bubble !== null ? (
         // Positioned by FollowTracker on every drawn frame, above the character's head.

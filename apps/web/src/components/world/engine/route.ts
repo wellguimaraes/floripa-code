@@ -92,6 +92,7 @@ const FOOTPRINTS: Partial<Record<PropKind, number>> = {
   palm: 0.3,
   beachChair: 0.45,
   rockPile: 0.65,
+  lamp: 0.2,
   rock: 0.3,
 };
 /** A rock pile stands this far in front of its slot (see the `rockPile` prop). */

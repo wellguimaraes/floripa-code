@@ -149,6 +149,7 @@ const PROP_ROOM: Record<PropKind, number> = {
   palm: 0.7,
   rockPile: 1,
   tree: 0.9,
+  lamp: 0.35,
   rock: 0.3,
   grass: 0.25,
 };

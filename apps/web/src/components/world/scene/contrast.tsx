@@ -1,9 +1,8 @@
 import { useThree } from "@react-three/fiber";
-import { createContext, useLayoutEffect, useMemo } from "react";
+import { createContext, useLayoutEffect } from "react";
 import { Color, type Material, ShaderChunk } from "three";
 
 import { useWorldContrastStore } from "../worldContrastStore";
-import { palette } from "./palette";
 
 /**
  * The contrast slider desaturates the scene in the tone-mapping step, so a drag
@@ -46,7 +45,7 @@ export function keepColors(material: Material) {
 export const KeepColorContext = createContext(false);
 
 /** Applies the contrast slider to the scene, sky included (the clear colour skips tone mapping). */
-export function SceneContrast() {
+export function SceneContrast(props: { readonly sky: Color }) {
   const contrast = useWorldContrastStore((state) => state.contrast);
   const get = useThree((state) => state.get);
   // Full contrast greys the world out completely; characters always keep their colours.
@@ -58,11 +57,9 @@ export function SceneContrast() {
     invalidate();
   }, [get, saturation]);
 
-  const sky = useMemo(() => {
-    const color = new Color(palette.sky);
-    const grey = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
-    return color.lerp(new Color(grey, grey, grey), 1 - saturation);
-  }, [saturation]);
+  const { r, g, b } = props.sky;
+  const grey = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  const sky = props.sky.clone().lerp(new Color(grey, grey, grey), 1 - saturation);
 
   return <color attach="background" args={[sky.r, sky.g, sky.b]} />;
 }

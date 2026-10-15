@@ -16,7 +16,9 @@ import { islandBounds } from "../engine/archipelago";
 import { hashString, seededRandom } from "../engine/hash";
 import { isScenery } from "../engine/scenery";
 import { geometry } from "./geometries";
-import { FadedContext, LitMaterial, toFaded } from "./lighting";
+import type { Direction } from "./daylight";
+import { Lamp } from "./Lamp";
+import { FadedContext, LitMaterial, TimeOfDayContext, toFaded } from "./lighting";
 import {
   chain,
   type MergedPart,
@@ -99,6 +101,7 @@ export function Island(props: {
 }) {
   const { definition, furniture, ripple } = props;
   const faded = useContext(FadedContext);
+  const { light } = useContext(TimeOfDayContext);
   const shore = useMemo(() => rippleShore(definition), [definition]);
   const ground = groundHeight(definition);
   return (
@@ -154,7 +157,7 @@ export function Island(props: {
           </mesh>
         );
       })}
-      <GroundShadow geometry={islandShadows(definition, furniture, ground)} />
+      <GroundShadow geometry={islandShadows(definition, furniture, ground, light)} />
       <Suspense fallback={null}>
         <Scenery definition={definition} />
       </Suspense>
@@ -187,6 +190,7 @@ export function Island(props: {
 /** The island's pebbles and grass tufts, as one mesh. */
 function Scenery({ definition }: { readonly definition: WorldDefinition }) {
   const baked = sceneryGeometry(useNatureModels(), definition, useContext(FadedContext));
+  const { light } = useContext(TimeOfDayContext);
   const ground = groundHeight(definition);
   if (baked === null) return null;
   return (
@@ -194,7 +198,7 @@ function Scenery({ definition }: { readonly definition: WorldDefinition }) {
       <mesh geometry={baked}>
         <meshLambertMaterial vertexColors />
       </mesh>
-      <GroundShadow geometry={shadowOf(baked, ground)} />
+      <GroundShadow geometry={shadowOf(baked, light, ground)} />
     </>
   );
 }
@@ -207,14 +211,18 @@ interface Placed {
   readonly length?: number | undefined;
 }
 
-/** Every prop's shadow on the island, scenery aside, as one mesh. */
+/**
+ * Every prop's shadow on the island, as one mesh. Scenery casts its own, and
+ * lamps none: they sink into the ground by day.
+ */
 function islandShadows(
   definition: WorldDefinition,
   furniture: ReadonlyArray<FurnitureSpot>,
   ground: Ground,
+  light: Direction,
 ): BufferGeometry | null {
   const casters: Placed[] = [
-    ...definition.props.filter((prop) => !isScenery(prop.kind)),
+    ...definition.props.filter((prop) => !isScenery(prop.kind) && prop.kind !== "lamp"),
     ...furniture,
   ];
   const key = casters
@@ -235,11 +243,13 @@ function islandShadows(
           matrix: frame,
         }));
       }),
+    light,
     ground,
   );
 }
 
 function GroundShadow({ geometry: shadow }: { readonly geometry: BufferGeometry | null }) {
+  const { shadowOpacity } = useContext(TimeOfDayContext);
   if (shadow === null) return null;
   return (
     // Just above the ground, under the characters' own shadows.
@@ -247,7 +257,7 @@ function GroundShadow({ geometry: shadow }: { readonly geometry: BufferGeometry 
       <meshBasicMaterial
         color={palette.shadow}
         transparent
-        opacity={0.16}
+        opacity={shadowOpacity}
         depthWrite={false}
         side={DoubleSide}
         {...SHADOW_STENCIL}
@@ -274,7 +284,11 @@ function Prop(props: {
       rotation-y={props.facing}
       scale={props.scale ?? 1}
     >
-      <MergedMeshes parts={propParts(props.kind, props.length ?? 1, seedOf(props))} />
+      {props.kind === "lamp" ? (
+        <Lamp seed={seedOf(props)} />
+      ) : (
+        <MergedMeshes parts={propParts(props.kind, props.length ?? 1, seedOf(props))} />
+      )}
     </group>
   );
 }
@@ -298,6 +312,9 @@ function propParts(kind: PropKind, length: number, seed: number): ReadonlyArray<
       return mergedParts(`palm:${seed % 70}`, () => palmParts(seed % 70));
     case "tree":
       return mergedParts(`tree:${seed % 30}`, () => treeParts(seed % 30));
+    case "lamp":
+      // Drawn by `Lamp`, which raises and lowers it.
+      return [];
     case "rock":
     case "grass":
       // Drawn together with the rest of the island's scenery; see `Scenery`.

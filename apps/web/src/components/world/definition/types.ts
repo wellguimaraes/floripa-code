@@ -30,7 +30,15 @@ export interface WorldSlot {
 /** Small things strewn around for looks; see `SceneryRule`. */
 export type SceneryKind = "rock" | "grass";
 
-export type PropKind = "towel" | "beachChair" | "pier" | "palm" | "tree" | "rockPile" | SceneryKind;
+export type PropKind =
+  | "towel"
+  | "beachChair"
+  | "pier"
+  | "palm"
+  | "tree"
+  | "rockPile"
+  | "lamp"
+  | SceneryKind;
 
 export interface WorldProp {
   readonly kind: PropKind;

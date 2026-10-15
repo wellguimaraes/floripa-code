@@ -32,6 +32,7 @@ export default function CharacterPortrait(props: {
         orthographic
         camera={{ position: [0, 0.8, 5], rotation: [0, 0, 0], zoom: 23 }}
       >
+        {/* Daylight, not the world's night, so the portrait reads clearly in the UI. */}
         <hemisphereLight args={[palette.skyLight, palette.groundLight, 1.7]} />
         <directionalLight position={[6, 14, 9]} intensity={1.6} />
         <Suspense fallback={null}>

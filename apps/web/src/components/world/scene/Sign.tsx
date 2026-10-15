@@ -1,11 +1,11 @@
 import type { ThreeEvent } from "@react-three/fiber";
-import { useEffect, useMemo } from "react";
-import { CanvasTexture, Color, SRGBColorSpace } from "three";
+import { useContext, useEffect, useMemo } from "react";
+import { CanvasTexture, Color, Object3D, SRGBColorSpace } from "three";
 
 import type { WorldSlot } from "../definition/types";
 import { KeepColorContext, keepColors } from "./contrast";
 import { geometry } from "./geometries";
-import { LitMaterial } from "./lighting";
+import { LitMaterial, TimeOfDayContext } from "./lighting";
 import { palette } from "./palette";
 
 const BOARD_HEIGHT = 2.2;
@@ -14,8 +14,16 @@ const FRAME = 0.28;
 const POLE_WIDTH = 0.42;
 /** A chunky board, so it reads as a solid object rather than a card. */
 const DEPTH = 0.5;
-/** How high the sign reaches, so the camera can fit it in. */
-export const SIGN_TOP = BOARD_LIFT + BOARD_HEIGHT + FRAME + 0.2;
+/** The top of the cap plank, where the lamps stand. */
+const CAP_TOP = BOARD_LIFT + BOARD_HEIGHT + FRAME + 0.2;
+/** How high the sign reaches, lamps included, so the camera can fit it in. */
+export const SIGN_TOP = CAP_TOP + 0.6;
+/** The lamps' brightness; with `decay` 1 it fades with distance, not its square. */
+const LAMP_INTENSITY = 14;
+/** The lamps tip forward this far from level, to shine down on the island. */
+const LAMP_TILT = 0.6;
+/** Where the lamps' light lands: the island's middle, in front of the sign. */
+const LAMP_REACH = 8.5;
 /** The board grows with the name, between these widths; longer names shrink, then truncate. */
 const MIN_BOARD_WIDTH = 6;
 const MAX_BOARD_WIDTH = 15;
@@ -49,10 +57,14 @@ export function Sign(props: {
   readonly branches: number;
   readonly pullRequests: number;
   readonly worktrees: number;
+  /** Someone is on the island; the lamps on top stay out on an empty one. */
+  readonly occupied: boolean;
   /** Clicking the branch count, e.g. to list the branches. */
   readonly onBranchesClick: () => void;
 }) {
-  const { slot, text, color, branches, pullRequests, worktrees, onBranchesClick } = props;
+  const { slot, text, color, branches, pullRequests, worktrees, occupied, onBranchesClick } = props;
+  // The lamps on top come on after sunset, on an island someone is on.
+  const lit = useContext(TimeOfDayContext).lampsOn && occupied;
   const board = useMemo(
     () =>
       signBoard(text, color, [
@@ -70,6 +82,7 @@ export function Sign(props: {
     return branchesBadge !== undefined && x >= branchesBadge.left && x <= branchesBadge.right;
   };
   const width = board.width;
+  const lampTarget = useMemo(() => new Object3D(), []);
   return (
     // Keeps its colours at any contrast, so the project's name stays easy to spot.
     <KeepColorContext value>
@@ -117,6 +130,41 @@ export function Sign(props: {
           {/* Unlit so the name stays readable whatever the light does. */}
           <meshBasicMaterial map={board.texture} onUpdate={keepColors} />
         </mesh>
+        {[-width / 3, width / 3].map((x) => (
+          <group key={x} position={[x, CAP_TOP + 0.3, 0.1]} rotation-x={LAMP_TILT}>
+            <mesh geometry={geometry.cylinder} rotation-x={Math.PI / 2} scale={[0.3, 0.6, 0.3]}>
+              <LitMaterial color={palette.lampHousing} />
+            </mesh>
+            {/* The bulb's face, unlit so it glows at night. */}
+            <mesh
+              geometry={geometry.cylinder}
+              position-z={0.31}
+              rotation-x={Math.PI / 2}
+              scale={[0.24, 0.02, 0.24]}
+            >
+              <meshBasicMaterial
+                color={lit ? palette.lampBulb : palette.lampHousing}
+                onUpdate={keepColors}
+              />
+            </mesh>
+          </group>
+        ))}
+        {/*
+         * One light for both lamps: a warm pool on the island in front of the
+         * sign. Off is zero intensity, not unmounted, so the scene's light count
+         * holds and no material recompiles as islands empty and fill.
+         */}
+        <primitive object={lampTarget} position={[0, 0, LAMP_REACH]} />
+        <spotLight
+          position={[0, CAP_TOP + 0.3, 0.4]}
+          target={lampTarget}
+          color={palette.lampLight}
+          intensity={lit ? LAMP_INTENSITY : 0}
+          angle={0.75}
+          penumbra={0.7}
+          decay={1}
+          distance={28}
+        />
       </group>
     </KeepColorContext>
   );

@@ -174,6 +174,12 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
       prop("palm", -2.3, 8.7, 5),
       prop("palm", -8.6, -1.2, 2.9),
       { kind: "pier", position: onPier(0, 0), facing: PIER_FACING, length: PIER_LENGTH },
+      // Street lamps for the night, clear of every spot, road, and walk at every
+      // size: by the pier's foot and round the shore, off the lawn.
+      prop("lamp", 7.2, -4.8),
+      prop("lamp", -6.6, 5.4),
+      prop("lamp", -8.7, -2.2),
+      prop("lamp", -1.6, -6.6),
     ],
     // Pebbles and tufts on the sand, as many per unit of ground at every size.
     scenery: [

@@ -1,5 +1,5 @@
 import { useFrame, useLoader, useThree } from "@react-three/fiber";
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useContext, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import {
   type AnimationAction,
   AnimationMixer,
@@ -23,7 +23,7 @@ import type { Pose } from "../definition/types";
 import { keepColors } from "./contrast";
 import { drawSoon } from "./frames";
 import { geometry } from "./geometries";
-import { LitMaterial } from "./lighting";
+import { GlowContext, LitMaterial } from "./lighting";
 import { type FamilyShades, palette } from "./palette";
 
 // KayKit "Rogue" (CC0), trimmed to these clips; see public/world/LICENSE.txt.
@@ -87,6 +87,7 @@ export function CharacterModel(props: {
   const { raiseHand = false, raiseHands = false, reachHand = false, dangleLegs = false } = props;
   const gltf = useLoader(GLTFLoader, MODEL_URL);
   const invalidate = useThree((state) => state.invalidate);
+  const glow = useContext(GlowContext);
 
   const rig = useMemo(() => {
     const scene = cloneSkinned(gltf.scene);
@@ -97,7 +98,11 @@ export function CharacterModel(props: {
       const mesh = object as Mesh;
       if (!mesh.isMesh) return;
       const source = mesh.material as Material & { map?: MeshLambertMaterial["map"] };
-      const material = new MeshLambertMaterial({ map: source.map ?? null });
+      // The texture also masks the glow, so its shading shows in the dark too.
+      const material = new MeshLambertMaterial({
+        map: source.map ?? null,
+        emissiveMap: source.map ?? null,
+      });
       keepColors(material);
       mesh.material = material;
       mesh.frustumCulled = false;
@@ -134,11 +139,13 @@ export function CharacterModel(props: {
     for (const [mesh, material] of rig.materials) {
       const color = shades[shadeFor(mesh.name)];
       material.color.set(color);
+      material.emissive.set(glow > 0 ? color : "#000000");
+      material.setValues({ emissiveIntensity: glow });
     }
     // Repainted outside React's props, so ask for the frame that shows it:
     // nothing else redraws a still portrait.
     invalidate();
-  }, [rig, shades, invalidate]);
+  }, [rig, shades, glow, invalidate]);
 
   // The hand item is rendered here, then moved onto its bone so it follows the
   // animation; sized in world units, so undo the model's own scale. The

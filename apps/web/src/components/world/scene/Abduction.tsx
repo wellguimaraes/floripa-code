@@ -11,6 +11,7 @@ import {
 
 import type { Vec3 } from "../definition/types";
 import { CharacterModel } from "./CharacterModel";
+import { CharacterGlow } from "./lighting";
 import { drawSoon } from "./frames";
 import { geometry } from "./geometries";
 import { type FamilyShades, palette } from "./palette";
@@ -160,7 +161,9 @@ export function Abduction(props: {
           visible={!arriving}
         >
           <Suspense fallback={null}>
-            <CharacterModel pose="stand" shades={figure.shades} isWalking={() => false} />
+            <CharacterGlow>
+              <CharacterModel pose="stand" shades={figure.shades} isWalking={() => false} />
+            </CharacterGlow>
           </Suspense>
         </group>
       ))}

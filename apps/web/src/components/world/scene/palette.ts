@@ -3,7 +3,10 @@
  * so these are game colors, not theme tokens; restyle the world here.
  */
 export const palette = {
-  sky: "#8fd3f4",
+  // The sky behind the world, by day and at night; it blends through the day (see `daylight.ts`).
+  daySky: "#8fd3f4",
+  nightSky: "#121b33",
+  // Daylight for character portraits, outside the world's night.
   skyLight: "#ffffff",
   groundLight: "#7aae81",
   // Sea, lagoon, shallows, sand, and grass follow the Atoll logo's rings.
@@ -47,6 +50,11 @@ export const palette = {
   leafLight: "#5bd36b",
   leafDark: "#2e8b3a",
   signPost: "#7c4a21",
+  /** The lamps on top of the sign, and the warm light they cast on the island. */
+  lampHousing: "#2f343b",
+  lampBulb: "#fff1b0",
+  lampLight: "#ffc861",
+  lampPost: "#3a3f47",
   signTextDark: "#1f1408",
   signTextLight: "#ffffff",
   foam: "#ffffff",
