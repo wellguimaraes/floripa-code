@@ -143,6 +143,20 @@ export default function WorldCanvas(props: {
     () => facts.map((f) => ({ ...f, projectKey: islandOf.get(f.projectKey) ?? f.projectKey })),
     [facts, islandOf],
   );
+  // Archived characters leave by saucer: the real one is hidden at once and
+  // a stand-in of it is beamed up from where it stood. New agents started here
+  // arrive the same way, hidden until their stand-in has landed on their pile.
+  const [abductions, setAbductions] = useState<
+    ReadonlyArray<{
+      readonly id: number;
+      readonly islandKeys: ReadonlyArray<string>;
+      readonly figures: ReadonlyArray<AbductedFigure>;
+      /** The archived agents' facts, keeping their places until the saucer has gone. */
+      readonly held?: ReadonlyArray<CharacterFacts>;
+      readonly arriving?: { readonly landed: boolean };
+    }>
+  >([]);
+  const abductionId = useRef(0);
   // Islands hidden from the projects menu leave the map; the rest close up.
   const hidden = useWorldVisibilityStore((state) => state.hidden);
   const hideIsland = useWorldVisibilityStore((state) => state.toggleHidden);
@@ -151,10 +165,13 @@ export default function WorldCanvas(props: {
     () => projectOrder.filter((key) => !hidden[key]),
     [projectOrder, hidden],
   );
-  const visibleFacts = useMemo(
-    () => islandFacts.filter((f) => !hidden[f.projectKey]),
-    [islandFacts, hidden],
-  );
+  const visibleFacts = useMemo(() => {
+    // Archived agents still hold their spots under the beam, so the beach only
+    // closes ranks once the saucer has flown off with them.
+    const live = new Set(islandFacts.map((f) => f.key));
+    const held = abductions.flatMap((a) => a.held ?? []).filter((f) => !live.has(f.key));
+    return [...islandFacts, ...held].filter((f) => !hidden[f.projectKey]);
+  }, [islandFacts, abductions, hidden]);
   const visibleMembers = useMemo(
     () => new Map(visibleOrder.map((key) => [key, projectMembers.get(key) ?? []])),
     [visibleOrder, projectMembers],
@@ -352,18 +369,6 @@ export default function WorldCanvas(props: {
   }, []);
   const bubbleRef = useRef<HTMLDivElement>(null);
 
-  // Archived characters leave by saucer: the real one is hidden at once and
-  // a stand-in of it is beamed up from where it stood. New agents started here
-  // arrive the same way, hidden until their stand-in has landed on their pile.
-  const [abductions, setAbductions] = useState<
-    ReadonlyArray<{
-      readonly id: number;
-      readonly islandKeys: ReadonlyArray<string>;
-      readonly figures: ReadonlyArray<AbductedFigure>;
-      readonly arriving?: { readonly landed: boolean };
-    }>
-  >([]);
-  const abductionId = useRef(0);
   /** One saucer takes everyone archived together. */
   const abduct = (characters: ReadonlyArray<WorldCharacter>) => {
     const islandKeys = new Set<string>();
@@ -388,7 +393,12 @@ export default function WorldCanvas(props: {
     abductionId.current += 1;
     setAbductions((all) => [
       ...all,
-      { id: abductionId.current, islandKeys: [...islandKeys], figures },
+      {
+        id: abductionId.current,
+        islandKeys: [...islandKeys],
+        figures,
+        held: characters.map((character) => character.facts),
+      },
     ]);
   };
   /** The saucer brings a new agent down onto its pile. */
