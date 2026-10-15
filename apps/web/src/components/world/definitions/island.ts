@@ -164,15 +164,22 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
       { shape: "disc", kind: "grass", center: at(-2, 0), radius: 7.2 * scale },
     ],
     props: [
-      prop("tree", -7, 4),
-      prop("tree", -3.2, -5.8),
+      prop("sibipiruna", -3.2, -5.8),
       // The lawn's far-left edge, behind the miners, where it hides no one.
       prop("tree", -7.5, -4.4),
       prop("palm", 3.4, -8.2, 0.4),
       prop("palm", 4.6, -7.6, 1.3),
       prop("palm", -0.8, -9, 3.6),
       prop("palm", -2.3, 8.7, 5),
-      prop("palm", -8.6, -1.2, 2.9),
+      // Big rocks at the waterline round the far-left shore.
+      ...[153, 168, 183].map((degrees, index) =>
+        prop(
+          "boulder",
+          9.6 * Math.cos((degrees * Math.PI) / 180),
+          9.6 * Math.sin((degrees * Math.PI) / 180),
+          index * 2.1,
+        ),
+      ),
       { kind: "pier", position: onPier(0, 0), facing: PIER_FACING, length: PIER_LENGTH },
       // Street lamps for the night, clear of every spot, road, and walk at every
       // size: by the pier's foot and round the shore, off the lawn.

@@ -319,6 +319,10 @@ function propParts(kind: PropKind, length: number, seed: number): ReadonlyArray<
       return mergedParts(`palm:${seed % 70}`, () => palmParts(seed % 70));
     case "tree":
       return mergedParts(`tree:${seed % 30}`, () => treeParts(seed % 30));
+    case "boulder":
+      return mergedParts(`boulder:${seed % 20}`, () => boulderParts(seed % 20));
+    case "sibipiruna":
+      return mergedParts(`sibipiruna:${seed % 12}`, () => sibipirunaParts(seed % 12));
     case "lamp":
       // Drawn by `Lamp`, which raises and lowers it.
       return [];
@@ -410,6 +414,150 @@ function treeParts(seed: number): Part[] {
   } else {
     crown(0, trunkHeight + 0.75, 0, 0.55, 1.6);
     crown(0.18, trunkHeight + 1.35, 0.05, 0.4, 1.3);
+  }
+  return parts;
+}
+
+/**
+ * A low-poly sibipiruna: a trunk that forks low into long limbs, each with a
+ * twig of its own, reaching up and out to hold a broad, flat-topped crown of
+ * leafy lobes. The lobes sit above the limbs' tips, so the branches show
+ * under the crown. The seed turns the fork and sizes the lobes.
+ */
+function sibipirunaParts(seed: number): Part[] {
+  const random = seededRandom(hashString(`sibipiruna:${seed}`));
+  const fork = 1.05;
+  const lean = (random() - 0.5) * 0.16;
+  const parts: Part[] = [
+    {
+      geometry: trunkSegment,
+      matrix: chain(
+        rotateZ(lean),
+        translate(0, fork / 2, 0),
+        rotateY(random() * Math.PI),
+        scale(0.16, fork, 0.16),
+      ),
+      color: palette.treeTrunk,
+      flat: true,
+    },
+  ];
+  const top: Vec3 = [-Math.sin(lean) * fork, Math.cos(lean) * fork, 0];
+  /** A branch from `from`, leaning `tilt` off upright toward `heading`; returns its tip. */
+  const branch = (from: Vec3, heading: number, tilt: number, length: number, width: number) => {
+    parts.push({
+      geometry: trunkSegment,
+      matrix: chain(
+        translate(...from),
+        rotateY(heading),
+        rotateZ(-tilt),
+        translate(0, length / 2, 0),
+        scale(width, length, width),
+      ),
+      color: palette.treeTrunk,
+      flat: true,
+    });
+    const reach = Math.sin(tilt) * length;
+    return [
+      from[0] + Math.cos(heading) * reach,
+      from[1] + Math.cos(tilt) * length,
+      from[2] - Math.sin(heading) * reach,
+    ] as const;
+  };
+  /** A crown lobe, a squashed canopy. */
+  const lobe = (center: Vec3, size: number, color: string) => {
+    parts.push({
+      geometry: canopy,
+      matrix: chain(
+        translate(...center),
+        rotateY(random() * Math.PI * 2),
+        scale(size, size * (0.5 + random() * 0.12), size),
+      ),
+      color,
+      flat: true,
+    });
+  };
+  const limbs = 4;
+  const turn = random() * Math.PI * 2;
+  let highest = 0;
+  for (let index = 0; index < limbs; index += 1) {
+    const heading = turn + (index / limbs) * Math.PI * 2 + (random() - 0.5) * 0.6;
+    const length = 1.4 + random() * 0.3;
+    const tip = branch(top, heading, 0.75 + random() * 0.15, length, 0.09);
+    highest = Math.max(highest, tip[1]);
+    // A thinner twig off the limb's middle, splaying to one side.
+    const middle: Vec3 = [(top[0] + tip[0]) / 2, (top[1] + tip[1]) / 2, (top[2] + tip[2]) / 2];
+    const side = (index % 2 === 0 ? 1 : -1) * (0.6 + random() * 0.3);
+    branch(middle, heading + side, 0.85, 0.75, 0.05);
+    // Resting on the limb's tip, so the limb shows below it.
+    lobe(
+      [tip[0], tip[1] + 0.32, tip[2]],
+      0.58 + random() * 0.14,
+      index % 2 === 0 ? palette.treeLeaf : palette.palmLeafDark,
+    );
+  }
+  // The middle of the crown rides over the limbs, a little higher; the camera
+  // looks down on the tree, so the gaps between it and the outer lobes show the limbs.
+  lobe([top[0], highest + 0.7, top[2]], 0.72, palette.treeLeaf);
+  return parts;
+}
+
+/**
+ * A craggy rock: a split icosahedron with its corners pushed in and out a
+ * lot, so no two sides look alike. Corners move by where they sit, so faces
+ * that share one stay joined.
+ */
+const crag = (() => {
+  const shape = new IcosahedronGeometry(1, 1);
+  const position = shape.getAttribute("position");
+  const corner = new Vector3();
+  for (let index = 0; index < position.count; index += 1) {
+    corner.fromBufferAttribute(position, index);
+    const at = [corner.x, corner.y, corner.z].map((value) => Math.round(value * 1000));
+    corner.multiplyScalar(0.72 + (hashString(`crag:${at.join(",")}`) % 1000) * 0.00056);
+    position.setXYZ(index, corner.x, corner.y, corner.z);
+  }
+  shape.computeVertexNormals();
+  return shape;
+})();
+
+/**
+ * A big craggy rock at the waterline, sunk partway into the sand and the
+ * sea, with a few small stones strewn round it. The seed sets its size,
+ * shape and where the stones fall, so no two look alike.
+ */
+function boulderParts(seed: number): Part[] {
+  const random = seededRandom(hashString(`boulder:${seed}`));
+  const stones = [palette.stone, palette.stoneDark, palette.stoneLight];
+  const size = 1 + random() * 0.5;
+  const parts: Part[] = [
+    {
+      geometry: crag,
+      matrix: chain(
+        translate(0, size * 0.15, 0),
+        rotateY(random() * Math.PI * 2),
+        rotateZ((random() - 0.5) * 0.5),
+        scale(size * (1 + random() * 0.4), size * (0.65 + random() * 0.35), size * 0.85),
+      ),
+      color: stones[seed % stones.length]!,
+      flat: true,
+    },
+  ];
+  const strewn = 1 + Math.floor(random() * 3);
+  for (let index = 0; index < strewn; index += 1) {
+    const around = random() * Math.PI * 2;
+    const away = size * (1 + random() * 0.4);
+    const small = 0.25 + random() * 0.35;
+    parts.push({
+      geometry: geometry.foliage,
+      matrix: chain(
+        translate(Math.cos(around) * away, small * 0.2, Math.sin(around) * away),
+        rotateY(random() * Math.PI * 2),
+        rotateX((random() - 0.5) * 0.8),
+        scale(small * (0.9 + random() * 0.4), small * (0.6 + random() * 0.3), small),
+      ),
+      color: stones[(seed + index + 1) % stones.length]!,
+      flat: true,
+    });
   }
   return parts;
 }

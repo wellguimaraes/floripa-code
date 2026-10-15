@@ -90,8 +90,10 @@ const FOOTPRINTS: Partial<Record<PropKind, number>> = {
   tree: 0.45,
   // Trunk only: the crown is overhead.
   palm: 0.3,
+  sibipiruna: 0.35,
   beachChair: 0.45,
   rockPile: 0.65,
+  boulder: 1.1,
   lamp: 0.2,
   rock: 0.3,
 };

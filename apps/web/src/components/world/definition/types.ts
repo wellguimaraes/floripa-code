@@ -36,7 +36,9 @@ export type PropKind =
   | "pier"
   | "palm"
   | "tree"
+  | "sibipiruna"
   | "rockPile"
+  | "boulder"
   | "lamp"
   | SceneryKind;
 
