@@ -904,7 +904,6 @@ export default function WorldCanvas(props: {
                       branches={signStats.get(island.key)?.branches ?? 0}
                       pullRequests={signStats.get(island.key)?.pullRequests ?? 0}
                       worktrees={signStats.get(island.key)?.worktrees ?? 0}
-                      occupied={!faded}
                       onBranchesClick={() => setBranchesOn(island.key)}
                     />
                   </FadedContext>

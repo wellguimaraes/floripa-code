@@ -57,14 +57,12 @@ export function Sign(props: {
   readonly branches: number;
   readonly pullRequests: number;
   readonly worktrees: number;
-  /** Someone is on the island; the lamps on top stay out on an empty one. */
-  readonly occupied: boolean;
   /** Clicking the branch count, e.g. to list the branches. */
   readonly onBranchesClick: () => void;
 }) {
-  const { slot, text, color, branches, pullRequests, worktrees, occupied, onBranchesClick } = props;
-  // The lamps on top come on after sunset, on an island someone is on.
-  const lit = useContext(TimeOfDayContext).lampsOn && occupied;
+  const { slot, text, color, branches, pullRequests, worktrees, onBranchesClick } = props;
+  // The lamps on top come on after sunset, on every island, empty ones too.
+  const lit = useContext(TimeOfDayContext).lampsOn;
   const board = useMemo(
     () =>
       signBoard(text, color, [
