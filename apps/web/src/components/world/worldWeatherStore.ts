@@ -6,7 +6,10 @@ import { resolveStorage } from "../../lib/storage";
 
 interface WorldWeatherState {
   readonly raining: boolean;
+  /** Lightning now and then; only ever with rain. */
+  readonly storm: boolean;
   readonly setRaining: (raining: boolean) => void;
+  readonly setStorm: (storm: boolean) => void;
 }
 
 /** The world's weather. Per viewer, so it lives in this browser only. */
@@ -14,20 +17,23 @@ export const useWorldWeatherStore = create<WorldWeatherState>()(
   persist(
     (set) => ({
       raining: false,
-      setRaining: (raining) => set({ raining }),
+      storm: false,
+      setRaining: (raining) => set(raining ? { raining } : { raining, storm: false }),
+      setStorm: (storm) => set(storm ? { storm, raining: true } : { storm }),
     }),
     {
       name: "t3code:world-weather:v1",
       storage: createJSONStorage(() =>
         resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
       ),
-      partialize: (state) => ({ raining: state.raining }),
+      partialize: (state) => ({ raining: state.raining, storm: state.storm }),
     },
   ),
 );
 
-/** Whether it rains in the world. */
+/** Whether it rains in the world, and whether lightning strikes. */
 export const selectRaining = (state: WorldWeatherState) => state.raining;
+export const selectStorm = (state: WorldWeatherState) => state.storm;
 
 /** How long the rain takes to set in or clear up. */
 const CHANGE_MS = 2000;

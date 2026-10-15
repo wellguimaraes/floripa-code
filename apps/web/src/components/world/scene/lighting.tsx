@@ -2,9 +2,10 @@ import { createContext, type ReactNode, useContext, useMemo } from "react";
 import { Color, SRGBColorSpace } from "three";
 
 import { useWorldHour } from "../worldTimeStore";
-import { useRainAmount } from "../worldWeatherStore";
+import { selectStorm, useRainAmount, useWorldWeatherStore } from "../worldWeatherStore";
 import { KeepColorContext, keepColors, SceneContrast } from "./contrast";
 import { type Daylight, daylightAt, type Direction, lightDirection, overcast } from "./daylight";
+import { Lightning } from "./Lightning";
 import { palette } from "./palette";
 import { Rain } from "./Rain";
 
@@ -92,6 +93,7 @@ export function LitMaterial(props: {
  */
 export function WorldDaylight(props: { readonly children: ReactNode }) {
   const rain = useRainAmount();
+  const storm = useWorldWeatherStore(selectStorm);
   const clear = daylightAt(useWorldHour());
   const daylight = overcast(clear, rain);
   const glow = step(daylight.night * CHARACTER_GLOW, 0.05);
@@ -110,6 +112,8 @@ export function WorldDaylight(props: { readonly children: ReactNode }) {
       <SceneContrast sky={daylight.background} />
       <WorldLights daylight={daylight} />
       <Rain amount={rain} />
+      {/* Strikes from the moment the rain starts setting in. */}
+      <Lightning active={storm && rain > 0} />
       {props.children}
     </TimeOfDayContext>
   );
