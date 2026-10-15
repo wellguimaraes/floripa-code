@@ -270,10 +270,6 @@ export default function WorldCanvas(props: {
       ),
     [islands],
   );
-  const obstacles = useMemo(
-    () => new Map(definitions.map((sized) => [sized, islandObstacles(sized)])),
-    [definitions],
-  );
   const islandSpots = useMemo(
     () =>
       islands.map(({ key, offset, definition: sized }) => {
@@ -924,7 +920,7 @@ export default function WorldCanvas(props: {
                             ? null
                             : (island.hats.get(character.facts.worktreePath) ?? null)
                         }
-                        obstacles={obstacles.get(island.definition)!}
+                        obstacles={islandObstacles(island.definition)}
                         ground={groundHeight(island.definition)}
                         surface={surfaceAt(island.definition)}
                         movement={definition.movement}

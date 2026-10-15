@@ -100,8 +100,12 @@ const FOOTPRINTS: Partial<Record<PropKind, number>> = {
 /** A rock pile stands this far in front of its slot (see the `rockPile` prop). */
 const PILE_AHEAD = 0.95;
 
+const obstacleCache = new WeakMap<WorldDefinition, Obstacle[]>();
+
 /** Everything on an island a character walks around, from its definition. */
 export function islandObstacles(definition: WorldDefinition): Obstacle[] {
+  const cached = obstacleCache.get(definition);
+  if (cached !== undefined) return cached;
   const obstacles: Obstacle[] = [];
   const add = (kind: PropKind, slot: Pick<WorldSlot, "position" | "facing">, scale = 1) => {
     const footprint = FOOTPRINTS[kind];
@@ -129,5 +133,6 @@ export function islandObstacles(definition: WorldDefinition): Obstacle[] {
     z: definition.archipelago.sign.position[2],
     radius: 0.4,
   });
+  obstacleCache.set(definition, obstacles);
   return obstacles;
 }

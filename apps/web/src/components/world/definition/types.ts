@@ -193,6 +193,11 @@ export interface WorldMovement {
 export interface WorldArchipelago {
   readonly columns: number;
   readonly gap: number;
+  /**
+   * Spare room round each island in its grid slot; each island sits
+   * somewhere in its slot, so the grid doesn't look ruled. None when left out.
+   */
+  readonly wander?: number;
   /** Where the project's name sign stands on each island. */
   readonly sign: WorldSlot;
   /**
@@ -227,6 +232,11 @@ export interface WorldArchipelago {
 }
 
 export interface WorldDefinition {
+  /**
+   * Mixed into the look of every prop, so islands of the same size don't
+   * share rock piles, palms and the like. Each project's island has its own.
+   */
+  readonly seed?: number;
   readonly terrain: ReadonlyArray<TerrainPatch>;
   readonly props: ReadonlyArray<WorldProp>;
   /** Placed in order, so list the biggest first: smaller things fill the gaps. */

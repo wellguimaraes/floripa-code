@@ -1,8 +1,9 @@
 import type { Vec3, WorldDefinition } from "../definition/types";
 import type { CharacterFacts } from "./facts";
-import { hashString } from "./hash";
+import { hashString, seededRandom } from "./hash";
 import { matchesFacts, resolveIntent } from "./rules";
 import type { Placement, SlotRequest } from "./slots";
+import { islandVariant } from "./variety";
 import { resolveWorld, type WorldCharacter } from "./world";
 
 export interface WorldIsland {
@@ -100,16 +101,20 @@ export function resolveArchipelago(input: {
     keys.map((key) => {
       const sized =
         input.sizes === undefined ? definition : fittingSize(input.sizes, byProject.get(key) ?? []);
-      return [key, sized] as const;
+      return [key, islandVariant(sized, key)] as const;
     }),
   );
   const offsets = islandOffsets({
     islands: keys.map((key) => ({
       cell: cells.get(key)!,
       radius: islandRadius(definitions.get(key)!),
+      key,
     })),
     gap: definition.archipelago.gap,
     columns: input.columns ?? definition.archipelago.columns,
+    ...(definition.archipelago.wander === undefined
+      ? {}
+      : { wander: definition.archipelago.wander }),
   });
   const placements = new Map<string, Placement>();
   const hues = new Map<string, number>();
@@ -334,22 +339,31 @@ export function islandRadius(definition: WorldDefinition): number {
 /**
  * Lays the grid out along the screen, not the world axes: the camera looks
  * down the (1, 1) diagonal, so (1, -1) reads as "right" and (1, 1) as "down".
- * Each column is as wide as its biggest island and each row as tall, which
- * leaves at least `gap` of water between neighbours' ground circles.
+ * Each cell is a slot: its column is as wide as its biggest island and its
+ * row as tall, plus `wander` on every side. With some `wander`, an island
+ * with a `key` sits somewhere in its slot, picked by the key, so the grid
+ * doesn't look ruled; otherwise it stays in the middle. Islands never leave their slot's column
+ * or row, so neighbours' ground circles keep at least `gap` of water between.
  */
 export function islandOffsets(input: {
-  readonly islands: ReadonlyArray<{ readonly cell: number; readonly radius: number }>;
+  readonly islands: ReadonlyArray<{
+    readonly cell: number;
+    readonly radius: number;
+    readonly key?: string;
+  }>;
   readonly gap: number;
   readonly columns: number;
+  readonly wander?: number;
 }): Vec3[] {
   const { islands, gap, columns } = input;
+  const wander = input.wander ?? 0;
   const columnRadius: number[] = [];
   const rowRadius: number[] = [];
   for (const { cell, radius } of islands) {
     const column = cell % columns;
     const row = Math.floor(cell / columns);
-    columnRadius[column] = Math.max(columnRadius[column] ?? 0, radius);
-    rowRadius[row] = Math.max(rowRadius[row] ?? 0, radius);
+    columnRadius[column] = Math.max(columnRadius[column] ?? 0, radius + wander);
+    rowRadius[row] = Math.max(rowRadius[row] ?? 0, radius + wander);
   }
   // How far along its axis each column's or row's middle lies from the first one's.
   const along = (radii: ReadonlyArray<number | undefined>, index: number) => {
@@ -359,9 +373,15 @@ export function islandOffsets(input: {
     }
     return distance;
   };
-  return islands.map(({ cell }) => {
-    const right = along(columnRadius, cell % columns);
-    const down = along(rowRadius, Math.floor(cell / columns));
+  return islands.map(({ cell, radius, key }) => {
+    const column = cell % columns;
+    const row = Math.floor(cell / columns);
+    // Anywhere in the slot, from one edge of it to the other.
+    const random = seededRandom(key === undefined ? 0 : hashString(`slot:${key}`));
+    const shift = (room: number) =>
+      key === undefined || wander === 0 ? 0 : (random() * 2 - 1) * room;
+    const right = along(columnRadius, column) + shift(columnRadius[column]! - radius);
+    const down = along(rowRadius, row) + shift(rowRadius[row]! - radius);
     return [(right + down) / Math.SQRT2, 0, (down - right) / Math.SQRT2];
   });
 }

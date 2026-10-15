@@ -337,7 +337,9 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
       // One island per row: a single column running down the screen.
       columns: 1,
       // The camera tilt squashes rows on screen; this keeps each sign clear of the beach above.
-      gap: 14,
+      gap: 8,
+      // Islands drift about their slots, so the column doesn't look ruled.
+      wander: 3,
       // Turned a little off the camera so the board's depth shows.
       sign: { position: node(-5.4, -6.4), facing: Math.PI / 4 - 0.35 },
       ripple: {

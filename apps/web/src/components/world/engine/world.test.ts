@@ -512,11 +512,22 @@ describe("resolveArchipelago", () => {
     expect(island!.hats.get("/wt/one")).not.toBe(island!.hats.get("/wt/two"));
   });
 
-  it("never overlaps two islands, whatever their sizes", () => {
+  it("never overlaps two islands, whatever their sizes or where they sit in their slots", () => {
     const { gap } = testWorld.archipelago;
-    for (const columns of [1, 3, 12]) {
-      const islands = Array.from({ length: 12 }, (_, cell) => ({ cell, radius: 2 + (cell % 4) }));
-      const offsets = islandOffsets({ islands, gap, columns });
+    for (const [columns, wander] of [
+      [1, 0],
+      [3, 0],
+      [12, 0],
+      [1, 3],
+      [3, 3],
+      [12, 3],
+    ] as const) {
+      const islands = Array.from({ length: 12 }, (_, cell) => ({
+        cell,
+        radius: 2 + (cell % 4),
+        key: `project-${cell}`,
+      }));
+      const offsets = islandOffsets({ islands, gap, columns, wander });
       for (const [i, a] of offsets.entries()) {
         for (const [j, b] of offsets.entries()) {
           if (j <= i) continue;
@@ -526,6 +537,16 @@ describe("resolveArchipelago", () => {
         }
       }
     }
+  });
+
+  it("sets each island somewhere in its slot, the same spot every time", () => {
+    const islands = Array.from({ length: 4 }, (_, cell) => ({ cell, radius: 5, key: `p${cell}` }));
+    const layout = () => islandOffsets({ islands, gap: 2, columns: 1, wander: 3 });
+    // One column down the screen: x - z runs right, so a ruled column would share it.
+    const rights = layout().map(([x, , z]) => x - z);
+    expect(new Set(rights.map((right) => right.toFixed(3))).size).toBe(islands.length);
+    expect(Math.max(...rights.map(Math.abs)) / Math.SQRT2).toBeLessThanOrEqual(3);
+    expect(layout()).toEqual(layout());
   });
 
   it("lays each island out at its own size", () => {

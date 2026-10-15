@@ -175,8 +175,10 @@ export function Island(props: {
             key={`${prop.kind}:${prop.position.join(",")}`}
             kind={prop.kind}
             position={prop.position}
+            seed={seedOf(prop, definition)}
             ground={ground}
             facing={prop.facing}
+            scale={prop.scale}
             length={prop.length}
           />
         ))}
@@ -185,6 +187,7 @@ export function Island(props: {
           key={`${spot.kind}-${spot.position.join(",")}`}
           kind={spot.kind}
           position={spot.position}
+          seed={seedOf(spot, definition)}
           ground={ground}
           facing={spot.facing}
           scale={spot.scale}
@@ -232,9 +235,9 @@ function islandShadows(
     ...definition.props.filter((prop) => !isScenery(prop.kind) && prop.kind !== "lamp"),
     ...furniture,
   ];
-  const key = casters
+  const key = `${definition.seed ?? ""}|${casters
     .map((prop) => `${prop.kind}:${prop.position.join(",")}:${prop.facing}:${prop.scale ?? 1}`)
-    .join("|");
+    .join("|")}`;
   return castShadows(
     key,
     () =>
@@ -245,7 +248,7 @@ function islandShadows(
           rotateY(prop.facing),
           scale(prop.scale ?? 1),
         );
-        return propParts(prop.kind, prop.length ?? 1, seedOf(prop)).map((part) => ({
+        return propParts(prop.kind, prop.length ?? 1, seedOf(prop, definition)).map((part) => ({
           geometry: part.geometry,
           matrix: frame,
         }));
@@ -273,15 +276,21 @@ function GroundShadow({ geometry: shadow }: { readonly geometry: BufferGeometry 
   );
 }
 
-/** Stable per placement, so props that vary (rock piles, palms) differ from their neighbours. */
-const seedOf = (prop: Pick<Placed, "position">) => hashString(prop.position.join(","));
+/**
+ * Stable per placement, so props that vary (rock piles, palms) differ from
+ * their neighbours, and per island (see `WorldDefinition.seed`).
+ */
+const seedOf = (prop: Pick<Placed, "position">, definition: WorldDefinition) =>
+  hashString(`${definition.seed ?? ""}:${prop.position.join(",")}`);
 
 function Prop(props: {
   readonly kind: PropKind;
   readonly position: readonly [number, number, number];
+  /** From `seedOf`. */
+  readonly seed: number;
   readonly ground: Ground;
   readonly facing: number;
-  readonly scale?: number;
+  readonly scale?: number | undefined;
   readonly length?: number | undefined;
 }) {
   const [x, y, z] = props.position;
@@ -292,9 +301,9 @@ function Prop(props: {
       scale={props.scale ?? 1}
     >
       {props.kind === "lamp" ? (
-        <Lamp seed={seedOf(props)} />
+        <Lamp seed={props.seed} />
       ) : (
-        <MergedMeshes parts={propParts(props.kind, props.length ?? 1, seedOf(props))} />
+        <MergedMeshes parts={propParts(props.kind, props.length ?? 1, props.seed)} />
       )}
     </group>
   );
