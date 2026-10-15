@@ -8,6 +8,7 @@ import {
   type VcsSwitchRefInput,
   type VcsSwitchRefResult,
   type VcsCreateRefInput,
+  type VcsDeleteRefInput,
   type VcsCreateRefResult,
   type VcsCreateWorktreeInput,
   type VcsCreateWorktreeResult,
@@ -112,6 +113,8 @@ export class GitWorkflowService extends Context.Service<
     readonly deleteLocalBranch: (
       input: GitVcsDriver.GitDeleteLocalBranchInput,
     ) => Effect.Effect<void, GitCommandError>;
+    /** See `GitVcsDriver.deleteRef`. */
+    readonly deleteRef: (input: VcsDeleteRefInput) => Effect.Effect<void, GitCommandError>;
     readonly createRef: (
       input: VcsCreateRefInput,
     ) => Effect.Effect<VcsCreateRefResult, GitCommandError>;
@@ -408,6 +411,10 @@ export const make = Effect.gen(function* () {
     deleteLocalBranch: (input) =>
       ensureGitCommand("GitWorkflowService.deleteLocalBranch", input.cwd).pipe(
         Effect.andThen(git.deleteLocalBranch(input)),
+      ),
+    deleteRef: (input) =>
+      ensureGitCommand("GitWorkflowService.deleteRef", input.cwd).pipe(
+        Effect.andThen(git.deleteRef(input)),
       ),
     createRef: (input) =>
       ensureGitCommand("GitWorkflowService.createRef", input.cwd).pipe(

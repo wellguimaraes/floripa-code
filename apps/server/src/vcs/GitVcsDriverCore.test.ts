@@ -3303,6 +3303,85 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
       }),
     );
 
+    it.effect("deletes a merged branch along with the worktree it's checked out in", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        const pathService = yield* Path.Path;
+        const worktreePath = pathService.join(yield* makeTmpDir("git-worktrees-"), "merged");
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* driver.createWorktree({
+          cwd,
+          path: worktreePath,
+          refName: initialBranch,
+          newRefName: "feature/merged",
+        });
+
+        yield* driver.deleteRef({ cwd, refName: "feature/merged" });
+
+        const fileSystem = yield* FileSystem.FileSystem;
+        assert.equal(yield* fileSystem.exists(worktreePath), false);
+        assert.notInclude(yield* driver.listLocalBranchNames(cwd), "feature/merged");
+      }),
+    );
+
+    it.effect("refuses an unmerged branch without force, keeping its worktree", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        const pathService = yield* Path.Path;
+        const worktreePath = pathService.join(yield* makeTmpDir("git-worktrees-"), "unmerged");
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* driver.createWorktree({
+          cwd,
+          path: worktreePath,
+          refName: initialBranch,
+          newRefName: "feature/unmerged",
+        });
+        const fileSystem = yield* FileSystem.FileSystem;
+        yield* fileSystem.writeFileString(pathService.join(worktreePath, "new.txt"), "new\n");
+        yield* git(worktreePath, ["add", "new.txt"]);
+        yield* git(worktreePath, ["commit", "-m", "Unmerged work"]);
+
+        const error = yield* driver
+          .deleteRef({ cwd, refName: "feature/unmerged" })
+          .pipe(Effect.flip);
+        assert.deepInclude(error, { _tag: "GitCommandError", reason: "branch_not_fully_merged" });
+        assert.equal(yield* fileSystem.exists(worktreePath), true);
+        assert.include(yield* driver.listLocalBranchNames(cwd), "feature/unmerged");
+
+        yield* driver.deleteRef({ cwd, refName: "feature/unmerged", force: true });
+        assert.equal(yield* fileSystem.exists(worktreePath), false);
+        assert.notInclude(yield* driver.listLocalBranchNames(cwd), "feature/unmerged");
+      }),
+    );
+
+    it.effect("refuses an unmerged branch outside any worktree without force", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* git(cwd, ["checkout", "-b", "feature/loose"]);
+        yield* git(cwd, ["commit", "--allow-empty", "-m", "Loose work"]);
+        yield* git(cwd, ["checkout", initialBranch]);
+
+        const error = yield* driver.deleteRef({ cwd, refName: "feature/loose" }).pipe(Effect.flip);
+        assert.deepInclude(error, { _tag: "GitCommandError", reason: "branch_not_fully_merged" });
+      }),
+    );
+
+    it.effect("dates each local branch by its last commit", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const refs = yield* driver.listRefs({ cwd, refKind: "local" });
+        const lastCommitAt = refs.refs.find((ref) => ref.name === initialBranch)?.lastCommitAt;
+        assert.isDefined(lastCommitAt);
+        assert.isFalse(Number.isNaN(Date.parse(lastCommitAt!)));
+      }),
+    );
+
     it.effect("keeps a worktree whose untracked files status is configured to hide", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTmpDir();

@@ -445,6 +445,7 @@ const GIT_FAILURE_REASON_PATTERNS: ReadonlyArray<readonly [RegExp, GitCommandFai
   [/would clobber existing tag/i, "tag_would_be_clobbered"],
   [/is already (?:used by worktree at|checked out at)/i, "branch_checked_out_in_worktree"],
   [/a branch named .+ already exists/i, "branch_already_exists"],
+  [/is not fully merged/i, "branch_not_fully_merged"],
   // ssh names the methods it tried, so the parenthesized list varies:
   // `(publickey)`, `(publickey,password)`, `(keyboard-interactive)`.
   [
@@ -3197,6 +3198,9 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
             isRemote: false,
             isDefault: name === defaultBranch,
             worktreePath: worktreeMap.get(name) ?? null,
+            ...(lastCommit > 0
+              ? { lastCommitAt: DateTime.formatIso(DateTime.makeUnsafe(lastCommit * 1000)) }
+              : {}),
           },
           lastCommit,
         });
@@ -3855,7 +3859,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   const deleteLocalBranch: GitVcsDriver.GitVcsDriver["Service"]["deleteLocalBranch"] = Effect.fn(
     "deleteLocalBranch",
   )(function* (input) {
-    yield* executeGit(
+    // Stable diagnostics, so an unmerged branch is recognised whatever the user's locale.
+    yield* executeGitWithStableDiagnostics(
       "GitVcsDriver.deleteLocalBranch",
       input.cwd,
       ["branch", input.force === true ? "-D" : "-d", "--", input.refName],
@@ -3865,6 +3870,59 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       },
     );
   });
+
+  /**
+   * Whether `git branch -d` would take the branch: merged into its upstream, or into HEAD when it
+   * has none.
+   */
+  const isBranchMerged = Effect.fn("isBranchMerged")(function* (cwd: string, refName: string) {
+    const upstream = yield* executeGit(
+      "GitVcsDriver.deleteRef.upstream",
+      cwd,
+      ["rev-parse", "--abbrev-ref", "--verify", "--quiet", `${refName}@{upstream}`],
+      { timeoutMs: 5_000, allowNonZeroExit: true },
+    );
+    const into = upstream.exitCode === 0 ? upstream.stdout.trim() : "HEAD";
+    const ancestor = yield* executeGit(
+      "GitVcsDriver.deleteRef.mergeBase",
+      cwd,
+      ["merge-base", "--is-ancestor", "--", `refs/heads/${refName}`, into],
+      { timeoutMs: 10_000, allowNonZeroExit: true },
+    );
+    return ancestor.exitCode === 0;
+  });
+
+  const deleteRef: GitVcsDriver.GitVcsDriver["Service"]["deleteRef"] = Effect.fn("deleteRef")(
+    function* (input) {
+      const worktrees = yield* executeGit(
+        "GitVcsDriver.deleteRef.worktreeList",
+        input.cwd,
+        ["worktree", "list", "--porcelain", "-z"],
+        { timeoutMs: 30_000, maxOutputBytes: 16 * 1024 * 1024 },
+      );
+      const worktreePath = parseWorktreeBranchPaths(worktrees.stdout).get(input.refName) ?? null;
+      if (worktreePath !== null) {
+        // Checked before the worktree goes, so a refused branch keeps its worktree.
+        if (input.force !== true && !(yield* isBranchMerged(input.cwd, input.refName))) {
+          return yield* new GitCommandError({
+            ...gitCommandContext({
+              operation: "GitVcsDriver.deleteRef",
+              cwd: input.cwd,
+              args: ["branch", "-d", "--", input.refName],
+            }),
+            reason: "branch_not_fully_merged",
+            detail: "The branch is not fully merged.",
+          });
+        }
+        yield* removeWorktree({ cwd: input.cwd, path: worktreePath, force: true });
+      }
+      yield* deleteLocalBranch({
+        cwd: input.cwd,
+        refName: input.refName,
+        ...(input.force === undefined ? {} : { force: input.force }),
+      });
+    },
+  );
 
   const renameBranch: GitVcsDriver.GitVcsDriver["Service"]["renameBranch"] = Effect.fn(
     "renameBranch",
@@ -4098,6 +4156,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     removeWorktree: (input) => withListRefsInvalidation(input.cwd, removeWorktree(input)),
     pruneWorktrees: (input) => withListRefsInvalidation(input.cwd, pruneWorktrees(input)),
     deleteLocalBranch: (input) => withListRefsInvalidation(input.cwd, deleteLocalBranch(input)),
+    deleteRef: (input) => withListRefsInvalidation(input.cwd, deleteRef(input)),
     renameBranch: (input) => withListRefsInvalidation(input.cwd, renameBranch(input)),
     createRef: (input) => withListRefsInvalidation(input.cwd, createRef(input)),
     switchRef: (input) => withListRefsInvalidation(input.cwd, switchRef(input)),

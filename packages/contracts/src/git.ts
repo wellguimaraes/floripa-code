@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import {
+  IsoDateTime,
   NonNegativeInt,
   PositiveInt,
   ProjectId,
@@ -87,6 +88,8 @@ export const VcsRef = Schema.Struct({
   current: Schema.Boolean,
   isDefault: Schema.Boolean,
   worktreePath: TrimmedNonEmptyStringSchema.pipe(Schema.NullOr),
+  /** When the branch's last commit was made, for local branches. */
+  lastCommitAt: Schema.optional(IsoDateTime),
 });
 export type VcsRef = typeof VcsRef.Type;
 
@@ -180,6 +183,17 @@ export const VcsRemoveWorktreeInput = Schema.Struct({
   force: Schema.optional(Schema.Boolean),
 });
 export type VcsRemoveWorktreeInput = typeof VcsRemoveWorktreeInput.Type;
+
+/**
+ * Deletes a local branch, removing the worktree it's checked out in first. Without `force`, a
+ * branch that isn't fully merged fails with `branch_not_fully_merged` and nothing is touched.
+ */
+export const VcsDeleteRefInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+  refName: TrimmedNonEmptyStringSchema,
+  force: Schema.optional(Schema.Boolean),
+});
+export type VcsDeleteRefInput = typeof VcsDeleteRefInput.Type;
 
 export const VcsCreateRefInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
@@ -372,6 +386,7 @@ export const GitCommandFailureReason = Schema.Literals([
   "authentication_failed",
   "branch_already_exists",
   "branch_checked_out_in_worktree",
+  "branch_not_fully_merged",
   "host_key_unverified",
   "not_a_repository",
   "path_already_exists",
