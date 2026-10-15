@@ -271,7 +271,7 @@ export function NewAgentBubble(props: {
                 if (item !== undefined) setWorkspace(item.workspace);
               }}
             >
-              <SelectTrigger size="xs" aria-label="Workspace">
+              <SelectTrigger size="sm" aria-label="Workspace">
                 <WorkspaceIcon workspace={selectedWorkspace} />
                 <SelectValue />
               </SelectTrigger>
