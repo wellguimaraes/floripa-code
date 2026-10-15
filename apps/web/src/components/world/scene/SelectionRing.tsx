@@ -2,6 +2,7 @@ import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
 import { Color, type Mesh, type MeshBasicMaterial } from "three";
 
+import { keepColors } from "./contrast";
 import { drawSoon } from "./frames";
 import { geometry } from "./geometries";
 import { palette } from "./palette";
@@ -67,6 +68,15 @@ export function SelectionRing(props: {
   );
 }
 
+/** Keeps its colours at any contrast, like the character it marks. */
 function RingMaterial({ opacity }: { readonly opacity: number }) {
-  return <meshBasicMaterial color={ELSEWHERE} transparent opacity={opacity} depthWrite={false} />;
+  return (
+    <meshBasicMaterial
+      color={ELSEWHERE}
+      transparent
+      opacity={opacity}
+      depthWrite={false}
+      onUpdate={keepColors}
+    />
+  );
 }
