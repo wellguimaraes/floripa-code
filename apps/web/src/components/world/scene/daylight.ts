@@ -102,8 +102,8 @@ const KEYFRAMES: ReadonlyArray<Keyframe> = [
 /** The sun is up from sunrise to sunset; the rest of the time the moon lights the world. */
 export const SUNRISE = 6;
 export const SUNSET = 19;
-/** Lamps come on once the night passes this, at dusk, and go out at dawn. */
-const LAMPS_ON = 0.5;
+/** Lamps come on this long before sunset and stay on until this long after sunrise. */
+const LAMP_MARGIN_HOURS = 30 / 60;
 /** The moon stays put, high and a little left of the camera. */
 const MOON: Direction = normalize([7, 12, 6]);
 /** Light and shadows move in steps this long, so shadows are rebuilt only a few times an hour. */
@@ -147,7 +147,7 @@ export function daylightAt(hour: number): Daylight {
     fillIntensity: MathUtils.lerp(previous.fillIntensity, next.fillIntensity, t),
     background: color(previous.background, next.background),
     night,
-    lampsOn: night >= LAMPS_ON,
+    lampsOn: at >= SUNSET - LAMP_MARGIN_HOURS || at < SUNRISE + LAMP_MARGIN_HOURS,
   };
 }
 
