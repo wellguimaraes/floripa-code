@@ -7,6 +7,7 @@ import * as McpAppModelContext from "../mcpApps/McpAppModelContext.ts";
 import * as McpAppRequests from "../mcpApps/McpAppRequests.ts";
 import * as ProviderSessionRuntime from "../persistence/ProviderSessionRuntime.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
+import * as ManagerRouter from "../manager/ManagerRouter.ts";
 import * as ThreadTitleDrift from "../textGeneration/ThreadTitleDrift.ts";
 import { FetchHttpClient } from "effect/http";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
@@ -361,5 +362,8 @@ export const layerProduction = Layer.mergeAll(
   ),
   layerProviderContinuationWorkerProvided,
   layerAgentSessionImporterProvided,
+  ManagerRouter.layer.pipe(
+    Layer.provide(Layer.merge(layerThreadManagementProvided, FetchHttpClient.layer)),
+  ),
   EffectOutbox.layerPruneWorker.pipe(Layer.provide(EffectOutbox.layer)),
 ).pipe(Layer.provide(Scheduler.layer), Layer.provideMerge(layerEventInfrastructure));

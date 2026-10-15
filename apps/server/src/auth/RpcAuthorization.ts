@@ -118,6 +118,8 @@ export const RPC_REQUIRED_SCOPES = {
   // Talking to an agent is operating it; the host's key pays, so read-only guests cannot.
   [WS_METHODS.voiceTranscribe]: AuthOrchestrationOperateScope,
   [WS_METHODS.voiceListTranscriptionModels]: AuthOrchestrationReadScope,
+  // Routing a message is the first step of sending it, on the host's key.
+  [WS_METHODS.managerRoute]: AuthOrchestrationOperateScope,
   // Delivery logs hold request bodies, so they need the same scope as the URL.
   [WS_METHODS.scheduledTasksListWebhookDeliveries]: AuthOrchestrationOperateScope,
   [WS_METHODS.scheduledTasksGetWebhookDelivery]: AuthOrchestrationOperateScope,

@@ -64,4 +64,5 @@ export * from "./rpc.ts";
 export * from "./worktreeSetup.ts";
 export * from "./secretRequest.ts";
 export * from "./voice.ts";
+export * from "./manager.ts";
 export * from "./clientRpcPermissions.ts";

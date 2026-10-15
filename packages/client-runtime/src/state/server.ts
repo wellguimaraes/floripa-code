@@ -1343,6 +1343,11 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:voice:transcribe",
       tag: WS_METHODS.voiceTranscribe,
     }),
+    // Off the config lane too: one OpenRouter round trip per message.
+    routeManagerMessage: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:manager:route",
+      tag: WS_METHODS.managerRoute,
+    }),
     // Off the config lane: answering a card must not queue behind settings
     // edits. One answer per card at a time.
     answerSecretRequest: createEnvironmentRpcCommand(runtime, {

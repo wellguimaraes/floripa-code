@@ -343,6 +343,7 @@ import {
   ScheduledTaskMutationResult,
 } from "./scheduledTask.ts";
 import { SecretRequestAnswerInput, SecretRequestError } from "./secretRequest.ts";
+import { ManagerRoute, ManagerRouteError, ManagerRouteInput } from "./manager.ts";
 import {
   VoiceTranscribeInput,
   VoiceTranscription,
@@ -524,6 +525,9 @@ export const WS_METHODS = {
   // Voice input
   voiceTranscribe: "voice.transcribe",
   voiceListTranscriptionModels: "voice.listTranscriptionModels",
+
+  // Island manager
+  managerRoute: "manager.route",
   scheduledTasksListWebhookDeliveries: "scheduledTasks.listWebhookDeliveries",
   scheduledTasksGetWebhookDelivery: "scheduledTasks.getWebhookDelivery",
 
@@ -1810,6 +1814,13 @@ const WsVoiceTranscribeRpc = Rpc.make(WS_METHODS.voiceTranscribe, {
   error: Schema.Union([VoiceTranscriptionError, EnvironmentAuthorizationError]),
 });
 
+/** Guesses which checkout and agent on an island a message is for, through OpenRouter. */
+const WsManagerRouteRpc = Rpc.make(WS_METHODS.managerRoute, {
+  payload: ManagerRouteInput,
+  success: ManagerRoute,
+  error: Schema.Union([ManagerRouteError, EnvironmentAuthorizationError]),
+});
+
 const WsVoiceListTranscriptionModelsRpc = Rpc.make(WS_METHODS.voiceListTranscriptionModels, {
   payload: Schema.Struct({}),
   success: VoiceTranscriptionModels,
@@ -1925,6 +1936,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSecretsAnswerRequestRpc,
   WsVoiceTranscribeRpc,
   WsVoiceListTranscriptionModelsRpc,
+  WsManagerRouteRpc,
   WsScheduledTasksListWebhookDeliveriesRpc,
   WsScheduledTasksGetWebhookDeliveryRpc,
   WsServerReportClientActivityRpc,

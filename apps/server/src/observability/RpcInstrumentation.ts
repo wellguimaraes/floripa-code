@@ -94,6 +94,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.secretsAnswerRequest]: "secrets",
   [WS_METHODS.voiceTranscribe]: "voice",
   [WS_METHODS.voiceListTranscriptionModels]: "voice",
+  [WS_METHODS.managerRoute]: "manager",
   [WS_METHODS.cloudGetRelayClientStatus]: "cloud",
   [WS_METHODS.cloudInstallRelayClient]: "cloud",
   [WS_METHODS.pullRequestsList]: "pull-requests",
