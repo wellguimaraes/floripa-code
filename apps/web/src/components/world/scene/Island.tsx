@@ -1,11 +1,13 @@
 import { Suspense, useContext, useMemo } from "react";
 import {
   BufferGeometry,
+  Color,
   CylinderGeometry,
   DoubleSide,
   Float32BufferAttribute,
   IcosahedronGeometry,
   Matrix4,
+  SRGBColorSpace,
   Vector3,
 } from "three";
 
@@ -14,7 +16,7 @@ import { islandBounds } from "../engine/archipelago";
 import { hashString, seededRandom } from "../engine/hash";
 import { isScenery } from "../engine/scenery";
 import { geometry } from "./geometries";
-import { FadedContext, LitMaterial } from "./lighting";
+import { FadedContext, LitMaterial, toFaded } from "./lighting";
 import {
   chain,
   type MergedPart,
@@ -55,6 +57,15 @@ export interface FurnitureSpot {
 
 /** Each of `palette.lawnBands`' radius, as a share of the lawn's. */
 const LAWN_BANDS = [0.8, 0.58, 0.34];
+
+/**
+ * The shallows around an empty island: in its sea shades like the rest of it,
+ * a little lighter, so they still read as water around the dimmed sand.
+ */
+const IDLE_SHALLOWS = (() => {
+  const shade = new Color(toFaded(palette.shallows)).getHSL({ h: 0, s: 0, l: 0 }, SRGBColorSpace);
+  return `#${new Color().setHSL(shade.h, shade.s, shade.l + 0.06, SRGBColorSpace).getHexString()}`;
+})();
 
 /** How far the outer shallows reach past a sand patch's edge. */
 const LAGOON_REACH = 2.1;
@@ -106,18 +117,18 @@ export function Island(props: {
                 {...(patch.kind === "sand" ? { map: sandGrainTexture() } : {})}
               />
             </mesh>
-            {patch.kind === "sand" && !faded ? (
+            {patch.kind === "sand" ? (
               // Just above the sea, under the island's rim: turquoise, then
-              // paler water over the sand close in. Gone on an empty island,
-              // where they'd read as rings of darker sea.
-              <>
+              // paler water over the sand close in. Water, not island, so it
+              // keeps its colours on an empty island too.
+              <FadedContext value={false}>
                 <mesh geometry={wavyDiscGeometry(patch.radius + LAGOON_REACH)} position-y={-0.24}>
                   <LitMaterial color={palette.lagoon} />
                 </mesh>
                 <mesh geometry={wavyDiscGeometry(patch.radius + 0.9)} position-y={-0.23}>
-                  <LitMaterial color={palette.shallows} />
+                  <LitMaterial color={faded ? IDLE_SHALLOWS : palette.shallows} />
                 </mesh>
-              </>
+              </FadedContext>
             ) : null}
             {patch.kind === "grass"
               ? // Bands of lighter green toward the middle, each a hair above the last.

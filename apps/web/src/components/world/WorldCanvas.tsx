@@ -58,7 +58,7 @@ import { HAT_COUNT } from "./scene/Hat";
 import { Island, type FurnitureSpot } from "./scene/Island";
 import { afterPaint, whenIdle } from "./scene/frames";
 import { SceneContrast } from "./scene/contrast";
-import { FadedContext, toFaded } from "./scene/lighting";
+import { FadedContext } from "./scene/lighting";
 import { palette } from "./scene/palette";
 import { SharkSightings } from "./scene/Sharks";
 import { groundHeight, surfaceAt } from "./scene/terrain";
@@ -851,15 +851,18 @@ export default function WorldCanvas(props: {
                   furniture={buildFurniture(island.definition, island.characters)}
                   ripple={island.ripple}
                 />
-                <Sign
-                  slot={island.definition.archipelago.sign}
-                  text={projectTitles.get(island.key) ?? "Project"}
-                  color={faded ? toFaded(plate) : plate}
-                  branches={signStats.get(island.key)?.branches ?? 0}
-                  pullRequests={signStats.get(island.key)?.pullRequests ?? 0}
-                  worktrees={signStats.get(island.key)?.worktrees ?? 0}
-                  onBranchesClick={() => setBranchesOn(island.key)}
-                />
+                {/* The sign names the project, so it keeps its colours on an empty island. */}
+                <FadedContext value={false}>
+                  <Sign
+                    slot={island.definition.archipelago.sign}
+                    text={projectTitles.get(island.key) ?? "Project"}
+                    color={plate}
+                    branches={signStats.get(island.key)?.branches ?? 0}
+                    pullRequests={signStats.get(island.key)?.pullRequests ?? 0}
+                    worktrees={signStats.get(island.key)?.worktrees ?? 0}
+                    onBranchesClick={() => setBranchesOn(island.key)}
+                  />
+                </FadedContext>
                 {island.characters
                   .filter((character) => !abducted.has(character.facts.key))
                   .map((character) => (
