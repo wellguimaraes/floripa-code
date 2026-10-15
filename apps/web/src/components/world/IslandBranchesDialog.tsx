@@ -114,7 +114,7 @@ export function IslandBranchesDialog(props: {
           >
             {title}
           </span>
-          <DialogTitle>Branches</DialogTitle>
+          <DialogTitle>Local Branches</DialogTitle>
         </DialogHeader>
         <DialogPanel>
           {rows.length === 0 ? (
