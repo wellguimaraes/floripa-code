@@ -1352,7 +1352,35 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
           }
           return handled;
         },
-        handleTextInput: (view, from, to, text) => {
+        handleTextInput: (view, from, to, text, deflt) => {
+          // Input rules only see a marker typed last, so text that lands in one
+          // go (dictation, text replacement, autocomplete) would keep its
+          // `code` or **bold** literal. The draft is Markdown either way, so
+          // rebuild the doc from it, the way a restored draft is built.
+          if (richText && text.length > 1 && !view.composing) {
+            if (view.state.selection.$from.parent.type.spec.code) return false;
+            const tr = deflt();
+            const map = serializeEditorDoc(tr.doc);
+            const rebuilt = view.state.schema.nodeFromJSON(
+              buildDocJson(map.value, skillLabelFor, { styling: true }),
+            );
+            if (!rebuilt.eq(tr.doc)) {
+              const caret = flatToCollapsed(map, pmToFlat(map, tr.selection.from));
+              tr.replaceWith(0, tr.doc.content.size, rebuilt.content);
+              const rebuiltMap = serializeEditorDoc(tr.doc);
+              tr.setSelection(
+                TextSelection.create(
+                  tr.doc,
+                  flatToPm(rebuiltMap, collapsedToFlat(rebuiltMap, caret)),
+                ),
+              );
+              // Text typed next follows what comes after, not a span the
+              // insert just closed, as after an input rule.
+              tr.setStoredMarks(tr.selection.$from.nodeAfter?.marks ?? []);
+            }
+            view.dispatch(tr.scrollIntoView());
+            return true;
+          }
           if (literalText || text.length !== 1) return false;
           const closer = SURROUND_CLOSE[text];
           if (!closer || from === to) return false;
