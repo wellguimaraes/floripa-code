@@ -1,6 +1,6 @@
 import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
-import { Color, type Mesh, type MeshBasicMaterial } from "three";
+import { Color, type Mesh, type MeshBasicMaterial, SRGBColorSpace } from "three";
 
 import { keepColors } from "./contrast";
 import { drawSoon } from "./frames";
@@ -18,11 +18,13 @@ const PERIOD_SECONDS = 1.6;
 const SPREAD = 0.8;
 const OPACITY = 0.8;
 const ELSEWHERE = new Color(palette.selection);
+/** How much of its lightness the character's colour keeps on sand, so the ring stands out on it. */
+const SAND_LIGHTNESS = 0.75;
 
 /**
  * The selected character's ring, with ripples spreading out of it. White shows
  * poorly on pale sand, so while `onSand` says the character stands on sand the
- * ring takes `sandColor`, the character's own colour. Keeps frames coming at
+ * ring takes `sandColor`, the character's own colour, darkened. Keeps frames coming at
  * `fps` while it is shown.
  */
 export function SelectionRing(props: {
@@ -30,7 +32,10 @@ export function SelectionRing(props: {
   readonly sandColor: string;
   readonly onSand: () => boolean;
 }) {
-  const onSand = useMemo(() => new Color(props.sandColor), [props.sandColor]);
+  const onSand = useMemo(() => {
+    const { h, s, l } = new Color(props.sandColor).getHSL({ h: 0, s: 0, l: 0 }, SRGBColorSpace);
+    return new Color().setHSL(h, s, l * SAND_LIGHTNESS, SRGBColorSpace);
+  }, [props.sandColor]);
   const ring = useRef<Mesh>(null);
   const ripples = useRef<Array<Mesh | null>>([]);
   useFrame((state) => {
