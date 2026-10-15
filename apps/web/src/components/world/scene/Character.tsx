@@ -275,6 +275,7 @@ export function Character(props: {
         {selected ? (
           <SelectionRing
             fps={movement.walkFps}
+            sandColor={shades.base}
             onSand={() => {
               const [x, , z] = motion.current.position;
               return surface(x, z) === "sand";

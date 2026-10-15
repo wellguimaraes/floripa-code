@@ -1,5 +1,5 @@
 import { useFrame } from "@react-three/fiber";
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import { Color, type Mesh, type MeshBasicMaterial } from "three";
 
 import { drawSoon } from "./frames";
@@ -16,20 +16,24 @@ const PERIOD_SECONDS = 1.6;
 /** How far a ripple grows, as a multiple of the ring's size. */
 const SPREAD = 0.8;
 const OPACITY = 0.8;
-/** White shows poorly on pale sand, so there the ring takes the ocean's deep blue. */
-const ON_SAND = new Color(palette.water);
 const ELSEWHERE = new Color(palette.selection);
 
 /**
- * The selected character's ring, with ripples spreading out of it, blue while
- * `onSand` says the character stands on sand. Keeps frames coming at `fps`
- * while it is shown.
+ * The selected character's ring, with ripples spreading out of it. White shows
+ * poorly on pale sand, so while `onSand` says the character stands on sand the
+ * ring takes `sandColor`, the character's own colour. Keeps frames coming at
+ * `fps` while it is shown.
  */
-export function SelectionRing(props: { readonly fps: number; readonly onSand: () => boolean }) {
+export function SelectionRing(props: {
+  readonly fps: number;
+  readonly sandColor: string;
+  readonly onSand: () => boolean;
+}) {
+  const onSand = useMemo(() => new Color(props.sandColor), [props.sandColor]);
   const ring = useRef<Mesh>(null);
   const ripples = useRef<Array<Mesh | null>>([]);
   useFrame((state) => {
-    const color = props.onSand() ? ON_SAND : ELSEWHERE;
+    const color = props.onSand() ? onSand : ELSEWHERE;
     for (const mesh of [ring.current, ...ripples.current]) {
       if (mesh !== null) (mesh.material as MeshBasicMaterial).color.copy(color);
     }
