@@ -40,7 +40,11 @@ import { observeResize } from "~/lib/observeResize";
 import { cn } from "~/lib/utils";
 import { useClientSettings } from "../../hooks/useSettings";
 import { useWorldLook } from "../world/worldLookStore";
-import { WorldChatCharacter, WorldRegenerateTitleButton } from "../world/WorldChatActions";
+import {
+  WorldChatCharacter,
+  WorldChatWorktree,
+  WorldRegenerateTitleButton,
+} from "../world/WorldChatActions";
 
 // three.js loads only when the world shows this thread's character.
 
@@ -350,7 +354,7 @@ export const ChatHeader = memo(function ChatHeader({
                   aria-label={`New thread in ${worldProjectName}`}
                   onClick={onNewThreadInProject}
                   className={cn(
-                    "mb-0.5 max-w-full cursor-pointer self-start truncate rounded-md px-1.5",
+                    "mb-0.5 max-w-full cursor-pointer self-start truncate rounded-full px-2",
                     "text-xs leading-5 font-semibold",
                     "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                   )}
@@ -434,7 +438,11 @@ export const ChatHeader = memo(function ChatHeader({
               </WorkspaceBreadcrumbSeparator>
             </>
           ) : null}
-          <WorkspaceBreadcrumbItem current className="min-w-10 flex-1">
+          <WorkspaceBreadcrumbItem
+            current
+            // In the world the regenerate button follows the title, a small step apart.
+            className={cn("min-w-10 flex-1", worldLook !== null && "gap-1.5")}
+          >
             {renamingTitle !== null ? (
               <input
                 autoFocus
@@ -461,7 +469,7 @@ export const ChatHeader = memo(function ChatHeader({
                 onFocus={(event) => event.currentTarget.select()}
                 onKeyDown={handleRenameKeyDown}
               />
-            ) : isServerThread ? (
+            ) : isServerThread && worldLook === null ? (
               <Tooltip>
                 <TooltipTrigger
                   render={
@@ -491,9 +499,19 @@ export const ChatHeader = memo(function ChatHeader({
                 <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
               </Tooltip>
             ) : (
+              // In the world the title opens no menu (right-click still does); double-click renames.
               <Tooltip>
                 <TooltipTrigger
-                  render={<h2 aria-label={activeThreadTitle} className="min-w-0 flex-1" />}
+                  render={
+                    <h2
+                      aria-label={activeThreadTitle}
+                      // In the world the regenerate button follows the title, not the row's end.
+                      className={cn("min-w-0", worldLook === null && "flex-1")}
+                      onDoubleClick={
+                        isServerThread && canOperateThread ? handleTitleDoubleClick : undefined
+                      }
+                    />
+                  }
                 >
                   <WorkspaceBreadcrumbText className={cn(worldLook !== null && "text-base")}>
                     {activeThreadTitle}
@@ -507,6 +525,10 @@ export const ChatHeader = memo(function ChatHeader({
             ) : null}
           </WorkspaceBreadcrumbItem>
         </WorkspaceBreadcrumb>
+        {/* In the world, where the thread works sits under its title, main checkout included. */}
+        {worldLook !== null && isServerThread ? (
+          <WorldChatWorktree threadRef={activeThreadRef} projectRoot={activeProjectCwd} />
+        ) : null}
       </div>
     </div>
   );

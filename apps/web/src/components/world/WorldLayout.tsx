@@ -195,9 +195,9 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
             style={
               {
                 "--workspace-controls-top": "calc(100% - var(--workspace-topbar-height))",
-                // Taller than the app's bar, so the portrait and the project chip over the
-                // title get room to breathe.
-                "--workspace-topbar-height": "68px",
+                // Taller than the app's bar, so the portrait, the project chip over the
+                // title and the worktree under it get room to breathe.
+                "--workspace-topbar-height": "100px",
                 "--workspace-controls-right": "0.75rem",
                 "--workspace-native-controls-inset": "0px",
               } as CSSProperties
