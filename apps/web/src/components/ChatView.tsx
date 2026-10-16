@@ -11651,6 +11651,8 @@ export default function ChatView(props: ChatViewProps) {
                     >
                       <ComposerSurface.Shell
                         contextStrip={showComposerContextStrip || showComposerModelStrip}
+                        // Over the world's scene the composer needs a firmer edge.
+                        className={cn(worldChatShown && "[--chat-composer-outline:rgb(0_0_0/14%)]")}
                       >
                         <ComposerSurface.Host
                           inert={isSavingQueuedEdit}
@@ -11734,7 +11736,10 @@ export default function ChatView(props: ChatViewProps) {
                                 isPreparingWorktree={isPreparingWorktree}
                                 header={
                                   worldChatShown ? (
-                                    <div className="flex px-3 pt-2.5">{chatHeader}</div>
+                                    // Less at the bottom: the title's text brings its own space there.
+                                    <div className="flex rounded-t-3xl border-b border-border bg-muted px-3 pt-3 pb-1.5 sm:px-4 sm:pt-4 sm:pb-2.5">
+                                      {chatHeader}
+                                    </div>
                                   ) : undefined
                                 }
                                 queuedRunsControl={

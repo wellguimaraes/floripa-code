@@ -321,7 +321,9 @@ export const ChatHeader = memo(function ChatHeader({
     <div
       ref={breadcrumbContainerRef}
       className={cn(
-        "flex min-w-0 flex-1 items-center gap-2 sm:gap-3",
+        "flex min-w-0 flex-1 items-center gap-2",
+        // The world's character keeps close to its title.
+        worldLook === null && "sm:gap-3",
         // The world's header sits in the composer, clear of the panel toggles.
         worldLook === null && (rightPanelOpen ? "pr-10" : "pr-24"),
       )}
@@ -520,7 +522,10 @@ export const ChatHeader = memo(function ChatHeader({
                     />
                   }
                 >
-                  <WorkspaceBreadcrumbText className={cn(worldLook !== null && "text-base")}>
+                  <WorkspaceBreadcrumbText
+                    // Titles are often a lowercase first message; the world header reads as a heading.
+                    className={cn(worldLook !== null && "text-base first-letter:uppercase")}
+                  >
                     {activeThreadTitle}
                   </WorkspaceBreadcrumbText>
                 </TooltipTrigger>
@@ -530,12 +535,17 @@ export const ChatHeader = memo(function ChatHeader({
             {worldLook !== null && renamingTitle === null && isServerThread ? (
               <span className="flex shrink-0 items-center">
                 <WorldRegenerateTitleButton threadRef={activeThreadRef} />
-                <WorldArchiveButton threadRef={activeThreadRef} />
               </span>
             ) : null}
           </WorkspaceBreadcrumbItem>
         </WorkspaceBreadcrumb>
       </div>
+      {/* Archive closes the chat, so it sits apart in the header's top corner. */}
+      {worldLook !== null && isServerThread ? (
+        <span className="flex shrink-0 items-center self-start">
+          <WorldArchiveButton threadRef={activeThreadRef} />
+        </span>
+      ) : null}
     </div>
   );
 });
