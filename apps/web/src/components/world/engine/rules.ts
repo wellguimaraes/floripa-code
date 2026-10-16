@@ -16,6 +16,7 @@ export function matchesFacts(match: CharacterFactMatch, facts: CharacterFacts): 
     (match.unread === undefined || match.unread === facts.unread) &&
     (match.kid === undefined || match.kid === facts.kid) &&
     (match.hasWorkingKids === undefined || match.hasWorkingKids === facts.hasWorkingKids) &&
+    (match.parentBusy === undefined || match.parentBusy === facts.parentBusy) &&
     (match.backgroundTask === undefined || match.backgroundTask === facts.backgroundTask) &&
     (match.quiet === undefined || match.quiet === facts.quiet) &&
     (match.repliedWithin === undefined || facts.replyAgeSeconds <= match.repliedWithin)

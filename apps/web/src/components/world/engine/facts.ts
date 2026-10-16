@@ -26,6 +26,8 @@ export interface CharacterFacts {
   readonly parentKey: string | null;
   /** A kid is working, or the thread waits on a background subagent. */
   readonly hasWorkingKids: boolean;
+  /** A kid whose parent is busy (see `isBusy`), or follows a parent who is. */
+  readonly parentBusy: boolean;
   /** A background task other than a subagent, such as a long command, is still running. */
   readonly backgroundTask: boolean;
   /**
@@ -50,6 +52,16 @@ export function isResting(facts: CharacterFacts): boolean {
     (facts.status === "ready" || facts.status === "waiting") &&
     !facts.hasWorkingKids &&
     !facts.backgroundTask
+  );
+}
+
+/** Working, waiting on you, or waiting on its kids or a background task. */
+function isBusy(facts: CharacterFacts): boolean {
+  return (
+    facts.status === "working" ||
+    facts.status === "approval" ||
+    facts.status === "input" ||
+    (facts.status === "waiting" && (facts.hasWorkingKids || facts.backgroundTask))
   );
 }
 
@@ -132,11 +144,23 @@ export function buildCharacterFacts(input: {
     }
     return current.projectKey;
   };
-  return drafts.map((facts) => ({
+  const family = drafts.map((facts) => ({
     ...facts,
     projectKey: familyProject(facts),
     hasWorkingKids: parentsWithWorkingKids.has(facts.key),
+    parentBusy: false,
   }));
+  // A kid goes along with a busy parent, and its own kids with it.
+  const byKey = new Map(family.map((facts) => [facts.key, facts]));
+  const parentBusy = (facts: CharacterFacts) => {
+    let current = facts;
+    for (let depth = 0; depth < 32 && current.parentKey !== null; depth += 1) {
+      current = byKey.get(current.parentKey) ?? current;
+      if (isBusy(current)) return true;
+    }
+    return false;
+  };
+  return family.map((facts) => ({ ...facts, parentBusy: parentBusy(facts) }));
 }
 
 function threadKey(thread: EnvironmentThreadShell): string {

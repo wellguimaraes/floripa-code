@@ -89,6 +89,7 @@ const character = (overrides: Partial<CharacterFacts> = {}): CharacterFacts => {
     kid: false,
     parentKey: null,
     hasWorkingKids: false,
+    parentBusy: false,
     backgroundTask: false,
     beat: 0,
     quiet: false,
@@ -138,6 +139,16 @@ describe("resolveIntent", () => {
       go: "mine",
       do: "mine",
     });
+  });
+
+  it("brings a done kid along to its busy parent's pile, standing by instead of digging", () => {
+    const [island] = islandWorlds;
+    const kid = { kid: true, parentKey: "env:parent", status: "ready" as const };
+    expect(resolveIntent(character({ ...kid, parentBusy: true }), island!)).toEqual({
+      go: "helpers",
+      do: "idle",
+    });
+    expect(resolveIntent(character(kid), island!).go).toBe("beach");
   });
 });
 
@@ -239,6 +250,79 @@ describe("resolveWorld", () => {
     expect(slotsOf([first!, second!, third!, fourth!]).map(([, slot]) => slot)).toEqual([
       3, 0, 1, 2,
     ]);
+  });
+
+  it("lines a family up as one block, placed by its latest reply", () => {
+    const world: WorldDefinition = {
+      ...testWorld,
+      areas: {
+        ...testWorld.areas,
+        beach: {
+          kind: "fixed",
+          entry: "c",
+          lineUp: true,
+          slots: [0, 1, 2, 3].map((x) => ({ position: [x, 0, 10] as const, facing: 0 })),
+        },
+      },
+    };
+    const rester = (second: number, overrides: Partial<CharacterFacts> = {}) =>
+      character({
+        status: "ready",
+        lastReplyAt: `2026-01-01T00:01:0${second}.000Z`,
+        ...overrides,
+      });
+    const parent = rester(4);
+    const kid = rester(1, { kid: true, parentKey: parent.key });
+    const [early, late] = [rester(2), rester(3)];
+    const slots = new Map(
+      resolveWorld({
+        facts: [kid, early, late, parent],
+        definition: world,
+        previous: new Map(),
+      }).map((c) => [c.facts.key, c.placement.slotIndex]),
+    );
+    // Alone, the kid would sit first in line, three towels from its parent.
+    expect(slots).toEqual(
+      new Map([
+        [early.key, 0],
+        [late.key, 1],
+        [kid.key, 2],
+        [parent.key, 3],
+      ]),
+    );
+  });
+
+  it("seats a newcomer at the free slot nearest its family", () => {
+    const world: WorldDefinition = {
+      ...testWorld,
+      areas: {
+        ...testWorld.areas,
+        desks: {
+          kind: "fixed",
+          entry: "a",
+          slots: [0, 1, 2, 3, 4, 5].map((x) => ({ position: [x, 0, 0] as const, facing: 0 })),
+        },
+      },
+    };
+    const desk = (slotIndex: number) => ({
+      area: "desks",
+      slotIndex,
+      position: [slotIndex, 0, 0] as const,
+      facing: 0,
+      entry: "a",
+    });
+    const [parent, stranger] = [character(), character()];
+    // Asking for approval, the kid leaves its parent's side for the desks.
+    const kid = character({ kid: true, parentKey: parent.key, status: "approval" });
+    const placed = resolveWorld({
+      facts: [parent, stranger, kid],
+      definition: world,
+      previous: new Map([
+        [parent.key, desk(4)],
+        [stranger.key, desk(3)],
+      ]),
+    });
+    expect(placed.find((c) => c.facts.key === kid.key)!.placement.slotIndex).toBe(5);
   });
 
   describe("with worktrees", () => {

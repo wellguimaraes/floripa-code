@@ -72,6 +72,26 @@ describe("buildCharacterFacts", () => {
     expect(facts.find((f) => f.ref.threadId === "parent")?.hasWorkingKids).toBe(true);
   });
 
+  it("marks a done kid, and its own kids, as following a busy parent", () => {
+    const old = { updatedAt: "2025-12-31T00:00:00.000Z" };
+    const family = (parent: ThreadFixtureOverrides) =>
+      new Map(
+        build([
+          thread("parent", parent),
+          thread("kid", { ...subagentOf("parent"), ...old }),
+          thread("grandkid", { ...subagentOf("kid"), ...old }),
+        ]).map((f) => [f.ref.threadId as string, f]),
+      );
+
+    const busy = family({ runtime: running });
+    expect(busy.get("kid")).toMatchObject({ status: "ready", parentBusy: true });
+    expect(busy.get("grandkid")).toMatchObject({ status: "ready", parentBusy: true });
+    expect(busy.get("parent")!.parentBusy).toBe(false);
+    const resting = family({});
+    expect(resting.get("kid")!.parentBusy).toBe(false);
+    expect(resting.get("grandkid")!.parentBusy).toBe(false);
+  });
+
   it("keeps a background subagent working while its settled parent waits on it", () => {
     const facts = build([
       thread("parent", {

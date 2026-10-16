@@ -45,6 +45,7 @@ const OVERFLOW_SPACING = 0.9;
  * departures never reshuffle everyone else. New arrivals start from a slot
  * picked by their key, so the same thread tends to get the same spot. Areas
  * that line up (see `FixedArea.lineUp`) instead close ranks as anyone leaves.
+ * Either way an agent and its subagents in the same area sit side by side.
  */
 export function placeCharacters(input: {
   readonly characters: ReadonlyArray<PlacementInput>;
@@ -65,6 +66,7 @@ export function placeCharacters(input: {
     return slots;
   };
 
+  const familyOf = familyRoots(input.characters);
   const fixed: PlacementInput[] = [];
   let anchored: PlacementInput[] = [];
   for (const character of input.characters) {
@@ -83,8 +85,16 @@ export function placeCharacters(input: {
       const area = definition.areas[areaId] as FixedArea;
       const slots = taken(areaId);
       const chosen = area.lineUp
-        ? lineUp(members, area, slots)
-        : settle({ members, areaId, area, slots, previous, requested: input.requested });
+        ? lineUp(members, area, slots, familyOf)
+        : settle({
+            members,
+            areaId,
+            area,
+            slots,
+            previous,
+            requested: input.requested,
+            familyOf,
+          });
       for (const [character, slotIndex] of chosen) {
         placed.set(character.facts.key, {
           intent: character.intent,
@@ -170,18 +180,30 @@ function fixedPlacement(
 
 /**
  * Lines `members` up by when their agent last replied: the free slots fill in
- * order, oldest first, and the oldest who do not fit take the spillover.
+ * order, oldest first, and the oldest who do not fit take the spillover. A
+ * family lines up as one block, placed by its latest reply.
  */
 function lineUp(
   members: ReadonlyArray<PlacementInput>,
   area: FixedArea,
   slots: Set<number>,
+  familyOf: (character: PlacementInput) => string,
 ): Map<PlacementInput, number> {
-  const line = members.toSorted(
-    (a, b) =>
+  const latestReply = new Map<string, string>();
+  for (const character of members) {
+    const family = familyOf(character);
+    const reply = character.facts.lastReplyAt;
+    if ((latestReply.get(family) ?? "") < reply) latestReply.set(family, reply);
+  }
+  const line = members.toSorted((a, b) => {
+    const [familyA, familyB] = [familyOf(a), familyOf(b)];
+    return (
+      latestReply.get(familyA)!.localeCompare(latestReply.get(familyB)!) ||
+      familyA.localeCompare(familyB) ||
       a.facts.lastReplyAt.localeCompare(b.facts.lastReplyAt) ||
-      a.facts.key.localeCompare(b.facts.key),
-  );
+      a.facts.key.localeCompare(b.facts.key)
+    );
+  });
   const front = area.slots.flatMap((_, index) => (slots.has(index) ? [] : [index]));
   const behind = Math.max(0, line.length - front.length);
   const chosen = new Map<PlacementInput, number>();
@@ -197,7 +219,8 @@ function lineUp(
 
 /**
  * Everyone keeps the slot they had while it stays free; newcomers take the
- * slot they asked for or one picked by their key. With `worktreeReach`,
+ * free slot nearest their family, else the slot they asked for or one picked
+ * by their key. With `worktreeReach`,
  * agents sharing a worktree keep within reach of each other: one cut off from
  * the rest moves in beside them, and a neighbour outside any worktree moves
  * aside when no slot there is free.
@@ -209,6 +232,7 @@ function settle(input: {
   readonly slots: Set<number>;
   readonly previous: ReadonlyMap<string, Placement>;
   readonly requested: ReadonlyMap<string, SlotRequest> | undefined;
+  readonly familyOf: (character: PlacementInput) => string;
 }): Map<PlacementInput, number> {
   const { area, areaId, slots } = input;
   const count = area.slots.length;
@@ -278,7 +302,11 @@ function settle(input: {
       crew !== null && crewOf(other) === crew ? [slotIndex] : [],
     );
     if (mates.length === 0) {
-      take(character, askedSlot ?? freeSlot(slots, count, key));
+      const family = input.familyOf(character);
+      const kin = [...chosen].flatMap(([other, slotIndex]) =>
+        slotIndex < count && input.familyOf(other) === family ? [slotIndex] : [],
+      );
+      take(character, closestFree(area, slots, kin) ?? askedSlot ?? freeSlot(slots, count, key));
       continue;
     }
     const beside = (slotIndex: number) => mates.some((mate) => near(mate, slotIndex));
@@ -302,6 +330,44 @@ function settle(input: {
     take(other, freeSlot(slots, count, other.facts.key));
   }
   return chosen;
+}
+
+/** The free slot nearest any of `to`, the lowest index winning ties; null when none is. */
+function closestFree(
+  area: FixedArea,
+  slots: ReadonlySet<number>,
+  to: ReadonlyArray<number>,
+): number | null {
+  let closest: number | null = null;
+  let closestDistance = Infinity;
+  for (const [index, slot] of area.slots.entries()) {
+    if (slots.has(index)) continue;
+    for (const other of to) {
+      const [x, , z] = area.slots[other]!.position;
+      const distance = Math.hypot(slot.position[0] - x, slot.position[2] - z);
+      if (distance >= closestDistance) continue;
+      closest = index;
+      closestDistance = distance;
+    }
+  }
+  return closest;
+}
+
+/** Each character's family: its topmost ancestor in the world, else itself. */
+function familyRoots(
+  characters: ReadonlyArray<PlacementInput>,
+): (character: PlacementInput) => string {
+  const parents = new Map(characters.map(({ facts }) => [facts.key, facts.parentKey]));
+  return ({ facts }) => {
+    let key = facts.key;
+    // Bounded, so a lineage cycle cannot spin forever.
+    for (let depth = 0; depth < 32; depth += 1) {
+      const parent = parents.get(key);
+      if (parent == null || !parents.has(parent)) break;
+      key = parent;
+    }
+    return key;
+  };
 }
 
 /** The biggest group of `slots` linked by `near`, the earliest listed winning ties. */

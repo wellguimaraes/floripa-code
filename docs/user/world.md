@@ -48,7 +48,9 @@ The water ripples around an island while an agent on it waits for your answer
 or approval, so you can spot it from far out. It stops as soon as you reply.
 
 Subagents appear as smaller copies of the agent that started them and mine the
-same rock pile beside it, on its island.
+same rock pile beside it, on its island. A subagent that has finished still goes
+back to the pile with its agent and stands by. Anywhere else, such as on the
+beach, an agent and its subagents sit next to each other.
 
 ## Open the world
 

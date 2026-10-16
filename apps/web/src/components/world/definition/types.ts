@@ -84,7 +84,8 @@ export interface FixedArea {
   /**
    * Characters line up across the slots by when their agent last replied,
    * oldest at the first slot, and close the gap when one leaves. Once the
-   * slots run out, the oldest move back to the spillover.
+   * slots run out, the oldest move back to the spillover. A family lines up
+   * as one block, placed by its latest reply.
    */
   readonly lineUp?: boolean;
   /**
@@ -119,6 +120,8 @@ export interface CharacterFactMatch {
   readonly unread?: boolean;
   readonly kid?: boolean;
   readonly hasWorkingKids?: boolean;
+  /** A kid whose parent is working or waiting on something, so it tags along. */
+  readonly parentBusy?: boolean;
   /** A background task, such as a long command, is still running. */
   readonly backgroundTask?: boolean;
   /** The thread has produced nothing new for `movement.quietSeconds`. */
