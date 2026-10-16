@@ -173,6 +173,18 @@ export function createAssetEnvironmentAtoms<R, E>(
 }
 
 /**
+ * Bumped to ask a checkout's server for its project icon again, e.g. after the
+ * user asks it to look for one, since the request is otherwise unchanged.
+ */
+export const projectFaviconRefreshAtom = Atom.family((_key: string) =>
+  Atom.make(0).pipe(Atom.keepAlive),
+);
+
+/** The `projectFaviconRefreshAtom` key of a checkout. */
+export const projectFaviconRefreshKey = (environmentId: EnvironmentId, cwd: string) =>
+  JSON.stringify([environmentId, cwd]);
+
+/**
  * Keeps project icons visible while their environment reconnects. Each resource
  * owns its last resolved URL, including a confirmed missing-icon response.
  */
@@ -200,18 +212,20 @@ export function createProjectFaviconUrlAtomFamily(input: {
     const query = input.createUrl({ environmentId, input: { resource } });
     // A cloned project exists before its files do, and the server reports its
     // icon missing until the clone lands. Ask again whenever the clone's phase
-    // changes: the first list a client sees may already say done.
-    const request = projectClones
-      ? query.pipe(
-          Atom.makeRefreshOnSignal(
-            Atom.make(
-              (get) =>
-                get(projectClones(environmentId)).find((clone) => clone.destinationPath === cwd)
-                  ?.phase ?? null,
-            ),
-          ),
-        )
-      : query;
+    // changes: the first list a client sees may already say done. Ask again,
+    // too, when someone asks for the icon to be looked for.
+    const refreshes = projectFaviconRefreshAtom(projectFaviconRefreshKey(environmentId, cwd));
+    const request = query.pipe(
+      Atom.makeRefreshOnSignal(
+        Atom.make((get) => {
+          const phase = projectClones
+            ? (get(projectClones(environmentId)).find((clone) => clone.destinationPath === cwd)
+                ?.phase ?? null)
+            : null;
+          return `${phase}:${get(refreshes)}`;
+        }),
+      ),
+    );
     const resolvedUrl = Atom.make((get): string | null => {
       const result = get(request);
       const connection = get(input.preparedConnection(environmentId));

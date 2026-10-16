@@ -33,6 +33,8 @@ import { createProjectFaviconCache } from "../projectFaviconCache.ts";
 import {
   createAssetEnvironmentAtoms,
   createProjectFaviconUrlAtomFamily,
+  projectFaviconRefreshAtom,
+  projectFaviconRefreshKey,
   InvalidAssetCollectionKeyError,
   parseAssetCollectionKey,
 } from "./assets.ts";
@@ -506,6 +508,26 @@ describe("project favicon URL cache", () => {
       server.landed = true;
       registry.set(clones, [{ ...cloning, phase: "done", sequence: 2 }]);
       expect(registry.get(favicon)).toBe("https://remote.test/api/assets/token-b/v1-icon.svg");
+    } finally {
+      dispose();
+    }
+  });
+
+  it("asks again when someone asks for the icon to be looked for", () => {
+    const { registry, server, favicon, dispose } = mountClonedProjectFavicon([]);
+    try {
+      expect(registry.get(favicon)).toBe(
+        "https://remote.test/api/assets/token-a/project-favicon-missing",
+      );
+      server.landed = true;
+      registry.update(
+        projectFaviconRefreshAtom(
+          projectFaviconRefreshKey(EnvironmentId.make("remote"), "/workspace"),
+        ),
+        (count) => count + 1,
+      );
+      expect(registry.get(favicon)).toBe("https://remote.test/api/assets/token-b/v1-icon.svg");
+      expect(server.lookups).toBe(2);
     } finally {
       dispose();
     }

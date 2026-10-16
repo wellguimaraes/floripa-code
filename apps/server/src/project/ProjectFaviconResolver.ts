@@ -6,6 +6,7 @@
  *
  * @module ProjectFaviconResolver
  */
+import { isProjectFaviconPath } from "@t3tools/shared/projectFavicon";
 import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -19,15 +20,18 @@ import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
+import * as ProcessRunner from "../processRunner.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as T3ProjectFileLoader from "./T3ProjectFileLoader.ts";
 
-// Resolution probes 23 well-known paths plus 7 source files, so a miss
-// costs ~30 filesystem probes. AssetAccess resolves on every project-favicon
-// asset URL, and a project's icon does not move, so the answer is cached.
+// Resolution probes 23 well-known paths plus 7 source files, then asks git for
+// icon-like files anywhere in the checkout. AssetAccess resolves on every
+// project-favicon asset URL, and a project's icon rarely moves, so the answer
+// is kept for an hour either way. Choosing "detect automatically" refreshes it.
 const FAVICON_CACHE_CAPACITY = 512;
-const FAVICON_POSITIVE_CACHE_TTL = Duration.minutes(10);
-const FAVICON_NEGATIVE_CACHE_TTL = Duration.minutes(1);
+const FAVICON_CACHE_TTL = Duration.hours(1);
+const GIT_SCAN_TIMEOUT = Duration.seconds(5);
+const GIT_SCAN_MAX_OUTPUT_BYTES = 1024 * 1024;
 
 function faviconCacheKey(cwd: string, faviconPath?: string): string {
   return `${faviconPath ?? ""}\0${cwd}`;
@@ -84,6 +88,115 @@ const ICON_SOURCE_FILES = [
   "src/index.html",
 ] as const;
 
+// Icon-like file names git is asked for, at any depth. The extension is
+// checked afterwards, since pathspecs cannot express alternatives.
+const ICON_SCAN_PATHSPECS = [
+  "favicon*",
+  "icon.*",
+  "app-icon.*",
+  "apple-icon.*",
+  "apple-touch-icon*",
+  "AppIcon.icns",
+  "logo.*",
+].map((name) => `:(glob,icase)**/${name}`);
+
+// Folders whose icons belong to something other than the project itself.
+const IGNORED_ICON_DIRECTORIES = new Set([
+  "node_modules",
+  "vendor",
+  "third_party",
+  "third-party",
+  "test",
+  "tests",
+  "__tests__",
+  "e2e",
+  "fixtures",
+  "__fixtures__",
+  "mocks",
+  "__mocks__",
+  "example",
+  "examples",
+  "docs",
+  "storybook",
+  ".storybook",
+  "coverage",
+  "dist",
+  "out",
+  ".next",
+  "pods",
+]);
+
+// Folders that conventionally hold an app's icon, so they cost no depth.
+const ICON_HOME_DIRECTORIES = new Set([
+  "public",
+  "static",
+  "assets",
+  "app",
+  "src",
+  "build",
+  "resources",
+  "res",
+  "images",
+  "img",
+  "icons",
+]);
+
+// A web app's favicon is drawn to be read small, which is how projects show it.
+const ICON_APP_DIRECTORIES: Record<string, number> = {
+  web: 5,
+  www: 5,
+  site: 5,
+  frontend: 5,
+  client: 5,
+  desktop: 4,
+  mobile: 2,
+};
+
+function iconNameScore(baseName: string): number {
+  if (baseName.startsWith("favicon")) return 40;
+  if (baseName.startsWith("apple-touch-icon")) return 25;
+  if (baseName.startsWith("logo")) return 15;
+  return 30;
+}
+
+const ICON_FORMAT_SCORES: Record<string, number> = { svg: 6, png: 4, icns: 3, ico: 2 };
+
+/**
+ * Ranks a repository-relative path as the project's icon, or null when it is
+ * not one. Shallow beats deep, a favicon beats a logo, and a web app's icon
+ * beats a mobile app's, so a monorepo's apps/web favicon wins over its
+ * apps/mobile launcher icon.
+ */
+export function scoreIconPath(relativePath: string): number | null {
+  if (!isProjectFaviconPath(relativePath)) return null;
+  const segments = relativePath.toLowerCase().split("/");
+  const baseName = segments.pop() ?? "";
+  if (segments.some((segment) => IGNORED_ICON_DIRECTORIES.has(segment))) return null;
+  const extension = baseName.slice(baseName.lastIndexOf(".") + 1);
+  let score = iconNameScore(baseName) + (ICON_FORMAT_SCORES[extension] ?? 0);
+  for (const segment of segments) {
+    if (ICON_HOME_DIRECTORIES.has(segment)) continue;
+    score += (ICON_APP_DIRECTORIES[segment] ?? 0) - 10;
+  }
+  return score;
+}
+
+/** The scanned paths that could be the project's icon, best first. */
+export function rankIconPaths(relativePaths: ReadonlyArray<string>): ReadonlyArray<string> {
+  return relativePaths
+    .flatMap((relativePath) => {
+      const score = scoreIconPath(relativePath);
+      return score === null ? [] : [{ relativePath, score }];
+    })
+    .toSorted(
+      (a, b) =>
+        b.score - a.score ||
+        a.relativePath.length - b.relativePath.length ||
+        a.relativePath.localeCompare(b.relativePath),
+    )
+    .map((candidate) => candidate.relativePath);
+}
+
 // Matches <link ...> tags or object-like icon metadata where rel/href can appear in any order.
 // The tag pattern is anchored on `<link`, so it only starts at real candidates. Object metadata
 // is matched by scanning brace-free runs instead of by one combined pattern: an unanchored
@@ -131,6 +244,7 @@ export class ProjectFaviconResolver extends Context.Service<
     readonly resolvePath: (
       cwd: string,
       faviconPath?: string,
+      options?: { readonly refresh?: boolean },
     ) => Effect.Effect<string | null, ProjectFaviconResolutionError>;
   }
 >()("t3/project/ProjectFaviconResolver") {}
@@ -164,6 +278,7 @@ export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
   const projectFileLoader = yield* T3ProjectFileLoader.T3ProjectFileLoader;
+  const processRunner = yield* ProcessRunner.ProcessRunner;
 
   const resolveIconHref = (href: string): ReadonlyArray<string> => {
     const clean = href.replace(/^\//, "");
@@ -277,6 +392,41 @@ export const make = Effect.gen(function* () {
       return null;
     }).pipe(Effect.scoped);
 
+  // Icons outside the well-known spots, e.g. a monorepo's apps/web/public/favicon.svg.
+  // git lists tracked and untracked files but skips ignored ones such as
+  // node_modules, so one call covers the checkout without walking it. A folder
+  // that is not a repository, or a git that fails, simply has no such icon.
+  const findIconWithGit = Effect.fn("ProjectFaviconResolver.findIconWithGit")(function* (
+    projectCwd: string,
+  ): Effect.fn.Return<string | null, ProjectFaviconResolutionError> {
+    const result = yield* processRunner
+      .run({
+        command: "git",
+        args: [
+          "-C",
+          projectCwd,
+          "ls-files",
+          "-z",
+          "--cached",
+          "--others",
+          "--exclude-standard",
+          "--",
+          ...ICON_SCAN_PATHSPECS,
+        ],
+        timeout: GIT_SCAN_TIMEOUT,
+        timeoutBehavior: "timedOutResult",
+        maxOutputBytes: GIT_SCAN_MAX_OUTPUT_BYTES,
+        outputMode: "truncate",
+      })
+      .pipe(Effect.option);
+    if (Option.isNone(result) || result.value.code !== 0) return null;
+    const paths = result.value.stdout.split("\0").filter((entry) => entry.length > 0);
+    // A truncated listing can end mid-path.
+    if (result.value.stdoutTruncated) paths.pop();
+    // A listed file can be gone from disk, e.g. deleted but not yet committed.
+    return yield* findExistingFile(projectCwd, rankIconPaths(paths), "workspace");
+  });
+
   const resolvePathUncached = Effect.fn("ProjectFaviconResolver.resolvePathUncached")(function* (
     cwd: string,
     faviconPath?: string,
@@ -320,9 +470,14 @@ export const make = Effect.gen(function* () {
       return wellKnown;
     }
 
-    return yield* firstInOrder(ICON_SOURCE_FILES, (sourceFile) =>
+    const declared = yield* firstInOrder(ICON_SOURCE_FILES, (sourceFile) =>
       findIconFromSource(projectCwd, sourceFile),
     );
+    if (declared) {
+      return declared;
+    }
+
+    return yield* findIconWithGit(projectCwd);
   });
 
   const faviconCache = yield* Cache.makeWith<string, string | null, ProjectFaviconResolutionError>(
@@ -333,8 +488,7 @@ export const make = Effect.gen(function* () {
     {
       capacity: FAVICON_CACHE_CAPACITY,
       timeToLive: Exit.match({
-        onSuccess: (value: string | null) =>
-          value === null ? FAVICON_NEGATIVE_CACHE_TTL : FAVICON_POSITIVE_CACHE_TTL,
+        onSuccess: () => FAVICON_CACHE_TTL,
         onFailure: () => Duration.zero,
       }),
     },
@@ -342,8 +496,11 @@ export const make = Effect.gen(function* () {
 
   const resolvePath: ProjectFaviconResolver["Service"]["resolvePath"] = Effect.fn(
     "ProjectFaviconResolver.resolvePath",
-  )(function* (cwd, faviconPath) {
+  )(function* (cwd, faviconPath, options) {
     const key = faviconCacheKey(cwd, faviconPath);
+    if (options?.refresh) {
+      yield* Cache.invalidate(faviconCache, key);
+    }
     const cached = yield* Cache.get(faviconCache, key);
     if (cached === null) {
       return null;
@@ -374,4 +531,6 @@ export const make = Effect.gen(function* () {
   return ProjectFaviconResolver.of({ resolvePath });
 });
 
-export const layer = Layer.effect(ProjectFaviconResolver, make);
+export const layer = Layer.effect(ProjectFaviconResolver, make).pipe(
+  Layer.provide(ProcessRunner.layer),
+);

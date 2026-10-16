@@ -389,6 +389,9 @@ export const make = Effect.gen(function* () {
       });
       if (workspaceRoot !== previousRoot) {
         yield* projectEnrichment.invalidate([previousRoot, workspaceRoot]);
+      } else if (input.faviconPath !== undefined || input.projectIcon !== undefined) {
+        // Any icon choice, including going back to automatic, looks at the files again.
+        yield* projectEnrichment.refreshFavicon(workspaceRoot);
       }
       return yield* readCommitted(input.projectId);
     },

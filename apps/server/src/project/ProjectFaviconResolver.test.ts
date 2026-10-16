@@ -8,6 +8,7 @@ import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import { TestClock } from "effect/testing";
 
+import * as ProcessRunner from "../processRunner.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as ProjectFaviconResolver from "./ProjectFaviconResolver.ts";
 import * as T3ProjectFileLoader from "./T3ProjectFileLoader.ts";
@@ -19,6 +20,7 @@ const layerTest = Layer.empty.pipe(
       Layer.provide(T3ProjectFileLoader.layer),
     ),
   ),
+  Layer.provideMerge(ProcessRunner.layer),
   Layer.provideMerge(NodeServices.layer),
 );
 
@@ -43,9 +45,14 @@ const writeTextFile = Effect.fn("writeTextFile")(function* (
   yield* fileSystem.writeFileString(absolutePath, contents).pipe(Effect.orDie);
 });
 
+const initGitRepository = Effect.fn("initGitRepository")(function* (cwd: string) {
+  const processRunner = yield* ProcessRunner.ProcessRunner;
+  yield* processRunner.run({ command: "git", args: ["-C", cwd, "init", "-q"] }).pipe(Effect.orDie);
+});
+
 const makeResolverWithFileSystem = (fileSystem: FileSystem.FileSystem) =>
   ProjectFaviconResolver.make.pipe(
-    Effect.provide([WorkspacePaths.layer, T3ProjectFileLoader.layer]),
+    Effect.provide([WorkspacePaths.layer, T3ProjectFileLoader.layer, ProcessRunner.layer]),
     Effect.provideService(FileSystem.FileSystem, fileSystem),
   );
 
@@ -70,11 +77,46 @@ it.layer(layerTest)("ProjectFaviconResolverLive", (it) => {
           expect(yield* resolver.resolvePath(cwd)).toBe(resolved);
         }
 
-        yield* TestClock.adjust(Duration.minutes(11));
+        yield* TestClock.adjust(Duration.minutes(61));
 
         expect(yield* resolver.resolvePath(cwd)).toBe(path.join(cwd, "favicon.svg"));
         expect(yield* resolver.resolvePath(cwd)).not.toBe(resolved);
       }).pipe(Effect.provide(TestClock.layer())),
+    );
+
+    it.effect("rediscovers at once when asked to refresh", () =>
+      Effect.gen(function* () {
+        const resolver = yield* ProjectFaviconResolver.ProjectFaviconResolver;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+
+        expect(yield* resolver.resolvePath(cwd)).toBeNull();
+        yield* writeTextFile(cwd, "favicon.svg", "<svg>favicon</svg>");
+        expect(yield* resolver.resolvePath(cwd)).toBeNull();
+
+        expect(yield* resolver.resolvePath(cwd, undefined, { refresh: true })).toBe(
+          path.join(cwd, "favicon.svg"),
+        );
+      }).pipe(Effect.provide(TestClock.layer())),
+    );
+
+    it.effect("finds a monorepo app's icon through git, skipping ignored folders", () =>
+      Effect.gen(function* () {
+        const resolver = yield* ProjectFaviconResolver.ProjectFaviconResolver;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* initGitRepository(cwd);
+        yield* writeTextFile(cwd, ".gitignore", "node_modules\n");
+        yield* writeTextFile(cwd, "node_modules/pkg/favicon.svg", "<svg>dependency</svg>");
+        yield* writeTextFile(cwd, "apps/mobile/assets/icon.png", "png");
+        yield* writeTextFile(cwd, "apps/desktop/build/icon.png", "png");
+        yield* writeTextFile(cwd, "apps/web/public/favicon.svg", "<svg>web</svg>");
+        yield* writeTextFile(cwd, "apps/web/src/components/favicon.tsx", "export {}");
+
+        expect(yield* resolver.resolvePath(cwd)).toBe(
+          path.join(cwd, "apps", "web", "public", "favicon.svg"),
+        );
+      }),
     );
 
     it.effect("falls back at once when a cached favicon is deleted", () =>
@@ -104,7 +146,7 @@ it.layer(layerTest)("ProjectFaviconResolverLive", (it) => {
         yield* writeTextFile(cwd, "favicon.svg", "<svg>favicon</svg>");
         expect(yield* resolver.resolvePath(cwd)).toBeNull();
 
-        yield* TestClock.adjust(Duration.minutes(2));
+        yield* TestClock.adjust(Duration.minutes(61));
 
         expect(yield* resolver.resolvePath(cwd)).not.toBeNull();
       }).pipe(Effect.provide(TestClock.layer())),
@@ -533,5 +575,36 @@ it.layer(layerTest)("ProjectFaviconResolverLive", (it) => {
         expect(resolved).toBe((yield* Path.Path).join(cwd, "public", "brand", "logo.svg"));
       }),
     );
+  });
+});
+
+describe("rankIconPaths", () => {
+  it("prefers a monorepo's favicon over app icons and logos", () => {
+    expect(
+      ProjectFaviconResolver.rankIconPaths([
+        "apps/desktop/build/icon.icns",
+        "apps/desktop/build/icon.png",
+        "apps/mobile/assets/icon.png",
+        "apps/mobile/assets/favicon.png",
+        "docs/logo.svg",
+      ]),
+    ).toEqual([
+      "apps/mobile/assets/favicon.png",
+      "apps/desktop/build/icon.png",
+      "apps/desktop/build/icon.icns",
+      "apps/mobile/assets/icon.png",
+    ]);
+  });
+
+  it("ranks a shallow icon above a deep one and drops non-images and test fixtures", () => {
+    expect(
+      ProjectFaviconResolver.rankIconPaths([
+        "packages/ui/src/icon.tsx",
+        "packages/app/test/fixtures/favicon.svg",
+        "web/public/favicon.ico",
+        "logo.png",
+        "public/favicon.svg",
+      ]),
+    ).toEqual(["public/favicon.svg", "web/public/favicon.ico", "logo.png"]);
   });
 });

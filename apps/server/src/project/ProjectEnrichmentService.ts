@@ -19,11 +19,11 @@ const DEFAULT_CACHE_CAPACITY = 512;
 const DEFAULT_MAX_PENDING = 512;
 const DEFAULT_CONCURRENCY = 4;
 const DEFAULT_SUCCESS_TTL = Duration.minutes(1);
-// A favicon scan checks about 20 files. Shell reads (and PR sync through them) ask for every
-// linked project about once a minute, and icons rarely change, so a resolved favicon is kept
-// longer than the identity, which is only a hit on RepositoryIdentityResolver's own cache.
-// Moving a project's workspace root, and deleting it, invalidate both at once.
-const DEFAULT_FAVICON_TTL = Duration.minutes(15);
+// A favicon scan checks about 30 files and runs git. Shell reads (and PR sync through them)
+// ask for every linked project about once a minute, and icons rarely change, so a resolved
+// favicon is kept for an hour, like ProjectFaviconResolver's own cache. Moving a project's
+// workspace root, and deleting it, invalidate both at once; changing its icon refreshes the favicon.
+const DEFAULT_FAVICON_TTL = Duration.hours(1);
 const DEFAULT_FAILURE_TTL = Duration.seconds(5);
 
 export interface ProjectEnrichment {
@@ -61,6 +61,8 @@ export class ProjectEnrichmentService extends Context.Service<
     readonly getAvailable: (workspaceRoot: string) => Effect.Effect<ProjectEnrichment>;
     /** Invalidate workspace-derived metadata. */
     readonly invalidate: (workspaceRoots: Iterable<string>) => Effect.Effect<void>;
+    /** Look for the automatic icon again now, past both favicon caches. */
+    readonly refreshFavicon: (workspaceRoot: string) => Effect.Effect<void>;
     /** Subscribe to ephemeral completion notifications. */
     readonly subscribeChanges: Effect.Effect<
       PubSub.Subscription<ProjectEnrichmentChange>,
@@ -299,11 +301,23 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
     );
   });
 
+  const refreshFavicon: ProjectEnrichmentService["Service"]["refreshFavicon"] = Effect.fn(
+    "ProjectEnrichmentService.refreshFavicon",
+  )(function* (workspaceRoot) {
+    // Stored rather than invalidated, so the read that follows sees the new icon at once.
+    const faviconPath = yield* Effect.exit(
+      faviconResolver.resolvePath(workspaceRoot, undefined, { refresh: true }),
+    );
+    yield* logFailure(workspaceRoot, "faviconPath", faviconPath);
+    yield* Cache.set(faviconCache, workspaceRoot, faviconPath);
+  });
+
   return ProjectEnrichmentService.of({
     peek,
     request,
     getAvailable,
     invalidate,
+    refreshFavicon,
     subscribeChanges: PubSub.subscribe(changes),
   });
 });

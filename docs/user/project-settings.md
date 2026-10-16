@@ -169,6 +169,12 @@ Select the project and open Project to choose an icon, emoji, monogram, or image
 every checkout in the project group and appears on connected clients. Choose **Automatic** to let
 Floripa Code detect an icon again.
 
+Detection looks for a favicon, app icon, or logo, first in the usual places at the project's root,
+then anywhere in the repository except ignored files, tests, and docs, so a monorepo picks up an
+app's icon such as `apps/web/public/favicon.svg`. A new or changed icon file shows up within an
+hour. To check sooner, click the icon on the project's island in the world view and choose
+**Detect automatically**.
+
 Choose **Monogram** in the icon picker to set one or two letters or numbers and a color.
 
 When no image is found, web and desktop show a two-character monogram with a color

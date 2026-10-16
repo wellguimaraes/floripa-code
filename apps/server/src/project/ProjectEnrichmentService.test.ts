@@ -398,7 +398,39 @@ it.effect("deduplicates requests, bounds pending work, and reloads invalidated r
   }),
 );
 
-it.effect("rescans a favicon only after 15 minutes", () =>
+it.effect("refreshFavicon rescans past the cache and serves the new icon at once", () =>
+  Effect.gen(function* () {
+    const refreshes = yield* Ref.make<ReadonlyArray<boolean>>([]);
+    const layerMetadata = Layer.merge(
+      Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, {
+        resolve: (workspaceRoot) => Effect.succeed(identity(workspaceRoot)),
+      }),
+      Layer.succeed(ProjectFaviconResolver.ProjectFaviconResolver, {
+        resolvePath: (workspaceRoot, _faviconPath, options) =>
+          Ref.updateAndGet(refreshes, (calls) => [...calls, options?.refresh === true]).pipe(
+            Effect.map((calls) => `${workspaceRoot}/favicon-${calls.length}.svg`),
+          ),
+      }),
+    );
+
+    yield* Effect.gen(function* () {
+      const service = yield* ProjectEnrichment.ProjectEnrichmentService;
+      yield* service.getAvailable("/repo");
+      yield* waitForAvailable(
+        service,
+        "/repo",
+        (value) => value.faviconPath === "/repo/favicon-1.svg",
+      );
+
+      yield* service.refreshFavicon("/repo");
+
+      assert.equal((yield* service.peek("/repo")).faviconPath, "/repo/favicon-2.svg");
+      assert.deepEqual(yield* Ref.get(refreshes), [false, true]);
+    }).pipe(Effect.provide(layer(layerMetadata)));
+  }).pipe(Effect.provide(TestClock.layer())),
+);
+
+it.effect("rescans a favicon only after an hour", () =>
   Effect.gen(function* () {
     const faviconScans = yield* Ref.make(0);
     const layerMetadata = Layer.merge(
@@ -424,7 +456,7 @@ it.effect("rescans a favicon only after 15 minutes", () =>
       );
 
       // Callers such as the shell stream read projects far more often than this.
-      for (let minute = 1; minute < 15; minute += 1) {
+      for (let minute = 1; minute < 60; minute += 1) {
         yield* TestClock.adjust("1 minute");
         yield* service.getAvailable("/repo");
       }

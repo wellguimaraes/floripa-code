@@ -319,6 +319,7 @@ const layerProjectDeletionTest = Layer.mergeAll(
           repositoryIdentityResolved: false,
         }),
       invalidate: () => Effect.void,
+      refreshFavicon: () => Effect.void,
     }),
   ),
   Layer.provide(
@@ -468,6 +469,7 @@ const layerSharedApplicationDataPlaneTest = Layer.mergeAll(
           repositoryIdentityResolved: false,
         }),
       invalidate: () => Effect.void,
+      refreshFavicon: () => Effect.void,
       subscribeChanges: Effect.never,
     }),
   ),
