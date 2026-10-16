@@ -65,6 +65,7 @@ import { SharkSightings } from "./scene/Sharks";
 import { groundHeight, surfaceAt } from "./scene/terrain";
 import { SIGN_TOP, Sign, signTextColor } from "./scene/Sign";
 import { ManagerBubble, type ManagerStatus } from "./ManagerBubble";
+import { MissingFolderPill, useMissingProjects } from "./MissingFolderPill";
 import { NewAgentBubble } from "./NewAgentBubble";
 import { NewAgentProjectPicker } from "./NewAgentProjectPicker";
 import { useIslandSignStats } from "./useIslandSignStats";
@@ -78,6 +79,7 @@ import { AddProjectButton } from "./AddProjectButton";
 import { IslandArrangementMenu } from "./IslandArrangementMenu";
 import { ProjectVisibilityMenu } from "./ProjectVisibilityMenu";
 import { IslandBranchesDialog } from "./IslandBranchesDialog";
+import { canChangeIslandIcon, IslandIconPicker, useSetIslandIcon } from "./IslandIconPicker";
 import { RestoreArchivedDialog } from "./RestoreArchivedDialog";
 import { layoutTags, type ScreenPoint } from "./scene/tagLayout";
 import { isStoppable, WorldBubble } from "./WorldBubble";
@@ -114,7 +116,15 @@ export default function WorldCanvas(props: {
   // One island per sidebar project group, so clones of the same repository
   // share an island under the same name the sidebar shows.
   const groupingSettings = useClientSettings(selectProjectGroupingSettings);
-  const { islandOf, projectOrder, projectTitles, projectRefs, projectMembers } = useMemo(() => {
+  const {
+    islandOf,
+    projectOrder,
+    projectTitles,
+    projectRefs,
+    projectRecords,
+    projectMembers,
+    projectCheckouts,
+  } = useMemo(() => {
     const groups = buildProjectGroups({ projects, settings: groupingSettings });
     const islandOf = new Map<string, string>();
     for (const group of groups) {
@@ -136,10 +146,27 @@ export default function WorldCanvas(props: {
       projectRefs: new Map(
         sorted.map((group) => [
           group.key,
-          { environmentId: group.representative.environmentId, projectId: group.representative.id },
+          {
+            environmentId: group.representative.environmentId,
+            projectId: group.representative.id,
+          },
         ]),
       ),
+      // Signs show the main project's icon, as the sidebar does for the group.
+      projectRecords: new Map(sorted.map((group) => [group.key, group.representative])),
       projectMembers: new Map(sorted.map((group) => [group.key, group.memberProjectRefs])),
+      // An icon is the group's, so changing it from the sign changes it on every checkout.
+      projectCheckouts: new Map(
+        sorted.map((group) => [
+          group.key,
+          [
+            group.representative,
+            ...group.members
+              .map((member) => member.project)
+              .filter((project) => project !== group.representative),
+          ],
+        ]),
+      ),
     };
   }, [projects, groupingSettings]);
   const islandFacts = useMemo(
@@ -180,6 +207,7 @@ export default function WorldCanvas(props: {
     [visibleOrder, projectMembers],
   );
   const signStats = useIslandSignStats(visibleMembers, projects);
+  const missingProjects = useMissingProjects(projects);
   const arrangement = useWorldArrangementStore((state) => state.arrangement);
   const [memory] = useState(createArchipelagoMemory);
   // Piles picked for agents started from them, by the thread they will become.
@@ -516,6 +544,28 @@ export default function WorldCanvas(props: {
   const [zoomTo, setZoomTo] = useState<{ readonly key: string } | null>(null);
   const [restoringOn, setRestoringOn] = useState<string | null>(null);
   const [branchesOn, setBranchesOn] = useState<string | null>(null);
+  const [iconPicking, setIconPicking] = useState<{
+    readonly key: string;
+    readonly picker: "icon" | "file";
+  } | null>(null);
+  const setIslandIcon = useSetIslandIcon();
+  const showIconMenu = async (key: string, point: { x: number; y: number }) => {
+    const api = readLocalApi();
+    const checkouts = projectCheckouts.get(key) ?? [];
+    if (api === undefined || checkouts.length === 0) return;
+    const disabled = !canChangeIslandIcon(checkouts);
+    const clicked = await api.contextMenu.show(
+      [
+        { id: "detect", label: "Detect automatically", disabled },
+        { id: "icon", label: "Choose icon…", disabled, separatorBefore: true },
+        { id: "file", label: "Choose image file…", disabled },
+      ],
+      point,
+    );
+    if (clicked === "detect")
+      void setIslandIcon(checkouts, { faviconPath: null, projectIcon: null });
+    else if (clicked === "icon" || clicked === "file") setIconPicking({ key, picker: clicked });
+  };
   const showIslandMenu = async (key: string, point: { x: number; y: number }) => {
     const api = readLocalApi();
     if (api === undefined) return;
@@ -777,6 +827,34 @@ export default function WorldCanvas(props: {
       spot.style.visibility = visible ? "visible" : "hidden";
     }
   }, []);
+  // Islands whose project folder is gone get an alert over their sign.
+  const missingFolders = useMemo(() => {
+    const lostOn = new Map<string, Array<(typeof missingProjects)[number]>>();
+    for (const project of missingProjects) {
+      const island = islandOf.get(
+        scopedProjectKey({ environmentId: project.environmentId, projectId: project.id }),
+      );
+      if (island !== undefined) lostOn.set(island, [...(lostOn.get(island) ?? []), project]);
+    }
+    return islands.flatMap((island) => {
+      const lost = lostOn.get(island.key);
+      if (lost === undefined) return [];
+      const sign = island.definition.archipelago.sign.position;
+      const position: Vec3 = [
+        island.offset[0] + sign[0],
+        island.offset[1] + sign[1] + SIGN_TOP + 0.6,
+        island.offset[2] + sign[2],
+      ];
+      return [{ key: island.key, projects: lost, position }];
+    });
+  }, [missingProjects, islandOf, islands]);
+  const missingFolderRefs = useRef(new Map<string, HTMLDivElement>());
+  const moveMissingFolders = useCallback((points: ReadonlyArray<ScreenPoint>) => {
+    for (const point of points) {
+      const pill = missingFolderRefs.current.get(point.key);
+      if (pill !== undefined) pill.style.transform = `translate(${point.x}px, ${point.y}px)`;
+    }
+  }, []);
   const newAgentRef = useRef<HTMLDivElement>(null);
   const moveNewAgent = useCallback((points: ReadonlyArray<ScreenPoint>) => {
     const point = points[0];
@@ -939,6 +1017,7 @@ export default function WorldCanvas(props: {
           />
           <FollowTracker roots={roots} keys={managerKeys} hatted={NO_HATS} onMove={moveManager} />
           <PointTracker points={newAgentSpots} onMove={moveSpots} />
+          <PointTracker points={missingFolders} onMove={moveMissingFolders} />
           <PointTracker
             points={newAgent === null ? [] : [{ key: "new-agent", position: newAgent.position }]}
             onMove={moveNewAgent}
@@ -986,12 +1065,14 @@ export default function WorldCanvas(props: {
                   <FadedContext value={false}>
                     <Sign
                       slot={island.definition.archipelago.sign}
+                      project={projectRecords.get(island.key)!}
                       text={projectTitles.get(island.key) ?? "Project"}
                       color={plate}
                       branches={signStats.get(island.key)?.branches ?? 0}
                       pullRequests={signStats.get(island.key)?.pullRequests ?? 0}
                       worktrees={signStats.get(island.key)?.worktrees ?? 0}
                       onBranchesClick={() => setBranchesOn(island.key)}
+                      onIconClick={(point) => void showIconMenu(island.key, point)}
                     />
                   </FadedContext>
                   {/* Like the sign, he keeps his colours on an empty island. */}
@@ -1121,6 +1202,22 @@ export default function WorldCanvas(props: {
           </span>
         </button>
       ))}
+      {missingFolders.map((spot) => (
+        // Positioned by PointTracker on drawn frames, over the island's sign.
+        <div
+          key={spot.key}
+          ref={(pill) => {
+            if (pill === null) missingFolderRefs.current.delete(spot.key);
+            else missingFolderRefs.current.set(spot.key, pill);
+          }}
+          className="pointer-events-none absolute top-0 left-0 z-10"
+          onWheel={forwardWheel}
+        >
+          <div className="pointer-events-auto w-max -translate-x-1/2 -translate-y-full">
+            <MissingFolderPill projects={spot.projects} />
+          </div>
+        </div>
+      ))}
       {newAgent !== null ? (
         <div ref={newAgentRef} className="pointer-events-none absolute top-0 left-0 z-30">
           <div className="pointer-events-auto -translate-x-1/2 -translate-y-[calc(100%+0.75rem)]">
@@ -1248,6 +1345,15 @@ export default function WorldCanvas(props: {
           color={palette.plates[hashString(restoringOn) % palette.plates.length]!}
           projectRefs={projectMembers.get(restoringOn) ?? []}
           onClose={() => setRestoringOn(null)}
+        />
+      ) : null}
+      {iconPicking !== null && (projectCheckouts.get(iconPicking.key)?.length ?? 0) > 0 ? (
+        <IslandIconPicker
+          checkouts={projectCheckouts.get(iconPicking.key)!}
+          projectName={projectTitles.get(iconPicking.key) ?? "Project"}
+          picker={iconPicking.picker}
+          onSelect={(icon) => void setIslandIcon(projectCheckouts.get(iconPicking.key)!, icon)}
+          onClose={() => setIconPicking(null)}
         />
       ) : null}
       {branchesOn !== null ? (

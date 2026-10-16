@@ -2,7 +2,9 @@ import type { ThreeEvent } from "@react-three/fiber";
 import { useContext, useEffect, useMemo } from "react";
 import { CanvasTexture, Color, Object3D, SRGBColorSpace } from "three";
 
+import type { ProjectFaviconProject } from "../../ProjectFavicon";
 import type { WorldSlot } from "../definition/types";
+import { type SignIcon, useSignIcon } from "../useSignIcon";
 import { KeepColorContext, keepColors } from "./contrast";
 import { geometry } from "./geometries";
 import { LitMaterial, TimeOfDayContext } from "./lighting";
@@ -46,12 +48,15 @@ interface Badge {
 
 /**
  * The island's name board, painted in the project's colour on a wooden frame,
- * standing at the definition's sign slot. After the name, counts of the
+ * standing at the definition's sign slot. The project's icon leads the name;
+ * after it, counts of the
  * island's local branches (the default one aside), its worktrees, and the open
  * PRs from those branches, so stale branches and worktrees are easy to spot.
  */
 export function Sign(props: {
   readonly slot: WorldSlot;
+  /** The project whose icon the sign shows. */
+  readonly project: ProjectFaviconProject;
   readonly text: string;
   readonly color: string;
   readonly branches: number;
@@ -59,25 +64,42 @@ export function Sign(props: {
   readonly worktrees: number;
   /** Clicking the branch count, e.g. to list the branches. */
   readonly onBranchesClick: () => void;
+  /** Clicking the project's icon, at this point on screen, e.g. to change it. */
+  readonly onIconClick: (point: { readonly x: number; readonly y: number }) => void;
 }) {
-  const { slot, text, color, branches, pullRequests, worktrees, onBranchesClick } = props;
+  const {
+    slot,
+    project,
+    text,
+    color,
+    branches,
+    pullRequests,
+    worktrees,
+    onBranchesClick,
+    onIconClick,
+  } = props;
+  // The icon sits on a white tile, so lucide glyphs take the dark ink whatever the board's colour.
+  const icon = useSignIcon(project, palette.signTextDark);
   // The lamps on top come on after sunset, on every island, empty ones too.
   const lit = useContext(TimeOfDayContext).lampsOn;
   const board = useMemo(
     () =>
-      signBoard(text, color, [
+      signBoard(text, color, icon, [
         { icon: BRANCH_ICON, count: branches },
         { icon: WORKTREE_ICON, count: worktrees },
         { icon: PULL_REQUEST_ICON, count: pullRequests },
       ]),
-    [text, color, branches, pullRequests, worktrees],
+    [text, color, icon, branches, pullRequests, worktrees],
   );
   useEffect(() => () => board.texture.dispose(), [board]);
-  // The first badge is the branch count; it takes clicks, the rest of the board doesn't.
-  const onBranches = (event: ThreeEvent<PointerEvent | MouseEvent>) => {
+  // The icon and the first badge, the branch count, take clicks; the rest of the board doesn't.
+  const target = (event: ThreeEvent<PointerEvent | MouseEvent>) => {
     const x = (event.uv?.x ?? -1) * board.pixelWidth;
-    const branchesBadge = board.badges[0];
-    return branchesBadge !== undefined && x >= branchesBadge.left && x <= branchesBadge.right;
+    const within = (span: { readonly left: number; readonly right: number } | undefined) =>
+      span !== undefined && x >= span.left && x <= span.right;
+    if (within(board.icon)) return "icon";
+    if (within(board.badges[0])) return "branches";
+    return null;
   };
   const width = board.width;
   const lampTarget = useMemo(() => new Object3D(), []);
@@ -114,12 +136,17 @@ export function Sign(props: {
           scale={[width, BOARD_HEIGHT, 1]}
 
           onClick={(event) => {
-            if (!onBranches(event)) return;
+            const clicked = target(event);
+            if (clicked === null) return;
             event.stopPropagation();
-            onBranchesClick();
+            if (clicked === "icon") {
+              onIconClick({ x: event.nativeEvent.clientX, y: event.nativeEvent.clientY });
+            } else {
+              onBranchesClick();
+            }
           }}
           onPointerMove={(event) => {
-            document.body.style.cursor = onBranches(event) ? "pointer" : "";
+            document.body.style.cursor = target(event) === null ? "" : "pointer";
           }}
           onPointerOut={() => {
             document.body.style.cursor = "";
@@ -171,12 +198,14 @@ export function Sign(props: {
 function signBoard(
   text: string,
   color: string,
+  icon: SignIcon,
   badges: ReadonlyArray<Badge>,
 ): {
   readonly texture: CanvasTexture;
   readonly width: number;
-  /** The canvas's width, and each badge's span across it, in pixels. */
+  /** The canvas's width, and the icon's and each badge's span across it, in pixels. */
   readonly pixelWidth: number;
+  readonly icon: { readonly left: number; readonly right: number };
   readonly badges: ReadonlyArray<{ readonly left: number; readonly right: number }>;
 } {
   const padding = 70;
@@ -198,9 +227,12 @@ function signBoard(
   const badgesWidth =
     widths.reduce((sum, width) => sum + width, 0) + betweenBadges * (badges.length - 1);
   const badgeSpace = badges.length === 0 ? 0 : badgesWidth + badgeGap;
+  // The icon's tile is as tall as a badge pill, and square.
+  const pillHeight = iconSize + badgePadding * 1.4;
+  const iconSpace = pillHeight + badgeGap;
   let size = 150;
   measure.font = font(size);
-  const maxTextWidth = MAX_BOARD_WIDTH * PIXELS_PER_UNIT - padding * 2 - badgeSpace;
+  const maxTextWidth = MAX_BOARD_WIDTH * PIXELS_PER_UNIT - padding * 2 - iconSpace - badgeSpace;
   while (size > 96 && measure.measureText(text).width > maxTextWidth) {
     size -= 6;
     measure.font = font(size);
@@ -213,7 +245,7 @@ function signBoard(
     MAX_BOARD_WIDTH,
     Math.max(
       MIN_BOARD_WIDTH,
-      (measure.measureText(label).width + padding * 2 + badgeSpace) / PIXELS_PER_UNIT,
+      (measure.measureText(label).width + padding * 2 + iconSpace + badgeSpace) / PIXELS_PER_UNIT,
     ),
   );
 
@@ -225,12 +257,44 @@ function signBoard(
   context.fillRect(0, 0, canvas.width, canvas.height);
   const ink = signTextColor(color);
   const middle = canvas.height / 2;
-  context.fillStyle = ink;
-  context.font = font(size);
+  const pillFill = ink === palette.signTextLight ? "rgba(0,0,0,0.2)" : "rgba(255,255,255,0.3)";
+  const tileTop = middle - pillHeight / 2;
+  // White, so favicons and glyphs read the same on every board colour.
+  context.fillStyle = "#ffffff";
+  context.beginPath();
+  context.roundRect(padding, tileTop, pillHeight, pillHeight, pillHeight / 4);
+  context.fill();
   context.textAlign = "center";
   context.textBaseline = "middle";
-  // The name centres in whatever the badge leaves.
-  context.fillText(label, (canvas.width - badgeSpace) / 2, middle + size * 0.06);
+  if (icon.kind === "image") {
+    // Contained in the tile, its corners rounded like the sidebar's favicons.
+    const inset = 18;
+    const box = pillHeight - inset * 2;
+    const scale = Math.min(box / icon.image.naturalWidth, box / icon.image.naturalHeight);
+    const drawWidth = icon.image.naturalWidth * scale;
+    const drawHeight = icon.image.naturalHeight * scale;
+    context.save();
+    context.beginPath();
+    context.roundRect(padding + inset, tileTop + inset, box, box, box / 4);
+    context.clip();
+    context.drawImage(
+      icon.image,
+      padding + (pillHeight - drawWidth) / 2,
+      middle - drawHeight / 2,
+      drawWidth,
+      drawHeight,
+    );
+    context.restore();
+  } else {
+    context.fillStyle = palette.signTextDark;
+    const glyphSize = Array.from(icon.text).length > 1 ? 64 : 84;
+    context.font = font(glyphSize);
+    context.fillText(icon.text, padding + pillHeight / 2, middle + glyphSize * 0.06);
+  }
+  context.fillStyle = ink;
+  context.font = font(size);
+  // The name centres in whatever the icon and badges leave.
+  context.fillText(label, (iconSpace + canvas.width - badgeSpace) / 2, middle + size * 0.06);
   let left = canvas.width - padding - badgesWidth;
   const spans: Array<{ readonly left: number; readonly right: number }> = [];
   badges.forEach((badge, index) => {
@@ -238,10 +302,9 @@ function signBoard(
     spans.push({ left, right: left + badgeWidth });
     // Nothing to count: still there, but faded back so the counts that matter stand out.
     context.globalAlpha = badge.count === 0 ? 0.4 : 1;
-    const height = iconSize + badgePadding * 1.4;
-    context.fillStyle = ink === palette.signTextLight ? "rgba(0,0,0,0.2)" : "rgba(255,255,255,0.3)";
+    context.fillStyle = pillFill;
     context.beginPath();
-    context.roundRect(left, middle - height / 2, badgeWidth, height, height / 2);
+    context.roundRect(left, tileTop, badgeWidth, pillHeight, pillHeight / 2);
     context.fill();
     context.save();
     context.translate(left + badgePadding, middle - iconSize / 2);
@@ -267,7 +330,13 @@ function signBoard(
   const texture = new CanvasTexture(canvas);
   texture.colorSpace = SRGBColorSpace;
   texture.anisotropy = 4;
-  return { texture, width, pixelWidth: canvas.width, badges: spans };
+  return {
+    texture,
+    width,
+    pixelWidth: canvas.width,
+    icon: { left: padding, right: padding + pillHeight },
+    badges: spans,
+  };
 }
 
 /** The sign's text colour on this board colour: dark where it reads better than white. */
