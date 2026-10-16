@@ -111,7 +111,7 @@ function Crown() {
   return (
     <group position-y={-0.04}>
       <mesh geometry={geometry.cylinder} position-y={0.08} scale={[0.36, 0.16, 0.36]}>
-        <LitMaterial color={palette.gold} />
+        <LitMaterial color={palette.hats.crown} />
       </mesh>
       {CROWN_POINTS.map((angle) => (
         <mesh
@@ -120,7 +120,7 @@ function Crown() {
           position={[Math.sin(angle) * 0.3, 0.24, Math.cos(angle) * 0.3]}
           scale={[0.09, 0.18, 0.09]}
         >
-          <LitMaterial color={palette.gold} />
+          <LitMaterial color={palette.hats.crownPoints} />
         </mesh>
       ))}
     </group>
