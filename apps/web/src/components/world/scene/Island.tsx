@@ -11,7 +11,7 @@ import {
   Vector3,
 } from "three";
 
-import type { PropKind, TerrainKind, Vec3, WorldDefinition } from "../definition/types";
+import type { PierArc, PropKind, TerrainKind, Vec3, WorldDefinition } from "../definition/types";
 import { islandBounds } from "../engine/archipelago";
 import { hashString, seededRandom } from "../engine/hash";
 import { isScenery } from "../engine/scenery";
@@ -179,7 +179,7 @@ export function Island(props: {
             ground={ground}
             facing={prop.facing}
             scale={prop.scale}
-            length={prop.length}
+            arc={prop.arc}
           />
         ))}
       {furniture.map((spot) => (
@@ -218,7 +218,7 @@ interface Placed {
   readonly position: Vec3;
   readonly facing: number;
   readonly scale?: number | undefined;
-  readonly length?: number | undefined;
+  readonly arc?: PierArc | undefined;
 }
 
 /**
@@ -248,7 +248,7 @@ function islandShadows(
           rotateY(prop.facing),
           scale(prop.scale ?? 1),
         );
-        return propParts(prop.kind, prop.length ?? 1, seedOf(prop, definition)).map((part) => ({
+        return propParts(prop.kind, seedOf(prop, definition), prop.arc).map((part) => ({
           geometry: part.geometry,
           matrix: frame,
         }));
@@ -291,7 +291,7 @@ function Prop(props: {
   readonly ground: Ground;
   readonly facing: number;
   readonly scale?: number | undefined;
-  readonly length?: number | undefined;
+  readonly arc?: PierArc | undefined;
 }) {
   const [x, y, z] = props.position;
   return (
@@ -303,7 +303,7 @@ function Prop(props: {
       {props.kind === "lamp" ? (
         <Lamp seed={props.seed} />
       ) : (
-        <MergedMeshes parts={propParts(props.kind, props.length ?? 1, props.seed)} />
+        <MergedMeshes parts={propParts(props.kind, props.seed, props.arc)} />
       )}
     </group>
   );
@@ -312,9 +312,9 @@ function Prop(props: {
 /**
  * A prop's pieces, merged by colour. Each is built around its slot: local +z
  * is the way the occupant faces, and the thing they work at stands in front
- * of them. Long props (the pier) run `length` units along +z.
+ * of them. The pier curves round its `arc`.
  */
-function propParts(kind: PropKind, length: number, seed: number): ReadonlyArray<MergedPart> {
+function propParts(kind: PropKind, seed: number, arc?: PierArc): ReadonlyArray<MergedPart> {
   switch (kind) {
     case "rockPile":
       return mergedParts(`rocks:${seed}`, () => pileParts(seed));
@@ -323,7 +323,8 @@ function propParts(kind: PropKind, length: number, seed: number): ReadonlyArray<
     case "beachChair":
       return mergedParts("beachChair", loungerParts);
     case "pier":
-      return mergedParts(`pier:${length}`, () => pierParts(length));
+      if (arc === undefined) return [];
+      return mergedParts(`pier:${arc.radius}:${arc.left}:${arc.right}`, () => pierParts(arc));
     case "palm":
       return mergedParts(`palm:${seed % 70}`, () => palmParts(seed % 70));
     case "tree":
@@ -731,36 +732,49 @@ function loungerParts(): Part[] {
   ];
 }
 
+/** How far the pier reaches out from its arc's inner edge, onto the water. */
 const PIER_WIDTH = 1.8;
 
 /**
- * A plank deck running `length` units along +z, its top just above the sand,
- * on posts where it stands over the water.
+ * A plank deck curving round the shore (see `PierArc`), its top just above
+ * the sand, planks laid out from the island's middle, on posts along its
+ * outer edge, which stands over the water.
  */
-function pierParts(length: number): Part[] {
-  const planks = Math.round(length / 0.32);
-  const pitch = length / planks;
-  const parts: Part[] = Array.from({ length: planks }, (_, index) =>
-    block(
-      [PIER_WIDTH, 0.08, pitch - 0.04],
-      [0, -0.02, (index + 0.5) * pitch],
-      index % 2 === 0 ? palette.plank : palette.plankDark,
-    ),
-  );
-  // Rails along both sides tie the planks together.
-  const edge = PIER_WIDTH / 2 - 0.05;
-  for (const x of [-edge, edge]) {
-    parts.push(block([0.1, 0.1, length], [x, -0.08, length / 2], palette.plankDark));
-  }
-  // Posts only past the first stretch, which lies on the sand.
-  for (let z = 1.4; z < length; z += 1.5) {
-    for (const x of [-edge, edge]) {
-      parts.push({
-        geometry: geometry.cylinder,
-        matrix: chain(translate(x, -0.45, z), scale(0.08, 0.8, 0.08)),
-        color: palette.plankDark,
-      });
+function pierParts(arc: PierArc): Part[] {
+  const { radius } = arc;
+  // The island's middle, straight behind the pier.
+  const middle = translate(0, 0, -radius);
+  const across = radius + PIER_WIDTH / 2;
+  const from = -arc.left / radius;
+  const to = arc.right / radius;
+  const planks = Math.round(((to - from) * across) / 0.32);
+  const step = (to - from) / planks;
+  const pitch = step * across;
+  const outer = radius + PIER_WIDTH - 0.05;
+  const parts: Part[] = [];
+  for (let index = 0; index < planks; index += 1) {
+    const frame = chain(middle, rotateY(from + (index + 0.5) * step));
+    parts.push(
+      block(
+        [pitch - 0.04, 0.08, PIER_WIDTH],
+        [0, -0.02, across],
+        index % 2 === 0 ? palette.plank : palette.plankDark,
+        frame,
+      ),
+    );
+    // Rails along both edges tie the planks together.
+    for (const at of [radius + 0.05, outer]) {
+      parts.push(block([pitch, 0.1, 0.1], [0, -0.08, at], palette.plankDark, frame));
     }
+  }
+  const posts = Math.max(1, Math.round(((to - from) * outer) / 1.5));
+  for (let index = 0; index <= posts; index += 1) {
+    const angle = from + (index / posts) * (to - from);
+    parts.push({
+      geometry: geometry.cylinder,
+      matrix: chain(middle, rotateY(angle), translate(0, -0.45, outer), scale(0.08, 0.8, 0.08)),
+      color: palette.plankDark,
+    });
   }
   return parts;
 }

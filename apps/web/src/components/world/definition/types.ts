@@ -46,10 +46,21 @@ export interface WorldProp {
   readonly kind: PropKind;
   readonly position: Vec3;
   readonly facing: number;
-  /** Stretches the prop along its facing, e.g. a pier's length. */
-  readonly length?: number;
   /** Grows or shrinks the prop; 1 is its usual size. */
   readonly scale?: number;
+  /** A pier's curve; see `PierArc`. */
+  readonly arc?: PierArc;
+}
+
+/**
+ * A pier curving along the shore, on the circle `radius` from the island's
+ * middle, which lies straight behind the pier's position. It reaches `left`
+ * and `right` units round that circle either side of it: right is local +x.
+ */
+export interface PierArc {
+  readonly radius: number;
+  readonly left: number;
+  readonly right: number;
 }
 
 /**

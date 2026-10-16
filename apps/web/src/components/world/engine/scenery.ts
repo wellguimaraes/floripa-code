@@ -1,4 +1,5 @@
 import type {
+  PierArc,
   PropKind,
   SceneryKind,
   TerrainKind,
@@ -132,15 +133,29 @@ function spotKeepouts(definition: WorldDefinition, spots: ReadonlyArray<Vec3>): 
 function layoutKeepouts(definition: WorldDefinition): Keepout[] {
   const keepouts: Keepout[] = [];
   for (const prop of definition.props) {
-    keepouts.push(
-      prop.kind === "pier"
-        ? along(prop.position, prop.facing, 0, prop.length ?? 1, 1.2)
-        : point(prop.position, PROP_ROOM[prop.kind] * (prop.scale ?? 1)),
-    );
+    if (prop.arc !== undefined) keepouts.push(...arcKeepouts(prop, prop.arc));
+    else keepouts.push(point(prop.position, PROP_ROOM[prop.kind] * (prop.scale ?? 1)));
   }
   keepouts.push(point(definition.archipelago.sign.position, 1.1));
   keepouts.push(point(definition.archipelago.manager.position, 0.9));
   return keepouts;
+}
+
+/** A pier as short straight stretches round its curve, down its middle. */
+function arcKeepouts(pier: WorldProp, arc: PierArc): Keepout[] {
+  const across = arc.radius + 0.9;
+  const middle = [
+    pier.position[0] - Math.sin(pier.facing) * arc.radius,
+    pier.position[2] - Math.cos(pier.facing) * arc.radius,
+  ] as const;
+  const from = -arc.left / arc.radius;
+  const to = arc.right / arc.radius;
+  const stretches = Math.ceil(((to - from) * across) / 1.5);
+  const at = (step: number): Vec3 => {
+    const angle = pier.facing + (from + ((to - from) * step) / stretches);
+    return [middle[0] + Math.sin(angle) * across, 0, middle[1] + Math.cos(angle) * across];
+  };
+  return Array.from({ length: stretches }, (_, step) => segment(at(step), at(step + 1), 1));
 }
 
 const PROP_ROOM: Record<PropKind, number> = {

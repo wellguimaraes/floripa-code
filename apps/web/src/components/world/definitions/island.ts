@@ -98,21 +98,26 @@ export const ISLAND_SIZES = [8, 12, 16].map((piles) => ({ piles, restSpots: pile
 // Seat height of the loungers on the beach (see the `beachChair` prop).
 const LOUNGER_SEAT = 0.4;
 
-// The pier runs out from the right end of the beach, square to the camera's
-// view, so it crosses the screen sideways and hides no one. Its seats line the
-// camera's side, facing it: agents sit on the edge, legs and rods over the water.
+// The pier curves along the shore at the right end of the beach, from just up
+// the sand out over the shallows. Its seats line the outer edge, facing the
+// sea: agents sit on the edge, legs and rods over the water.
 const PIER_ANGLE = (-45 * Math.PI) / 180;
-const PIER_FACING = Math.PI / 2 - PIER_ANGLE;
-const PIER_LENGTH = 7;
 /** How far up the sand the pier starts, from the shore. */
 const PIER_LANDING = 1;
-/** Along the pier from its foot: the first stretch stays on the sand. */
-const PIER_SEATS = [2.2, 3.5, 4.8, 6.1];
 /**
- * Off the deck's middle toward the camera's side (local -x): the deck is 1.8
- * wide (see the `pier` prop), so a sitter's knees reach just past its edge.
+ * How far round the shore the pier reaches either side of `PIER_ANGLE`, in
+ * degrees: up to the palms on its right, and short of the beach's first
+ * towel on its left, the camera's side.
  */
-const PIER_SEAT_SIDE = 0.6;
+const PIER_RIGHT = 9;
+const PIER_LEFT = 23;
+/** Round the shore, in degrees, inside the pier's reach. */
+const PIER_SEATS = [-50, -42, -34, -26];
+/**
+ * Out from the pier's inner edge: the deck is 1.8 wide (see the `pier`
+ * prop), so a sitter's knees reach just past its outer edge.
+ */
+const PIER_SEAT_OUT = 1.5;
 /** The top of the pier's deck. */
 const PIER_DECK = 0.02;
 
@@ -140,23 +145,19 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
   const perArea = (count: number) => Math.round(count * scale * scale);
   const dunes = { center: at(1.5, -6.8), radius: 3 * scale };
 
-  // A point `along` the pier from its foot and `side` units to its right (local +x).
-  const shore = 9.5 * scale - PIER_LANDING;
-  const onPier = (along: number, side: number): Vec3 => [
-    shore * Math.cos(PIER_ANGLE) + along * Math.sin(PIER_FACING) + side * Math.cos(PIER_FACING),
-    0,
-    shore * Math.sin(PIER_ANGLE) + along * Math.cos(PIER_FACING) - side * Math.sin(PIER_FACING),
-  ];
-  const pierFoot = onPier(0.5, 0);
-  const pierSeats: WorldSlot[] = PIER_SEATS.map((along) => ({
-    position: onPier(along, -PIER_SEAT_SIDE),
-    // Square to the pier, toward the camera's side.
-    facing: PIER_FACING - Math.PI / 2,
-    seat: PIER_DECK,
-    ledge: true,
-    via: pierFoot,
-    fishing: true,
-  }));
+  // The pier's inner edge, round the island's middle.
+  const pierRadius = 9.5 * scale - PIER_LANDING;
+  const pierSeats: WorldSlot[] = PIER_SEATS.map((degrees) => {
+    const angle = (degrees * Math.PI) / 180;
+    const out = pierRadius + PIER_SEAT_OUT;
+    return {
+      position: [out * Math.cos(angle), 0, out * Math.sin(angle)],
+      facing: Math.PI / 2 - angle,
+      seat: PIER_DECK,
+      ledge: true,
+      fishing: true,
+    };
+  });
 
   return {
     terrain: [
@@ -180,10 +181,19 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
           index * 2.1,
         ),
       ),
-      { kind: "pier", position: onPier(0, 0), facing: PIER_FACING, length: PIER_LENGTH },
+      {
+        kind: "pier",
+        position: [pierRadius * Math.cos(PIER_ANGLE), 0, pierRadius * Math.sin(PIER_ANGLE)],
+        facing: Math.PI / 2 - PIER_ANGLE,
+        arc: {
+          radius: pierRadius,
+          left: (pierRadius * PIER_LEFT * Math.PI) / 180,
+          right: (pierRadius * PIER_RIGHT * Math.PI) / 180,
+        },
+      },
       // Street lamps for the night, clear of every spot, road, and walk at every
-      // size: by the pier's foot and round the shore, off the lawn.
-      prop("lamp", 7.2, -4.8),
+      // size: by the pier, off its deck, and round the shore, off the lawn.
+      prop("lamp", 6.9, -4),
       prop("lamp", -6.6, 5.4),
       prop("lamp", -8.7, -2.2),
       prop("lamp", -1.6, -6.6),
