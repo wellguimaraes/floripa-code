@@ -24,6 +24,7 @@ import { Button } from "../ui/button";
 import { SidebarInset, useSidebar, useSidebarVisibility } from "../ui/sidebar";
 import { ContrastSlider } from "./ContrastSlider";
 import { ManagerToggle } from "./ManagerToggle";
+import { WORLD_MANAGERS_AVAILABLE } from "./worldManagerStore";
 import { TimeSlider } from "./TimeSlider";
 import { WeatherToggle } from "./WeatherToggle";
 import { islandWorlds } from "./definitions/island";
@@ -173,7 +174,7 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
           <ContrastSlider />
           <TimeSlider />
           <WeatherToggle />
-          <ManagerToggle />
+          {WORLD_MANAGERS_AVAILABLE ? <ManagerToggle /> : null}
           <div ref={setToolbar} className="flex items-center gap-2" />
         </div>
       </div>

@@ -9,6 +9,9 @@ interface WorldManagerState {
   readonly setEnabled: (enabled: boolean) => void;
 }
 
+/** Off for now: hides every island's manager and the top bar toggle. Flip to bring them back. */
+export const WORLD_MANAGERS_AVAILABLE = false;
+
 /** The islands' managers, on or off. Per viewer, so it lives in this browser only. */
 export const useWorldManagerStore = create<WorldManagerState>()(
   persist(

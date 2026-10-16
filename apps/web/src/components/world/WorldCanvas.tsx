@@ -72,7 +72,7 @@ import { useIslandSignStats } from "./useIslandSignStats";
 import { useWorldHueStore } from "./worldHueStore";
 import { useWorldLookStore, type WorldLook } from "./worldLookStore";
 import { useWorldArrangementStore } from "./worldArrangementStore";
-import { useWorldManagerStore } from "./worldManagerStore";
+import { useWorldManagerStore, WORLD_MANAGERS_AVAILABLE } from "./worldManagerStore";
 import { useWorldModeStore } from "./worldModeStore";
 import { useWorldVisibilityStore } from "./worldVisibilityStore";
 import { AddProjectButton } from "./AddProjectButton";
@@ -363,7 +363,7 @@ export default function WorldCanvas(props: {
   } | null>(null);
   const [managerStatus, setManagerStatus] = useState<ManagerStatus>("idle");
   // The top bar's megaphone toggle hides every manager, and drops a talk in progress.
-  const managersOn = useWorldManagerStore((state) => state.enabled);
+  const managersOn = useWorldManagerStore((state) => WORLD_MANAGERS_AVAILABLE && state.enabled);
   useEffect(() => {
     if (managersOn) return;
     setManager(null);
