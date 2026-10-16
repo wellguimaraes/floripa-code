@@ -78,8 +78,9 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
 
   const openThread = (ref: ScopedThreadRef) =>
     navigate({ to: "/$environmentId/$threadId", params: buildThreadRouteParams(ref) });
+  const closeChat = () => navigate({ to: "/" });
   const closePanel = () => {
-    void navigate({ to: "/" });
+    void closeChat();
   };
 
   // The chat closes once its agent is archived, from here or anywhere else. One opened
@@ -153,6 +154,7 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
             definitions={islandWorlds}
             selectedKey={selectedKey}
             onExpand={openThread}
+            onCollapse={closeChat}
             panel={readPanel}
             toolbar={toolbar}
           />

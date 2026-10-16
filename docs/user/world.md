@@ -64,7 +64,7 @@ Hover an island to see each character's thread title above its head; the one
 under the pointer shows its full title. A resting agent's tag also shows how
 long ago it last replied, such as `10s`, `30m` or `2h`. A tag acts like its character:
 clicks and right-clicks on it do the same things. Click a character, or its balloon, to
-open a reply bubble beside it. It shows the first two lines of the last message you sent. Type a
+open a reply bubble beside it; a character with a `!` or `?` balloon opens its chat instead. It shows the first two lines of the last message you sent. Type a
 message and press `Enter` to send it; if the agent is busy, the message waits
 for the current turn to finish. Paste, drop, or use the paperclip to attach
 images and files to the message. The expand button, or `Cmd`+`Enter`

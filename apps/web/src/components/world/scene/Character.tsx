@@ -78,6 +78,8 @@ export function Character(props: {
   readonly onRoot: (key: string, root: Group | null) => void;
   /** Screen point to anchor a label at, or null when the pointer leaves. */
   readonly onHover: (character: WorldCharacter, point: { x: number; y: number } | null) => void;
+  /** Called as the character sets off for a new spot, so its bubble can close first. */
+  readonly onWalk: (key: string) => void;
 }) {
   const {
     character,
@@ -90,6 +92,7 @@ export function Character(props: {
     selected,
     onRoot,
     onHover,
+    onWalk,
   } = props;
   const { onSelect, onOpen, onPick, onMenu } = props;
   const { facts, placement, activity, intent } = character;
@@ -153,8 +156,9 @@ export function Character(props: {
       current.route.push(...planRoute({ from, to, obstacles }));
       from = to;
     }
+    if (current.route.length > 0) onWalk(facts.key);
     invalidate();
-  }, [placement, obstacles, invalidate]);
+  }, [placement, obstacles, invalidate, onWalk, facts.key]);
 
   const speed = movement.walkSpeed * (facts.kid ? movement.kidSpeedScale : 1);
   useFrame((state, frameDelta) => {
@@ -226,11 +230,14 @@ export function Character(props: {
     });
   });
 
-  const select = (event: ThreeEvent<MouseEvent>, open = event.nativeEvent.altKey) => {
+  const select = (event: ThreeEvent<MouseEvent>) => {
     if (event.delta > DRAG_CLICK_TOLERANCE_PX) return;
     event.stopPropagation();
-    if (open) onOpen(character);
-    else if (event.nativeEvent.metaKey || event.nativeEvent.ctrlKey) onPick(character);
+    const { altKey, metaKey, ctrlKey } = event.nativeEvent;
+    if (altKey) onOpen(character);
+    else if (metaKey || ctrlKey) onPick(character);
+    // A question or approval needs an answer, so the click goes straight to the chat.
+    else if (intent.balloon !== undefined) onOpen(character);
     else onSelect(character);
   };
   const openMenu = (event: ThreeEvent<MouseEvent>) => {
@@ -335,16 +342,7 @@ export function Character(props: {
           {intent.balloon !== undefined ? (
             <>
               <primitive object={string} />
-              <sprite
-                ref={balloon}
-                name={BALLOON_NAME}
-                renderOrder={10}
-                {...pointer}
-                // A question needs an answer, so its balloon goes straight to the chat.
-                onClick={(event) =>
-                  select(event, intent.balloon === "question" || event.nativeEvent.altKey)
-                }
-              >
+              <sprite ref={balloon} name={BALLOON_NAME} renderOrder={10} {...pointer}>
                 <spriteMaterial
                   map={balloonTexture(intent.balloon)}
                   depthTest={false}
