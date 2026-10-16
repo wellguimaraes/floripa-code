@@ -141,6 +141,8 @@ export class ProjectService extends Context.Service<
     readonly listShells: (options?: {
       readonly projectIds?: ReadonlyArray<ProjectId>;
     }) => Effect.Effect<ReadonlyArray<OrchestrationProjectShell>, ProjectOperationError>;
+    /** Active projects whose workspace root no longer exists, e.g. moved or deleted outside the app. */
+    readonly listMissingRoots: Effect.Effect<ReadonlyArray<ProjectId>, ProjectOperationError>;
   }
 >()("t3/project/ProjectService") {}
 
@@ -554,6 +556,29 @@ export const make = Effect.gen(function* () {
     } satisfies ProjectSnapshot;
   });
 
+  const listMissingRoots = Effect.gen(function* () {
+    const rows = yield* projects
+      .list()
+      .pipe(
+        Effect.mapError(
+          (cause) => new ProjectOperationError({ operation: "list-projects", cause }),
+        ),
+      );
+    const missing = yield* Effect.forEach(
+      rows.filter((row) => row.deletedAt === null),
+      (row) =>
+        workspacePaths.normalizeWorkspaceRoot(row.workspaceRoot).pipe(
+          Effect.as(false),
+          // Only a root that is gone counts; one we cannot read for another reason is left alone.
+          Effect.catchTag("WorkspaceRootNotExistsError", () => Effect.succeed(true)),
+          Effect.orElseSucceed(() => false),
+          Effect.map((isMissing) => (isMissing ? [row.projectId] : [])),
+        ),
+      { concurrency: 8 },
+    );
+    return missing.flat();
+  }).pipe(Effect.withSpan("ProjectService.listMissingRoots"));
+
   return ProjectService.of({
     create,
     bootstrap,
@@ -564,6 +589,7 @@ export const make = Effect.gen(function* () {
     snapshot,
     getShell,
     listShells,
+    listMissingRoots,
   });
 });
 

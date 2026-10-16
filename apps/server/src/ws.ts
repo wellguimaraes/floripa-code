@@ -2592,6 +2592,13 @@ const layerWsRpc = (
               (cause) => new OrchestrationDispatchCommandError({ message: cause.message, cause }),
             ),
           ),
+        [WS_METHODS.projectsListMissingRoots]: () =>
+          projectService.listMissingRoots.pipe(
+            Effect.map((projectIds) => ({ projectIds })),
+            Effect.mapError(
+              (cause) => new OrchestrationDispatchCommandError({ message: cause.message, cause }),
+            ),
+          ),
         [WS_METHODS.projectsCreateNew]: (input) =>
           managedFolders
             .createNamedProject(input)
@@ -2680,9 +2687,12 @@ const layerWsRpc = (
                 new ProjectMutationError({
                   commandId: mutation.commandId,
                   message:
-                    cause._tag === "ProjectNotEmptyError"
+                    cause._tag === "ProjectNotEmptyError" || cause._tag === "ProjectConflictError"
                       ? cause.message
-                      : "Failed to mutate project.",
+                      : cause._tag === "ProjectOperationError" &&
+                          cause.operation === "normalize-workspace"
+                        ? `Can't use the folder ${cause.workspaceRoot ?? ""}. Check that it exists.`
+                        : "Failed to mutate project.",
                   cause,
                 }),
             ),

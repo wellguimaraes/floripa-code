@@ -524,6 +524,12 @@ export const ProjectEnsureScratchResult = Schema.Struct({
 });
 export type ProjectEnsureScratchResult = typeof ProjectEnsureScratchResult.Type;
 
+/** Active projects whose folder no longer exists, so a client can offer to move or remove them. */
+export const ProjectListMissingRootsResult = Schema.Struct({
+  projectIds: Schema.Array(ProjectId),
+});
+export type ProjectListMissingRootsResult = typeof ProjectListMissingRootsResult.Type;
+
 /** A project started from just a name, in a new folder the server makes. */
 export const ProjectCreateNewInput = Schema.Struct({
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),

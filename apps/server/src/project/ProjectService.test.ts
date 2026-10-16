@@ -798,3 +798,57 @@ it.effect("rejects an update that waited on the lock while its project was delet
     );
   }).pipe(Effect.provide(layerProjectServiceDependencies)),
 );
+
+it.effect("lists active projects whose workspace root is gone, and only those", () =>
+  Effect.gen(function* () {
+    const gone = new Set<string>();
+    const unreadable = new Set<string>();
+    const workspacePaths = WorkspacePaths.WorkspacePaths.of({
+      normalizeWorkspaceRoot: (workspaceRoot) =>
+        gone.has(workspaceRoot)
+          ? Effect.fail(
+              new WorkspacePaths.WorkspaceRootNotExistsError({
+                workspaceRoot,
+                normalizedWorkspaceRoot: workspaceRoot,
+              }),
+            )
+          : unreadable.has(workspaceRoot)
+            ? Effect.fail(
+                new WorkspacePaths.WorkspaceRootStatFailedError({
+                  workspaceRoot,
+                  normalizedWorkspaceRoot: workspaceRoot,
+                  phase: "validate-existing",
+                  cause: "permission denied",
+                }),
+              )
+            : Effect.succeed(workspaceRoot),
+      resolveRelativePathWithinRoot: ({ workspaceRoot, relativePath }) =>
+        Effect.succeed({ absolutePath: `${workspaceRoot}/${relativePath}`, relativePath }),
+    });
+    const service = yield* ProjectService.make.pipe(
+      Effect.provideService(WorkspacePaths.WorkspacePaths, workspacePaths),
+    );
+    const create = (name: string) =>
+      service.create({
+        commandId: CommandId.make(`command:missing:${name}`),
+        projectId: ProjectId.make(`project:missing:${name}`),
+        title: name,
+        workspaceRoot: `/work/${name}`,
+      });
+    yield* create("present");
+    yield* create("moved");
+    yield* create("locked");
+    yield* create("deleted");
+    yield* service.delete({
+      commandId: CommandId.make("command:missing:deleted:delete"),
+      projectId: ProjectId.make("project:missing:deleted"),
+    });
+    gone.add("/work/moved");
+    gone.add("/work/deleted");
+    unreadable.add("/work/locked");
+
+    assert.deepStrictEqual(yield* service.listMissingRoots, [
+      ProjectId.make("project:missing:moved"),
+    ]);
+  }).pipe(Effect.provide(layerProjectServiceDependencies)),
+);

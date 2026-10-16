@@ -87,6 +87,13 @@ export function createProjectEnvironmentAtoms<R, E>(
       tag: WS_METHODS.projectsSearchEntries,
       staleTimeMs: 15_000,
     }),
+    // Projects whose folder is gone; the world flags their islands.
+    missingRoots: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:projects:missing-roots",
+      tag: WS_METHODS.projectsListMissingRoots,
+      // Folders move outside the app, so look again now and then.
+      refreshIntervalMs: 60_000,
+    }),
     listEntries: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:projects:list-entries",
       tag: WS_METHODS.projectsListEntries,
