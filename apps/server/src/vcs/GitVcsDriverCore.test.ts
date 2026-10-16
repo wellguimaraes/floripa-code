@@ -3089,6 +3089,44 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
       }),
     );
 
+    it.effect("suffixes a generated name until its branch and folder are free", () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const pathService = yield* Path.Path;
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        const worktreesDirectory = yield* makeTmpDir("unique-worktrees-");
+        const folder = (name: string) =>
+          pathService.join(worktreesDirectory, pathService.basename(cwd), name);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        // The branch is taken outright, and a stray folder holds the first suffix.
+        yield* git(cwd, ["branch", "t3/fix-login"]);
+        yield* fileSystem.makeDirectory(folder("t3-fix-login-2"), { recursive: true });
+
+        const created = yield* driver.createWorktree(
+          { cwd, path: null, refName: initialBranch, newRefName: "t3/fix-login" },
+          { worktreesDirectory, uniqueRefName: true },
+        );
+
+        assert.equal(created.worktree.refName, "t3/fix-login-3");
+        assert.equal(created.worktree.path, folder("t3-fix-login-3"));
+
+        // A plain `t3` branch blocks the `t3/` namespace, so the name flattens.
+        const flatCwd = yield* makeTmpDir();
+        const flat = yield* initRepoWithCommit(flatCwd);
+        yield* git(flatCwd, ["branch", "t3"]);
+        const flattened = yield* driver.createWorktree(
+          { cwd: flatCwd, path: null, refName: flat.initialBranch, newRefName: "t3/fix-login" },
+          { worktreesDirectory, uniqueRefName: true },
+        );
+        assert.equal(flattened.worktree.refName, "t3-fix-login");
+        assert.equal(
+          yield* git(created.worktree.path, ["branch", "--show-current"]),
+          "t3/fix-login-3",
+        );
+      }),
+    );
+
     it.effect("creates worktrees under the configured worktrees directory", () =>
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;

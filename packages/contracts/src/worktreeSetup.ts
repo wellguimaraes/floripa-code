@@ -13,6 +13,7 @@ export const WORKTREE_SETUP_TAIL_LINE_MAX_LENGTH = 400;
 export const WORKTREE_SETUP_ERROR_MAX_LENGTH = 1000;
 
 export const WorktreeSetupStageId = Schema.Literals([
+  "name",
   "fetch",
   "checkout",
   "submodules",
@@ -101,6 +102,7 @@ export const WorktreeSetupCancelResult = Schema.Struct({
 export type WorktreeSetupCancelResult = typeof WorktreeSetupCancelResult.Type;
 
 export const WORKTREE_SETUP_STAGE_ORDER: ReadonlyArray<WorktreeSetupStageId> = [
+  "name",
   "fetch",
   "checkout",
   "submodules",
@@ -110,6 +112,8 @@ export const WORKTREE_SETUP_STAGE_ORDER: ReadonlyArray<WorktreeSetupStageId> = [
 
 export function worktreeSetupStageLabel(id: WorktreeSetupStageId): string {
   switch (id) {
+    case "name":
+      return "Name the worktree";
     case "fetch":
       return "Fetch base branch";
     case "checkout":

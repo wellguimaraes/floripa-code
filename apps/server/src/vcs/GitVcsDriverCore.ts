@@ -3408,8 +3408,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   const createWorktree: GitVcsDriver.GitVcsDriver["Service"]["createWorktree"] = Effect.fn(
     "createWorktree",
   )(function* (input, options) {
-    const targetBranch = input.newRefName ?? input.refName;
-    const sanitizedBranch = targetBranch.replace(/\//g, "-");
+    let newRefName = input.newRefName;
+    let targetBranch = newRefName ?? input.refName;
     const repoName = path.basename(input.cwd);
     let worktreePath = input.path;
     if (worktreePath == null) {
@@ -3427,10 +3427,35 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           detail: `The worktree location "${options?.worktreesDirectory}" must be an absolute folder on this machine, not a drive root. Change it in Settings → Storage.`,
         });
       }
-      worktreePath = path.join(parentDir, repoName, sanitizedBranch);
+      const folderFor = (branch: string) =>
+        path.join(parentDir, repoName, branch.replace(/\//g, "-"));
+      if (options?.uniqueRefName === true && newRefName) {
+        // Git stores refs as paths, so a plain `t3` branch makes `t3/<name>` impossible.
+        const segments = newRefName.split("/");
+        let blocked = false;
+        for (let depth = 1; depth < segments.length && !blocked; depth += 1) {
+          blocked = yield* branchExists(input.cwd, segments.slice(0, depth).join("/")).pipe(
+            Effect.orElseSucceed(() => false),
+          );
+        }
+        const wanted = blocked ? segments.join("-") : newRefName;
+        newRefName = wanted;
+        const taken = (branch: string) =>
+          branchExists(input.cwd, branch).pipe(
+            Effect.flatMap((exists) =>
+              exists ? Effect.succeed(true) : fileSystem.exists(folderFor(branch)),
+            ),
+            Effect.orElseSucceed(() => false),
+          );
+        for (let suffix = 2; (yield* taken(newRefName)) && suffix <= 100; suffix += 1) {
+          newRefName = `${wanted}-${suffix}`;
+        }
+        targetBranch = newRefName;
+      }
+      worktreePath = folderFor(targetBranch);
     }
-    const args = input.newRefName
-      ? ["worktree", "add", "-b", input.newRefName, worktreePath, input.refName]
+    const args = newRefName
+      ? ["worktree", "add", "-b", newRefName, worktreePath, input.refName]
       : ["worktree", "add", worktreePath, input.refName];
     const progress = options?.progress;
     const onCheckoutProgress = progress?.onCheckoutProgress;
@@ -3535,7 +3560,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       );
     }
 
-    if (input.newRefName && input.baseRefName) {
+    if (newRefName && input.baseRefName) {
       const remoteNames = yield* listRemoteNames(input.cwd).pipe(Effect.orElseSucceed(() => []));
       const parsedBaseRef = parseRemoteRefWithRemoteNames(
         input.baseRefName,
@@ -3544,7 +3569,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       const baseBranch = parsedBaseRef?.branchName ?? input.baseRefName;
       yield* runGit("GitVcsDriver.createWorktree.configureBaseRef", input.cwd, [
         "config",
-        `branch.${input.newRefName}.gh-merge-base`,
+        `branch.${newRefName}.gh-merge-base`,
         baseBranch,
       ]);
     }

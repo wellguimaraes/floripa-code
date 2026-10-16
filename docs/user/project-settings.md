@@ -48,9 +48,16 @@ are replaced with hyphens. Custom instructions are appended to
 the naming prompt and can specify issue IDs, namespaces, and casing.
 
 These settings apply to automatically named new worktree branches. Select a project
-to override its environment defaults. Worktree directories keep their original names.
-If generation fails, or a custom name is invalid or already taken, the temporary
-branch name remains.
+to override its environment defaults.
+
+With an OpenRouter API key saved in **Settings → Providers → OpenRouter**, a fast
+OpenRouter model names the branch before the worktree is created, so the worktree
+folder carries the same name. Your first message is sent to OpenRouter for this.
+A name already in use gets a `-2`, `-3`, … suffix. Without a key, or when OpenRouter
+does not answer within a few seconds, the worktree starts under a temporary `t3/<hash>`
+name: the branch is renamed later by your text-generation model, and the folder keeps
+the temporary name. If that generation fails, or a custom name is invalid or already
+taken, the temporary branch name remains.
 
 ## Scheduled tasks on mobile
 

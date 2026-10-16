@@ -23,6 +23,7 @@ import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
@@ -41,6 +42,7 @@ import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.t
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as FastBranchNamer from "../textGeneration/FastBranchNamer.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import * as CommandReceiptStore from "./CommandReceiptStore.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -204,6 +206,7 @@ const make = Effect.gen(function* () {
   const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const textGeneration = yield* TextGeneration.TextGeneration;
+  const fastBranchNamer = yield* FastBranchNamer.FastBranchNamer;
   const receipts = yield* CommandReceiptStore.CommandReceiptStoreV2;
   const ids = yield* IdAllocator.IdAllocatorV2;
   const threads = yield* ThreadManagement.ThreadManagementService;
@@ -310,12 +313,25 @@ const make = Effect.gen(function* () {
     let createdWorktreePath: string | null = null;
     let setupTerminalId: string | null = null;
     let workspaceRecorded = false;
+    // A worktree without a chosen name waits for a fast generated one, so its
+    // folder is named after the work rather than the temporary hash.
+    const namesWorktree =
+      input.workspaceStrategy.type === "worktree" &&
+      input.initialMessage !== undefined &&
+      (input.workspaceStrategy.branch === undefined ||
+        isTemporaryWorktreeBranch(input.workspaceStrategy.branch));
     if (input.workspaceStrategy.type === "worktree") {
       yield* setupTracker.begin({
         threadId,
         branch: input.workspaceStrategy.branch ?? null,
         baseRef: input.workspaceStrategy.baseRef,
-        stages: ["fetch", "checkout", "setup-script", "agent"],
+        stages: [
+          ...(namesWorktree ? (["name"] as const) : []),
+          "fetch",
+          "checkout",
+          "setup-script",
+          "agent",
+        ],
         fiber: yield* Effect.fiber,
       });
     } else if (reused !== undefined) {
@@ -390,6 +406,43 @@ const make = Effect.gen(function* () {
             })
             .pipe(Effect.mapError(mapError(input, "update-thread", threadId)));
         }
+        // Runs beside the fetch. None keeps the temporary name, which the
+        // provider renames in the background below.
+        const fastName = yield* (
+          namesWorktree && initialMessage !== undefined
+            ? Effect.gen(function* () {
+                yield* setupTracker.stageStatus(threadId, "name", "running");
+                const settings = resolveProjectSettings(
+                  yield* serverSettings.getSettings,
+                  input.projectId,
+                ).settings;
+                const named = yield* fastBranchNamer.generateBranchName({
+                  naming: {
+                    mode: settings.branchNamingMode,
+                    prefix: settings.branchNamePrefix,
+                    instructions: settings.branchNameInstructions,
+                  },
+                  message: initialMessage.text,
+                  attachments: initialMessage.attachments,
+                });
+                yield* setupTracker.stageStatus(
+                  threadId,
+                  "name",
+                  Option.isSome(named) ? "done" : "skipped",
+                );
+                return named;
+              }).pipe(
+                Effect.catchCause((cause) =>
+                  Effect.logWarning("Fast worktree naming failed", { threadId, cause }).pipe(
+                    Effect.andThen(
+                      setupTracker.stageStatus(threadId, "name", "skipped", "temporary name"),
+                    ),
+                    Effect.as(Option.none<string>()),
+                  ),
+                ),
+              )
+            : Effect.succeed(Option.none<string>())
+        ).pipe(Effect.forkChild);
         let startRef = input.workspaceStrategy.baseRef;
         // "Start from origin" is a stored default; repos without the requested
         // remote branch fall back to the local base branch.
@@ -428,7 +481,10 @@ const make = Effect.gen(function* () {
           }
         }
         if (startFromOrigin) yield* setupTracker.stageStatus(threadId, "fetch", "done");
+        const generatedName = yield* Fiber.join(fastName);
+        if (Option.isSome(generatedName)) branch = generatedName.value;
         if (
+          Option.isNone(generatedName) &&
           branch !== null &&
           isTemporaryWorktreeBranch(branch) &&
           (yield* git
@@ -459,6 +515,7 @@ const make = Effect.gen(function* () {
                 onCheckoutProgress: (progress) =>
                   setupTracker.stage(threadId, "checkout", { percent: progress.percent }),
               },
+              ...(Option.isSome(generatedName) ? { uniqueRefName: true } : {}),
             },
           )
           .pipe(Effect.mapError(mapError(input, "provision-worktree", threadId)));

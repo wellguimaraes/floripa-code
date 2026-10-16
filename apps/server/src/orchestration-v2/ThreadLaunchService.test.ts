@@ -24,6 +24,7 @@ import {
   OrchestrationV2ThreadProjectionJson,
   ScheduledTaskId,
   type ServerProvider,
+  TextGenerationError,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -49,6 +50,7 @@ import * as ProviderRegistryMock from "../provider/testUtils/providerRegistryMoc
 import * as ServerSettings from "../serverSettings.ts";
 import * as ScheduledTasks from "../scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
+import * as FastBranchNamer from "../textGeneration/FastBranchNamer.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import * as ThreadTitleDrift from "../textGeneration/ThreadTitleDrift.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
@@ -106,6 +108,7 @@ interface HarnessOptions {
   readonly runSetup?: ProjectSetupScriptRunner.ProjectSetupScriptRunner["Service"]["runForThread"];
   readonly generateTitle?: TextGeneration.TextGeneration["Service"]["generateThreadTitle"];
   readonly generateBranchName?: TextGeneration.TextGeneration["Service"]["generateBranchName"];
+  readonly fastBranchName?: FastBranchNamer.FastBranchNamer["Service"]["generateBranchName"];
   readonly serverSettings?: Parameters<typeof ServerSettings.layerTest>[0];
   readonly providers?: ReadonlyArray<ServerProvider>;
   readonly git?: Partial<GitWorkflow.GitWorkflowService["Service"]>;
@@ -166,6 +169,7 @@ function makeHarness(options: HarnessOptions = {}) {
       snapshot: Effect.die("unused"),
       getShell: () => Effect.die("unused"),
       listShells: () => Effect.die("unused"),
+      listMissingRoots: Effect.die("unused"),
     }),
     Layer.mock(GitWorkflow.GitWorkflowService)({
       createWorktree,
@@ -188,6 +192,9 @@ function makeHarness(options: HarnessOptions = {}) {
     }),
     Layer.mock(ThreadTitleDrift.ThreadTitleDrift)({
       shouldRetitle: () => Effect.succeed(false),
+    }),
+    Layer.mock(FastBranchNamer.FastBranchNamer)({
+      generateBranchName: options.fastBranchName ?? (() => Effect.succeedNone),
     }),
     ServerSettings.layerTest(options.serverSettings),
     ProviderRegistryMock.layer(options.providers),
@@ -1186,6 +1193,85 @@ it.effect("renames a temporary t3/<hash> branch off the provisioning critical pa
         oldBranch: "t3/abcd1234",
         newBranch: "generated-branch",
       });
+    }).pipe(Effect.provide(harness.layer));
+  }),
+);
+
+it.effect("creates the worktree under a fast generated name when one arrives", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness({
+      fastBranchName: () => Effect.succeedSome("t3/fix-login-redirect"),
+      createWorktree: (input) =>
+        Effect.succeed({
+          worktree: {
+            path: "/repo-worktrees/t3-fix-login-redirect",
+            refName: input.newRefName,
+            headSha: "abc",
+          },
+        } as never),
+    });
+    yield* Effect.gen(function* () {
+      const launches = yield* ThreadLaunch.ThreadLaunchService;
+      const threads = yield* ThreadManagement.ThreadManagementService;
+      const tracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
+      const launched = yield* launches.launch(
+        launchInput({
+          command: "command:launch:fast-name",
+          thread: "thread:launch:fast-name",
+          message: "Fix the login redirect",
+          workspace: { type: "worktree", baseRef: "main" },
+        }),
+      );
+      yield* waitUntil(() =>
+        threads
+          .getThreadProjection(launched.threadId)
+          .pipe(Effect.map((projection) => projection.runs[0]?.status === "starting")),
+      );
+      assert.equal(harness.createWorktree.mock.calls[0]?.[0]?.newRefName, "t3/fix-login-redirect");
+      assert.equal(harness.createWorktree.mock.calls[0]?.[1]?.uniqueRefName, true);
+      assert.equal(
+        (yield* threads.getThreadProjection(launched.threadId)).thread.branch,
+        "t3/fix-login-redirect",
+      );
+      const snapshot = yield* tracker.get(launched.threadId);
+      assert.equal(snapshot?.stages.find((stage) => stage.id === "name")?.status, "done");
+      assert.equal(harness.generateBranchName.mock.calls.length, 0);
+      assert.equal(harness.renameBranch.mock.calls.length, 0);
+    }).pipe(Effect.provide(harness.layer));
+  }),
+);
+
+it.effect("falls back to the temporary name when fast naming fails", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness({
+      fastBranchName: () =>
+        Effect.fail(
+          new TextGenerationError({ operation: "generateBranchName", detail: "timed out" }),
+        ),
+      createWorktree: (input) =>
+        Effect.succeed({
+          worktree: { path: "/repo-worktrees/temp", refName: input.newRefName, headSha: "abc" },
+        } as never),
+    });
+    yield* Effect.gen(function* () {
+      const launches = yield* ThreadLaunch.ThreadLaunchService;
+      const threads = yield* ThreadManagement.ThreadManagementService;
+      const launched = yield* launches.launch(
+        launchInput({
+          command: "command:launch:fast-name-fallback",
+          thread: "thread:launch:fast-name-fallback",
+          message: "Build the feature",
+          workspace: { type: "worktree", baseRef: "main", branch: "t3/abcd1234" },
+        }),
+      );
+      yield* waitUntil(() =>
+        threads
+          .getThreadProjection(launched.threadId)
+          .pipe(Effect.map((projection) => projection.thread.branch === "generated-branch")),
+      );
+      assert.equal(harness.createWorktree.mock.calls[0]?.[0]?.newRefName, "t3/abcd1234");
+      assert.equal(harness.createWorktree.mock.calls[0]?.[1]?.uniqueRefName, undefined);
+      assert.equal(harness.renameBranch.mock.calls[0]?.[0]?.oldBranch, "t3/abcd1234");
     }).pipe(Effect.provide(harness.layer));
   }),
 );

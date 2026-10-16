@@ -8,6 +8,7 @@ import * as McpAppRequests from "../mcpApps/McpAppRequests.ts";
 import * as ProviderSessionRuntime from "../persistence/ProviderSessionRuntime.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import * as ManagerRouter from "../manager/ManagerRouter.ts";
+import * as FastBranchNamer from "../textGeneration/FastBranchNamer.ts";
 import * as ThreadTitleDrift from "../textGeneration/ThreadTitleDrift.ts";
 import { FetchHttpClient } from "effect/http";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
@@ -260,6 +261,7 @@ const layerThreadLaunchProvided = ThreadLaunchService.layer.pipe(
       layerThreadManagementProvided,
       layerCommandReceiptStoreProvided,
       IdAllocator.layer,
+      FastBranchNamer.layer.pipe(Layer.provide(FetchHttpClient.layer)),
     ),
   ),
 );

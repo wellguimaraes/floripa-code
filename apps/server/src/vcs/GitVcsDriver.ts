@@ -159,6 +159,11 @@ export interface CreateWorktreeOptions {
   readonly submodules?: WorktreeSubmodules | null;
   /** The `worktreesDirectory` setting, used when the input has no explicit path. */
   readonly worktreesDirectory?: string;
+  /**
+   * Treat `newRefName` as a wish: append `-2`, `-3`, … until neither the
+   * branch nor its default worktree folder exists. Used for generated names.
+   */
+  readonly uniqueRefName?: boolean;
 }
 
 export interface GitCommitProgress {
