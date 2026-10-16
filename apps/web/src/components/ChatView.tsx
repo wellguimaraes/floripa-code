@@ -460,7 +460,6 @@ import {
   type PanelLayoutControlsProps,
   RightPanelMaximizeControl,
 } from "./chat/PanelLayoutControls";
-import { WorldArchiveButton } from "./world/WorldChatActions";
 import { useWorldModeStore } from "./world/worldModeStore";
 import { expandedImageKey, type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { ThreadDetailsPanel, type ThreadDetailsPanelProps } from "./chat/ThreadDetailsPanel";
@@ -2396,8 +2395,8 @@ export default function ChatView(props: ChatViewProps) {
   const inlineRightPanelOwnsTitleBar = rightPanelOpen && !shouldUsePlanSidebarSheet;
   const worldChatShown = useWorldModeStore((state) => state.shown);
   // The open right panel takes the titlebar's right end, so the thread panel toggle moves
-  // into the chat's header. The world's footer spans both, so its toggles stay together.
-  const splitTitleBarControls = inlineRightPanelOwnsTitleBar && !worldChatShown;
+  // into the chat's header.
+  const splitTitleBarControls = inlineRightPanelOwnsTitleBar;
   const [threadPanelPresentation, setThreadPanelPresentation] =
     useState<ThreadPanelPresentation>("inline");
   const [threadPanelPopoverHandle] = useState(PopoverCreateHandle);
@@ -11281,11 +11280,6 @@ export default function ChatView(props: ChatViewProps) {
       )}
       data-workspace-titlebar-controls
     >
-      {worldChatShown ? (
-        <div className="pointer-events-auto flex shrink-0">
-          <WorldArchiveButton threadRef={isServerThread ? activeThreadRef : null} />
-        </div>
-      ) : null}
       {!shouldUsePlanSidebarSheet ? (
         <span
           aria-hidden={!rightPanelOpen}
@@ -11311,6 +11305,23 @@ export default function ChatView(props: ChatViewProps) {
       <div className="pointer-events-auto flex h-full items-center">{panelToggleControls}</div>
     </div>
   );
+  const chatHeader = (
+    <ChatHeader
+      activeThreadEnvironmentId={activeThread.environmentId}
+      activeThreadId={activeThread.id}
+      isServerThread={isServerThread}
+      activeThreadTitle={activeThread.title}
+      activeProject={activeProject ?? null}
+      activeProjectGroupLabel={activeProjectGroupLabel}
+      parentThreadLink={parentThreadLink}
+      onOpenThread={onOpenRelatedThread}
+      rightPanelOpen={splitTitleBarControls}
+      onNewThreadInProject={handleNewThreadInActiveProject}
+      {...(activeDraftLogicalProjectKey
+        ? { onOpenProjectSettings: handleOpenDraftProjectSettings }
+        : {})}
+    />
+  );
   const chatTopBar = (
     <header
       ref={threadPanelPopoverAnchorRef}
@@ -11326,8 +11337,6 @@ export default function ChatView(props: ChatViewProps) {
             )
           : "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center pl-(--workspace-gutter-start) pr-(--workspace-gutter-end)",
         COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
-        // The world's floating chat shows its header as a footer under the chat and its panels.
-        worldChatShown && "border-t border-border",
       )}
     >
       {isElectron && rightPanelControlsAtRoot ? (
@@ -11338,21 +11347,9 @@ export default function ChatView(props: ChatViewProps) {
       ) : null}
       {!rightPanelControlsAtRoot && !rightPanelControlsInPanel ? panelLayoutControls : null}
       {splitTitleBarControls ? threadPanelHeaderControl : null}
-      <ChatHeader
-        activeThreadEnvironmentId={activeThread.environmentId}
-        activeThreadId={activeThread.id}
-        isServerThread={isServerThread}
-        activeThreadTitle={activeThread.title}
-        activeProject={activeProject ?? null}
-        activeProjectGroupLabel={activeProjectGroupLabel}
-        parentThreadLink={parentThreadLink}
-        onOpenThread={onOpenRelatedThread}
-        rightPanelOpen={splitTitleBarControls}
-        onNewThreadInProject={handleNewThreadInActiveProject}
-        {...(activeDraftLogicalProjectKey
-          ? { onOpenProjectSettings: handleOpenDraftProjectSettings }
-          : {})}
-      />
+      {/* The world's floating chat keeps only the panel toggles up here; who you're talking
+          to sits in the composer instead. */}
+      {worldChatShown ? null : chatHeader}
     </header>
   );
   const workspaceFileDropHandlers = makeWorkspaceFileDropHandlers({
@@ -11398,7 +11395,7 @@ export default function ChatView(props: ChatViewProps) {
           )}
           data-chat-column-maximized-away={rightPanelMaximized ? "true" : "false"}
         >
-          {worldChatShown ? null : chatTopBar}
+          {chatTopBar}
 
           {/* Main content area with optional plan sidebar */}
           <div className="relative flex min-h-0 min-w-0 flex-1">
@@ -11721,6 +11718,11 @@ export default function ChatView(props: ChatViewProps) {
                                               : projectCloneSendBlockReason
                                 }
                                 isPreparingWorktree={isPreparingWorktree}
+                                header={
+                                  worldChatShown ? (
+                                    <div className="flex px-3 pt-2.5">{chatHeader}</div>
+                                  ) : undefined
+                                }
                                 queuedRunsControl={
                                   isServerThread && activeThread ? (
                                     <QueuedRunsControl
@@ -12178,7 +12180,6 @@ export default function ChatView(props: ChatViewProps) {
           />
         )}
       </div>
-      {worldChatShown ? chatTopBar : null}
     </>
   );
 }

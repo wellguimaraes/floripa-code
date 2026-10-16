@@ -1585,6 +1585,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
               getItemType={getItemType}
               renderItem={renderItem}
               estimatedItemSize={90}
+              // Short threads sit just above the composer instead of under the header.
+              alignItemsAtEnd
               initialScrollAtEnd={
                 !findActive && citationRequest === null && rememberedPosition?.atEnd !== false
               }

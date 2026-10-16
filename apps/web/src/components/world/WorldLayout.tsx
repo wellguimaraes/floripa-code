@@ -62,7 +62,7 @@ function useChatWidth() {
 /**
  * The chat layout in world mode. The URL still picks the open thread, so
  * clicking a character navigates to it and its chat floats over the world;
- * everything ChatView does on its own (forks, drafts, deletes) keeps working.
+ * everything ChatView does on its own (forks, deletes) keeps working.
  */
 export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | null }) {
   const navigate = useNavigate();
@@ -71,7 +71,10 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
   const readPanel = useCallback(() => panelRef.current, []);
   const [toolbar, setToolbar] = useState<HTMLDivElement | null>(null);
   const chatWidth = useChatWidth();
-  const selectedKey = target?.kind === "server" ? scopedThreadKey(target.threadRef) : null;
+  // Only real threads open here. A draft (the new-thread creator) never does: the world
+  // starts agents from its own bubble, so a draft route shows the world alone.
+  const chatTarget = target?.kind === "server" ? target : null;
+  const selectedKey = chatTarget ? scopedThreadKey(chatTarget.threadRef) : null;
 
   const openThread = (ref: ScopedThreadRef) =>
     navigate({ to: "/$environmentId/$threadId", params: buildThreadRouteParams(ref) });
@@ -81,7 +84,7 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
 
   // The chat closes once its agent is archived, from here or anywhere else. One opened
   // already archived (from Settings → Archived, say) stays open.
-  const chatThread = useThreadShell(target?.kind === "server" ? target.threadRef : null);
+  const chatThread = useThreadShell(chatTarget?.threadRef ?? null);
   const chatArchived = chatThread !== null && chatThread.archivedAt != null;
   const chatWasArchived = useRef<{ key: string | null; archived: boolean }>({
     key: null,
@@ -125,7 +128,7 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
   }, [setWorldMode, sidebarVisible]);
 
   useEffect(() => {
-    if (target === null) return;
+    if (chatTarget === null) return;
     // Cmd+Escape (Ctrl+Escape) closes the panel unless something in it (a menu, picker,
     // dialog) took it first. Plain Escape is left to the chat, so it can't close it by accident.
     const onKeyDown = (event: KeyboardEvent) => {
@@ -140,7 +143,7 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [navigate, target]);
+  }, [chatTarget, navigate]);
 
   return (
     <SidebarInset className="h-svh min-h-0 overflow-hidden md:h-dvh">
@@ -172,7 +175,7 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
           <div ref={setToolbar} className="flex items-center gap-2" />
         </div>
       </div>
-      {target !== null ? (
+      {chatTarget !== null ? (
         <div
           ref={panelRef}
           className="absolute top-[calc(var(--workspace-topbar-height)+0.25rem)] right-3 bottom-3 w-[min(var(--resizable-width),calc(100%-4rem))]"
@@ -196,22 +199,20 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
             </Button>
           </div>
           {/* Layout containment makes the frame the anchor for the chat's fixed
-              titlebar controls. The chat's header is a footer here, so its panel
-              toggles sit at the footer's right end. */}
+              titlebar controls. The chat's header moves into its composer here, so
+              its bar is a slim row for the panel toggles, level with the close button. */}
           <div
             className="flex size-full flex-col overflow-hidden rounded-xl bg-background shadow-xl [contain:layout]"
             style={
               {
-                "--workspace-controls-top": "calc(100% - var(--workspace-topbar-height))",
-                // Taller than the app's bar, so the portrait, the project chip over the
-                // title and the worktree under it get room to breathe.
-                "--workspace-topbar-height": "100px",
+                "--workspace-controls-top": "0px",
+                "--workspace-topbar-height": "2.5rem",
                 "--workspace-controls-right": "0.75rem",
                 "--workspace-native-controls-inset": "0px",
               } as CSSProperties
             }
           >
-            <ThreadRouteView target={target} container="bare" />
+            <ThreadRouteView target={chatTarget} container="bare" />
           </div>
         </div>
       ) : null}

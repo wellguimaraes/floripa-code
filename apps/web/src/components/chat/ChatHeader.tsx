@@ -41,6 +41,7 @@ import { cn } from "~/lib/utils";
 import { useClientSettings } from "../../hooks/useSettings";
 import { useWorldLook } from "../world/worldLookStore";
 import {
+  WorldArchiveButton,
   WorldChatCharacter,
   WorldChatWorktree,
   WorldRegenerateTitleButton,
@@ -320,7 +321,8 @@ export const ChatHeader = memo(function ChatHeader({
       ref={breadcrumbContainerRef}
       className={cn(
         "flex min-w-0 flex-1 items-center gap-2 sm:gap-3",
-        rightPanelOpen ? "pr-10" : "pr-24",
+        // The world's header sits in the composer, clear of the panel toggles.
+        worldLook === null && (rightPanelOpen ? "pr-10" : "pr-24"),
       )}
       onContextMenu={handleHeaderContextMenu}
     >
@@ -331,9 +333,7 @@ export const ChatHeader = memo(function ChatHeader({
           hat={worldLook.hat}
         />
       ) : null}
-      {/* In the world the regenerate button makes the title row taller than its text, so
-          the stack sits lower to leave even room over the chip and under the title. */}
-      <div className={cn("flex min-w-0 flex-1 flex-col", worldLook !== null && "pt-1.5")}>
+      <div className="flex min-w-0 flex-1 flex-col">
         {/* The project title is often just a folder name, so the sidebar's
             label for it sits above, matching the sidebar row. */}
         {worldLook === null &&
@@ -343,32 +343,38 @@ export const ChatHeader = memo(function ChatHeader({
             {activeProjectGroupLabel}
           </span>
         ) : null}
-        {/* In the world, the project shows as its island's sign: a chip in the
-            sign's colour above the title, which then stands alone. */}
+        {/* In the world, the project shows as its island's sign: a chip in the sign's
+            colour above the title, which then stands alone. Where the thread works,
+            main checkout included, follows the chip. */}
         {worldLook !== null && activeProject ? (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <button
-                  type="button"
-                  aria-label={`New thread in ${worldProjectName}`}
-                  onClick={onNewThreadInProject}
-                  className={cn(
-                    "mb-0.5 max-w-full cursor-pointer self-start truncate rounded-full px-2",
-                    "text-xs leading-5 font-semibold",
-                    "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                  )}
-                  style={{
-                    backgroundColor: worldLook.plate.background,
-                    color: worldLook.plate.text,
-                  }}
-                />
-              }
-            >
-              {worldProjectName}
-            </TooltipTrigger>
-            <TooltipPopup side="top">New thread in {worldProjectName}</TooltipPopup>
-          </Tooltip>
+          <div className="mb-0.5 flex min-w-0 items-center gap-2">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    aria-label={`New thread in ${worldProjectName}`}
+                    onClick={onNewThreadInProject}
+                    className={cn(
+                      "min-w-0 shrink cursor-pointer truncate rounded-full px-2",
+                      "text-xs leading-5 font-semibold",
+                      "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                    )}
+                    style={{
+                      backgroundColor: worldLook.plate.background,
+                      color: worldLook.plate.text,
+                    }}
+                  />
+                }
+              >
+                {worldProjectName}
+              </TooltipTrigger>
+              <TooltipPopup side="top">New thread in {worldProjectName}</TooltipPopup>
+            </Tooltip>
+            {isServerThread ? (
+              <WorldChatWorktree threadRef={activeThreadRef} projectRoot={activeProjectCwd} />
+            ) : null}
+          </div>
         ) : null}
         <WorkspaceBreadcrumb
           ariaLabel="Thread breadcrumb"
@@ -521,14 +527,13 @@ export const ChatHeader = memo(function ChatHeader({
               </Tooltip>
             )}
             {worldLook !== null && renamingTitle === null && isServerThread ? (
-              <WorldRegenerateTitleButton threadRef={activeThreadRef} />
+              <span className="flex shrink-0 items-center">
+                <WorldRegenerateTitleButton threadRef={activeThreadRef} />
+                <WorldArchiveButton threadRef={activeThreadRef} />
+              </span>
             ) : null}
           </WorkspaceBreadcrumbItem>
         </WorkspaceBreadcrumb>
-        {/* In the world, where the thread works sits under its title, main checkout included. */}
-        {worldLook !== null && isServerThread ? (
-          <WorldChatWorktree threadRef={activeThreadRef} projectRoot={activeProjectCwd} />
-        ) : null}
       </div>
     </div>
   );

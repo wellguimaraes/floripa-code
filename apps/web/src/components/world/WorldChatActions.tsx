@@ -39,7 +39,7 @@ function useWorldChatThread(threadRef: ScopedThreadRef | null) {
 }
 
 /**
- * The reply bubble's archive action, at the start of the world chat footer's panel controls.
+ * The reply bubble's archive action, after the world chat's title and its regenerate button.
  * Elsewhere it lives in the title menu, so it renders nothing outside the world.
  */
 export const WorldArchiveButton = memo(function WorldArchiveButton({
@@ -93,8 +93,7 @@ export const WorldArchiveButton = memo(function WorldArchiveButton({
           />
         }
       >
-        {/* Tinted like the panel toggles it sits beside. */}
-        <ArchiveIcon className="size-4 text-foreground opacity-80" />
+        <ArchiveIcon className="size-4" />
       </TooltipTrigger>
       <TooltipPopup side="top">
         <span className="flex items-center gap-2">
@@ -143,7 +142,7 @@ export const WorldChatCharacter = memo(function WorldChatCharacter({
                   aria-label="Change color"
                   className={cn(
                     "w-10 shrink-0 cursor-pointer self-stretch rounded-md outline-none",
-                    "focus-visible:ring-2 focus-visible:ring-ring",
+                    "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
                   )}
                 />
               }
@@ -223,7 +222,7 @@ export const WorldRegenerateTitleButton = memo(function WorldRegenerateTitleButt
 });
 
 /**
- * Where the world chat's thread works, under its title: the worktree's folder,
+ * Where the world chat's thread works, beside its project chip: the worktree's folder,
  * or "Main worktree" when it works in the project's own checkout. Renders
  * nothing outside the world.
  */
@@ -242,7 +241,7 @@ export const WorldChatWorktree = memo(function WorldChatWorktree({
   const name =
     worktree === null || worktree === projectRoot ? "Main worktree" : lastSegment(worktree);
   const label = (
-    <span className="flex min-w-0 items-center gap-1 self-start text-xs leading-4 text-muted-foreground">
+    <span className="flex min-w-0 items-center gap-1 text-xs leading-4 text-muted-foreground">
       <FolderGit2Icon className="size-3 shrink-0" />
       <span className="truncate">{name}</span>
     </span>

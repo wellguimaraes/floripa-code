@@ -35,7 +35,7 @@ Where a character is and what it does tells you the thread's state at a glance:
 
 Each agent has its own colour, shared with its subagents. To change it, click
 the agent, then the colour dot at the top left of its bubble, or click the agent's
-figure in its chat's footer. Subagents change
+figure next to its chat's message box. Subagents change
 with it. If another agent on the island wears that colour, that agent moves to a
 free one. Your pick is remembered in this browser.
 
