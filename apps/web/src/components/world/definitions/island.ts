@@ -367,7 +367,7 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
       },
       // Over the rock pile in front of each mining spot.
       newAgents: { area: "mine", marker: [0, 1.3 * pileSpread, PILE_DISTANCE * pileSpread] },
-      sharks: { intervalSeconds: [20, 45], surfaceSeconds: 4, offshore: [1.5, 4], fps: 24 },
+      whales: { intervalSeconds: [20, 45], leapSeconds: 3, offshore: [2.5, 5], fps: 30 },
     },
   };
 }

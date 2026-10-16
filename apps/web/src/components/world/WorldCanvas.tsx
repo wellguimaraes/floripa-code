@@ -61,7 +61,7 @@ import { afterPaint, whenIdle } from "./scene/frames";
 import { FadedContext, WorldDaylight } from "./scene/lighting";
 import { palette } from "./scene/palette";
 import { Manager } from "./scene/Manager";
-import { SharkSightings } from "./scene/Sharks";
+import { WhaleSightings } from "./scene/Whales";
 import { groundHeight, surfaceAt } from "./scene/terrain";
 import { SIGN_TOP, Sign, signTextColor } from "./scene/Sign";
 import { ManagerBubble, type ManagerStatus } from "./ManagerBubble";
@@ -1024,7 +1024,7 @@ export default function WorldCanvas(props: {
           <mesh geometry={geometry.plane} rotation-x={-Math.PI / 2} position-y={-0.25} scale={4000}>
             <meshLambertMaterial color={palette.water} />
           </mesh>
-          <SharkSightings islands={islandSpots} config={definition.archipelago.sharks} />
+          <WhaleSightings islands={islandSpots} config={definition.archipelago.whales} />
           {islands.map((island) => {
             // Everyone there archived: once the saucer has left, the island stays
             // washed out until new work lands.

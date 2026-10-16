@@ -234,14 +234,15 @@ export interface WorldArchipelago {
     readonly marker: Vec3;
   };
   /**
-   * Now and then a shark fin surfaces in the water near a random island,
-   * swims a little and dives. Frames are drawn at `fps` only while one is up.
+   * Now and then a whale leaps out of the water near a random island and
+   * splashes back in. Frames are drawn at `fps` only while one is up.
    */
-  readonly sharks: {
+  readonly whales: {
     /** Wait between sightings, picked at random in this range. */
     readonly intervalSeconds: readonly [min: number, max: number];
-    readonly surfaceSeconds: number;
-    /** How far past the island's edge the fin shows up. */
+    /** From the dive under the surface to the dive back in. */
+    readonly leapSeconds: number;
+    /** How far past the island's edge the whale shows up. */
     readonly offshore: readonly [min: number, max: number];
     readonly fps: number;
   };

@@ -32,7 +32,6 @@ export const geometry = {
   box: new BoxGeometry(1, 1, 1),
   cylinder: new CylinderGeometry(1, 1, 1, 10),
   cone: new ConeGeometry(1, 1, 8),
-  fin: new ConeGeometry(1, 1, 3),
   foliage: new IcosahedronGeometry(1, 0),
   plane: new PlaneGeometry(1, 1),
 };
