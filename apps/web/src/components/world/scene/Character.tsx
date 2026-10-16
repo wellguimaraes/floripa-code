@@ -135,6 +135,7 @@ export function Character(props: {
     route: [],
   });
   const lastPlacement = useRef<Placement | null>(null);
+  const lastSurface = useRef(surface);
   useEffect(() => {
     onRoot(facts.key, root.current);
     return () => onRoot(facts.key, null);
@@ -143,8 +144,18 @@ export function Character(props: {
   useEffect(() => {
     const previous = lastPlacement.current;
     lastPlacement.current = placement;
+    const resized = lastSurface.current !== surface;
+    lastSurface.current = surface;
     if (previous === null || samePlacement(previous, placement)) return;
     const current = motion.current;
+    // An island that shrank can leave its resters out at sea; rather than wade
+    // back, they are simply at their new spot.
+    if (resized && surface(current.position[0], current.position[2]) === null) {
+      [current.position[0], current.position[1], current.position[2]] = placement.position;
+      current.route = [];
+      invalidate();
+      return;
+    }
     // Off a pier through its foot, and onto one the same way; along the deck, straight.
     const alongDeck = previous.via !== undefined && sameVec(previous.via, placement.via);
     const stops = alongDeck
@@ -158,7 +169,7 @@ export function Character(props: {
     }
     if (current.route.length > 0) onWalk(facts.key);
     invalidate();
-  }, [placement, obstacles, invalidate, onWalk, facts.key]);
+  }, [placement, surface, obstacles, invalidate, onWalk, facts.key]);
 
   const speed = movement.walkSpeed * (facts.kid ? movement.kidSpeedScale : 1);
   useFrame((state, frameDelta) => {

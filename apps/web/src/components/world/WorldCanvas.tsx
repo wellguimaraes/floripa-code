@@ -189,6 +189,9 @@ export default function WorldCanvas(props: {
     }>
   >([]);
   const abductionId = useRef(0);
+  // Agents being archived hold their places from the moment it is asked, so
+  // the island does not shrink while the server answers and the saucer comes.
+  const [archiving, setArchiving] = useState<ReadonlyArray<CharacterFacts>>([]);
   // Islands hidden from the projects menu leave the map; the rest close up.
   const hidden = useWorldVisibilityStore((state) => state.hidden);
   const hideIsland = useWorldVisibilityStore((state) => state.toggleHidden);
@@ -198,12 +201,14 @@ export default function WorldCanvas(props: {
     [projectOrder, hidden],
   );
   const visibleFacts = useMemo(() => {
-    // Archived agents still hold their spots under the beam, so the beach only
-    // closes ranks once the saucer has flown off with them.
+    // Archived agents still hold their spots while archiving and under the beam,
+    // so the beach only closes ranks once the saucer has flown off with them.
     const live = new Set(islandFacts.map((f) => f.key));
-    const held = abductions.flatMap((a) => a.held ?? []).filter((f) => !live.has(f.key));
+    const held = [...archiving, ...abductions.flatMap((a) => a.held ?? [])].filter(
+      (f) => !live.has(f.key),
+    );
     return [...islandFacts, ...held].filter((f) => !hidden[f.projectKey]);
-  }, [islandFacts, abductions, hidden]);
+  }, [islandFacts, archiving, abductions, hidden]);
   const visibleMembers = useMemo(
     () => new Map(visibleOrder.map((key) => [key, projectMembers.get(key) ?? []])),
     [visibleOrder, projectMembers],
@@ -523,6 +528,8 @@ export default function WorldCanvas(props: {
   const archiveAll = async (characters: ReadonlyArray<WorldCharacter>) => {
     setPicked(new Set());
     setBubbleKey(null);
+    const keys = new Set(characters.map((character) => character.facts.key));
+    setArchiving((all) => [...all, ...characters.map((character) => character.facts)]);
     const results = await Promise.all(
       characters.map(async (character) => ({
         character,
@@ -530,13 +537,17 @@ export default function WorldCanvas(props: {
       })),
     );
     const archived = results.filter((r) => r.result._tag === "Success").map((r) => r.character);
-    // The open chat of an archived agent closes first, so its saucer is seen leaving,
-    // and the map frames the islands that showed beside it.
-    if (archived.some((character) => character.facts.key === selectedKey)) {
-      frameVisibleOnClose.current?.();
-      await onCollapse();
+    try {
+      // The open chat of an archived agent closes first, so its saucer is seen leaving,
+      // and the map frames the islands that showed beside it.
+      if (archived.some((character) => character.facts.key === selectedKey)) {
+        frameVisibleOnClose.current?.();
+        await onCollapse();
+      }
+      abduct(archived);
+    } finally {
+      setArchiving((all) => all.filter((f) => !keys.has(f.key)));
     }
-    abduct(archived);
     const failed = results.flatMap(({ character, result }) =>
       result._tag === "Failure" ? [{ character, error: squashAtomCommandFailure(result) }] : [],
     );
