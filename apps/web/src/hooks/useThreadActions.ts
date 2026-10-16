@@ -52,7 +52,7 @@ import {
 } from "../state/entities";
 import { useUiStateStore } from "../uiStateStore";
 import { clearThreadPreviewState } from "../previewStateStore";
-import { useTerminalUiStateStore } from "../terminalUiStateStore";
+import { useRightPanelStore } from "../rightPanelStore";
 import { buildThreadRouteParams, resolveThreadRouteRef } from "../threadRoutes";
 import { formatWorktreePathForDisplay, getOrphanedWorktreePathForThread } from "../worktreeCleanup";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
@@ -327,7 +327,6 @@ export function useThreadActions() {
   const clearProjectDraftThreadById = useComposerDraftStore(
     (store) => store.clearProjectDraftThreadById,
   );
-  const clearTerminalUiState = useTerminalUiStateStore((state) => state.clearTerminalUiState);
   const markThreadVisited = useUiStateStore((state) => state.markThreadVisited);
   const router = useRouter();
   const handleNewThread = useNewThreadHandler();
@@ -465,6 +464,7 @@ export function useThreadActions() {
         if (result._tag === "Success") {
           refreshArchivedThreadsForEnvironment(target.environmentId);
           clearThreadPreviewState(target);
+          useRightPanelStore.getState().removeThread(target);
         }
         return result;
       }
@@ -570,8 +570,8 @@ export function useThreadActions() {
         scopeProjectRef(threadRef.environmentId, thread.projectId),
         threadRef,
       );
-      clearTerminalUiState(threadRef);
       clearThreadPreviewState(threadRef);
+      useRightPanelStore.getState().removeThread(threadRef);
 
       if (shouldNavigateToFallback) {
         const fallbackThread = fallbackThreadId
@@ -656,7 +656,6 @@ export function useThreadActions() {
     [
       clearComposerDraftForThread,
       clearProjectDraftThreadById,
-      clearTerminalUiState,
       deleteThreadMutation,
       getCurrentRouteThreadRef,
       loadSessionState,

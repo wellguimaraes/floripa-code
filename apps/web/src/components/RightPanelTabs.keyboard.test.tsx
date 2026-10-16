@@ -139,6 +139,29 @@ describe("right panel new-tab shortcut", () => {
     },
   );
 
+  it("adds a tab to the type on screen instead of opening the menu", async () => {
+    const addTerminal = vi.fn();
+    await renderPanel({
+      activeType: "terminal",
+      terminalAvailable: true,
+      onAddTerminal: addTerminal,
+      onActivateType: noop,
+      surfaces: [
+        {
+          id: "terminal:term-1",
+          kind: "terminal",
+          resourceId: "term-1",
+          terminalIds: ["term-1"],
+          activeTerminalId: "term-1",
+        },
+      ],
+      activeSurfaceId: "terminal:term-1",
+    });
+    expect((await press("t", { metaKey: true })).defaultPrevented).toBe(true);
+    expect(addTerminal).toHaveBeenCalledOnce();
+    expect(document.querySelector('[role="menu"]:not([data-closed])')).toBeNull();
+  });
+
   it("leaves the shortcut alone while the mounted panel is closed", async () => {
     await renderPanel({ open: false });
     expect((await press("t", { metaKey: true })).defaultPrevented).toBe(false);

@@ -311,7 +311,7 @@ const make = Effect.gen(function* () {
     const reused = input.reusedWorktree;
     const tracked = input.workspaceStrategy.type === "worktree" || reused !== undefined;
     let createdWorktreePath: string | null = null;
-    let setupTerminalId: string | null = null;
+    let setupTerminal: { readonly terminalId: string; readonly scopeKey: string } | null = null;
     let workspaceRecorded = false;
     // A worktree without a chosen name waits for a fast generated one, so its
     // folder is named after the work rather than the temporary hash.
@@ -621,7 +621,7 @@ const make = Effect.gen(function* () {
 
       let awaitAsyncSetup = Effect.void;
       if (setup.status === "started") {
-        setupTerminalId = setup.terminalId;
+        setupTerminal = { terminalId: setup.terminalId, scopeKey: setup.scopeKey };
         yield* setupTracker.update(threadId, (snapshot) => ({
           ...snapshot,
           setupScript: {
@@ -690,9 +690,9 @@ const make = Effect.gen(function* () {
           // the thread recorded, so a retry reuses it, and removes one it never
           // recorded, which a retry would otherwise duplicate.
           if (tracked && createdWorktreePath && (cancelled || !workspaceRecorded)) {
-            if (setupTerminalId)
+            if (setupTerminal)
               yield* terminals
-                .close({ threadId, terminalId: setupTerminalId, deleteHistory: true })
+                .close({ threadId, ...setupTerminal, deleteHistory: true })
                 .pipe(Effect.ignore);
             const removedPath = createdWorktreePath;
             // The thread forgets the worktree only once it is gone; a failed

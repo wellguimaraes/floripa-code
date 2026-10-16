@@ -21,7 +21,7 @@ import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { isModelPickerOpen } from "../modelPickerVisibility";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
-import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
+import { selectTerminalPanelOpen } from "../terminalPanel";
 import { resolveThreadRouteRef } from "../threadRoutes";
 import { cn, isMacPlatform } from "../lib/utils";
 import { primaryServerKeybindingsAtom } from "../state/server";
@@ -191,15 +191,13 @@ function NavigationHistoryShortcuts() {
       const command = resolveShortcutCommand(event, keybindings, {
         context: {
           terminalFocus: isTerminalFocused(),
-          terminalOpen: routeThreadRef
-            ? selectThreadTerminalUiState(
-                useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
-                routeThreadRef,
-              ).terminalOpen
-            : false,
+          terminalOpen: selectTerminalPanelOpen(
+            useRightPanelStore.getState().byPanelKey,
+            routeThreadRef,
+          ),
           previewFocus: isPreviewFocused(),
           previewOpen: routeThreadRef
-            ? selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, routeThreadRef) ===
+            ? selectActiveRightPanel(useRightPanelStore.getState().byPanelKey, routeThreadRef) ===
               "preview"
             : false,
           editableFocus: isEditableFocused(event.target),

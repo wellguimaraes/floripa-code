@@ -15,6 +15,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
@@ -25,6 +26,7 @@ import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { forkParked } from "../serverActivation.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
+import * as WorktreeScopes from "../workspace/WorktreeScopes.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
@@ -306,6 +308,7 @@ export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const terminals = yield* TerminalManager.TerminalManager;
   const projectScripts = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
+  const worktreeScopes = yield* WorktreeScopes.WorktreeScopes;
   // Settling a settled thread re-emits thread.settled with the same settledAt,
   // so this keeps the settle action to one run per settlement.
   const settleActionRunAt = new Map<ThreadId, number>();
@@ -557,16 +560,28 @@ export const make = Effect.gen(function* () {
   );
 
   // Settling closes the thread's shells that sit at an idle prompt, so they stop
-  // holding the worktree. A terminal running a command (a dev server, an
-  // editor) stays for the user to close. Then the project's settle script runs
-  // in the thread's own worktree; a thread in the shared checkout skips it,
-  // because other threads may still be working there.
+  // holding the worktree. Shells shared by the checkout close only when no
+  // other unsettled thread works there, and never in the project's own
+  // checkout. A terminal running a command (a dev server, an editor) stays for
+  // the user to close. Then the project's settle script runs in the thread's
+  // own worktree; a thread in the shared checkout skips it, because other
+  // threads may still be working there.
   const cleanUpSettledThread = Effect.fn("ThreadSettlementServiceV2.cleanUpSettledThread")(
     function* (threadId: ThreadId) {
       // A thread re-engaged before this event ran keeps its shells.
       const settled = yield* projections.getThread(threadId);
       if (settled.settledOverride !== "settled") return;
       yield* terminals.closeIdle({ threadId });
+      const scope = yield* worktreeScopes.forThread(threadId);
+      if (Option.isSome(scope) && !scope.value.projectCheckout) {
+        const { scopeKey } = scope.value;
+        const shared = yield* worktreeScopes.sharedWithOtherLiveThread({
+          scopeKey,
+          threadId,
+          ignoreSettled: true,
+        });
+        if (!shared) yield* terminals.closeIdle({ threadId, scopeKey });
+      }
       const worktreePath = settled.worktreePath;
       if (worktreePath === null || !(yield* fileSystem.exists(worktreePath))) return;
       // Closing and the worktree check wait on I/O. A thread re-engaged

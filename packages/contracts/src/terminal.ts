@@ -27,6 +27,13 @@ const TerminalEnvSchema = Schema.Record(TerminalEnvKeySchema, TerminalEnvValueSc
 
 export const TerminalThreadInput = Schema.Struct({
   threadId: TrimmedNonEmptyStringSchema,
+  /**
+   * The checkout that owns the terminal (`worktreeScopeKey` in
+   * `@t3tools/shared/worktreeScope`). Sessions are keyed by it so every thread
+   * in a worktree shares them; `threadId` then names the caller. Absent keys
+   * the session by `threadId`, as older clients and synthetic callers expect.
+   */
+  scopeKey: Schema.optional(TrimmedNonEmptyStringSchema),
 });
 export type TerminalThreadInput = typeof TerminalThreadInput.Type;
 
@@ -101,7 +108,10 @@ export const TerminalSessionStatus = Schema.Literals(["starting", "running", "ex
 export type TerminalSessionStatus = typeof TerminalSessionStatus.Type;
 
 export const TerminalSessionSnapshot = Schema.Struct({
+  /** The thread that opened the session. */
   threadId: Schema.String.check(Schema.isNonEmpty()),
+  /** See `TerminalThreadInput.scopeKey`; absent for thread-keyed sessions. */
+  scopeKey: Schema.optional(Schema.String.check(Schema.isNonEmpty())),
   terminalId: Schema.String.check(Schema.isNonEmpty()),
   cwd: Schema.String.check(Schema.isNonEmpty()),
   worktreePath: Schema.NullOr(TrimmedNonEmptyStringSchema),
@@ -118,7 +128,10 @@ export const TerminalSessionSnapshot = Schema.Struct({
 export type TerminalSessionSnapshot = typeof TerminalSessionSnapshot.Type;
 
 export const TerminalSummary = Schema.Struct({
+  /** The thread that opened the session. */
   threadId: Schema.String.check(Schema.isNonEmpty()),
+  /** See `TerminalThreadInput.scopeKey`; absent for thread-keyed sessions. */
+  scopeKey: Schema.optional(Schema.String.check(Schema.isNonEmpty())),
   terminalId: Schema.String.check(Schema.isNonEmpty()),
   cwd: Schema.String.check(Schema.isNonEmpty()),
   worktreePath: Schema.NullOr(TrimmedNonEmptyStringSchema),
@@ -146,6 +159,7 @@ const TerminalMetadataUpsertEvent = Schema.Struct({
 const TerminalMetadataRemoveEvent = Schema.Struct({
   type: Schema.Literal("remove"),
   threadId: Schema.String.check(Schema.isNonEmpty()),
+  scopeKey: Schema.optional(Schema.String.check(Schema.isNonEmpty())),
   terminalId: Schema.String.check(Schema.isNonEmpty()),
 });
 
@@ -158,6 +172,7 @@ export type TerminalMetadataStreamEvent = typeof TerminalMetadataStreamEvent.Typ
 
 const TerminalEventBaseSchema = Schema.Struct({
   threadId: Schema.String.check(Schema.isNonEmpty()),
+  scopeKey: Schema.optional(Schema.String.check(Schema.isNonEmpty())),
   terminalId: Schema.String.check(Schema.isNonEmpty()),
   sequence: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
 });

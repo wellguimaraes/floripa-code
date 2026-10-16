@@ -32,8 +32,10 @@ export function resolveTerminalSessionLabel(
  * Client-side terminal id allocator. Ids are ALWAYS chosen by the client and sent explicitly
  * on every `terminal.open` / `terminal.attach` call — the server never allocates.
  *
- * Returns the lowest unused `term-N` number. When metadata is unavailable,
- * callers append a UUID so an unseen host session cannot be reused accidentally.
+ * Returns the lowest unused `term-N` number. When metadata is unavailable, or the
+ * terminal opens in a checkout other threads share, callers append a UUID so a
+ * session another thread or device opened meanwhile is never reused by accident.
+ * Suffixed ids still label as "Terminal N".
  */
 export function nextTerminalId(
   existingTerminalIds: ReadonlyArray<string>,

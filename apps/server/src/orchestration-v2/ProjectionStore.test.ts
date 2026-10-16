@@ -327,6 +327,73 @@ const restartCancelledWorkSurvivesStaleRunUpdate = Effect.gen(function* () {
   assert.deepEqual(updated?.restartCancelledBackgroundWork, work);
 });
 
+// Archived and deleted threads no longer hold a checkout; settled ones still do.
+const liveThreadCheckoutsSkipArchivedAndDeleted = Effect.gen(function* () {
+  const store = yield* ProjectionStore.ProjectionStoreV2;
+  const now = yield* DateTime.now;
+  const projectId = ProjectId.make("project:live-checkouts");
+  const create = (
+    name: string,
+    overrides: {
+      readonly worktreePath?: string;
+      readonly archivedAt?: DateTime.Utc;
+      readonly deletedAt?: DateTime.Utc;
+      readonly settledOverride?: "settled";
+    },
+  ) => {
+    const threadId = ThreadId.make(`thread:live-checkouts:${name}`);
+    return store
+      .apply({
+        id: EventId.make(`event:live-checkouts:${name}`),
+        type: "thread.created",
+        threadId,
+        occurredAt: now,
+        payload: {
+          createdBy: "user",
+          creationSource: "web",
+          id: threadId,
+          projectId,
+          title: name,
+          providerInstanceId,
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: overrides.worktreePath ?? null,
+          activeProviderThreadId: null,
+          lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+          forkedFrom: null,
+          createdAt: now,
+          updatedAt: now,
+          archivedAt: overrides.archivedAt ?? null,
+          settledOverride: overrides.settledOverride ?? null,
+          settledAt: overrides.settledOverride === undefined ? null : now,
+          lastVisitedAt: null,
+          deletedAt: overrides.deletedAt ?? null,
+        },
+      })
+      .pipe(Effect.as(threadId));
+  };
+  const root = yield* create("root", {});
+  const worktree = yield* create("worktree", { worktreePath: "/repo/.worktrees/feature" });
+  const settled = yield* create("settled", { settledOverride: "settled" });
+  yield* create("archived", { archivedAt: now });
+  yield* create("deleted", { deletedAt: now });
+
+  const checkouts = (yield* store.getLiveThreadCheckouts())
+    .filter((checkout) => checkout.projectId === projectId)
+    .toSorted((left, right) => left.id.localeCompare(right.id));
+  assert.deepStrictEqual(checkouts, [
+    { id: root, projectId, worktreePath: null, settled: false },
+    { id: settled, projectId, worktreePath: null, settled: true },
+    { id: worktree, projectId, worktreePath: "/repo/.worktrees/feature", settled: false },
+  ]);
+});
+
+it.effect("memory projection lists the checkouts of live threads", () =>
+  liveThreadCheckoutsSkipArchivedAndDeleted.pipe(Effect.provide(ProjectionStore.layerMemory)),
+);
+
 it.effect("memory projection keeps restart-cancelled work through a stale run.updated", () =>
   restartCancelledWorkSurvivesStaleRunUpdate.pipe(Effect.provide(ProjectionStore.layerMemory)),
 );
@@ -501,6 +568,7 @@ it.effect("memory shell snapshots scope to one project", () =>
 );
 
 it.layer(layerTest)("ProjectionStoreV2", (it) => {
+  it.effect("lists the checkouts of live threads", () => liveThreadCheckoutsSkipArchivedAndDeleted);
   it.effect(
     "keeps restart-cancelled work through a stale run.updated",
     () => restartCancelledWorkSurvivesStaleRunUpdate,

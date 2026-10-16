@@ -25,7 +25,7 @@ const shared = {
 const PreviewListTool = Tool.make("t3_preview_list", {
   ...shared,
   description:
-    "List this thread's preview tabs. Pages reflect the current server state and may shift as tabs change.",
+    "List the preview tabs of this thread's worktree, including tabs other threads in the same checkout opened. Pages reflect the current server state and may shift as tabs change.",
   parameters: Schema.Struct({
     cursor: Schema.optional(NonNegativeInt),
     limit: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 50 }))),
@@ -40,7 +40,7 @@ const PreviewListTool = Tool.make("t3_preview_list", {
 const PreviewCloseTool = Tool.make("t3_preview_close", {
   ...shared,
   description:
-    "Close one preview tab owned by this thread through the normal server/host tab lifecycle. This does not wait for renderer cleanup.",
+    "Close one preview tab in this thread's worktree through the normal server/host tab lifecycle. This does not wait for renderer cleanup.",
   parameters: Schema.Struct({ tabId: PreviewTabId }),
   success: Schema.Struct({}),
 }).annotate(Tool.Destructive, true);

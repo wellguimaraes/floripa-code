@@ -36,7 +36,7 @@ const snapshot = (tabId: string): PreviewSessionSnapshot => ({
 beforeEach(() => {
   __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
   resetPreviewStateForTests();
-  useRightPanelStore.setState({ byThreadKey: {}, threadPanelVisibilityByThreadKey: {} });
+  useRightPanelStore.setState({ byPanelKey: {}, threadPanelVisibilityByThreadKey: {} });
 });
 
 describe("addBrowserSurface", () => {
@@ -74,10 +74,9 @@ describe("addBrowserSurface", () => {
     });
     expect(Object.keys(readThreadPreviewState(threadRef).sessions)).toEqual(["tab-1", "tab-2"]);
     expect(
-      selectThreadRightPanelState(
-        useRightPanelStore.getState().byThreadKey,
-        threadRef,
-      ).surfaces.map((surface) => surface.id),
+      selectThreadRightPanelState(useRightPanelStore.getState().byPanelKey, threadRef).surfaces.map(
+        (surface) => surface.id,
+      ),
     ).toEqual(["browser:tab-1", "browser:tab-2"]);
   });
 });

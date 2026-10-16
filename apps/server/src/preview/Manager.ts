@@ -1,9 +1,11 @@
 /**
  * In-memory PreviewManager implementation.
  *
- * Sessions are keyed by `(threadId, tabId)`; a single thread can host
- * multiple tabs (browser-style). `open` always creates a new tab — tab
- * lifecycle is owned by the renderer.
+ * Sessions are keyed by `tabId` (process-unique) and belong to the opening
+ * thread's checkout (`scopeKey`), so every thread in one worktree lists and
+ * drives the same tabs. A tab whose thread could not be resolved belongs to
+ * that thread alone. `open` always creates a new tab — tab lifecycle is owned
+ * by the renderer.
  *
  * Events are published via Effect's `PubSub`, so subscriber failures are
  * isolated from the publishing call (a closed WS subscriber queue cannot
@@ -36,11 +38,18 @@ import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 import { PreviewControlRequiredError } from "@t3tools/contracts";
+
+import { worktreeScopeKey } from "@t3tools/shared/worktreeScope";
+
+import * as WorktreeScopes from "../workspace/WorktreeScopes.ts";
+
+const CLIENT_SCOPE_HINT_LIMIT = 256;
 
 export class PreviewManager extends Context.Service<
   PreviewManager,
@@ -48,6 +57,8 @@ export class PreviewManager extends Context.Service<
     readonly open: (
       input: PreviewOpenInput & {
         readonly automationOwner?: string;
+        /** The scope to open in, such as a popup's opener tab's; resolved from the thread when omitted. */
+        readonly scopeKey?: string | undefined;
         /** Runs before the `opened` event publishes, so subscribers find state keyed by the tab. */
         readonly beforePublish?: (snapshot: PreviewSessionSnapshot) => void;
       },
@@ -73,21 +84,34 @@ export class PreviewManager extends Context.Service<
       input: PreviewAdjustInput,
     ) => Effect.Effect<PreviewSessionSnapshot, PreviewError>;
     readonly refresh: (input: PreviewRefreshInput) => Effect.Effect<void, PreviewError>;
+    /** Closes one tab the caller can see, or without `tabId` every tab `list` returns for it. */
     readonly close: (input: PreviewCloseInput) => Effect.Effect<void, PreviewError>;
+    /**
+     * Cleanup for a deleted thread: closes the tabs only it could see and, when
+     * `scopeKey` is given, every tab of that checkout.
+     */
+    readonly closeForThread: (input: {
+      readonly threadId: string;
+      readonly scopeKey?: string | undefined;
+    }) => Effect.Effect<void>;
+    /** Every tab in the caller's checkout, plus tabs only the caller can see. */
     readonly list: (input: PreviewListInput) => Effect.Effect<PreviewListResult>;
+    /**
+     * The checkout a caller's tabs belong to; undefined when its thread cannot
+     * be resolved. Callers compare it with `previewTabVisibleTo`.
+     */
+    readonly resolveScope: (threadId: string) => Effect.Effect<string | undefined>;
     readonly events: Stream.Stream<PreviewEvent>;
     readonly subscribeEvents: Effect.Effect<PubSub.Subscription<PreviewEvent>, never, Scope.Scope>;
   }
 >()("t3/preview/Manager/PreviewManager") {}
 
 interface PreviewSessionState {
-  readonly threadId: string;
-  readonly tabId: string;
   readonly snapshot: PreviewSessionSnapshot;
 }
 
 interface ManagerState {
-  /** All sessions across every thread, keyed by `${threadId}\u0000${tabId}`. */
+  /** All sessions across every thread, keyed by `tabId`. */
   readonly sessions: ReadonlyMap<string, PreviewSessionState>;
   /** Global monotonic revision establishing list/event ordering. */
   readonly revision: number;
@@ -101,18 +125,33 @@ type PreviewEventDraft = PreviewEvent extends infer Event
     : never
   : never;
 
-const compositeKey = (threadId: string, tabId: string): string => `${threadId}\u0000${tabId}`;
+/**
+ * Whether a caller sees a tab: any thread in the tab's checkout does, and a
+ * tab without one is its opening thread's alone.
+ */
+export const previewTabVisibleTo = (
+  tab: { readonly threadId: string; readonly scopeKey?: string | undefined },
+  caller: { readonly threadId: string; readonly scopeKey: string | undefined },
+): boolean =>
+  tab.threadId === caller.threadId ||
+  (tab.scopeKey !== undefined && tab.scopeKey === caller.scopeKey);
 
-const sessionsForThread = (
+const sessionsVisibleTo = (
   state: ManagerState,
-  threadId: string,
+  caller: { readonly threadId: string; readonly scopeKey: string | undefined },
 ): ReadonlyArray<PreviewSessionState> => {
   const out: PreviewSessionState[] = [];
   for (const session of state.sessions.values()) {
-    if (session.threadId === threadId) out.push(session);
+    if (previewTabVisibleTo(session.snapshot, caller)) out.push(session);
   }
   return out;
 };
+
+/** The owner fields every event about a tab carries. */
+const eventOwner = (snapshot: PreviewSessionSnapshot) => ({
+  threadId: snapshot.threadId,
+  ...(snapshot.scopeKey === undefined ? {} : { scopeKey: snapshot.scopeKey }),
+});
 
 const normalizeUrl = (rawUrl: string): Effect.Effect<string, PreviewInvalidUrlError> =>
   Effect.try({
@@ -140,6 +179,7 @@ const currentIsoTimestamp = DateTime.now.pipe(Effect.map(DateTime.formatIso));
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* PreviewManagerMake() {
   const crypto = yield* Crypto.Crypto;
+  const worktreeScopes = yield* WorktreeScopes.WorktreeScopes;
   const serverEpoch = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
   const stateRef = yield* SynchronizedRef.make<ManagerState>(initialState);
   // Unbounded PubSub is fine here — events are tiny and we don't want to
@@ -148,8 +188,51 @@ export const make = Effect.gen(function* PreviewManagerMake() {
   const eventsPubSub = yield* PubSub.unbounded<PreviewEvent>();
   const events: Stream.Stream<PreviewEvent> = Stream.fromPubSub(eventsPubSub);
 
+  // Where clients place threads the server cannot resolve yet (drafts). Bounded:
+  // a draft that never sends would otherwise keep its entry for the process's life.
+  const clientScopeHints = new Map<string, string>();
+  const rememberClientScope = (threadId: string, clientScopeKey: string | undefined) => {
+    if (clientScopeKey === undefined) return;
+    clientScopeHints.delete(threadId);
+    clientScopeHints.set(threadId, worktreeScopeKey({ workspaceRoot: clientScopeKey }));
+    if (clientScopeHints.size > CLIENT_SCOPE_HINT_LIMIT) {
+      const oldest = clientScopeHints.keys().next().value;
+      if (oldest !== undefined) clientScopeHints.delete(oldest);
+    }
+  };
+
+  const resolveScope: PreviewManager["Service"]["resolveScope"] = (threadId) =>
+    worktreeScopes.forThread(threadId).pipe(
+      Effect.map((scope) =>
+        Option.isSome(scope) ? scope.value.scopeKey : clientScopeHints.get(threadId),
+      ),
+      // An unresolved thread keeps its tabs to itself rather than failing the request.
+      Effect.catch((error) =>
+        Effect.logWarning("failed to resolve preview scope", { threadId, error }).pipe(
+          Effect.as(undefined),
+        ),
+      ),
+    );
+
   /**
-   * Atomic read-modify-write over the session for `(threadId, tabId)`. The
+   * The caller's scope, resolved only when the tab belongs to a checkout and
+   * another thread opened it; the opener itself needs no lookup.
+   */
+  const callerScopeFor = (threadId: string, tabId: string) =>
+    Effect.gen(function* () {
+      const session = (yield* SynchronizedRef.get(stateRef)).sessions.get(tabId);
+      if (
+        session === undefined ||
+        session.snapshot.threadId === threadId ||
+        session.snapshot.scopeKey === undefined
+      ) {
+        return undefined;
+      }
+      return yield* resolveScope(threadId);
+    });
+
+  /**
+   * Atomic read-modify-write over the tab `tabId`, when the caller sees it. The
    * mutator runs under the SynchronizedRef so concurrent writers cannot
    * interleave. Lookup failures travel through the modify result so both
    * branches yield the same `[A, S]` shape `modifyEffect` requires.
@@ -169,35 +252,37 @@ export const make = Effect.gen(function* PreviewManagerMake() {
       | { kind: "fail"; error: PreviewSessionLookupError }
       | { kind: "ok"; result: R };
 
-    return SynchronizedRef.modifyEffect(stateRef, (state) => {
-      const session = state.sessions.get(compositeKey(threadId, tabId));
-      if (!session) {
-        return Effect.succeed([
-          { kind: "fail", error: new PreviewSessionLookupError({ threadId, tabId }) },
-          state,
-        ] as readonly [ModifyResult, ManagerState]);
-      }
-      return mutator(session).pipe(
-        Effect.flatMap(
-          Effect.fn("PreviewManager.commitMutation")(function* ({ next, emit, result }) {
-            const revision = emit ? state.revision + 1 : state.revision;
-            if (emit) {
-              yield* PubSub.publish(eventsPubSub, {
-                ...emit,
-                revision,
-                serverEpoch,
-              } as PreviewEvent);
-            }
-            const sessions = new Map(state.sessions);
-            sessions.set(compositeKey(threadId, tabId), next);
-            return [{ kind: "ok", result } as ModifyResult, { sessions, revision }] as readonly [
-              ModifyResult,
-              ManagerState,
-            ];
-          }),
-        ),
-      );
-    }).pipe(
+    return Effect.flatMap(callerScopeFor(threadId, tabId), (scopeKey) =>
+      SynchronizedRef.modifyEffect(stateRef, (state) => {
+        const session = state.sessions.get(tabId);
+        if (!session || !previewTabVisibleTo(session.snapshot, { threadId, scopeKey })) {
+          return Effect.succeed([
+            { kind: "fail", error: new PreviewSessionLookupError({ threadId, tabId }) },
+            state,
+          ] as readonly [ModifyResult, ManagerState]);
+        }
+        return mutator(session).pipe(
+          Effect.flatMap(
+            Effect.fn("PreviewManager.commitMutation")(function* ({ next, emit, result }) {
+              const revision = emit ? state.revision + 1 : state.revision;
+              if (emit) {
+                yield* PubSub.publish(eventsPubSub, {
+                  ...emit,
+                  revision,
+                  serverEpoch,
+                } as PreviewEvent);
+              }
+              const sessions = new Map(state.sessions);
+              sessions.set(tabId, next);
+              return [{ kind: "ok", result } as ModifyResult, { sessions, revision }] as readonly [
+                ModifyResult,
+                ManagerState,
+              ];
+            }),
+          ),
+        );
+      }),
+    ).pipe(
       Effect.flatMap((modify) =>
         modify.kind === "fail" ? Effect.fail(modify.error) : Effect.succeed(modify.result),
       ),
@@ -210,8 +295,11 @@ export const make = Effect.gen(function* PreviewManagerMake() {
       // Persisted client surfaces must not bind to a different tab after a server restart.
       const tabId = `${newPreviewTabId()}${runtime === "server" ? `_${serverEpoch}` : ""}`;
       const updatedAt = yield* currentIsoTimestamp;
+      rememberClientScope(input.threadId, input.clientScopeKey);
+      const scopeKey = input.scopeKey ?? (yield* resolveScope(input.threadId));
       const snapshot: PreviewSessionSnapshot = {
         threadId: input.threadId,
+        ...(scopeKey === undefined ? {} : { scopeKey }),
         tabId,
         navStatus: input.url
           ? { _tag: "Loading", url: yield* normalizeUrl(input.url), title: "" }
@@ -231,15 +319,11 @@ export const make = Effect.gen(function* PreviewManagerMake() {
         Effect.gen(function* () {
           const revision = state.revision + 1;
           const sessions = new Map(state.sessions);
-          sessions.set(compositeKey(input.threadId, tabId), {
-            threadId: input.threadId,
-            tabId,
-            snapshot,
-          });
+          sessions.set(tabId, { snapshot });
           input.beforePublish?.(snapshot);
           yield* PubSub.publish(eventsPubSub, {
             type: "opened",
-            threadId: input.threadId,
+            ...eventOwner(snapshot),
             tabId,
             createdAt: snapshot.updatedAt,
             serverEpoch,
@@ -276,8 +360,8 @@ export const make = Effect.gen(function* PreviewManagerMake() {
             next: { ...session, snapshot },
             emit: {
               type: "navigated",
-              threadId: session.threadId,
-              tabId: session.tabId,
+              ...eventOwner(session.snapshot),
+              tabId: session.snapshot.tabId,
               createdAt: snapshot.updatedAt,
               snapshot,
             },
@@ -310,8 +394,8 @@ export const make = Effect.gen(function* PreviewManagerMake() {
           input.navStatus._tag === "LoadFailed"
             ? {
                 type: "failed",
-                threadId: session.threadId,
-                tabId: session.tabId,
+                ...eventOwner(session.snapshot),
+                tabId: session.snapshot.tabId,
                 createdAt: snapshot.updatedAt,
                 url: input.navStatus.url,
                 title: input.navStatus.title,
@@ -323,8 +407,8 @@ export const make = Effect.gen(function* PreviewManagerMake() {
               }
             : {
                 type: "navigated",
-                threadId: session.threadId,
-                tabId: session.tabId,
+                ...eventOwner(session.snapshot),
+                tabId: session.snapshot.tabId,
                 createdAt: snapshot.updatedAt,
                 snapshot,
               };
@@ -355,8 +439,8 @@ export const make = Effect.gen(function* PreviewManagerMake() {
             next: { ...session, snapshot },
             emit: {
               type: "resized",
-              threadId: session.threadId,
-              tabId: session.tabId,
+              ...eventOwner(session.snapshot),
+              tabId: session.snapshot.tabId,
               createdAt: snapshot.updatedAt,
               snapshot,
             },
@@ -395,8 +479,8 @@ export const make = Effect.gen(function* PreviewManagerMake() {
             emit: {
               ...request,
               type: "resized",
-              threadId: session.threadId,
-              tabId: session.tabId,
+              ...eventOwner(session.snapshot),
+              tabId: session.snapshot.tabId,
               createdAt: snapshot.updatedAt,
               snapshot,
             },
@@ -417,25 +501,21 @@ export const make = Effect.gen(function* PreviewManagerMake() {
     },
   );
 
-  const close: PreviewManager["Service"]["close"] = Effect.fn("PreviewManager.close")(
-    function* (input) {
+  /** Removes the sessions `pick` selects and publishes a `closed` event for each. */
+  const closeWhere = (pick: (state: ManagerState) => ReadonlyArray<PreviewSessionState>) =>
+    Effect.gen(function* () {
       const createdAt = yield* currentIsoTimestamp;
       yield* SynchronizedRef.modifyEffect(stateRef, (state) => {
         const eventsToEmit: PreviewEvent[] = [];
         const sessions = new Map(state.sessions);
-        const targets = input.tabId
-          ? [state.sessions.get(compositeKey(input.threadId, input.tabId))].filter(
-              (entry): entry is PreviewSessionState => entry !== undefined,
-            )
-          : sessionsForThread(state, input.threadId);
         let revision = state.revision;
-        for (const target of targets) {
+        for (const target of pick(state)) {
           revision += 1;
-          sessions.delete(compositeKey(target.threadId, target.tabId));
+          sessions.delete(target.snapshot.tabId);
           eventsToEmit.push({
             type: "closed",
-            threadId: target.threadId,
-            tabId: target.tabId,
+            ...eventOwner(target.snapshot),
+            tabId: target.snapshot.tabId,
             createdAt,
             serverEpoch,
             revision,
@@ -451,14 +531,45 @@ export const make = Effect.gen(function* PreviewManagerMake() {
           [undefined, { sessions, revision }] as const,
         );
       });
+    });
+
+  const close: PreviewManager["Service"]["close"] = Effect.fn("PreviewManager.close")(
+    function* (input) {
+      const tabId = input.tabId;
+      const caller = {
+        threadId: input.threadId,
+        scopeKey:
+          tabId === undefined
+            ? yield* resolveScope(input.threadId)
+            : yield* callerScopeFor(input.threadId, tabId),
+      };
+      yield* closeWhere((state) => {
+        if (tabId === undefined) return sessionsVisibleTo(state, caller);
+        const session = state.sessions.get(tabId);
+        return session && previewTabVisibleTo(session.snapshot, caller) ? [session] : [];
+      });
     },
   );
 
+  const closeForThread: PreviewManager["Service"]["closeForThread"] = Effect.fn(
+    "PreviewManager.closeForThread",
+  )(function* (input) {
+    yield* closeWhere((state) =>
+      [...state.sessions.values()].filter(({ snapshot }) =>
+        snapshot.scopeKey === undefined
+          ? snapshot.threadId === input.threadId
+          : snapshot.scopeKey === input.scopeKey,
+      ),
+    );
+  });
+
   const list: PreviewManager["Service"]["list"] = Effect.fn("PreviewManager.list")(
     function* (input) {
+      rememberClientScope(input.threadId, input.clientScopeKey);
+      const scopeKey = yield* resolveScope(input.threadId);
       return yield* SynchronizedRef.get(stateRef).pipe(
         Effect.map((state): PreviewListResult => ({
-          sessions: sessionsForThread(state, input.threadId)
+          sessions: sessionsVisibleTo(state, { threadId: input.threadId, scopeKey })
             .map((s) => s.snapshot)
             .toSorted((a, b) => a.updatedAt.localeCompare(b.updatedAt)),
           serverEpoch,
@@ -488,8 +599,8 @@ export const make = Effect.gen(function* PreviewManagerMake() {
           next: { ...session, snapshot },
           emit: {
             type: "navigated" as const,
-            threadId: session.threadId,
-            tabId: session.tabId,
+            ...eventOwner(session.snapshot),
+            tabId: session.snapshot.tabId,
             createdAt: snapshot.updatedAt,
             snapshot,
           },
@@ -508,7 +619,9 @@ export const make = Effect.gen(function* PreviewManagerMake() {
     adjust,
     refresh,
     close,
+    closeForThread,
     list,
+    resolveScope,
     events,
     subscribeEvents: PubSub.subscribe(eventsPubSub),
   });

@@ -195,7 +195,16 @@ export type PreviewStreamHostSetup = typeof PreviewStreamHostSetup.Type;
 export const PREVIEW_STREAM_HOST_SETUP_CLOSE_CODE = 4503;
 
 export const PreviewSessionSnapshot = Schema.Struct({
+  /** The thread that opened the tab. */
   threadId: TrimmedNonEmptyString,
+  /**
+   * The checkout that owns the tab (`worktreeScopeKey` in
+   * `@t3tools/shared/worktreeScope`), resolved by the server from the opening
+   * thread. Every thread in that checkout lists and drives the tab. Absent
+   * when the server could not resolve the thread; the tab is then the
+   * opening thread's alone.
+   */
+  scopeKey: Schema.optional(TrimmedNonEmptyString),
   tabId: PreviewTabId,
   navStatus: PreviewNavStatus,
   canGoBack: Schema.Boolean,
@@ -240,6 +249,13 @@ export const PreviewOpenInput = Schema.Struct({
   runtime: Schema.optional(PreviewRuntime),
   /** Set by agent opens that should float for viewers; see the snapshot field. */
   reveal: Schema.optional(Schema.Boolean),
+  /**
+   * The checkout the client places this thread in (`worktreeScopeKey`). The
+   * server resolves a known thread itself and ignores this; it only counts
+   * for a thread the server has not seen yet, such as a draft, so the draft
+   * shares its worktree's tabs from the start.
+   */
+  clientScopeKey: Schema.optional(TrimmedNonEmptyString),
 });
 export type PreviewOpenInput = typeof PreviewOpenInput.Type;
 
@@ -310,6 +326,13 @@ export type PreviewClearProfileInput = typeof PreviewClearProfileInput.Type;
 
 export const PreviewListInput = Schema.Struct({
   threadId: ThreadId,
+  /**
+   * The checkout the client places this thread in (`worktreeScopeKey`). The
+   * server resolves a known thread itself and ignores this; it only counts
+   * for a thread the server has not seen yet, such as a draft, so the draft
+   * shares its worktree's tabs from the start.
+   */
+  clientScopeKey: Schema.optional(TrimmedNonEmptyString),
 });
 export type PreviewListInput = typeof PreviewListInput.Type;
 
@@ -324,6 +347,7 @@ export type PreviewListResult = typeof PreviewListResult.Type;
 
 const PreviewEventBaseSchema = Schema.Struct({
   threadId: TrimmedNonEmptyString,
+  scopeKey: Schema.optional(TrimmedNonEmptyString),
   tabId: PreviewTabId,
   createdAt: Schema.String,
   /** Identifies the server process that emitted this event. */
@@ -393,7 +417,10 @@ export const DiscoveredLocalServer = Schema.Struct({
   pid: Schema.NullOr(Schema.Int.check(Schema.isGreaterThan(0))),
   terminal: Schema.NullOr(
     Schema.Struct({
+      /** The thread that opened the terminal. */
       threadId: ThreadId,
+      /** The terminal's checkout when it is shared; see `TerminalThreadInput.scopeKey`. */
+      scopeKey: Schema.optional(TrimmedNonEmptyString),
       terminalId: TrimmedNonEmptyString,
     }),
   ),

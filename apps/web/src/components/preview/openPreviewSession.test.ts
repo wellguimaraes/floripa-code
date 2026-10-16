@@ -43,7 +43,7 @@ const snapshot: PreviewSessionSnapshot = {
 
 beforeEach(() => {
   resetPreviewStateForTests();
-  useRightPanelStore.setState({ byThreadKey: {}, threadPanelVisibilityByThreadKey: {} });
+  useRightPanelStore.setState({ byPanelKey: {}, threadPanelVisibilityByThreadKey: {} });
   __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
 });
 

@@ -25,6 +25,7 @@ import { beforeEach, expect, vi } from "vite-plus/test";
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as Broker from "../mcp/PreviewAutomationBroker.ts";
+import * as WorktreeScopesTestkit from "../workspace/WorktreeScopes.testkit.ts";
 import * as DesktopChannel from "./DesktopBrowserChannel.ts";
 import * as Manager from "./Manager.ts";
 import * as ServerBrowser from "./ServerBrowser.ts";
@@ -183,6 +184,13 @@ const scope = {
   capabilities: new Set(["preview"] as const),
   issuedAt: 1,
 };
+/** Another thread in the test thread's worktree, and one in a different checkout. */
+const siblingThreadId = ThreadId.make("browser-sibling-thread");
+const otherThreadId = ThreadId.make("browser-other-thread");
+const asThread = (threadId: ThreadId, providerSessionId: string) => ({
+  ...scope,
+  thread: { ...testThread, threadId, providerSessionId },
+});
 /** The same thread, as another of its agent sessions. */
 const asSession = (providerSessionId: string) => ({
   ...scope,
@@ -190,7 +198,15 @@ const asSession = (providerSessionId: string) => ({
 });
 const dependencies = Layer.mergeAll(
   Broker.layer,
-  Manager.layer,
+  Manager.layer.pipe(
+    Layer.provide(
+      WorktreeScopesTestkit.layer({
+        [testThread.threadId]: { scopeKey: "/repo/.t3/worktrees/browser" },
+        [siblingThreadId]: { scopeKey: "/repo/.t3/worktrees/browser" },
+        [otherThreadId]: { scopeKey: "/repo/.t3/worktrees/other" },
+      }),
+    ),
+  ),
   Layer.succeed(ServerEnvironment.ServerEnvironment, {
     getEnvironmentId: Effect.succeed(scope.environmentId),
     getDescriptor: Effect.die("unused descriptor"),
@@ -277,6 +293,35 @@ beforeEach(() => {
   releasedDesktopTabs.length = 0;
   desktopConnections.length = 0;
 });
+
+it.live("shares server tabs with threads in the same worktree only", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { browser, broker, tabId } = yield* ready;
+      const sibling = yield* broker.invoke<PreviewAutomationStatus>({
+        scope: asThread(siblingThreadId, "agent-sibling"),
+        tabId,
+        operation: "status",
+        input: {},
+      });
+      expect(sibling.available).toBe(true);
+      expect(sibling.tabs?.map((tab) => tab.tabId)).toEqual([tabId]);
+      const outsider = yield* broker.invoke<PreviewAutomationStatus>({
+        scope: asThread(otherThreadId, "agent-other"),
+        tabId,
+        operation: "status",
+        input: {},
+      });
+      expect(outsider.available).toBe(false);
+
+      yield* browser.attachViewer({ ...viewerInput(tabId, false), threadId: siblingThreadId });
+      const error = yield* browser
+        .attachViewer({ ...viewerInput(tabId, false), threadId: otherThreadId })
+        .pipe(Effect.flip);
+      expect(error._tag).toBe("ServerBrowserTabNotFoundError");
+    }),
+  ).pipe(Effect.provide(layer)),
+);
 
 it.live("readiness none responds immediately but takeover input waits for navigation commit", () =>
   Effect.scoped(

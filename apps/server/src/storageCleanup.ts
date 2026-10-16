@@ -176,12 +176,13 @@ const make = Effect.gen(function* () {
   const terminals = yield* TerminalManager.TerminalManager;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  // Keyed by the terminal's owner: its checkout when shared, else its thread.
   const liveTerminals = new Map<string, Map<string, TerminalSummary>>();
   const noteTerminal = (terminal: TerminalSummary) => {
-    const threadTerminals =
-      liveTerminals.get(terminal.threadId) ?? new Map<string, TerminalSummary>();
-    threadTerminals.set(terminal.terminalId, terminal);
-    liveTerminals.set(terminal.threadId, threadTerminals);
+    const owner = terminal.scopeKey ?? terminal.threadId;
+    const ownerTerminals = liveTerminals.get(owner) ?? new Map<string, TerminalSummary>();
+    ownerTerminals.set(terminal.terminalId, terminal);
+    liveTerminals.set(owner, ownerTerminals);
   };
 
   const inside = (root: string, target: string) => {
@@ -741,9 +742,10 @@ const make = Effect.gen(function* () {
         } else if (event.type === "upsert") {
           noteTerminal(event.terminal);
         } else {
-          const threadTerminals = liveTerminals.get(event.threadId);
-          threadTerminals?.delete(event.terminalId);
-          if (threadTerminals?.size === 0) liveTerminals.delete(event.threadId);
+          const owner = event.scopeKey ?? event.threadId;
+          const ownerTerminals = liveTerminals.get(owner);
+          ownerTerminals?.delete(event.terminalId);
+          if (ownerTerminals?.size === 0) liveTerminals.delete(owner);
         }
       }),
     );

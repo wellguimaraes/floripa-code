@@ -174,6 +174,10 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
       shaping and validation when this is absent. */
   serverResolvedCommandContext: Schema.optionalKey(Schema.Boolean),
   threadPullRequests: Schema.optionalKey(Schema.Boolean),
+  /** Server shares terminals and browser tabs between every thread in one
+      checkout (`scopeKey`). Clients keep browser state per thread against
+      servers that lack this, since those list each thread's tabs alone. */
+  worktreeSurfaces: Schema.optionalKey(Schema.Boolean),
   /** Server understands thread.pull-request.watch and wakes agents on pull request changes. */
   threadPullRequestWatch: Schema.optionalKey(Schema.Boolean),
   pullRequestStackActions: Schema.optionalKey(Schema.Boolean),

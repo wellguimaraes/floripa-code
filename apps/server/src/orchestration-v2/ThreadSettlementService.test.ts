@@ -36,6 +36,7 @@ import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as ServerActivation from "../serverActivation.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
+import * as WorktreeScopesTestkit from "../workspace/WorktreeScopes.testkit.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
@@ -516,6 +517,8 @@ interface HarnessOptions {
   readonly onCloseIdle?: () => Effect.Effect<void>;
   /** Threads `getThread` returns when a `thread.settled` event is handled. */
   readonly currentThreads?: ReadonlyArray<OrchestrationV2AppThread>;
+  /** Checkouts by thread id; threads missing here have none. */
+  readonly worktreeScopes?: Readonly<Record<string, WorktreeScopesTestkit.TestThreadCheckout>>;
 }
 
 const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options: HarnessOptions) {
@@ -541,7 +544,10 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
   const summaryRecovery = yield* Ref.make<ReadonlyArray<boolean | undefined>>([]);
   const invalidatedCwds = yield* Ref.make<ReadonlyArray<string>>([]);
   const domainEvents = yield* PubSub.unbounded<OrchestrationV2DomainEvent>();
-  const closedIdle = yield* Queue.unbounded<{ readonly threadId: string }>();
+  const closedIdle = yield* Queue.unbounded<{
+    readonly threadId: string;
+    readonly scopeKey?: string | undefined;
+  }>();
   const scriptRuns =
     yield* Queue.unbounded<ProjectSetupScriptRunner.ProjectSetupScriptRunnerInput>();
 
@@ -655,6 +661,7 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
     FileSystem.layerNoop({
       exists: (path) => Effect.succeed(options.existingWorktreePaths?.includes(path) ?? false),
     }),
+    WorktreeScopesTestkit.layer(options.worktreeScopes),
   );
 
   return {
@@ -1098,6 +1105,72 @@ describe("ThreadSettlementServiceV2 terminals", () => {
           yield* startHarness(service, fixture.activation, fixture.snapshotReads);
           yield* fixture.publishEvent(settledEvent(thread));
           assert.deepStrictEqual(yield* Queue.take(fixture.closedIdle), { threadId: thread.id });
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+    ),
+  );
+
+  it.effect("closes a worktree's shared idle terminals when its last working thread settles", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const thread = appThread("last-thread", "settled", "/worktrees/feature");
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([]),
+          currentThreads: [thread],
+          worktreeScopes: {
+            [thread.id]: { scopeKey: "/worktrees/feature" },
+            // A settled sibling is done working there too.
+            "settled-sibling": { scopeKey: "/worktrees/feature", settled: true },
+          },
+        });
+
+        yield* Effect.gen(function* () {
+          const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+          yield* startHarness(service, fixture.activation, fixture.snapshotReads);
+          yield* fixture.publishEvent(settledEvent(thread));
+          assert.deepStrictEqual(yield* Queue.take(fixture.closedIdle), { threadId: thread.id });
+          assert.deepStrictEqual(yield* Queue.take(fixture.closedIdle), {
+            threadId: thread.id,
+            scopeKey: "/worktrees/feature",
+          });
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+    ),
+  );
+
+  it.effect("keeps shared terminals while another thread works in the checkout", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const sharing = appThread("sharing-thread", "settled", "/worktrees/shared");
+        const rooted = appThread("root-thread", "settled");
+        const marker = appThread("marker-thread", "settled", "/worktrees/marker");
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([]),
+          currentThreads: [sharing, rooted, marker],
+          worktreeScopes: {
+            [sharing.id]: { scopeKey: "/worktrees/shared" },
+            "working-sibling": { scopeKey: "/worktrees/shared" },
+            // The project's own checkout is shared by threads to come.
+            [rooted.id]: { scopeKey: "/workspace/project-root", projectCheckout: true },
+            [marker.id]: { scopeKey: "/worktrees/marker" },
+          },
+        });
+
+        yield* Effect.gen(function* () {
+          const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+          yield* startHarness(service, fixture.activation, fixture.snapshotReads);
+          yield* fixture.publishEvent(settledEvent(sharing));
+          yield* fixture.publishEvent(settledEvent(rooted));
+          yield* fixture.publishEvent(settledEvent(marker));
+          // Events run in order, so the marker's shared close comes right after
+          // the thread closes only if both earlier scopes stayed open.
+          assert.deepStrictEqual(yield* Queue.take(fixture.closedIdle), { threadId: sharing.id });
+          assert.deepStrictEqual(yield* Queue.take(fixture.closedIdle), { threadId: rooted.id });
+          assert.deepStrictEqual(yield* Queue.take(fixture.closedIdle), { threadId: marker.id });
+          assert.deepStrictEqual(yield* Queue.take(fixture.closedIdle), {
+            threadId: marker.id,
+            scopeKey: "/worktrees/marker",
+          });
         }).pipe(Effect.provide(fixture.layer));
       }),
     ),

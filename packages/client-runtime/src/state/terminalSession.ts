@@ -47,7 +47,21 @@ export interface TerminalBufferState {
 export interface KnownTerminalSessionTarget {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
+  /** The checkout that owns the terminal; see `TerminalThreadInput.scopeKey`. */
+  readonly scopeKey?: string | undefined;
   readonly terminalId: string;
+}
+
+/**
+ * The key a terminal session is stored under on the server: its checkout when
+ * shared, else its thread. Index terminal metadata and events by it, with the
+ * terminal id, so every thread in a worktree finds the same sessions.
+ */
+export function terminalOwnerKey(owner: {
+  readonly threadId: string;
+  readonly scopeKey?: string | undefined;
+}): string {
+  return owner.scopeKey ?? owner.threadId;
 }
 
 export interface KnownTerminalSession {
@@ -198,16 +212,10 @@ export function applyTerminalMetadataStreamEvent(
   if (event.type === "snapshot") {
     return event.terminals;
   }
-  if (event.type === "remove") {
-    return current.filter(
-      (terminal) =>
-        terminal.threadId !== event.threadId || terminal.terminalId !== event.terminalId,
-    );
-  }
+  const target = event.type === "remove" ? event : event.terminal;
+  const owner = terminalOwnerKey(target);
   const next = current.filter(
-    (terminal) =>
-      terminal.threadId !== event.terminal.threadId ||
-      terminal.terminalId !== event.terminal.terminalId,
+    (terminal) => terminalOwnerKey(terminal) !== owner || terminal.terminalId !== target.terminalId,
   );
-  return [...next, event.terminal];
+  return event.type === "remove" ? next : [...next, event.terminal];
 }

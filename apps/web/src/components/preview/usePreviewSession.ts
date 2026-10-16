@@ -8,10 +8,12 @@ import { AsyncResult, Atom } from "effect/reactivity";
 
 import {
   applyPreviewServerEvent,
+  previewClientScopeInput,
   readThreadPreviewState,
   reconcilePreviewServerSessions,
 } from "~/previewStateStore";
 import { previewEnvironment } from "~/state/preview";
+import { resolveThreadWorktreeScope } from "~/worktreeScope";
 
 class PreviewSessionThreadKeyParseError extends Schema.TaggedError<PreviewSessionThreadKeyParseError>()(
   "PreviewSessionThreadKeyParseError",
@@ -30,7 +32,7 @@ const previewSessionSyncAtom = Atom.family((threadKey: string) => {
 
   const sessionsAtom = previewEnvironment.list({
     environmentId: threadRef.environmentId,
-    input: { threadId: threadRef.threadId },
+    input: { threadId: threadRef.threadId, ...previewClientScopeInput(threadRef) },
   });
   const eventsAtom = previewEnvironment.events({
     environmentId: threadRef.environmentId,
@@ -54,7 +56,13 @@ const previewSessionSyncAtom = Atom.family((threadKey: string) => {
     };
 
     const applyLatestEvent = (result: Atom.Type<typeof eventsAtom>) => {
-      if (!AsyncResult.isSuccess(result) || result.value.threadId !== threadRef.threadId) return;
+      if (!AsyncResult.isSuccess(result)) return;
+      // Tabs belong to the checkout, so events for a sibling thread's tab apply here too.
+      const scopeKey = resolveThreadWorktreeScope(threadRef)?.scopeKey;
+      const ownTab =
+        result.value.threadId === threadRef.threadId ||
+        (scopeKey !== undefined && result.value.scopeKey === scopeKey);
+      if (!ownTab) return;
       const currentEpoch = readThreadPreviewState(threadRef).serverEpoch;
       if (currentEpoch !== null && currentEpoch !== result.value.serverEpoch) {
         get.refresh(sessionsAtom);

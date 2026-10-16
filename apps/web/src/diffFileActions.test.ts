@@ -12,7 +12,7 @@ const THREAD_REF = scopeThreadRef(
 
 describe("openDiffFilePrimaryAction", () => {
   beforeEach(() => {
-    useRightPanelStore.setState({ byThreadKey: {}, threadPanelVisibilityByThreadKey: {} });
+    useRightPanelStore.setState({ byPanelKey: {}, threadPanelVisibilityByThreadKey: {} });
   });
 
   it("opens diff files in the thread file viewer", () => {
@@ -26,7 +26,7 @@ describe("openDiffFilePrimaryAction", () => {
     });
 
     expect(
-      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, THREAD_REF),
+      selectThreadRightPanelState(useRightPanelStore.getState().byPanelKey, THREAD_REF),
     ).toMatchObject({
       isOpen: true,
       activeSurfaceId: "file:apps/web/src/components/DiffPanel.tsx",
@@ -61,7 +61,7 @@ describe("openDiffFilePrimaryAction", () => {
     });
 
     expect(
-      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, THREAD_REF),
+      selectThreadRightPanelState(useRightPanelStore.getState().byPanelKey, THREAD_REF),
     ).toMatchObject({
       isOpen: true,
       activeSurfaceId: "file:Dockerfile",
@@ -116,7 +116,7 @@ describe("openDiffFilePrimaryAction", () => {
       });
 
       expect(
-        selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, THREAD_REF),
+        selectThreadRightPanelState(useRightPanelStore.getState().byPanelKey, THREAD_REF),
       ).toMatchObject({ isOpen: false });
       expect(openInEditor).not.toHaveBeenCalled();
     },

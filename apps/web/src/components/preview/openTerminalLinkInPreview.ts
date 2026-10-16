@@ -11,7 +11,7 @@ import { isWebUrl, resolveBrowserLinkTargetPreference } from "~/browser/browserL
 import type { OpenPreviewMutation } from "~/browser/openFileInPreview";
 import { isPreviewAvailableFor, previewRuntimeFor } from "~/browser/previewRuntime";
 import { recordVisitForThread } from "~/browserHistoryStore";
-import { applyPreviewServerSnapshot } from "~/previewStateStore";
+import { applyPreviewServerSnapshot, previewClientScopeInput } from "~/previewStateStore";
 import { useRightPanelStore } from "~/rightPanelStore";
 
 const terminalLinkErrorContext = {
@@ -70,6 +70,7 @@ export async function openTerminalLinkInPreview<E>(
     environmentId: input.threadRef.environmentId,
     input: {
       threadId: input.threadRef.threadId,
+      ...previewClientScopeInput(input.threadRef),
       url: input.url,
       // Same reason as `openUrlInPreview`: this path handles its own result
       // mapping, so the configured defaults are applied explicitly.

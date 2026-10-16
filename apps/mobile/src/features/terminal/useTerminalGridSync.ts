@@ -14,6 +14,7 @@ import { readEnvironmentScope } from "../../state/session";
 export function useTerminalGridSync({
   environmentId,
   threadId,
+  scopeKey,
   terminalId,
   canOperate,
   terminal,
@@ -22,6 +23,8 @@ export function useTerminalGridSync({
 }: {
   readonly environmentId: EnvironmentId | null;
   readonly threadId: ThreadId | null;
+  /** The terminal's checkout when it is shared; see `TerminalThreadInput.scopeKey`. */
+  readonly scopeKey?: string | undefined;
   readonly terminalId: string;
   readonly canOperate: boolean;
   readonly terminal: Pick<TerminalSessionState, "output" | "status" | "version">;
@@ -46,7 +49,13 @@ export function useTerminalGridSync({
       return;
     resize({
       environmentId,
-      input: { threadId, terminalId, cols: size.cols, rows: size.rows },
+      input: {
+        threadId,
+        ...(scopeKey === undefined ? {} : { scopeKey }),
+        terminalId,
+        cols: size.cols,
+        rows: size.rows,
+      },
     });
-  }, [environmentId, generation, resize, size.cols, size.rows, terminalId, threadId]);
+  }, [environmentId, generation, resize, scopeKey, size.cols, size.rows, terminalId, threadId]);
 }

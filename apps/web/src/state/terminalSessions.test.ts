@@ -168,4 +168,33 @@ describe("selectKnownTerminalSessions", () => {
     expect(selectKnownTerminalSessions(metadata, environmentA, null)).toHaveLength(source.length);
     expect(reads).toBe(source.length);
   });
+  it("adds terminals other threads opened in the same checkout", () => {
+    const threadC = ThreadId.make("thread-c");
+    const metadata = [
+      summary(threadA, "term-1", { scopeKey: "/repo" }),
+      summary(threadB, "term-2", { scopeKey: "/repo" }),
+      summary(threadC, "term-1", { scopeKey: "/repo/.worktrees/c" }),
+      summary(threadA, "term-3"),
+    ];
+    const ids = (sessions: ReturnType<typeof selectKnownTerminalSessions>) =>
+      sessions.map((session) => `${session.target.threadId}/${session.target.terminalId}`);
+
+    expect(ids(selectKnownTerminalSessions(metadata, environmentA, threadB, "/repo"))).toEqual([
+      "thread-a/term-1",
+      "thread-b/term-2",
+    ]);
+    // A thread still owns its unshared terminals from a server without scopes.
+    expect(ids(selectKnownTerminalSessions(metadata, environmentA, threadA, "/repo"))).toEqual([
+      "thread-a/term-1",
+      "thread-b/term-2",
+      "thread-a/term-3",
+    ]);
+    // Without a scope only the terminals the thread opened count, as sidebar rows use it.
+    expect(ids(selectKnownTerminalSessions(metadata, environmentA, threadB))).toEqual([
+      "thread-b/term-2",
+    ]);
+    expect(
+      selectKnownTerminalSessions(metadata, environmentA, threadB, "/repo")[0]?.target.scopeKey,
+    ).toBe("/repo");
+  });
 });

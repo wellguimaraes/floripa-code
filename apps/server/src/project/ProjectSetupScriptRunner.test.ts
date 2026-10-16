@@ -89,16 +89,22 @@ it.effect("resolves setup scripts through the standalone project service", () =>
       projectId,
       worktreePath: "/repo-worktree",
     });
+    const setupTerminalId = result.status === "started" ? result.terminalId : "";
+    assert.match(setupTerminalId, /^setup-setup-/);
     assert.deepEqual(result, {
       status: "started",
       async: true,
       scriptId: "setup",
       scriptName: "Setup",
       scriptCommand: "vp install",
-      terminalId: "setup-setup",
+      terminalId: setupTerminalId,
+      // The worktree owns the shell, so every thread working there sees it.
+      scopeKey: "/repo-worktree",
       cwd: "/repo-worktree",
     });
     assert.equal(open.mock.calls[0]?.[0].cwd, "/repo-worktree");
+    assert.equal(open.mock.calls[0]?.[0].scopeKey, "/repo-worktree");
+    assert.equal(write.mock.calls[0]?.[0].scopeKey, "/repo-worktree");
     assert.deepEqual(open.mock.calls[0]?.[0].env, {
       T3CODE_PROJECT_ROOT: "/repo",
       T3CODE_WORKTREE_PATH: "/repo-worktree",
@@ -119,16 +125,25 @@ it.effect("resolves setup scripts through the standalone project service", () =>
           }),
       },
     });
-    assert.equal(observed.status, "started");
+    const observedSetupId = observed.status === "started" ? observed.terminalId : "";
+    // A re-run never types into an earlier run's shell, which may still be busy.
+    assert.notEqual(observedSetupId, setupTerminalId);
     const listener = listeners[0]!;
+    // Events for a shared shell name whichever thread opened it.
     yield* listener({
       type: "output",
-      threadId: "thread-1",
-      terminalId: "setup-setup",
+      threadId: "thread-2",
+      scopeKey: "/repo-worktree",
+      terminalId: observedSetupId,
       data: "Downloading 10%\rDownloading 20%\r\nDone\n",
     });
     assert.deepEqual(lines, ["Downloading 10%", "Downloading 20%", "Done"]);
-    yield* listener({ type: "closed", threadId: "thread-1", terminalId: "setup-setup" });
+    yield* listener({
+      type: "closed",
+      threadId: "thread-1",
+      scopeKey: "/repo-worktree",
+      terminalId: observedSetupId,
+    });
 
     const settle = yield* runner.runForThread({
       threadId: "thread-1",
@@ -162,6 +177,7 @@ it.effect("resolves setup scripts through the standalone project service", () =>
     yield* settleListener({
       type: "output",
       threadId: "thread-1",
+      scopeKey: "/repo-worktree",
       terminalId: observedTerminalId,
       data: `\r\n__T3_SETUP_DONE___${token}:0\r\n`,
     });
@@ -170,12 +186,14 @@ it.effect("resolves setup scripts through the standalone project service", () =>
     yield* settleListener({
       type: "output",
       threadId: "thread-1",
+      scopeKey: "/repo-worktree",
       terminalId: observedTerminalId,
       data: "$ ",
     });
     assert.deepEqual((yield* Fiber.join(completion)).exitCode, 0);
     assert.deepEqual(closeIdle.mock.calls[0]?.[0], {
       threadId: "thread-1",
+      scopeKey: "/repo-worktree",
       terminalId: observedTerminalId,
     });
   }).pipe(Effect.provide(layer));

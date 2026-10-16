@@ -41,7 +41,7 @@ beforeEach(() => {
   __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
   resetPreviewStateForTests();
   useClosedViewStore.setState({ entries: [] });
-  useRightPanelStore.setState({ byThreadKey: {}, userActionRevisionByThreadKey: {} });
+  useRightPanelStore.setState({ byPanelKey: {}, userActionRevisionByPanelKey: {} });
 });
 
 describe("reopenClosedView", () => {
@@ -62,7 +62,7 @@ describe("reopenClosedView", () => {
       { openPreview, workspaceAvailable: true },
     );
     expect(reopened).toBe(true);
-    const state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, threadRef);
+    const state = selectThreadRightPanelState(useRightPanelStore.getState().byPanelKey, threadRef);
     expect(state.isOpen).toBe(true);
     expect(state.surfaces).toMatchObject([{ id: "file:src/app.ts", revealLine: 18 }]);
     expect(openPreview).not.toHaveBeenCalled();
@@ -88,7 +88,7 @@ describe("reopenClosedView", () => {
       );
     }
     expect(
-      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, threadRef).surfaces,
+      selectThreadRightPanelState(useRightPanelStore.getState().byPanelKey, threadRef).surfaces,
     ).toEqual([]);
   });
 
@@ -110,7 +110,7 @@ describe("reopenClosedView", () => {
     });
     expect(readThreadPreviewState(threadRef).snapshot?.tabId).toBe("new-tab");
     expect(
-      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, threadRef)
+      selectThreadRightPanelState(useRightPanelStore.getState().byPanelKey, threadRef)
         .activeSurfaceId,
     ).toBe("browser:new-tab");
   });
@@ -125,7 +125,7 @@ describe("reopenClosedView", () => {
     );
     expect(result).toBe(false);
     expect(
-      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, threadRef).surfaces,
+      selectThreadRightPanelState(useRightPanelStore.getState().byPanelKey, threadRef).surfaces,
     ).toEqual([]);
   });
 });

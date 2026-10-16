@@ -529,12 +529,17 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
       // operation is not silently moved to a newer client: the caller gets a
       // capability failure and can deliberately start a fresh provider
       // session. A dead lease is pruned above and may fail over.
+      // Tabs belong to a worktree, so a sibling thread may target a tab another
+      // thread opened: a process-unique tab id is enough. Without one, prefer
+      // hosts showing the caller's own tabs; this only orders hosts, and the
+      // preview manager authorizes the tab itself.
       const ownsTargetTab = (host: ClientConnection, visibleOnly = false) =>
         host.liveTabs.some(
           (tab) =>
-            tab.threadId === input.scope.thread.threadId &&
-            (!visibleOnly || tab.visible === true) &&
-            (input.tabId === undefined || tab.tabId === input.tabId),
+            (input.tabId === undefined
+              ? tab.threadId === input.scope.thread.threadId
+              : tab.tabId === input.tabId) &&
+            (!visibleOnly || tab.visible === true),
         );
       const connection =
         hasLiveAssignment && supportsOperation(assignedConnection, input.operation)

@@ -31,9 +31,7 @@ import {
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import * as Schema from "effect/Schema";
 import {
-  type PointerEvent as ReactPointerEvent,
   type ReactNode,
-  type SetStateAction,
   useCallback,
   useEffect,
   useEffectEvent,
@@ -72,11 +70,7 @@ import {
   terminalDeleteShortcutData,
   terminalNavigationShortcutData,
 } from "../keybindings";
-import {
-  DEFAULT_THREAD_TERMINAL_HEIGHT,
-  MAX_TERMINALS_PER_GROUP,
-  type ThreadTerminalGroup,
-} from "../types";
+import { MAX_TERMINALS_PER_GROUP, type ThreadTerminalGroup } from "../types";
 import { readLocalApi } from "~/localApi";
 import { confirmTerminalClose } from "~/lib/terminalCloseConfirm";
 import { useClientSettings } from "../hooks/useSettings";
@@ -95,19 +89,6 @@ import {
   resolveTerminalFontSizePreference,
   TYPOGRAPHY_ADVANCED_STORAGE_KEY,
 } from "../appearanceFonts";
-
-const MIN_DRAWER_HEIGHT = 180;
-const MAX_DRAWER_HEIGHT_RATIO = 0.75;
-
-function maxDrawerHeight(): number {
-  if (typeof window === "undefined") return DEFAULT_THREAD_TERMINAL_HEIGHT;
-  return Math.max(MIN_DRAWER_HEIGHT, Math.floor(window.innerHeight * MAX_DRAWER_HEIGHT_RATIO));
-}
-
-function clampDrawerHeight(height: number, maxHeight = maxDrawerHeight()): number {
-  const safeHeight = Number.isFinite(height) ? height : DEFAULT_THREAD_TERMINAL_HEIGHT;
-  return Math.min(Math.max(Math.round(safeHeight), MIN_DRAWER_HEIGHT), maxHeight);
-}
 
 function writeSystemMessage(terminal: GhosttyTerminalSurface, message: string): void {
   terminal.write(`\r\n[terminal] ${message}\r\n`);
@@ -339,6 +320,8 @@ interface TerminalViewportProps {
   advancedTypography: boolean;
   threadRef: ScopedThreadRef;
   threadId: ThreadId;
+  /** The checkout that shares this terminal; see `TerminalThreadInput.scopeKey`. */
+  scopeKey?: string | undefined;
   terminalId: string;
   terminalLabel: string;
   cwd: string;
@@ -351,11 +334,17 @@ interface TerminalViewportProps {
   autoFocus: boolean;
   visible: boolean;
   resizeEpoch: number;
-  drawerHeight: number;
+  /** A host that resizes the viewport itself passes its height so the grid refits. */
+  drawerHeight?: number;
   keybindings: ResolvedKeybindingsConfig;
 }
 
 interface TerminalLaunchLocation {
+  /**
+   * The thread that opened the session. Attaching with it keeps sibling threads
+   * in one checkout on the same subscription instead of re-attaching.
+   */
+  readonly threadId?: ThreadId;
   readonly cwd: string;
   readonly worktreePath?: string | null;
   readonly runtimeEnv?: Record<string, string>;
@@ -365,6 +354,7 @@ export function TerminalViewport({
   advancedTypography,
   threadRef,
   threadId,
+  scopeKey,
   terminalId,
   terminalLabel,
   cwd,
@@ -444,6 +434,7 @@ export function TerminalViewport({
     terminal: {
       threadId,
       terminalId,
+      ...(scopeKey ? { scopeKey } : {}),
       cwd,
       ...(worktreePath !== undefined ? { worktreePath } : {}),
       ...(runtimeEnv ? { env: runtimeEnv } : {}),
@@ -456,14 +447,14 @@ export function TerminalViewport({
   const writeTerminal = useEffectEvent((data: string) =>
     runTerminalWrite({
       environmentId,
-      input: { threadId, terminalId, data },
+      input: { threadId, terminalId, ...(scopeKey ? { scopeKey } : {}), data },
     }),
   );
   const resizeTerminal = useEffectEvent((cols: number, rows: number) => {
     if (!canResizeTerminal || !hasTerminalWriteAccess()) return;
     return runTerminalResize({
       environmentId,
-      input: { threadId, terminalId, cols, rows },
+      input: { threadId, terminalId, ...(scopeKey ? { scopeKey } : {}), cols, rows },
     });
   });
   const terminalOutput = terminalSession.output;
@@ -1005,7 +996,7 @@ export function TerminalViewport({
         mount.focus({ preventScroll: true });
       }
     };
-  }, [cwd, environmentId, runtimeEnvKey, terminalId, threadId, worktreePath]);
+  }, [cwd, environmentId, runtimeEnvKey, scopeKey, terminalId, threadId, worktreePath]);
 
   useEffect(() => {
     const terminal = terminalRef.current;
@@ -1069,14 +1060,14 @@ export function TerminalViewport({
 }
 
 interface ThreadTerminalDrawerProps {
-  mode?: "drawer" | "panel";
   threadRef: ScopedThreadRef;
   threadId: ThreadId;
+  /** The thread's checkout; terminals are shared by every thread in it. */
+  scopeKey?: string | undefined;
   cwd: string;
   worktreePath?: string | null;
   runtimeEnv?: Record<string, string>;
   visible?: boolean;
-  height: number;
   terminalIds: string[];
   activeTerminalId: string;
   terminalGroups: ThreadTerminalGroup[];
@@ -1091,7 +1082,6 @@ interface ThreadTerminalDrawerProps {
   closeShortcutLabel?: string | undefined;
   onActiveTerminalChange: (terminalId: string) => void;
   onCloseTerminal: (terminalId: string) => void;
-  onHeightChange: (height: number) => void;
   onAddTerminalContext: (selection: TerminalContextSelection) => void;
   keybindings: ResolvedKeybindingsConfig;
   /** Prefer server-provided tab titles when present (e.g. active subprocess name). */
@@ -1144,15 +1134,15 @@ function TerminalActionButton({
   );
 }
 
+/** The terminals of one right-panel Terminal tab, side by side or stacked. */
 export default function ThreadTerminalDrawer({
-  mode = "drawer",
   threadRef,
   threadId,
+  scopeKey,
   cwd,
   worktreePath,
   runtimeEnv,
   visible = true,
-  height,
   terminalIds,
   activeTerminalId,
   terminalGroups,
@@ -1167,54 +1157,19 @@ export default function ThreadTerminalDrawer({
   closeShortcutLabel,
   onActiveTerminalChange,
   onCloseTerminal,
-  onHeightChange,
   onAddTerminalContext,
   keybindings,
   terminalLabelsById,
   terminalLaunchLocationsById,
 }: ThreadTerminalDrawerProps) {
   const canOperateTerminal = useEnvironmentScope(threadRef.environmentId, AuthTerminalOperateScope);
-  const isPanel = mode === "panel";
   const [advancedTypography] = useLocalStorage(
     TYPOGRAPHY_ADVANCED_STORAGE_KEY,
     false,
     Schema.Boolean,
   );
-  // The stored height is the user's preference; the window only clamps what renders.
-  const controlledDrawerHeight = height;
-  const [windowMaxDrawerHeight, setWindowMaxDrawerHeight] = useState(maxDrawerHeight);
-  const [drawerHeightState, setDrawerHeightState] = useState(() => ({
-    threadId,
-    height: controlledDrawerHeight,
-  }));
-  const preferredDrawerHeight =
-    drawerHeightState.threadId === threadId ? drawerHeightState.height : controlledDrawerHeight;
-  const drawerHeight = clampDrawerHeight(preferredDrawerHeight, windowMaxDrawerHeight);
-  const setDrawerHeight = useCallback(
-    (update: SetStateAction<number>) => {
-      setDrawerHeightState((current) => {
-        const currentHeight =
-          current.threadId === threadId ? current.height : controlledDrawerHeight;
-        const nextHeight = typeof update === "function" ? update(currentHeight) : update;
-        return nextHeight === currentHeight && current.threadId === threadId
-          ? current
-          : { threadId, height: nextHeight };
-      });
-    },
-    [controlledDrawerHeight, threadId],
-  );
+  // Refits the viewports when the panel shows again or the window resizes.
   const [resizeEpoch, setResizeEpoch] = useState(0);
-  const drawerHeightRef = useRef(drawerHeight);
-  const preferredDrawerHeightRef = useRef(preferredDrawerHeight);
-  const lastSyncedHeightRef = useRef(controlledDrawerHeight);
-  const onHeightChangeRef = useRef(onHeightChange);
-  const resizeStateRef = useRef<{
-    pointerId: number;
-    startY: number;
-    startHeight: number;
-    drawer: HTMLElement | null;
-  } | null>(null);
-  const didResizeDuringDragRef = useRef(false);
 
   const normalizedTerminalIds = useMemo(() => {
     const normalizedIds: string[] = [];
@@ -1392,145 +1347,22 @@ export default function ThreadTerminalDrawer({
   );
 
   useEffect(() => {
-    onHeightChangeRef.current = onHeightChange;
-  }, [onHeightChange]);
-
-  useLayoutEffect(() => {
-    // A render mid-drag (the window cap moved) must not replace the live height.
-    const resizeState = resizeStateRef.current;
-    if (resizeState) {
-      resizeState.drawer?.style.setProperty("height", `${drawerHeightRef.current}px`);
-      return;
-    }
-    drawerHeightRef.current = drawerHeight;
-  }, [drawerHeight]);
-
-  useEffect(() => {
-    preferredDrawerHeightRef.current = preferredDrawerHeight;
-  }, [preferredDrawerHeight]);
-
-  const syncHeight = useCallback((nextHeight: number) => {
-    if (lastSyncedHeightRef.current === nextHeight) return;
-    lastSyncedHeightRef.current = nextHeight;
-    onHeightChangeRef.current(nextHeight);
-  }, []);
-
-  useEffect(() => {
-    lastSyncedHeightRef.current = controlledDrawerHeight;
-  }, [controlledDrawerHeight, threadId]);
-
-  const handleResizePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
-    event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    didResizeDuringDragRef.current = false;
-    resizeStateRef.current = {
-      pointerId: event.pointerId,
-      startY: event.clientY,
-      startHeight: drawerHeightRef.current,
-      drawer: event.currentTarget.parentElement,
-    };
-  }, []);
-
-  // Writes the height straight to the drawer while dragging so the edge lands in
-  // the pointer's frame; React state commits once on release.
-  const handleResizePointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    const resizeState = resizeStateRef.current;
-    if (!resizeState || resizeState.pointerId !== event.pointerId) return;
-    event.preventDefault();
-    const clampedHeight = clampDrawerHeight(
-      resizeState.startHeight + (resizeState.startY - event.clientY),
-    );
-    if (clampedHeight === drawerHeightRef.current) {
-      return;
-    }
-    didResizeDuringDragRef.current = true;
-    drawerHeightRef.current = clampedHeight;
-    resizeState.drawer?.style.setProperty("height", `${clampedHeight}px`);
-  }, []);
-
-  const handleResizePointerEnd = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>) => {
-      const resizeState = resizeStateRef.current;
-      if (!resizeState || resizeState.pointerId !== event.pointerId) return;
-      resizeStateRef.current = null;
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }
-      // A drag that ends where it started keeps the stored preference, which may
-      // be taller than the window-capped height the drag started from.
-      if (!didResizeDuringDragRef.current || drawerHeightRef.current === resizeState.startHeight) {
-        // React skips the write when the rendered height did not change, so put
-        // back the preference as the current window caps it.
-        const renderedHeight = clampDrawerHeight(preferredDrawerHeightRef.current);
-        drawerHeightRef.current = renderedHeight;
-        resizeState.drawer?.style.setProperty("height", `${renderedHeight}px`);
-        return;
-      }
-      setDrawerHeight(drawerHeightRef.current);
-      syncHeight(drawerHeightRef.current);
-      setResizeEpoch((value) => value + 1);
-    },
-    [setDrawerHeight, syncHeight],
-  );
-
-  useEffect(() => {
-    if (!visible) {
-      return;
-    }
-
-    const onWindowResize = () => {
-      // React only renders the stored preference, so clamp a live drag height here.
-      const resizeState = resizeStateRef.current;
-      const liveHeight = clampDrawerHeight(drawerHeightRef.current);
-      if (resizeState && liveHeight !== drawerHeightRef.current) {
-        drawerHeightRef.current = liveHeight;
-        resizeState.drawer?.style.setProperty("height", `${liveHeight}px`);
-      }
-      setWindowMaxDrawerHeight(maxDrawerHeight());
-      setResizeEpoch((value) => value + 1);
-    };
+    if (!visible) return;
+    const onWindowResize = () => setResizeEpoch((value) => value + 1);
     window.addEventListener("resize", onWindowResize);
+    setResizeEpoch((value) => value + 1);
     return () => {
       window.removeEventListener("resize", onWindowResize);
     };
   }, [visible]);
 
-  useEffect(() => {
-    if (!visible) {
-      return;
-    }
-    setWindowMaxDrawerHeight(maxDrawerHeight());
-    setResizeEpoch((value) => value + 1);
-  }, [visible]);
-
-  useEffect(() => {
-    return () => {
-      syncHeight(preferredDrawerHeightRef.current);
-    };
-  }, [syncHeight]);
-
   if (normalizedTerminalIds.length === 0) {
     return (
       <aside
         data-thread-terminal-drawer
-        data-terminal-owner={isPanel ? "right-panel" : "drawer"}
-        className={cn(
-          "relative flex min-w-0 flex-col overflow-hidden bg-background",
-          isPanel ? "h-full flex-1" : "shrink-0 border-t border-border/80",
-        )}
-        style={isPanel ? undefined : { height: `${drawerHeight}px` }}
+        data-terminal-owner="right-panel"
+        className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-background"
       >
-        {!isPanel ? (
-          <div
-            className="absolute inset-x-0 top-0 z-20 h-1.5 cursor-row-resize"
-            onPointerDown={handleResizePointerDown}
-            onPointerMove={handleResizePointerMove}
-            onPointerUp={handleResizePointerEnd}
-            onPointerCancel={handleResizePointerEnd}
-            onLostPointerCapture={handleResizePointerEnd}
-          />
-        ) : null}
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-4 py-6 text-center text-sm text-muted-foreground">
           <p>No terminal sessions for this thread yet.</p>
           <Button
@@ -1551,24 +1383,9 @@ export default function ThreadTerminalDrawer({
   return (
     <aside
       data-thread-terminal-drawer
-      data-terminal-owner={isPanel ? "right-panel" : "drawer"}
-      className={cn(
-        "relative flex min-w-0 flex-col overflow-hidden bg-background",
-        isPanel ? "h-full flex-1" : "shrink-0 border-t border-border/80",
-      )}
-      style={isPanel ? undefined : { height: `${drawerHeight}px` }}
+      data-terminal-owner="right-panel"
+      className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-background"
     >
-      {!isPanel ? (
-        <div
-          className="absolute inset-x-0 top-0 z-20 h-1.5 cursor-row-resize"
-          onPointerDown={handleResizePointerDown}
-          onPointerMove={handleResizePointerMove}
-          onPointerUp={handleResizePointerEnd}
-          onPointerCancel={handleResizePointerEnd}
-          onLostPointerCapture={handleResizePointerEnd}
-        />
-      ) : null}
-
       {!hasTerminalSidebar && (
         <div className="pointer-events-none absolute right-2 top-2 z-20">
           <div className="pointer-events-auto inline-flex items-center overflow-hidden rounded-md border border-border/80 bg-background shadow-xs">
@@ -1664,7 +1481,8 @@ export default function ThreadTerminalDrawer({
                         <TerminalViewport
                           advancedTypography={advancedTypography}
                           threadRef={threadRef}
-                          threadId={threadId}
+                          threadId={terminalLaunchLocation.threadId ?? threadId}
+                          scopeKey={scopeKey}
                           terminalId={terminalId}
                           terminalLabel={terminalLabelById.get(terminalId) ?? "Terminal"}
                           cwd={terminalLaunchLocation.cwd}
@@ -1680,7 +1498,6 @@ export default function ThreadTerminalDrawer({
                           autoFocus={terminalId === resolvedActiveTerminalId}
                           visible={visible}
                           resizeEpoch={resizeEpoch}
-                          drawerHeight={drawerHeight}
                           keybindings={keybindings}
                         />
                       </div>
@@ -1694,7 +1511,8 @@ export default function ThreadTerminalDrawer({
                   advancedTypography={advancedTypography}
                   key={resolvedActiveTerminalId}
                   threadRef={threadRef}
-                  threadId={threadId}
+                  threadId={activeTerminalLaunchLocation.threadId ?? threadId}
+                  scopeKey={scopeKey}
                   terminalId={resolvedActiveTerminalId}
                   terminalLabel={terminalLabelById.get(resolvedActiveTerminalId) ?? "Terminal"}
                   cwd={activeTerminalLaunchLocation.cwd}
@@ -1710,7 +1528,6 @@ export default function ThreadTerminalDrawer({
                   autoFocus
                   visible={visible}
                   resizeEpoch={resizeEpoch}
-                  drawerHeight={drawerHeight}
                   keybindings={keybindings}
                 />
               </div>

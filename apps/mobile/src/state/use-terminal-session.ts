@@ -3,6 +3,7 @@ import {
   EMPTY_TERMINAL_BUFFER_STATE,
   EMPTY_TERMINAL_SESSION_STATE,
   terminalOutputText,
+  terminalOwnerKey,
   type KnownTerminalSession,
   type TerminalSessionState,
 } from "@t3tools/client-runtime/state/terminal";
@@ -41,7 +42,13 @@ export function useAttachedTerminalSession(input: {
         : canRead
           ? terminalEnvironment.observe({
               environmentId: input.environmentId,
-              input: { threadId: input.terminal.threadId, terminalId: input.terminal.terminalId },
+              input: {
+                threadId: input.terminal.threadId,
+                ...(input.terminal.scopeKey === undefined
+                  ? {}
+                  : { scopeKey: input.terminal.scopeKey }),
+                terminalId: input.terminal.terminalId,
+              },
             })
           : null
       : null,
@@ -63,10 +70,11 @@ export function useAttachedTerminalSession(input: {
     if (input.environmentId === null || input.terminal === null) {
       return EMPTY_LEGACY_TERMINAL_SESSION_STATE;
     }
+    const owner = terminalOwnerKey(input.terminal);
     const summary =
       metadata.data?.find(
         (terminal) =>
-          terminal.threadId === input.terminal?.threadId &&
+          terminalOwnerKey(terminal) === owner &&
           terminal.terminalId === input.terminal?.terminalId,
       ) ?? null;
     const state = {
@@ -77,9 +85,14 @@ export function useAttachedTerminalSession(input: {
   }, [attach.data, attach.error, buffer, input.environmentId, input.terminal, metadata.data]);
 }
 
+/**
+ * Terminals a thread can reach: its checkout's shared ones (`scopeKey`) and
+ * the ones it opened before checkouts were shared. Without a thread, all.
+ */
 export function useKnownTerminalSessions(input: {
   readonly environmentId: EnvironmentId | null;
   readonly threadId: ThreadId | null;
+  readonly scopeKey?: string | undefined;
 }) {
   const canRead = useEnvironmentScope(input.environmentId, AuthTerminalReadScope);
   const metadata = useEnvironmentQuery(
@@ -95,11 +108,18 @@ export function useKnownTerminalSessions(input: {
       return null;
     }
     return metadata.data
-      .filter((summary) => input.threadId === null || summary.threadId === input.threadId)
+      .filter(
+        (summary) =>
+          input.threadId === null ||
+          (summary.scopeKey === undefined
+            ? summary.threadId === input.threadId
+            : summary.scopeKey === input.scopeKey),
+      )
       .map((summary) => ({
         target: {
           environmentId: input.environmentId!,
           threadId: ThreadId.make(summary.threadId),
+          ...(summary.scopeKey === undefined ? {} : { scopeKey: summary.scopeKey }),
           terminalId: summary.terminalId,
         },
         state: combineTerminalSessionState(summary, EMPTY_TERMINAL_BUFFER_STATE),
@@ -109,6 +129,6 @@ export function useKnownTerminalSessions(input: {
           numeric: true,
         }),
       );
-  }, [input.environmentId, input.threadId, metadata.data, metadata.error]);
+  }, [input.environmentId, input.scopeKey, input.threadId, metadata.data, metadata.error]);
   return { sessions, isPending: metadata.isPending, error: metadata.error };
 }

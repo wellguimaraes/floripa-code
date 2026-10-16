@@ -38,7 +38,7 @@ function threadShowingBrowser(
   if (threadRef === null || !isPreviewAvailableFor(threadRef.environmentId)) return null;
   if (fileEnvironmentId !== null && threadRef.environmentId !== fileEnvironmentId) return null;
   const surface = selectActiveRightPanelSurface(
-    useRightPanelStore.getState().byThreadKey,
+    useRightPanelStore.getState().byPanelKey,
     threadRef,
   );
   return surface?.kind === "preview" ? threadRef : null;

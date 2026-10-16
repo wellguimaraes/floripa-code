@@ -13,6 +13,7 @@ import {
   readTerminalOutputUpdate,
   selectRunningSubprocessTerminalIds,
   terminalOutputText,
+  terminalOwnerKey,
 } from "./terminalSession.ts";
 
 const TARGET = {
@@ -211,6 +212,40 @@ describe("terminal session reducers", () => {
     expect(updated).toHaveLength(1);
     expect(updated[0]?.hasRunningSubprocess).toBe(true);
     expect(removed).toEqual([]);
+  });
+
+  it("keeps a checkout's shared terminal apart from a thread's own with the same id", () => {
+    const own = {
+      threadId: BASE_SNAPSHOT.threadId,
+      terminalId: BASE_SNAPSHOT.terminalId,
+      cwd: BASE_SNAPSHOT.cwd,
+      worktreePath: BASE_SNAPSHOT.worktreePath,
+      status: BASE_SNAPSHOT.status,
+      pid: BASE_SNAPSHOT.pid,
+      exitCode: BASE_SNAPSHOT.exitCode,
+      exitSignal: BASE_SNAPSHOT.exitSignal,
+      updatedAt: BASE_SNAPSHOT.updatedAt,
+      hasRunningSubprocess: false,
+      label: BASE_SNAPSHOT.label,
+    };
+    const shared = { ...own, scopeKey: "/repo" };
+    const both = applyTerminalMetadataStreamEvent([own], { type: "upsert", terminal: shared });
+    // A sibling thread's update to the shared terminal replaces it, not the opener's own.
+    const updated = applyTerminalMetadataStreamEvent(both, {
+      type: "upsert",
+      terminal: { ...shared, threadId: "thread-2", hasRunningSubprocess: true },
+    });
+    const removed = applyTerminalMetadataStreamEvent(updated, {
+      type: "remove",
+      threadId: "thread-2",
+      scopeKey: "/repo",
+      terminalId: TARGET.terminalId,
+    });
+
+    expect(both).toHaveLength(2);
+    expect(updated.map((terminal) => terminalOwnerKey(terminal))).toEqual(["thread-1", "/repo"]);
+    expect(updated[1]?.hasRunningSubprocess).toBe(true);
+    expect(removed).toEqual([own]);
   });
 
   it("caps retained output by UTF-8 byte length", () => {

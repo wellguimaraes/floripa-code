@@ -24,6 +24,7 @@ import {
   projectScriptRuntimeEnv,
   resolveProjectScripts,
 } from "@t3tools/shared/projectScripts";
+import { worktreeScopeKey } from "@t3tools/shared/worktreeScope";
 import { Alert, Platform, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useConnectionsReady } from "../../state/workspace";
@@ -409,6 +410,16 @@ function ThreadRouteContent(
   const { sessions: knownTerminalSessions } = useKnownTerminalSessions({
     environmentId: selectedThread?.environmentId ?? null,
     threadId: selectedThread?.id ?? null,
+    scopeKey:
+      selectedThread && selectedThreadProject?.workspaceRoot
+        ? worktreeScopeKey({
+            worktreePath: resolvePreferredThreadWorktreePath({
+              threadShellWorktreePath: selectedThread.worktreePath ?? null,
+              threadDetailWorktreePath: selectedThreadDetail?.thread.worktreePath ?? null,
+            }),
+            workspaceRoot: selectedThreadProject.workspaceRoot,
+          })
+        : undefined,
   });
   const terminalMenuSessions = useMemo(
     () =>
@@ -638,25 +649,18 @@ function ThreadRouteContent(
       return;
     }
 
+    // Other threads and devices in the checkout share its terminals and may
+    // pick the same number meanwhile, so a new shell always gets a unique id.
     const nextId = nextOpenTerminalId({
       listedTerminalIds: terminalMenuSessions.map((session) => session.terminalId),
-      ...(knownTerminalSessions === null ||
-      !readEnvironmentScope(selectedThread.environmentId, AuthTerminalReadScope)
-        ? { uniqueSuffix: uuidv4() }
-        : {}),
+      uniqueSuffix: uuidv4(),
     });
     void navigation.navigate("ThreadTerminal", {
       environmentId: String(selectedThread.environmentId),
       threadId: String(selectedThread.id),
       terminalId: nextId,
     });
-  }, [
-    knownTerminalSessions,
-    navigation,
-    selectedThread,
-    selectedThreadProject?.workspaceRoot,
-    terminalMenuSessions,
-  ]);
+  }, [navigation, selectedThread, selectedThreadProject?.workspaceRoot, terminalMenuSessions]);
 
   const handleRunProjectScript = useCallback(
     async (script: ProjectScript) => {

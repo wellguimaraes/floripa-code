@@ -489,10 +489,10 @@ function PullRequestsRouteView() {
   const rightPanelRef = capableEnvironments.length === 0 ? null : PULL_REQUESTS_PANEL_REF;
   const openPanelPullRequestUrl = useOpenPanelPullRequestUrl(rightPanelRef);
   const rightPanelState = useRightPanelStore((state) =>
-    selectThreadRightPanelState(state.byThreadKey, rightPanelRef),
+    selectThreadRightPanelState(state.byPanelKey, rightPanelRef),
   );
   const selectedRightPanelSurface = useRightPanelStore((state) =>
-    selectSelectedRightPanelSurface(state.byThreadKey, rightPanelRef),
+    selectSelectedRightPanelSurface(state.byPanelKey, rightPanelRef),
   );
   const selectedPullRequestSurface =
     selectedRightPanelSurface?.kind === "pull-request" ? selectedRightPanelSurface : null;
@@ -2140,7 +2140,7 @@ function PullRequestsRouteView() {
     if (rightPanelRef === null) return;
     useRightPanelStore.getState().closeSurface(rightPanelRef, surface.id);
     const next = selectActiveRightPanelSurface(
-      useRightPanelStore.getState().byThreadKey,
+      useRightPanelStore.getState().byPanelKey,
       rightPanelRef,
     );
     selectSurfaceInUrl(next?.kind === "pull-request" ? next : null);
@@ -2154,7 +2154,7 @@ function PullRequestsRouteView() {
     if (rightPanelRef === null) return;
     useRightPanelStore.getState().closeSurfacesToRight(rightPanelRef, surface.id);
     const next = selectActiveRightPanelSurface(
-      useRightPanelStore.getState().byThreadKey,
+      useRightPanelStore.getState().byPanelKey,
       rightPanelRef,
     );
     selectSurfaceInUrl(next?.kind === "pull-request" ? next : null);

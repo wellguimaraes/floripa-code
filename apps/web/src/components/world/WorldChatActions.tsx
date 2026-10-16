@@ -4,7 +4,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { ArchiveIcon, FolderGit2Icon, RefreshCwIcon } from "lucide-react";
+import { ArchiveIcon, RefreshCwIcon } from "lucide-react";
 import { lazy, memo, Suspense, useState } from "react";
 
 import { useThreadActions } from "../../hooks/useThreadActions";
@@ -221,42 +221,3 @@ export const WorldRegenerateTitleButton = memo(function WorldRegenerateTitleButt
     </Tooltip>
   );
 });
-
-/**
- * Where the world chat's thread works, beside its project chip: the worktree's folder,
- * or "Main worktree" when it works in the project's own checkout. Renders
- * nothing outside the world.
- */
-export const WorldChatWorktree = memo(function WorldChatWorktree({
-  threadRef,
-  projectRoot,
-}: {
-  readonly threadRef: ScopedThreadRef;
-  readonly projectRoot: string | null;
-}) {
-  const worldLook = useWorldLook(scopedThreadKey(threadRef));
-  const thread = useThreadShell(threadRef);
-  if (worldLook === null || thread === null) return null;
-  const worktree = thread.worktreePath;
-  const path = worktree ?? projectRoot;
-  const name =
-    worktree === null || worktree === projectRoot ? "Main worktree" : lastSegment(worktree);
-  const label = (
-    <span className="flex min-w-0 items-center gap-1 text-xs leading-4 text-muted-foreground">
-      <FolderGit2Icon className="size-3 shrink-0" />
-      <span className="truncate">{name}</span>
-    </span>
-  );
-  if (path === null) return label;
-  return (
-    <Tooltip>
-      <TooltipTrigger render={label} />
-      <TooltipPopup side="bottom">{path}</TooltipPopup>
-    </Tooltip>
-  );
-});
-
-/** The last folder of a path, e.g. a worktree's name. */
-function lastSegment(path: string): string {
-  return path.split(/[\\/]/).findLast((segment) => segment.length > 0) ?? path;
-}

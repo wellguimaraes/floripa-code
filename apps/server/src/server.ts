@@ -92,6 +92,7 @@ import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolve
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
+import * as WorktreeScopes from "./workspace/WorktreeScopes.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
 import * as VcsProjectConfig from "./vcs/VcsProjectConfig.ts";
@@ -411,8 +412,12 @@ const layerTerminal = TerminalManager.layer.pipe(
   Layer.provide(layerNativeTelemetry),
 );
 
+const layerWorktreeScopes = WorktreeScopes.layer.pipe(
+  Layer.provide(Layer.merge(ProjectionStoreV2.layer, ProjectStore.layer)),
+);
+
 const layerPreview = Layer.empty.pipe(
-  Layer.provideMerge(PreviewManager.layer),
+  Layer.provideMerge(PreviewManager.layer.pipe(Layer.provide(layerWorktreeScopes))),
   Layer.provideMerge(layerPortScanner),
 );
 
@@ -487,7 +492,7 @@ const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
   Layer.provide(ProviderEventIngestor.layerAnalytics),
   Layer.provide(layerCheckpointStore),
   Layer.provide(layerGitWorkflow),
-  Layer.provide(ResourceCleanupService.layer),
+  Layer.provide(ResourceCleanupService.layer.pipe(Layer.provide(layerWorktreeScopes))),
   Layer.provide(
     RunFinalizationService.layerObserver.pipe(
       Layer.provide(ProjectionStoreV2.layer),
@@ -507,7 +512,11 @@ const layerOrchestrationApplication = CheckpointDiffQuery.layer.pipe(
 // so every client sees the same shelf.
 const layerThreadSettlementWorker = Layer.effectDiscard(
   ThreadSettlementService.make.pipe(Effect.flatMap((service) => service.start())),
-).pipe(Layer.provide(layerPullRequestService), Layer.provide(ProjectionStoreV2.layer));
+).pipe(
+  Layer.provide(layerPullRequestService),
+  Layer.provide(ProjectionStoreV2.layer),
+  Layer.provide(layerWorktreeScopes),
+);
 
 const layerThreadPullRequestWorker = Layer.effectDiscard(
   ThreadPullRequestService.make.pipe(Effect.flatMap((service) => service.start())),

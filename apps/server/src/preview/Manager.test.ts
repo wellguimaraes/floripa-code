@@ -9,6 +9,7 @@ import * as PubSub from "effect/PubSub";
 import { expect } from "vite-plus/test";
 
 import * as ServerConfig from "../config.ts";
+import * as WorktreeScopesTestkit from "../workspace/WorktreeScopes.testkit.ts";
 import * as PreviewManager from "./Manager.ts";
 
 const DRAIN_LIMIT = 100;
@@ -40,7 +41,23 @@ const collectEvents = Effect.gen(function* () {
   return collector;
 }).pipe(Effect.withSpan("preview.test.collectEvents"));
 
+// Threads named here resolve to a checkout; `freshThreadId` threads are
+// unknown, so their tabs stay theirs alone as before scopes existed.
+const SCOPE_A = "/repo/.t3/worktrees/feature-a";
+const SCOPE_B = "/repo/.t3/worktrees/feature-b";
+const scopedThread = (name: string) => ThreadId.make(`scoped-${name}`);
+
 const layer = PreviewManager.layer.pipe(
+  Layer.provide(
+    WorktreeScopesTestkit.layer({
+      [scopedThread("a1")]: { scopeKey: SCOPE_A },
+      [scopedThread("a2")]: { scopeKey: SCOPE_A },
+      [scopedThread("a3")]: { scopeKey: SCOPE_A },
+      [scopedThread("a4")]: { scopeKey: SCOPE_A },
+      [scopedThread("b1")]: { scopeKey: SCOPE_B },
+      [scopedThread("b2")]: { scopeKey: SCOPE_B },
+    }),
+  ),
   Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-preview-manager-" })),
   Layer.provide(NodeCrypto.layer),
   Layer.provide(NodeServices.layer),
@@ -533,6 +550,126 @@ it.layer(layer)("PreviewManager", (it) => {
       const bEvents = yield* PubSub.takeUpTo(bSub, DRAIN_LIMIT);
       expect(aEvents.map((e) => e.type)).toEqual(["opened", "opened"]);
       expect(bEvents.map((e) => e.type)).toEqual(["opened", "opened"]);
+    }),
+  );
+  it.effect("shares a worktree's tabs with every thread in it", () =>
+    Effect.gen(function* () {
+      const manager = yield* PreviewManager.PreviewManager;
+      const collector = yield* collectEvents;
+      const opener = scopedThread("a1");
+      const sibling = scopedThread("a2");
+
+      const opened = yield* manager.open({ threadId: opener, url: "http://localhost:5173" });
+      expect(opened.threadId).toBe(opener);
+      expect(opened.scopeKey).toBe(SCOPE_A);
+
+      const listed = yield* manager.list({ threadId: sibling });
+      expect(listed.sessions.map((session) => session.tabId)).toContain(opened.tabId);
+
+      const navigated = yield* manager.navigate({
+        threadId: sibling,
+        tabId: opened.tabId,
+        url: "http://localhost:3000",
+      });
+      // The tab keeps its opener; the sibling only drove it.
+      expect(navigated.threadId).toBe(opener);
+
+      yield* manager.close({ threadId: sibling, tabId: opened.tabId });
+      const events = yield* collector.drain;
+      expect(events.map((event) => [event.type, event.threadId, event.scopeKey])).toEqual([
+        ["opened", opener, SCOPE_A],
+        ["navigated", opener, SCOPE_A],
+        ["closed", opener, SCOPE_A],
+      ]);
+    }),
+  );
+
+  it.effect("hides a worktree's tabs from threads in another checkout", () =>
+    Effect.gen(function* () {
+      const manager = yield* PreviewManager.PreviewManager;
+      const opened = yield* manager.open({ threadId: scopedThread("b1") });
+      const outsider = scopedThread("a3");
+
+      const listed = yield* manager.list({ threadId: outsider });
+      expect(listed.sessions.map((session) => session.tabId)).not.toContain(opened.tabId);
+
+      const error = yield* manager
+        .navigate({ threadId: outsider, tabId: opened.tabId, url: "http://localhost:3000" })
+        .pipe(Effect.flip);
+      expect(error._tag).toBe("PreviewSessionLookupError");
+
+      // Closing from outside does nothing; the tab is still there for its checkout.
+      yield* manager.close({ threadId: outsider, tabId: opened.tabId });
+      const owners = yield* manager.list({ threadId: scopedThread("b2") });
+      expect(owners.sessions.map((session) => session.tabId)).toContain(opened.tabId);
+    }),
+  );
+
+  it.effect("keeps an unresolved thread's tabs to itself", () =>
+    Effect.gen(function* () {
+      const manager = yield* PreviewManager.PreviewManager;
+      const draft = freshThreadId();
+      const opened = yield* manager.open({ threadId: draft });
+      expect(opened.scopeKey).toBeUndefined();
+
+      const other = yield* manager.list({ threadId: freshThreadId() });
+      expect(other.sessions.map((session) => session.tabId)).not.toContain(opened.tabId);
+      const error = yield* manager
+        .resize({ threadId: freshThreadId(), tabId: opened.tabId, viewport: { _tag: "fill" } })
+        .pipe(Effect.flip);
+      expect(error._tag).toBe("PreviewSessionLookupError");
+    }),
+  );
+
+  it.effect("places a draft in the worktree its client names", () =>
+    Effect.gen(function* () {
+      const manager = yield* PreviewManager.PreviewManager;
+      const sibling = yield* manager.open({ threadId: scopedThread("a4") });
+      const draft = freshThreadId();
+
+      // The trailing separator normalizes away, as the client's key would.
+      const listed = yield* manager.list({ threadId: draft, clientScopeKey: `${SCOPE_A}/` });
+      expect(listed.sessions.map((session) => session.tabId)).toContain(sibling.tabId);
+      // Later requests from the draft carry no hint and still reach the worktree's tabs.
+      yield* manager.navigate({
+        threadId: draft,
+        tabId: sibling.tabId,
+        url: "http://localhost:3000",
+      });
+      const opened = yield* manager.open({ threadId: draft });
+      expect(opened.scopeKey).toBe(SCOPE_A);
+
+      // A thread the server knows keeps its own checkout whatever the client says.
+      const known = yield* manager.list({ threadId: scopedThread("b2"), clientScopeKey: SCOPE_A });
+      expect(known.sessions.map((session) => session.tabId)).not.toContain(sibling.tabId);
+    }),
+  );
+
+  it.effect("closeForThread closes a checkout's tabs only when asked", () =>
+    Effect.gen(function* () {
+      const manager = yield* PreviewManager.PreviewManager;
+      const deleted = scopedThread("a4");
+      const sibling = scopedThread("a2");
+      const shared = yield* manager.open({ threadId: deleted });
+      const draft = freshThreadId();
+      const draftTab = yield* manager.open({ threadId: draft });
+
+      // A sibling still works in the checkout: only the thread's own tabs close.
+      yield* manager.closeForThread({ threadId: draft });
+      yield* manager.closeForThread({ threadId: deleted });
+      const remaining = (yield* manager.list({ threadId: sibling })).sessions.map(
+        (session) => session.tabId,
+      );
+      expect(remaining).toContain(shared.tabId);
+      expect((yield* manager.list({ threadId: draft })).sessions).toEqual([]);
+      expect(draftTab.scopeKey).toBeUndefined();
+
+      // The last thread leaving the checkout takes its tabs with it.
+      yield* manager.closeForThread({ threadId: deleted, scopeKey: SCOPE_A });
+      const after = (yield* manager.list({ threadId: sibling })).sessions.map(
+        (session) => session.tabId,
+      );
+      expect(after).not.toContain(shared.tabId);
     }),
   );
 });

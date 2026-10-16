@@ -1,9 +1,11 @@
 /**
- * Per-thread preview UI state.
+ * Per-checkout preview UI state.
  *
- * Each thread owns an independent atom. Most consumers read exactly one
- * thread; the desktop browser host uses the aggregate session atom because it
- * is the one place that must enumerate every live preview tab.
+ * Browser tabs belong to the checkout a thread works in, so every thread in a
+ * worktree reads the same atom (`previewStateKey`); a thread that has not
+ * reached this client yet keeps its own until it does. Most consumers read
+ * exactly one; the desktop browser host uses the aggregate session atom
+ * because it is the one place that must enumerate every live preview tab.
  */
 import { useAtomValue } from "@effect/atom-react";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
@@ -35,6 +37,8 @@ export interface DesktopPreviewOverlay {
 }
 
 export interface ThreadPreviewState {
+  /** A thread this state was last updated for, so the desktop host knows its environment. */
+  ownerRef: ScopedThreadRef | null;
   snapshot: PreviewSessionSnapshot | null;
   sessions: Record<string, PreviewSessionSnapshot>;
   /** Tabs intentionally closed by this client. Stale list snapshots must not resurrect them. */
@@ -52,6 +56,7 @@ export interface ThreadPreviewState {
 }
 
 const EMPTY_THREAD_PREVIEW_STATE: ThreadPreviewState = Object.freeze({
+  ownerRef: null,
   snapshot: null,
   sessions: {},
   suppressedTabIds: new Set<string>(),
@@ -67,6 +72,33 @@ const EMPTY_THREAD_PREVIEW_STATE: ThreadPreviewState = Object.freeze({
 const emptyPreviewStateAtom = Atom.make<ThreadPreviewState>(EMPTY_THREAD_PREVIEW_STATE).pipe(
   Atom.withLabel("preview:empty-thread"),
 );
+
+interface PreviewStateScope {
+  /** Keys this store's state for the checkout. */
+  readonly panelKey: string;
+  /** The checkout as the server knows it; see `PreviewListInput.clientScopeKey`. */
+  readonly scopeKey: string;
+}
+
+let resolvePreviewScope: (ref: ScopedThreadRef) => PreviewStateScope | null = () => null;
+
+/** Installed once at startup so the store stays free of entity lookups. */
+export function setPreviewStateScopeResolver(
+  resolver: (ref: ScopedThreadRef) => PreviewStateScope | null,
+): void {
+  resolvePreviewScope = resolver;
+}
+
+/** The checkout's key, or the thread's own until the thread resolves. */
+export function previewStateKey(ref: ScopedThreadRef): string {
+  return resolvePreviewScope(ref)?.panelKey ?? scopedThreadKey(ref);
+}
+
+/** Tells the server where a thread it has not seen yet (a draft) works, for `list` and `open`. */
+export function previewClientScopeInput(ref: ScopedThreadRef): { clientScopeKey?: string } {
+  const scope = resolvePreviewScope(ref);
+  return scope ? { clientScopeKey: scope.scopeKey } : {};
+}
 
 export const previewStateAtom = Atom.family((threadKey: string) =>
   Atom.make<ThreadPreviewState>(EMPTY_THREAD_PREVIEW_STATE).pipe(
@@ -113,11 +145,13 @@ function updateThreadPreviewState(
   ref: ScopedThreadRef,
   update: (current: ThreadPreviewState) => ThreadPreviewState,
 ): void {
-  const threadKey = scopedThreadKey(ref);
+  const threadKey = previewStateKey(ref);
   const atom = previewStateAtom(threadKey);
   let nextState = appAtomRegistry.get(atom);
   const changed = appAtomRegistry.modify(atom, (current) => {
-    nextState = update(current);
+    const updated = update(current);
+    nextState =
+      updated === current || updated.ownerRef !== null ? updated : { ...updated, ownerRef: ref };
     return [nextState !== current, nextState];
   });
   if (!changed) return;
@@ -164,7 +198,7 @@ const removeSession = (current: ThreadPreviewState, tabId: string): ThreadPrevie
 };
 
 export function useThreadPreviewState(ref: ScopedThreadRef | null | undefined): ThreadPreviewState {
-  const atom = ref ? previewStateAtom(scopedThreadKey(ref)) : emptyPreviewStateAtom;
+  const atom = ref ? previewStateAtom(previewStateKey(ref)) : emptyPreviewStateAtom;
   return useAtomValue(atom);
 }
 
@@ -173,7 +207,7 @@ export function useActivePreviewSessions(): Record<string, ThreadPreviewState> {
 }
 
 export function readThreadPreviewState(ref: ScopedThreadRef): ThreadPreviewState {
-  return appAtomRegistry.get(previewStateAtom(scopedThreadKey(ref)));
+  return appAtomRegistry.get(previewStateAtom(previewStateKey(ref)));
 }
 
 export function applyPreviewServerEvent(ref: ScopedThreadRef, event: PreviewEvent): void {
@@ -313,6 +347,7 @@ export function reconcilePreviewServerSessions(
   ref: ScopedThreadRef,
   result: PreviewListResult,
 ): void {
+  forgetThreadKeyedPreviewState(ref);
   updateThreadPreviewState(ref, (current) => {
     const sameServer = current.serverEpoch === result.serverEpoch;
     if (sameServer && result.revision < current.serverRevision) {
@@ -469,7 +504,7 @@ export function whenPreviewTabKnown(
   action: () => void,
   timeoutMs = 5_000,
 ): () => void {
-  const atom = previewStateAtom(scopedThreadKey(ref));
+  const atom = previewStateAtom(previewStateKey(ref));
   if (appAtomRegistry.get(atom).sessions[tabId]) {
     action();
     return () => {};
@@ -502,12 +537,28 @@ export function isPreviewSupportedInRuntime(): boolean {
 
 /**
  * Forgets a deleted thread's previews. The server closes their sessions too,
- * but the desktop host keeps a page for every session held here.
+ * but the desktop host keeps a page for every session held here. A checkout's
+ * tabs outlive any one of its threads; the server's close events clear them
+ * when the last one goes.
  */
 export function clearThreadPreviewState(ref: ScopedThreadRef): void {
+  if (previewStateKey(ref) !== scopedThreadKey(ref)) return;
   updateThreadPreviewState(ref, (current) =>
     Object.keys(current.sessions).length === 0 ? current : EMPTY_THREAD_PREVIEW_STATE,
   );
+}
+
+/**
+ * State kept under the thread's own key before it resolved to a checkout
+ * would otherwise keep its tabs mounted in the desktop host forever.
+ */
+function forgetThreadKeyedPreviewState(ref: ScopedThreadRef): void {
+  const threadKey = scopedThreadKey(ref);
+  if (previewStateKey(ref) === threadKey) return;
+  const atom = previewStateAtom(threadKey);
+  if (Object.keys(appAtomRegistry.get(atom).sessions).length === 0) return;
+  appAtomRegistry.set(atom, EMPTY_THREAD_PREVIEW_STATE);
+  syncActivePreviewThread(threadKey, EMPTY_THREAD_PREVIEW_STATE);
 }
 
 export function resetPreviewStateForTests(): void {

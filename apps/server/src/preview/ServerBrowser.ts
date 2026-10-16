@@ -286,7 +286,10 @@ interface Recording {
 }
 
 interface ServerTab {
+  /** The thread that opened the tab; desktop channel and storage keys use it. */
   readonly threadId: ThreadId;
+  /** The checkout whose threads all see the tab; absent keeps it the opener's alone. */
+  readonly scopeKey: string | undefined;
   readonly tabId: string;
   readonly page: Page;
   readonly cdp: CDPSession;
@@ -380,6 +383,15 @@ const ABORTED_NAVIGATION_DOWNLOAD_WAIT_MS = 5_000;
 const DOWNLOAD_MAX_BYTES = 1024 * 1024 * 1024;
 
 const tabKey = (threadId: string, tabId: string) => `${threadId}\u0000${tabId}`;
+
+/** The thread asking, with the checkout it resolved to; see `previewTabVisibleTo`. */
+interface Caller {
+  readonly threadId: string;
+  readonly scopeKey: string | undefined;
+}
+
+/** An agent request with its caller's checkout resolved once up front. */
+type ScopedRequest = PreviewAutomationRequest & { readonly caller: Caller };
 
 const pushBounded = <A>(
   buffer: Array<A>,
@@ -497,6 +509,29 @@ const make = Effect.gen(function* () {
   const closedSessions = new Set<string>();
   let hostConnectionId: string | null = null;
   let viewerResizeOrder = 0;
+
+  /** A live tab the caller sees, found by its process-unique id. */
+  const visibleTab = (caller: Caller, tabId: string) => {
+    for (const tab of tabs.values()) {
+      if (tab.tabId === tabId)
+        return PreviewManager.previewTabVisibleTo(tab, caller) ? tab : undefined;
+    }
+    return undefined;
+  };
+
+  /**
+   * The caller of a viewer route. Only a sibling thread reaching a checkout's
+   * tab needs its scope resolved; the opener and unknown tabs need no lookup.
+   */
+  const viewerCaller = (threadId: string, tabId: string) =>
+    Effect.gen(function* () {
+      const tab = [...tabs.values()].find((candidate) => candidate.tabId === tabId);
+      const scopeKey =
+        tab !== undefined && tab.threadId !== threadId && tab.scopeKey !== undefined
+          ? yield* manager.resolveScope(threadId)
+          : undefined;
+      return { threadId, scopeKey } satisfies Caller;
+    });
 
   const contexts = new ServerBrowserContexts({
     profilesDir: NodePath.join(config.stateDir, "server-browser", "profiles"),
@@ -777,6 +812,7 @@ const make = Effect.gen(function* () {
     );
     const tab: ServerTab = {
       threadId: ThreadId.make(snapshot.threadId),
+      scopeKey: snapshot.scopeKey,
       tabId: snapshot.tabId,
       page,
       cdp,
@@ -1064,8 +1100,9 @@ const make = Effect.gen(function* () {
   /** Hands uploaded files to the page's open picker; an empty list cancels it. */
   const setChooserFiles = async (
     input: Parameters<ServerBrowser["Service"]["answerFileChooser"]>[0],
+    caller: Caller,
   ) => {
-    const tab = tabs.get(tabKey(input.threadId, input.tabId));
+    const tab = visibleTab(caller, input.tabId);
     const open = tab?.fileChooser;
     if (
       !tab ||
@@ -1112,13 +1149,17 @@ const make = Effect.gen(function* () {
   };
 
   const answerFileChooser: ServerBrowser["Service"]["answerFileChooser"] = (input) =>
-    Effect.promise(() => setChooserFiles(input).catch(() => false));
+    viewerCaller(input.threadId, input.tabId).pipe(
+      Effect.flatMap((caller) =>
+        Effect.promise(() => setChooserFiles(input, caller).catch(() => false)),
+      ),
+    );
 
   const openDownload: ServerBrowser["Service"]["openDownload"] = (input) =>
-    Effect.sync(() => {
-      const download = tabs
-        .get(tabKey(input.threadId, input.tabId))
-        ?.downloads.find((candidate) => candidate.id === input.downloadId);
+    Effect.map(viewerCaller(input.threadId, input.tabId), (caller) => {
+      const download = visibleTab(caller, input.tabId)?.downloads.find(
+        (candidate) => candidate.id === input.downloadId,
+      );
       return download === undefined
         ? Option.none()
         : Option.some({ path: download.path, fileName: download.fileName });
@@ -1156,6 +1197,8 @@ const make = Effect.gen(function* () {
     await Effect.runPromise(
       manager.open({
         threadId: opener.threadId,
+        // A popup belongs where its opener does, even if the thread moved since.
+        scopeKey: opener.scopeKey,
         ...(/^https?:/i.test(url) ? { url } : {}),
         runtime: "server",
         ...(opener.profileId === undefined ? {} : { profileId: opener.profileId }),
@@ -1205,10 +1248,12 @@ const make = Effect.gen(function* () {
     return opening;
   };
 
-  const findTab = (threadId: string, tabId: string) =>
+  const findTab = (caller: Caller, tabId: string) =>
     Effect.gen(function* () {
-      const existing = tabs.get(tabKey(threadId, tabId));
+      const existing = visibleTab(caller, tabId);
       if (existing) return existing;
+      const threadId = caller.threadId;
+      // The manager lists exactly the sessions this caller sees.
       const { sessions } = yield* manager.list({ threadId: ThreadId.make(threadId) });
       const snapshot = sessions.find(
         (session) => session.tabId === tabId && session.runtime === "server",
@@ -1244,10 +1289,12 @@ const make = Effect.gen(function* () {
 
   /**
    * The tab a request without a tabId means: the caller's newest tab, else the
-   * thread's tab the user is looking at or used last, so "this page" works.
+   * worktree's tab the user is looking at or used last, so "this page" works.
    */
-  const latestThreadTab = (threadId: string, agentSessionId?: string) => {
-    const threadTabs = [...tabs.values()].filter((tab) => tab.threadId === threadId);
+  const latestThreadTab = (caller: Caller, agentSessionId?: string) => {
+    const threadTabs = [...tabs.values()].filter((tab) =>
+      PreviewManager.previewTabVisibleTo(tab, caller),
+    );
     return (
       threadTabs
         .filter((tab) => tab.control.agentId === agentSessionId)
@@ -1314,6 +1361,7 @@ const make = Effect.gen(function* () {
 
   const statusWithTitle = async (
     tab: ServerTab | undefined,
+    caller: Caller,
     agentSessionId?: string,
   ): Promise<PreviewAutomationStatus> => {
     if (!tab) {
@@ -1348,7 +1396,7 @@ const make = Effect.gen(function* () {
       viewportSetting: tab.setting,
       ...(viewport ? { viewport } : {}),
       tabs: [...tabs.values()]
-        .filter((candidate) => candidate.threadId === tab.threadId)
+        .filter((candidate) => PreviewManager.previewTabVisibleTo(candidate, caller))
         .map((candidate) => ({
           tabId: candidate.tabId,
           url: candidate.page.url() === "about:blank" ? null : candidate.page.url(),
@@ -1637,11 +1685,13 @@ const make = Effect.gen(function* () {
     );
   };
 
-  const requireTab = async (request: PreviewAutomationRequest) => {
+  const requireTab = async (request: ScopedRequest) => {
     if (!request.agentSessionId)
       throw new BrowserControlInterrupted("The agent session is missing. Reconnect the provider.");
     const owned = [...tabs.values()].filter(
-      (tab) => tab.threadId === request.threadId && tab.control.agentId === request.agentSessionId,
+      (tab) =>
+        PreviewManager.previewTabVisibleTo(tab, request.caller) &&
+        tab.control.agentId === request.agentSessionId,
     );
     if (!request.tabIdExplicit && owned.length > 1)
       throw new BrowserControlInterrupted(
@@ -1650,17 +1700,17 @@ const make = Effect.gen(function* () {
       );
     const tab =
       request.tabId === undefined
-        ? latestThreadTab(request.threadId, request.agentSessionId)
+        ? latestThreadTab(request.caller, request.agentSessionId)
         : await Effect.runPromise(
-            findTab(request.threadId, request.tabId).pipe(Effect.orElseSucceed(constVoid)),
+            findTab(request.caller, request.tabId).pipe(Effect.orElseSucceed(constVoid)),
           );
     if (!tab) {
       throw new ServerBrowserPage.ServerBrowserOperationError(
         "PreviewAutomationTabNotFoundError",
-        "No server preview tab is open for this thread. Call preview_open first.",
+        "No server preview tab is open for this worktree. Call preview_open first.",
       );
     }
-    // Any tab in the thread can be read; acting is checked by its control.
+    // Any tab in the worktree can be read; acting is checked by its control.
     if (!READ_OPERATIONS.has(request.operation) && !tab.control.agentMayAct(request.agentSessionId))
       throw new BrowserControlInterrupted(
         "This tab belongs to another agent session. You can read it, but open your own tab to act.",
@@ -1670,28 +1720,29 @@ const make = Effect.gen(function* () {
   };
 
   /**
-   * Any request, even a failed one, keeps the agent's tabs on the thread from
-   * idling out. The tab it targeted becomes the thread's most recently used.
+   * Any request, even a failed one, keeps the agent's tabs in the worktree from
+   * idling out. The tab it targeted becomes the worktree's most recently used.
    */
-  const markUsed = (request: PreviewAutomationRequest) => {
+  const markUsed = (request: ScopedRequest) => {
     const now = Date.now();
     for (const tab of tabs.values()) {
       if (
-        tab.threadId === request.threadId &&
+        PreviewManager.previewTabVisibleTo(tab, request.caller) &&
         (tab.control.agentId === request.agentSessionId || tab.tabId === request.tabId)
       )
         tab.usedAt = now;
     }
   };
 
-  const runOperation = async (request: PreviewAutomationRequest): Promise<unknown> => {
+  const runOperation = async (request: ScopedRequest): Promise<unknown> => {
     const input = request.input;
     switch (request.operation) {
       case "status":
         return statusWithTitle(
           request.tabId === undefined
-            ? latestThreadTab(request.threadId, request.agentSessionId)
-            : tabs.get(tabKey(request.threadId, request.tabId)),
+            ? latestThreadTab(request.caller, request.agentSessionId)
+            : visibleTab(request.caller, request.tabId),
+          request.caller,
           request.agentSessionId,
         );
       case "open": {
@@ -1707,7 +1758,8 @@ const make = Effect.gen(function* () {
           !request.tabIdExplicit &&
           [...tabs.values()].filter(
             (tab) =>
-              tab.threadId === request.threadId && tab.control.agentId === request.agentSessionId,
+              PreviewManager.previewTabVisibleTo(tab, request.caller) &&
+              tab.control.agentId === request.agentSessionId,
           ).length > 1
         )
           throw new BrowserControlInterrupted(
@@ -1718,7 +1770,7 @@ const make = Effect.gen(function* () {
         const found =
           reuse && request.tabId !== undefined
             ? await Effect.runPromise(
-                findTab(request.threadId, request.tabId).pipe(
+                findTab(request.caller, request.tabId).pipe(
                   Effect.catchTags({
                     ServerBrowserTabNotFoundError: () => Effect.succeed(undefined),
                   }),
@@ -1743,6 +1795,7 @@ const make = Effect.gen(function* () {
             await Effect.runPromise(
               manager.open({
                 threadId: request.threadId,
+                scopeKey: request.caller.scopeKey,
                 ...(url ? { url } : {}),
                 ...(profileId === undefined ? {} : { profileId }),
                 runtime: "server",
@@ -1783,7 +1836,7 @@ const make = Effect.gen(function* () {
               .waitForLoadState("load", { timeout: navigationTimeout })
               .catch(constVoid);
           }
-          return statusWithTitle(tab, request.agentSessionId);
+          return statusWithTitle(tab, request.caller, request.agentSessionId);
         });
       }
       case "recordingStop": {
@@ -1791,7 +1844,7 @@ const make = Effect.gen(function* () {
           !request.tabIdExplicit &&
           [...tabs.values()].filter(
             (candidate) =>
-              candidate.threadId === request.threadId &&
+              PreviewManager.previewTabVisibleTo(candidate, request.caller) &&
               candidate.control.agentId === request.agentSessionId,
           ).length > 1
         )
@@ -1801,19 +1854,19 @@ const make = Effect.gen(function* () {
           );
         const recordings = [...tabs.values()].filter(
           (candidate) =>
-            candidate.threadId === request.threadId &&
+            PreviewManager.previewTabVisibleTo(candidate, request.caller) &&
             candidate.control.agentMayAct(request.agentSessionId ?? "") &&
             (candidate.recording || candidate.recordingStart),
         );
         const targetTabId =
-          request.tabId ?? latestThreadTab(request.threadId, request.agentSessionId)?.tabId;
+          request.tabId ?? latestThreadTab(request.caller, request.agentSessionId)?.tabId;
         const tab =
           recordings.find((candidate) => candidate.tabId === targetTabId) ??
           (!request.tabIdExplicit && recordings.length === 1 ? recordings[0] : undefined);
         if (!tab) {
           throw new ServerBrowserPage.ServerBrowserOperationError(
             "PreviewAutomationRecordingNotActiveError",
-            "No recording is active for this thread.",
+            "No recording is active for this worktree.",
           );
         }
         return tab.control.agent(request.agentSessionId ?? "", () => stopRecording(tab));
@@ -1840,7 +1893,7 @@ const make = Effect.gen(function* () {
       if (tab.control.controller !== null)
         throw new BrowserControlInterrupted("A human controls this tab.", "humanControl");
       await resolveDialog(tab, input as PreviewAutomationDialogInput);
-      return statusWithTitle(tab, request.agentSessionId);
+      return statusWithTitle(tab, request.caller, request.agentSessionId);
     }
     const agentSessionId = request.agentSessionId!;
     // A tab this session did not open, while it cannot act there (another
@@ -1876,7 +1929,7 @@ const make = Effect.gen(function* () {
     });
   };
 
-  const executeTabOperation = async (tab: ServerTab, request: PreviewAutomationRequest) => {
+  const executeTabOperation = async (tab: ServerTab, request: ScopedRequest) => {
     const input = request.input;
     switch (request.operation) {
       case "navigate": {
@@ -1889,7 +1942,7 @@ const make = Effect.gen(function* () {
             navigateInput.timeoutMs ?? request.timeoutMs,
           ),
         );
-        return statusWithTitle(tab, request.agentSessionId);
+        return statusWithTitle(tab, request.caller, request.agentSessionId);
       }
       case "resize": {
         const setting = resolvePreviewViewport(input as PreviewAutomationResizeInput);
@@ -1967,31 +2020,42 @@ const make = Effect.gen(function* () {
   };
 
   const handleRequest = (connectionId: string, request: PreviewAutomationRequest) =>
-    Effect.tryPromise({
-      try: () => runOperation(request).finally(() => markUsed(request)),
-      catch: ServerBrowserPage.toOperationError,
-    }).pipe(
-      Effect.match({
-        onSuccess: (result) => ({ ok: true as const, result }),
-        onFailure: (error) => ({
-          ok: false as const,
-          error: {
-            _tag: error.tag,
-            message: error.message,
-            ...(error.detail === undefined ? {} : { detail: error.detail }),
-          },
+    manager
+      .resolveScope(request.threadId)
+      .pipe(
+        Effect.map((scopeKey): ScopedRequest => ({
+          ...request,
+          caller: { threadId: request.threadId, scopeKey },
+        })),
+        Effect.flatMap((scoped) =>
+          Effect.tryPromise({
+            try: () => runOperation(scoped).finally(() => markUsed(scoped)),
+            catch: ServerBrowserPage.toOperationError,
+          }),
+        ),
+      )
+      .pipe(
+        Effect.match({
+          onSuccess: (result) => ({ ok: true as const, result }),
+          onFailure: (error) => ({
+            ok: false as const,
+            error: {
+              _tag: error.tag,
+              message: error.message,
+              ...(error.detail === undefined ? {} : { detail: error.detail }),
+            },
+          }),
         }),
-      }),
-      Effect.flatMap((outcome) =>
-        broker.respond({
-          clientId: SERVER_HOST_CLIENT_ID,
-          connectionId,
-          requestId: request.requestId,
-          ...outcome,
-        }),
-      ),
-      Effect.ignore,
-    );
+        Effect.flatMap((outcome) =>
+          broker.respond({
+            clientId: SERVER_HOST_CLIENT_ID,
+            connectionId,
+            requestId: request.requestId,
+            ...outcome,
+          }),
+        ),
+        Effect.ignore,
+      );
 
   const mirrorManagerEvent = (event: PreviewEvent) =>
     Effect.promise(async () => {
@@ -2178,7 +2242,7 @@ const make = Effect.gen(function* () {
 
   const attachViewer: ServerBrowser["Service"]["attachViewer"] = (input) =>
     Effect.gen(function* () {
-      const tab = yield* findTab(input.threadId, input.tabId);
+      const tab = yield* findTab(yield* viewerCaller(input.threadId, input.tabId), input.tabId);
       const output = yield* Queue.make<ServerBrowserViewerOutput>({
         capacity: VIEWER_OUTPUT_LIMIT,
         strategy: "dropping",

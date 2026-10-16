@@ -16,7 +16,7 @@ import { useSupportsMultiplePullRequests } from "./useSupportsMultiplePullReques
 
 export function useOpenPanelPullRequestUrl(threadRef: ScopedThreadRef | null) {
   const surface = useRightPanelStore((state) =>
-    selectActiveRightPanelSurface(state.byThreadKey, threadRef),
+    selectActiveRightPanelSurface(state.byPanelKey, threadRef),
   );
   const requestedReference = surface?.kind === "pull-request" ? surface : null;
   const environmentId = requestedReference?.environmentId

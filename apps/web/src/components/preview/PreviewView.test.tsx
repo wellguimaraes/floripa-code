@@ -109,6 +109,8 @@ vi.mock("~/localApi", () => ({
 }));
 
 vi.mock("~/previewStateStore", () => ({
+  previewStateKey: (ref: { environmentId: string; threadId: string }) =>
+    `${ref.environmentId}:${ref.threadId}`,
   rememberPreviewUrl: mocks.rememberPreviewUrl,
   updatePreviewServerSnapshot: vi.fn(),
   useThreadPreviewState: () => ({

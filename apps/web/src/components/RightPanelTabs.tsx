@@ -53,7 +53,12 @@ import {
 
 import { isElectron } from "~/env";
 import type { DesktopPreviewOverlay } from "~/previewStateStore";
-import type { RightPanelSurface } from "~/rightPanelStore";
+import {
+  RIGHT_PANEL_SURFACE_TYPES,
+  rightPanelSurfaceType,
+  type RightPanelSurface,
+  type RightPanelSurfaceType,
+} from "~/rightPanelStore";
 import { cn } from "~/lib/utils";
 import { resolveShortcutCommand, type ShortcutMatchContext } from "~/keybindings";
 import { readLocalApi } from "~/localApi";
@@ -108,6 +113,13 @@ interface RightPanelTabsProps {
   inlineSize?: PreviewPanelInlineSize;
   layoutControls?: ReactNode;
   surfaces: readonly RightPanelSurface[];
+  /**
+   * The type the panel shows. Its surfaces are the tabs; the rest stay behind
+   * the type rail. Null shows every surface, as the pull-request page does.
+   */
+  activeType?: RightPanelSurfaceType | null;
+  /** Renders the type rail beside the content; omit for a single-type panel. */
+  onActivateType?: (type: RightPanelSurfaceType) => void;
   /** Fallback environment for surfaces that do not carry their own. */
   environmentId: EnvironmentId | null;
   activeSurfaceId: string | null;
@@ -865,6 +877,142 @@ function SortableTab({
   );
 }
 
+/** Which types can start a new surface right now; mirrors the launcher's rows. */
+export interface RightPanelTypeAvailability {
+  browserAvailable: boolean;
+  terminalAvailable: boolean;
+  diffAvailable: boolean;
+  filesAvailable: boolean;
+  pullRequestAvailable: boolean;
+  pullRequestsAvailable: boolean;
+  deviceAvailable: boolean;
+}
+
+const SURFACE_TYPE_META = {
+  preview: { label: "Browser", icon: Globe2, reason: SURFACE_UNAVAILABLE_HINTS.browser },
+  terminal: { label: "Terminal", icon: TerminalSquare, reason: SURFACE_UNAVAILABLE_HINTS.terminal },
+  "pull-request": {
+    label: "Pull requests",
+    icon: PullRequestGlyph.pullRequest,
+    reason: SURFACE_UNAVAILABLE_HINTS.pullRequest,
+  },
+  diff: { label: "Diff", icon: FileDiff, reason: SURFACE_UNAVAILABLE_HINTS.diff },
+  files: { label: "Files", icon: Files, reason: SURFACE_UNAVAILABLE_HINTS.files },
+  device: { label: "Device", icon: Smartphone, reason: SURFACE_UNAVAILABLE_HINTS.device },
+} as const satisfies Record<
+  RightPanelSurfaceType,
+  { label: string; icon: (props: { className?: string }) => ReactNode; reason: string }
+>;
+
+export function rightPanelSurfaceTypeLabel(type: RightPanelSurfaceType): string {
+  return SURFACE_TYPE_META[type].label;
+}
+
+function surfaceTypeAvailable(
+  type: RightPanelSurfaceType,
+  availability: RightPanelTypeAvailability,
+): boolean {
+  switch (type) {
+    case "preview":
+      return availability.browserAvailable;
+    case "terminal":
+      return availability.terminalAvailable;
+    case "pull-request":
+      return availability.pullRequestAvailable || availability.pullRequestsAvailable;
+    case "diff":
+      return availability.diffAvailable;
+    case "files":
+      return availability.filesAvailable;
+    case "device":
+      return availability.deviceAvailable;
+  }
+}
+
+/**
+ * The column of surface types beside the panel. Each type shows how many tabs
+ * it holds; picking one shows its tabs. It stays visible while the panel is
+ * hidden so any type is one click away.
+ */
+export function RightPanelTypeRail(
+  props: RightPanelTypeAvailability & {
+    surfaces: readonly RightPanelSurface[];
+    /** Null while the panel is hidden. */
+    activeType: RightPanelSurfaceType | null;
+    onActivateType: (type: RightPanelSurfaceType) => void;
+    className?: string;
+  },
+) {
+  const counts = new Map<RightPanelSurfaceType, number>();
+  for (const surface of props.surfaces) {
+    const type = rightPanelSurfaceType(surface.kind);
+    counts.set(type, (counts.get(type) ?? 0) + 1);
+  }
+  return (
+    <nav
+      aria-label="Surface types"
+      className={cn("flex w-11 shrink-0 flex-col items-stretch gap-0.5 py-1", props.className)}
+      data-right-panel-type-rail
+    >
+      {RIGHT_PANEL_SURFACE_TYPES.map((type) => {
+        const meta = SURFACE_TYPE_META[type];
+        const Icon = meta.icon;
+        const count = counts.get(type) ?? 0;
+        const enabled = count > 0 || surfaceTypeAvailable(type, props);
+        const active = props.activeType === type;
+        const button = (
+          <button
+            type="button"
+            aria-label={count > 0 ? `${meta.label}, ${count} open` : meta.label}
+            aria-pressed={active}
+            disabled={!enabled}
+            onClick={() => props.onActivateType(type)}
+            className={cn(
+              "mx-1 flex h-9 cursor-pointer items-center justify-center gap-0.5 rounded-md text-muted-foreground transition-colors",
+              active ? "bg-accent text-foreground" : "hover:bg-accent/60 hover:text-foreground",
+              !enabled && "cursor-default opacity-40 hover:bg-transparent",
+            )}
+          >
+            <Icon className="size-4 shrink-0" />
+            {count > 0 && type !== "diff" ? (
+              <span className="text-3xs tabular-nums leading-none">{count}</span>
+            ) : null}
+          </button>
+        );
+        return (
+          <Tooltip key={type}>
+            <TooltipTrigger render={button} />
+            <TooltipPopup side="left">{enabled ? meta.label : meta.reason}</TooltipPopup>
+          </Tooltip>
+        );
+      })}
+    </nav>
+  );
+}
+
+/** A type with no open tabs: says so and offers a new one. */
+function RightPanelTypeEmptyState(props: {
+  type: RightPanelSurfaceType;
+  available: boolean;
+  onAdd: () => void;
+}) {
+  const meta = SURFACE_TYPE_META[props.type];
+  const Icon = meta.icon;
+  return (
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 pb-(--workspace-topbar-height) text-center">
+      <Icon className="size-5 text-muted-foreground" />
+      <p className="text-muted-foreground text-sm">
+        {props.available ? `No ${meta.label.toLowerCase()} open in this worktree.` : meta.reason}
+      </p>
+      {props.available ? (
+        <Button size="sm" variant="outline" onClick={props.onAdd}>
+          <Plus />
+          New {props.type === "pull-request" ? "pull request" : meta.label.toLowerCase()}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 export function RightPanelTabs(props: RightPanelTabsProps) {
   const ownsDesktopTitleBar = isElectron && props.mode === "inline";
   const browserProfiles = useBrowserDefaults().profiles;
@@ -881,6 +1029,59 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
 
   if (props.open === false && addSurfaceMenuOpen) setAddSurfaceMenuOpen(false);
 
+  const activeType = props.activeType ?? null;
+  const visibleSurfaces = useMemo(
+    () =>
+      activeType === null
+        ? props.surfaces
+        : props.surfaces.filter((surface) => rightPanelSurfaceType(surface.kind) === activeType),
+    [activeType, props.surfaces],
+  );
+  const activeTypeAvailable = activeType !== null && surfaceTypeAvailable(activeType, props);
+  // Diff is one view per worktree, so its type has nothing to add once open.
+  const canAddToActiveType =
+    activeTypeAvailable && !(activeType === "diff" && visibleSurfaces.length > 0);
+  const addToActiveType = () => {
+    switch (activeType) {
+      case "preview":
+        props.onAddBrowser();
+        return;
+      case "terminal":
+        props.onAddTerminal();
+        return;
+      case "pull-request":
+        if (props.pullRequestAvailable) props.onAddPullRequest();
+        else props.onAddPullRequests();
+        return;
+      case "diff":
+        props.onAddDiff();
+        return;
+      case "files":
+        props.onAddFiles();
+        return;
+      case "device":
+        props.onAddDevice();
+        return;
+      case null:
+        return;
+    }
+  };
+  const { onMoveSurface } = props;
+  // Tabs reorder within their type; the store orders every surface together.
+  const moveVisibleSurface = useMemo(
+    () =>
+      onMoveSurface
+        ? (surfaceId: string, toVisibleIndex: number) => {
+            const target = visibleSurfaces[toVisibleIndex];
+            const toIndex = target
+              ? props.surfaces.findIndex((surface) => surface.id === target.id)
+              : -1;
+            if (toIndex >= 0) onMoveSurface(surfaceId, toIndex);
+          }
+        : undefined,
+    [onMoveSurface, props.surfaces, visibleSurfaces],
+  );
+
   const onNewSurfaceKeyDown = useEffectEvent((event: KeyboardEvent) => {
     if (event.defaultPrevented || event.isComposing) return;
     if (
@@ -892,10 +1093,14 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     if (!addSurfaceMenuOpen && document.querySelector(LAUNCHER_SHORTCUT_BLOCKING_LAYERS)) return;
     event.preventDefault();
     event.stopPropagation();
-    if (!event.repeat) {
-      addSurfaceTriggerRef.current?.focus();
-      setAddSurfaceMenuOpen(true);
+    if (event.repeat) return;
+    // A new tab joins the type on screen; with no type yet, the launcher picks one.
+    if (canAddToActiveType) {
+      addToActiveType();
+      return;
     }
+    addSurfaceTriggerRef.current?.focus();
+    setAddSurfaceMenuOpen(true);
   });
   useEffect(() => {
     if (props.open === false) return;
@@ -1010,7 +1215,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       const api = readLocalApi();
       if (!api) return;
 
-      const surfaceIndex = props.surfaces.findIndex((entry) => entry.id === surface.id);
+      const surfaceIndex = visibleSurfaces.findIndex((entry) => entry.id === surface.id);
       if (surfaceIndex < 0) return;
 
       const items: ContextMenuItem<TabContextMenuAction>[] = [];
@@ -1043,17 +1248,17 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
         {
           id: "close-others",
           label: "Close others",
-          disabled: props.surfaces.length <= 1,
+          disabled: visibleSurfaces.length <= 1,
         },
         {
           id: "close-to-right",
           label: "Close to the right",
-          disabled: surfaceIndex >= props.surfaces.length - 1,
+          disabled: surfaceIndex >= visibleSurfaces.length - 1,
         },
         {
           id: "close-all",
           label: "Close all",
-          disabled: props.surfaces.length === 0,
+          disabled: visibleSurfaces.length === 0,
         },
       );
 
@@ -1095,7 +1300,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           break;
       }
     },
-    [props],
+    [props, visibleSurfaces],
   );
   const handleTabMouseDown = useCallback((event: ReactMouseEvent) => {
     if (event.button !== 1) return;
@@ -1188,8 +1393,8 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           data-right-panel-tab-list
         >
           <div className="flex h-full w-max min-w-full items-center gap-1">
-            <SortableTabList surfaces={props.surfaces} onMove={props.onMoveSurface}>
-              {props.surfaces.map((surface) => {
+            <SortableTabList surfaces={visibleSurfaces} onMove={moveVisibleSurface}>
+              {visibleSurfaces.map((surface) => {
                 const active = surface.id === props.activeSurfaceId;
                 const pending = props.pendingSurfaceIds.has(surface.id);
                 const title = surfaceTitle(
@@ -1210,7 +1415,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   <SortableTab
                     key={surface.id}
                     surfaceId={surface.id}
-                    disabled={!props.onMoveSurface || renamingDevice === surface.id}
+                    disabled={!moveVisibleSurface || renamingDevice === surface.id}
                     data-active-tab={active}
                     onMouseDown={handleTabMouseDown}
                     onAuxClick={(event) => handleTabAuxClick(event, surface)}
@@ -1326,7 +1531,28 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                 );
               })}
             </SortableTabList>
-            {props.open !== false ? (
+            {props.open !== false && activeType !== null ? (
+              canAddToActiveType ? (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        aria-label={`New ${rightPanelSurfaceTypeLabel(activeType).toLowerCase()} tab`}
+                        className="shrink-0"
+                        size="icon-xs"
+                        variant="ghost-muted"
+                        onClick={addToActiveType}
+                      />
+                    }
+                  >
+                    <Plus className="size-3.5" />
+                  </TooltipTrigger>
+                  <TooltipPopup>
+                    New {rightPanelSurfaceTypeLabel(activeType).toLowerCase()} tab
+                  </TooltipPopup>
+                </Tooltip>
+              ) : null
+            ) : props.open !== false ? (
               <Menu open={addSurfaceMenuOpen} onOpenChange={setAddSurfaceMenuOpen}>
                 <MenuTrigger
                   ref={addSurfaceTriggerRef}
@@ -1472,18 +1698,40 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           />
         ) : null}
       </div>
-      <div className="flex min-h-0 flex-1 flex-col" data-right-panel-surface-content>
-        {props.activeSurfaceId === null ? (
-          <RightPanelEmptyState
-            onAddBrowser={props.onAddBrowser}
-            onAddBrowserInProfile={props.onAddBrowserInProfile}
-            browserProfiles={browserProfiles}
-            onAddTerminal={props.onAddTerminal}
-            onAddDiff={props.onAddDiff}
-            onAddFiles={props.onAddFiles}
-            onAddPullRequest={props.onAddPullRequest}
-            onAddPullRequests={props.onAddPullRequests}
-            onAddDevice={props.onAddDevice}
+      <div className="flex min-h-0 flex-1">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col" data-right-panel-surface-content>
+          {props.activeSurfaceId === null && activeType !== null ? (
+            <RightPanelTypeEmptyState
+              type={activeType}
+              available={activeTypeAvailable}
+              onAdd={addToActiveType}
+            />
+          ) : props.activeSurfaceId === null ? (
+            <RightPanelEmptyState
+              onAddBrowser={props.onAddBrowser}
+              onAddBrowserInProfile={props.onAddBrowserInProfile}
+              browserProfiles={browserProfiles}
+              onAddTerminal={props.onAddTerminal}
+              onAddDiff={props.onAddDiff}
+              onAddFiles={props.onAddFiles}
+              onAddPullRequest={props.onAddPullRequest}
+              onAddPullRequests={props.onAddPullRequests}
+              onAddDevice={props.onAddDevice}
+              browserAvailable={props.browserAvailable}
+              terminalAvailable={props.terminalAvailable}
+              diffAvailable={props.diffAvailable}
+              filesAvailable={props.filesAvailable}
+              pullRequestAvailable={props.pullRequestAvailable}
+              pullRequestsAvailable={props.pullRequestsAvailable}
+              deviceAvailable={props.deviceAvailable}
+            />
+          ) : (
+            props.children
+          )}
+        </div>
+        {props.onActivateType ? (
+          <RightPanelTypeRail
+            surfaces={props.surfaces}
             browserAvailable={props.browserAvailable}
             terminalAvailable={props.terminalAvailable}
             diffAvailable={props.diffAvailable}
@@ -1491,10 +1739,11 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             pullRequestAvailable={props.pullRequestAvailable}
             pullRequestsAvailable={props.pullRequestsAvailable}
             deviceAvailable={props.deviceAvailable}
+            className="border-border border-l"
+            activeType={activeType}
+            onActivateType={props.onActivateType}
           />
-        ) : (
-          props.children
-        )}
+        ) : null}
       </div>
     </PreviewPanelShell>
   );

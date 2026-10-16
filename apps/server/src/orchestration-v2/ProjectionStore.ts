@@ -31,7 +31,6 @@ import type {
   OrchestrationV2ThreadShell,
   OrchestrationV2ThreadProjection,
   OrchestrationV2TurnItem,
-  ProjectId,
   ProviderInstanceId,
   ProviderSessionId,
   ProviderThreadId,
@@ -60,6 +59,7 @@ import {
   MessageId,
   RuntimeRequestId,
   CheckpointScopeId,
+  ProjectId,
   ThreadId,
   TurnItemId,
   NodeId,
@@ -173,6 +173,14 @@ export type ProjectionThreadPullRequests = Pick<
   OrchestrationV2AppThread,
   "id" | "projectId" | "lineage" | "settledOverride" | "settledAt" | "pullRequests"
 >;
+
+/** Where a live thread works: its own worktree, or the project's checkout when null. */
+export interface ProjectionThreadCheckout {
+  readonly id: ThreadId;
+  readonly projectId: ProjectId;
+  readonly worktreePath: string | null;
+  readonly settled: boolean;
+}
 
 /**
  * Thread activity needed by settlement, without transcript or fork history.
@@ -414,6 +422,11 @@ export interface ProjectionStoreV2Shape {
   readonly getThreadsWithPullRequests: (
     threadId?: ThreadId,
   ) => Effect.Effect<ReadonlyArray<ProjectionThreadPullRequests>, ProjectionStoreV2Error>;
+  /** Checkouts of active (not deleted, not archived) threads, without decoding payloads. */
+  readonly getLiveThreadCheckouts: () => Effect.Effect<
+    ReadonlyArray<ProjectionThreadCheckout>,
+    ProjectionStoreV2Error
+  >;
   readonly getTurnStartContext: (
     threadId: ThreadId,
     runId: RunId,
@@ -5608,6 +5621,30 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         );
       }).pipe(Effect.mapError((cause) => new ProjectionStoreSetupError({ cause })));
 
+    const getLiveThreadCheckouts: ProjectionStoreV2Shape["getLiveThreadCheckouts"] = () =>
+      sql<{
+        readonly id: string;
+        readonly projectId: string;
+        readonly worktreePath: string | null;
+        readonly settled: number;
+      }>`
+        SELECT thread_id AS id, project_id AS "projectId",
+          json_extract(payload_json, '$.worktreePath') AS "worktreePath",
+          coalesce(json_extract(payload_json, '$.settledOverride') = 'settled', 0) AS settled
+        FROM orchestration_v2_projection_threads
+        WHERE deleted_at IS NULL AND json_extract(payload_json, '$.archivedAt') IS NULL
+      `.pipe(
+        Effect.map((rows) =>
+          rows.map((row): ProjectionThreadCheckout => ({
+            id: ThreadId.make(row.id),
+            projectId: ProjectId.make(row.projectId),
+            worktreePath: row.worktreePath,
+            settled: row.settled === 1,
+          })),
+        ),
+        Effect.mapError((cause) => new ProjectionStoreSetupError({ cause })),
+      );
+
     const shellThreadStateFromRow = (input: {
       readonly row: ShellThreadRow;
       readonly runOrdinalsByThreadId: ReadonlyMap<ThreadId, Map<RunId, number>>;
@@ -5944,6 +5981,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       getThread,
       getSettlementCandidates,
       getThreadsWithPullRequests,
+      getLiveThreadCheckouts,
       getThreadProjection,
       getTurnStartContext,
       getTurnStartHistory,
@@ -6116,6 +6154,20 @@ export const layerMemory: Layer.Layer<ProjectionStoreV2> = Layer.effect(
                 settledOverride: thread.settledOverride,
                 settledAt: thread.settledAt,
                 pullRequests: thread.pullRequests ?? [],
+              })),
+          ),
+        ),
+      getLiveThreadCheckouts: () =>
+        Ref.get(replayState).pipe(
+          Effect.map((state) =>
+            [...state.projections.values()]
+              .map(({ thread }) => thread)
+              .filter((thread) => thread.deletedAt === null && thread.archivedAt === null)
+              .map((thread): ProjectionThreadCheckout => ({
+                id: thread.id,
+                projectId: thread.projectId,
+                worktreePath: thread.worktreePath,
+                settled: thread.settledOverride === "settled",
               })),
           ),
         ),

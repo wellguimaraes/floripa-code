@@ -16,6 +16,7 @@ import {
 import { isElectron } from "../../env";
 import { RESIZABLE_WIDTH_PROPERTY, useResizableWidth } from "../../hooks/useResizableWidth";
 import { cn } from "../../lib/utils";
+import { selectThreadRightPanelState, useRightPanelStore } from "../../rightPanelStore";
 import { useThreadShell } from "../../state/entities";
 import { buildThreadRouteParams, type ThreadRouteTarget } from "../../threadRoutes";
 import { RightPanelResizeHandle } from "../preview/RightPanelResizeHandle";
@@ -35,6 +36,10 @@ const WorldCanvas = lazy(() => import("./WorldCanvas"));
 
 const CHAT_MIN_WIDTH = 400;
 const CHAT_DEFAULT_WIDTH = 720;
+// The frame grows by this much while the worktree's surfaces show beside the chat.
+const SURFACES_WIDTH = 560;
+// The agent rail on the left and the surface-type rail on the right.
+const RAILS_WIDTH = 88;
 // Room left of the chat for its close button (4rem) and right of it for the margin (0.75rem).
 const CHAT_GUTTERS = 76;
 
@@ -86,7 +91,15 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
 
   // The chat closes once its agent is archived, from here or anywhere else. One opened
   // already archived (from Settings → Archived, say) stays open.
-  const chatThread = useThreadShell(chatTarget?.threadRef ?? null);
+  const chatThreadRef = chatTarget?.threadRef ?? null;
+  const chatThread = useThreadShell(chatThreadRef);
+  const surfaces = useRightPanelStore((state) =>
+    selectThreadRightPanelState(state.byPanelKey, chatThreadRef),
+  );
+  // The dragged width is the chat's alone (the drag writes it straight to the frame);
+  // the surfaces add theirs beside it, or take its place when the chat collapses.
+  const chatShown = !(surfaces.isOpen && surfaces.maximized);
+  const surfacesWidth = (surfaces.isOpen ? SURFACES_WIDTH : 0) + RAILS_WIDTH;
   const chatArchived = chatThread !== null && chatThread.archivedAt != null;
   const chatWasArchived = useRef<{ key: string | null; archived: boolean }>({
     key: null,
@@ -181,10 +194,12 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
       {chatTarget !== null ? (
         <div
           ref={panelRef}
-          className="absolute top-[calc(var(--workspace-topbar-height)+0.25rem)] right-3 bottom-3 w-[min(var(--resizable-width),calc(100%-4rem))]"
+          className="absolute top-[calc(var(--workspace-topbar-height)+0.25rem)] right-3 bottom-3 w-[min(calc(var(--resizable-width)*var(--world-chat-shown)+var(--world-surfaces-width)),calc(100%-4rem))]"
           style={
             {
               [RESIZABLE_WIDTH_PROPERTY]: `${chatWidth.width}px`,
+              "--world-chat-shown": chatShown ? 1 : 0,
+              "--world-surfaces-width": `${surfacesWidth}px`,
               // The folded sidebar's toggle and window controls sit outside the
               // floating panel, so its header needs no room for them.
               "--workspace-titlebar-content-left": "var(--workspace-gutter)",

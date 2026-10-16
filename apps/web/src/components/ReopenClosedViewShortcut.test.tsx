@@ -62,7 +62,6 @@ vi.mock("./ui/toast", () => ({ toastManager: { add: state.toast } }));
 
 import { useClosedViewStore } from "../closedViewStore";
 import { selectThreadRightPanelState, useRightPanelStore } from "../rightPanelStore";
-import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import { ReopenClosedViewShortcut } from "./ReopenClosedViewShortcut";
 
 const ref = { environmentId: "remote", threadId: "thread-1" } as ScopedThreadRef;
@@ -113,11 +112,7 @@ beforeEach(() => {
   state.navigate.mockResolvedValue(undefined);
   state.openPreview.mockReset();
   useClosedViewStore.setState({ entries: [] });
-  useRightPanelStore.setState({ byThreadKey: {}, userActionRevisionByThreadKey: {} });
-  useTerminalUiStateStore.setState({
-    terminalUiStateByThreadKey: {},
-    suppressedTerminalIdsByThreadKey: {},
-  });
+  useRightPanelStore.setState({ byPanelKey: {}, userActionRevisionByPanelKey: {} });
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("HTMLElement", TestElement);
   vi.stubGlobal("navigator", { platform: "Linux" });
@@ -153,7 +148,7 @@ describe("root reopen shortcut", () => {
       expect(press().defaultPrevented).toBe(true);
     });
     expect(
-      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, ref).activeSurfaceId,
+      selectThreadRightPanelState(useRightPanelStore.getState().byPanelKey, ref).activeSurfaceId,
     ).toBe("diff");
     expect(state.navigate).toHaveBeenCalledWith({ to: "/$environmentId/$threadId", params: ref });
     expect(useClosedViewStore.getState().entries).toEqual([]);
@@ -233,7 +228,7 @@ describe("root reopen shortcut", () => {
       press();
     });
     expect(
-      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, ref).activeSurfaceId,
+      selectThreadRightPanelState(useRightPanelStore.getState().byPanelKey, ref).activeSurfaceId,
     ).toBe("browser:new-tab");
     expect(state.toast).toHaveBeenCalledWith(
       expect.objectContaining({ title: "Could not reopen view" }),
@@ -244,7 +239,7 @@ describe("root reopen shortcut", () => {
     });
     expect(state.openPreview).toHaveBeenCalledOnce();
     expect(
-      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, ref).activeSurfaceId,
+      selectThreadRightPanelState(useRightPanelStore.getState().byPanelKey, ref).activeSurfaceId,
     ).toBe("diff");
     expect(useClosedViewStore.getState().entries).toEqual([]);
   });
@@ -291,7 +286,7 @@ describe("root reopen shortcut", () => {
         menuAction?.("view.reopenClosed");
       });
       expect(
-        selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, ref).activeSurfaceId,
+        selectThreadRightPanelState(useRightPanelStore.getState().byPanelKey, ref).activeSurfaceId,
       ).toBe("diff");
       expect(useClosedViewStore.getState().entries.map((entry) => entry.id)).toEqual([failed]);
       state.workspaceAvailable = true;
@@ -300,7 +295,7 @@ describe("root reopen shortcut", () => {
         press();
       });
       expect(
-        selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, ref).activeSurfaceId,
+        selectThreadRightPanelState(useRightPanelStore.getState().byPanelKey, ref).activeSurfaceId,
       ).toBe(
         kind === "browser" ? "browser:new-tab" : kind === "file" ? "file:src/app.ts" : "files",
       );
@@ -330,6 +325,13 @@ describe("root reopen shortcut", () => {
     expect(state.setShortcuts).toHaveBeenLastCalledWith([
       expect.objectContaining({ command: "sidebar.toggle" }),
       expect.objectContaining({ command: "rightPanel.toggle" }),
+      expect.objectContaining({ command: "rightPanel.toggleMaximized" }),
+      expect.objectContaining({ command: "rightPanel.showBrowser" }),
+      expect.objectContaining({ command: "rightPanel.showTerminal" }),
+      expect.objectContaining({ command: "rightPanel.showPullRequests" }),
+      expect.objectContaining({ command: "rightPanel.showDiff" }),
+      expect.objectContaining({ command: "rightPanel.showFiles" }),
+      expect.objectContaining({ command: "rightPanel.showDevice" }),
     ]);
   });
 });

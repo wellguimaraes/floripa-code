@@ -1731,6 +1731,82 @@ it.layer(
     }),
   );
 
+  it.effect("shares a checkout's terminal across its threads without restarting it", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter, getEvents } = yield* createManager();
+      const scopeKey = "/repo/.worktrees/feature";
+
+      const opened = yield* manager.open(openInput({ scopeKey, env: { FROM: "thread-1" } }));
+      // Another thread's env differs, but a running shared shell is reused as is.
+      const reused = yield* manager.open(
+        openInput({ threadId: "thread-2", scopeKey, env: { FROM: "thread-2" } }),
+      );
+      expect(ptyAdapter.spawnInputs).toHaveLength(1);
+      assert.equal(opened.scopeKey, scopeKey);
+      assert.equal(reused.threadId, "thread-1");
+
+      const attachEvents = yield* Ref.make<ReadonlyArray<TerminalAttachStreamEvent>>([]);
+      const unsubscribe = yield* manager.attachStream(
+        { threadId: "thread-2", scopeKey, terminalId: DEFAULT_TERMINAL_ID },
+        (event) => Ref.update(attachEvents, (events) => [...events, event]),
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+      yield* manager.write({
+        threadId: "thread-2",
+        scopeKey,
+        terminalId: DEFAULT_TERMINAL_ID,
+        data: "ls\n",
+      });
+      const process = ptyAdapter.processes[0];
+      expect(process?.writes).toEqual(["ls\n"]);
+      process?.emitData("shared output\n");
+      yield* waitFor(
+        Ref.get(attachEvents).pipe(
+          Effect.map((events) =>
+            events.some((event) => event.type === "output" && event.data === "shared output\n"),
+          ),
+        ),
+      );
+
+      // Without a scope the same terminal id is the thread's own session.
+      yield* manager.open(openInput({ threadId: "thread-2" }));
+      expect(ptyAdapter.spawnInputs).toHaveLength(2);
+      const started = (yield* getEvents).filter((event) => event.type === "started");
+      expect(started.map((event) => event.scopeKey)).toEqual([scopeKey, undefined]);
+    }),
+  );
+
+  it.effect("names a checkout's history by a hash and deletes it when the checkout closes", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter, logsDir } = yield* createManager();
+      const fs = yield* FileSystem.FileSystem;
+      const scopeKey = `/repo/.worktrees/${"deeply-nested/".repeat(40)}feature`;
+      yield* manager.open(openInput({ scopeKey }));
+      yield* manager.open(openInput({ threadId: "thread-2", scopeKey, terminalId: "sidecar" }));
+      yield* manager.open(openInput({ terminalId: "own" }));
+      for (const process of ptyAdapter.processes) process.emitData("history\n");
+
+      const scopedLogs = fs
+        .readDirectory(logsDir)
+        .pipe(Effect.map((names) => names.filter((name) => name.startsWith("terminal_scope_"))));
+      yield* waitFor(scopedLogs.pipe(Effect.map((names) => names.length === 2)));
+      const names = (yield* scopedLogs).toSorted();
+      // A long checkout path still yields a short file name.
+      expect(names[0]).toMatch(/^terminal_scope_[0-9a-f]{32}\.log$/);
+      expect(names[1]).toBe(
+        `${names[0]?.slice(0, -".log".length)}_${Base64Url.encode("sidecar")}.log`,
+      );
+      const ownLog = yield* multiTerminalHistoryLogPath(logsDir, "thread-1", "own");
+      yield* waitFor(pathExists(ownLog));
+
+      yield* manager.close({ threadId: "thread-3", scopeKey, deleteHistory: true });
+
+      expect(ptyAdapter.processes.map((process) => process.killed)).toEqual([true, true, false]);
+      expect(yield* scopedLogs).toEqual([]);
+      expect(yield* pathExists(ownLog)).toBe(true);
+    }),
+  );
+
   it.effect("escalates terminal shutdown to SIGKILL when process does not exit in time", () =>
     Effect.gen(function* () {
       const { manager, ptyAdapter } = yield* createManager(5, { processKillGraceMs: 10 });

@@ -60,11 +60,14 @@ export class PortDiscovery extends Context.Service<
     readonly retain: Effect.Effect<void, never, Scope.Scope>;
     readonly registerTerminalProcesses: (input: {
       readonly threadId: string;
+      /** The terminal's checkout, when it is shared by every thread working there. */
+      readonly scopeKey?: string | undefined;
       readonly terminalId: string;
       readonly processIds: ReadonlyArray<number>;
     }) => Effect.Effect<void>;
     readonly unregisterTerminal: (input: {
       readonly threadId: string;
+      readonly scopeKey?: string | undefined;
       readonly terminalId: string;
     }) => Effect.Effect<void>;
   }
@@ -103,6 +106,7 @@ interface ScannerState {
 
 interface TerminalProcessOwner {
   readonly threadId: ThreadId;
+  readonly scopeKey?: string;
   readonly terminalId: string;
 }
 
@@ -123,10 +127,12 @@ interface WebProbeSnapshot {
   readonly configured: ReadonlyMap<string, DiscoveredLocalServer>;
 }
 
+/** Matches the terminal manager's session key: a shared terminal is one entry for its checkout. */
 const terminalOwnerKey = (owner: {
   readonly threadId: string;
+  readonly scopeKey?: string | undefined;
   readonly terminalId: string;
-}): string => `${owner.threadId}\u0000${owner.terminalId}`;
+}): string => `${owner.scopeKey ?? owner.threadId}\u0000${owner.terminalId}`;
 
 const parseConfiguredUrl = (raw: string): URL | null => {
   try {
@@ -333,6 +339,7 @@ const serversEqual = (
       a.processName !== b.processName ||
       a.pid !== b.pid ||
       a.terminal?.threadId !== b.terminal?.threadId ||
+      a.terminal?.scopeKey !== b.terminal?.scopeKey ||
       a.terminal?.terminalId !== b.terminal?.terminalId
     ) {
       return false;
@@ -768,8 +775,9 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
 
   const registerTerminalProcesses: PortDiscovery["Service"]["registerTerminalProcesses"] =
     Effect.fn("PortDiscovery.registerTerminalProcesses")(function* (input) {
-      const owner = {
+      const owner: TerminalProcessOwner = {
         threadId: ThreadId.make(input.threadId),
+        ...(input.scopeKey === undefined ? {} : { scopeKey: input.scopeKey }),
         terminalId: input.terminalId,
       };
       const processIds = new Set(

@@ -14,6 +14,7 @@ import {
   applyTerminalAttachStreamEvent,
   applyTerminalMetadataStreamEvent,
   nextTerminalAttachSeedState,
+  terminalOwnerKey,
 } from "./terminalSession.ts";
 
 export function createTerminalEnvironmentAtoms<R, E>(
@@ -21,21 +22,21 @@ export function createTerminalEnvironmentAtoms<R, E>(
 ) {
   const lifecycleScheduler = createAtomCommandScheduler();
   const resizeScheduler = createAtomCommandScheduler();
-  const terminalThreadKey = ({
-    environmentId,
-    input,
-  }: {
+  interface TerminalCommandTarget {
     readonly environmentId: string;
-    readonly input: { readonly threadId: string; readonly terminalId?: string | undefined };
-  }) => JSON.stringify([environmentId, input.threadId]);
-  const terminalSessionKey = ({
-    environmentId,
-    input,
-  }: {
-    readonly environmentId: string;
-    readonly input: { readonly threadId: string; readonly terminalId?: string | undefined };
-  }) => JSON.stringify([environmentId, input.threadId, input.terminalId ?? null]);
-  const lifecycleConcurrency = { mode: "serial" as const, key: terminalThreadKey };
+    readonly input: {
+      readonly threadId: string;
+      readonly scopeKey?: string | undefined;
+      readonly terminalId?: string | undefined;
+    };
+  }
+  // Commands serialize per owner, as the server locks: threads sharing a
+  // checkout share its terminals.
+  const terminalOwnerCommandKey = ({ environmentId, input }: TerminalCommandTarget) =>
+    JSON.stringify([environmentId, terminalOwnerKey(input)]);
+  const terminalSessionKey = ({ environmentId, input }: TerminalCommandTarget) =>
+    JSON.stringify([environmentId, terminalOwnerKey(input), input.terminalId ?? null]);
+  const lifecycleConcurrency = { mode: "serial" as const, key: terminalOwnerCommandKey };
   return {
     observe: createEnvironmentSubscriptionAtomFamily(runtime, {
       label: "environment-data:terminal:observe",

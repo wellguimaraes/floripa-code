@@ -5,6 +5,7 @@ import {
   type EnvironmentId,
   type ThreadId,
 } from "@t3tools/contracts";
+import { terminalOwnerKey } from "@t3tools/client-runtime/state/terminal";
 import { isLoopbackHost } from "@t3tools/shared/preview";
 import { useMemo } from "react";
 
@@ -72,16 +73,27 @@ export function useDiscoveredPortsState(
   );
 }
 
+/**
+ * Servers started from the thread's terminals. With the thread's worktree
+ * `scopeKey`, terminals other threads opened in the same checkout count too.
+ */
 export function useThreadDiscoveredPorts(input: {
   readonly environmentId: EnvironmentId | null;
   readonly threadId: ThreadId | null;
+  readonly scopeKey?: string | null;
 }): ReadonlyArray<DiscoveredLocalServer> {
   const ports = useDiscoveredPorts(input.environmentId);
+  const { threadId, scopeKey = null } = input;
   return useMemo(
     () =>
-      input.threadId
-        ? ports.filter((port) => port.terminal?.threadId === input.threadId)
+      threadId
+        ? ports.filter(
+            (port) =>
+              port.terminal !== null &&
+              (port.terminal.threadId === threadId ||
+                (scopeKey !== null && terminalOwnerKey(port.terminal) === scopeKey)),
+          )
         : EMPTY_PORTS,
-    [input.threadId, ports],
+    [ports, scopeKey, threadId],
   );
 }

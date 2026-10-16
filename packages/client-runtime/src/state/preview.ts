@@ -85,10 +85,11 @@ export function createPreviewEnvironmentAtoms<R, E>(
       label: "environment-data:preview:report-status",
       tag: WS_METHODS.previewReportStatus,
       scheduler: statusScheduler,
+      // Tab ids are unique per server and a tab is shared by every thread in
+      // its worktree, so reports for one tab coalesce whichever thread shows it.
       concurrency: {
         mode: "latest",
-        key: ({ environmentId, input }) =>
-          JSON.stringify([environmentId, input.threadId, input.tabId]),
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.tabId]),
       },
     }),
   };

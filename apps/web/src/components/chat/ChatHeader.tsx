@@ -43,9 +43,9 @@ import { useWorldLook } from "../world/worldLookStore";
 import {
   WorldArchiveButton,
   WorldChatCharacter,
-  WorldChatWorktree,
   WorldRegenerateTitleButton,
 } from "../world/WorldChatActions";
+import { WorktreeSwitcher } from "./WorktreeSwitcher";
 
 // three.js loads only when the world shows this thread's character.
 
@@ -375,7 +375,7 @@ export const ChatHeader = memo(function ChatHeader({
               <TooltipPopup side="top">New thread in {worldProjectName}</TooltipPopup>
             </Tooltip>
             {isServerThread ? (
-              <WorldChatWorktree threadRef={activeThreadRef} projectRoot={activeProjectCwd} />
+              <WorktreeSwitcher threadRef={activeThreadRef} />
             ) : null}
           </div>
         ) : null}
@@ -407,6 +407,13 @@ export const ChatHeader = memo(function ChatHeader({
                   </TooltipTrigger>
                   <TooltipPopup side="top">New thread in {activeProjectName}</TooltipPopup>
                 </Tooltip>
+              </WorkspaceBreadcrumbItem>
+              <WorkspaceBreadcrumbSeparator>
+                <WorkspaceBreadcrumbText>/</WorkspaceBreadcrumbText>
+              </WorkspaceBreadcrumbSeparator>
+              {/* The checkout owns the panel's surfaces, so it names itself beside the project. */}
+              <WorkspaceBreadcrumbItem className="shrink">
+                <WorktreeSwitcher threadRef={activeThreadRef} className="text-sm" />
               </WorkspaceBreadcrumbItem>
               <WorkspaceBreadcrumbSeparator>
                 <WorkspaceBreadcrumbText>/</WorkspaceBreadcrumbText>

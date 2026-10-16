@@ -19,6 +19,7 @@ import { resolveAssetUrl } from "~/assets/assetUrls";
 import { isPreviewAvailableFor, previewRuntimeFor } from "~/browser/previewRuntime";
 import {
   applyPreviewServerSnapshot,
+  previewClientScopeInput,
   readThreadPreviewState,
   rememberPreviewUrl,
   setActivePreviewTab,
@@ -74,13 +75,14 @@ export async function openUrlInPreview<E>(input: {
   // The server's "opened" event switches the preview tab but not the panel's
   // selection, so a changed selection means the user picked a tab themselves.
   const selectedSurface = () =>
-    selectSelectedRightPanelSurface(useRightPanelStore.getState().byThreadKey, input.threadRef)
+    selectSelectedRightPanelSurface(useRightPanelStore.getState().byPanelKey, input.threadRef)
       ?.id ?? null;
   const surfaceBeforeOpen = selectedSurface();
   const result = await input.openPreview({
     environmentId: input.threadRef.environmentId,
     input: {
       threadId: input.threadRef.threadId,
+      ...previewClientScopeInput(input.threadRef),
       url: input.url,
       // Built here rather than via `openPreviewSession` because this path
       // maps the result differently, so the configured defaults have to be

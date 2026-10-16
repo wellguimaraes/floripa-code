@@ -7,6 +7,7 @@ import {
   sessionGrantsScope,
 } from "@t3tools/contracts";
 import { type KnownTerminalSession } from "@t3tools/client-runtime/state/terminal";
+import { worktreeScopeKey } from "@t3tools/shared/worktreeScope";
 import { SymbolView } from "../../components/AppSymbol";
 import { ScreenHeader } from "../../components/ScreenHeader";
 import { useNativeColumnLayoutMetrics } from "../../native/native-layout-metrics";
@@ -69,6 +70,7 @@ import {
   TERMINAL_BUFFER_REPLAY_STABILITY_DELAY_MS,
 } from "./terminalBufferReplay";
 import {
+  resolvePreferredThreadWorktreePath,
   resolveTerminalOpenLocation,
   takePendingTerminalLaunch,
   type PendingTerminalLaunch,
@@ -247,6 +249,9 @@ function pickRunningTerminalSessionForBootstrap(
   );
 }
 
+/** Spreads a terminal's owning checkout into a command input; thread-owned sessions have none. */
+const withScope = (scopeKey: string | undefined) => (scopeKey === undefined ? {} : { scopeKey });
+
 type ThreadTerminalRouteScreenProps = StaticScreenProps<{
   readonly environmentId: string;
   readonly threadId: string;
@@ -312,6 +317,17 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
           terminalId,
         })
       : null;
+  // Terminals belong to the thread's checkout, shared by every thread working there.
+  const threadScopeKey =
+    selectedThread && selectedThreadProject?.workspaceRoot
+      ? worktreeScopeKey({
+          worktreePath: resolvePreferredThreadWorktreePath({
+            threadShellWorktreePath: selectedThread.worktreePath ?? null,
+            threadDetailWorktreePath: selectedThreadDetailWorktreePath,
+          }),
+          workspaceRoot: selectedThreadProject.workspaceRoot,
+        })
+      : undefined;
   const {
     sessions: knownSessions,
     isPending: sessionsPending,
@@ -319,6 +335,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
   } = useKnownTerminalSessions({
     environmentId: selectedThread?.environmentId ?? null,
     threadId: selectedThread?.id ?? null,
+    scopeKey: threadScopeKey,
   });
   const runningSession = useMemo(
     () =>
@@ -330,6 +347,10 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
     () => knownSessions?.find((session) => session.target.terminalId === terminalId) ?? null,
     [knownSessions, terminalId],
   );
+  // A listed session keeps its own owner: one without a scope predates shared
+  // checkouts and stays the thread's.
+  const terminalScopeKey =
+    activeKnownSession !== null ? activeKnownSession.target.scopeKey : threadScopeKey;
   const hasTerminalTarget = requestedTerminalId !== null || activeKnownSession !== null;
   const launchTarget = useMemo(
     () =>
@@ -432,6 +453,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
       !shouldRedirectToRunningTerminal
         ? {
             threadId: selectedThread.id,
+            ...withScope(terminalScopeKey),
             terminalId,
             cwd: launchLocation.cwd,
             worktreePath: launchLocation.worktreePath,
@@ -452,6 +474,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
       selectedThread,
       shouldRedirectToRunningTerminal,
       terminalId,
+      terminalScopeKey,
     ],
   );
   const observingTerminal =
@@ -461,7 +484,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
     terminal: canOperateTerminal
       ? terminalAttachInput
       : observingTerminal
-        ? { threadId: selectedThread.id, terminalId }
+        ? { threadId: selectedThread.id, ...withScope(terminalScopeKey), terminalId }
         : null,
   });
   const terminalKey = selectedThread
@@ -470,6 +493,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
   useTerminalGridSync({
     environmentId: selectedThread?.environmentId ?? null,
     threadId: selectedThread?.id ?? null,
+    scopeKey: terminalScopeKey,
     terminalId,
     canOperate: canOperateTerminal,
     terminal,
@@ -716,6 +740,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
       environmentId: selectedThread.environmentId,
       input: {
         threadId: selectedThread.id,
+        ...withScope(terminalScopeKey),
         terminalId,
         data: initialInput,
       },
@@ -726,6 +751,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
     selectedThread,
     terminal.version,
     terminalId,
+    terminalScopeKey,
     writeTerminal,
     canOperateTerminal,
   ]);
@@ -805,13 +831,14 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
         environmentId: selectedThread.environmentId,
         input: {
           threadId: selectedThread.id,
+          ...withScope(terminalScopeKey),
           terminalId,
           data,
         },
       });
       return result._tag === "Success";
     },
-    [isRunning, selectedThread, terminalId, writeTerminal],
+    [isRunning, selectedThread, terminalId, terminalScopeKey, writeTerminal],
   );
 
   const pasteSessionRef = useRef<ReturnType<typeof createTerminalPasteSession> | null>(null);
@@ -992,6 +1019,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
         environmentId: selectedThread.environmentId,
         input: {
           threadId: selectedThread.id,
+          ...withScope(terminalAttachInput.scopeKey),
           terminalId,
           cwd: terminalAttachInput.cwd,
           worktreePath: terminalAttachInput.worktreePath,
@@ -1013,7 +1041,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
         return;
       void closeTerminal({
         environmentId: selectedThread.environmentId,
-        input: { threadId: selectedThread.id, terminalId },
+        input: { threadId: selectedThread.id, ...withScope(terminalScopeKey), terminalId },
       });
       if (navigation.isFocused()) {
         navigateAwayAfterExit();
@@ -1048,17 +1076,15 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
       StackActions.replace("ThreadTerminal", {
         environmentId: String(selectedThread.environmentId),
         threadId: String(selectedThread.id),
+        // The checkout's other threads and devices may pick the same number meanwhile.
         terminalId: nextOpenTerminalId({
           listedTerminalIds: terminalMenuSessions.map((session) => session.terminalId),
           activeRouteTerminalId: terminalId,
-          ...(knownSessions === null ||
-          !readEnvironmentScope(selectedThread.environmentId, AuthTerminalReadScope)
-            ? { uniqueSuffix: uuidv4() }
-            : {}),
+          uniqueSuffix: uuidv4(),
         }),
       }),
     );
-  }, [knownSessions, navigation, selectedThread, terminalId, terminalMenuSessions]);
+  }, [navigation, selectedThread, terminalId, terminalMenuSessions]);
 
   const handleDecreaseFontSize = useCallback(() => {
     setTerminalFontSize(stepTerminalFontSize(fontSize, -1));
@@ -1081,10 +1107,11 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
       environmentId: selectedThread.environmentId,
       input: {
         threadId: selectedThread.id,
+        ...withScope(terminalScopeKey),
         terminalId,
       },
     });
-  }, [clearTerminal, selectedThread, terminalId]);
+  }, [clearTerminal, selectedThread, terminalId, terminalScopeKey]);
 
   const handleToolbarActionPress = useCallback(
     (action: TerminalToolbarAction) => {

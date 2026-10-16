@@ -1,7 +1,13 @@
 "use client";
 
-import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
-import { AuthPreviewOperateScope, FILL_PREVIEW_VIEWPORT } from "@t3tools/contracts";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import {
+  AuthPreviewOperateScope,
+  FILL_PREVIEW_VIEWPORT,
+  type PreviewSessionSnapshot,
+  type ScopedThreadRef,
+  ThreadId,
+} from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { type ComponentProps, useEffect, useMemo, useRef, useState } from "react";
 
@@ -21,40 +27,60 @@ import { useBrowserPointerStore } from "./browserPointerStore";
 import { HostedBrowserWebview } from "./HostedBrowserWebview";
 import { openUrlInPreview } from "./openFileInPreview";
 import { rendersServerTabNatively } from "./previewRuntime";
-import { previewRuntimeTabId } from "./previewRuntimeTabId";
+import { WORKTREE_PANEL_KEY_PREFIX } from "~/worktreeScope";
+
+import { previewRuntimeTabIdForKey } from "./previewRuntimeTabId";
+
+interface HostedPreviewSession {
+  readonly threadRef: ScopedThreadRef;
+  readonly snapshot: PreviewSessionSnapshot;
+  readonly runtimeTabId: string;
+  readonly pictureInPicture: boolean;
+  readonly zoomFactor: number;
+}
 
 export function ElectronBrowserHost() {
   const { resolvedTheme } = useTheme();
   const previewByThreadKey = useActivePreviewSessions();
   const primaryEnvironmentId = useAtomValue(primaryEnvironmentIdAtom);
-  const sessions = useMemo(
-    () =>
-      Object.entries(previewByThreadKey).flatMap(([threadKey, previewState]) => {
-        const threadRef = parseScopedThreadKey(threadKey);
+  const sessions = useMemo(() => {
+    const byTab = new Map<string, HostedPreviewSession & { checkoutKeyed: boolean }>();
+    for (const [stateKey, previewState] of Object.entries(previewByThreadKey)) {
+      const environmentId = previewState.ownerRef?.environmentId ?? null;
+      if (!environmentId) continue;
+      // A key the panel no longer reads (a thread's own, from before it reached its
+      // checkout) can briefly hold the same tab; the checkout's copy is the one shown.
+      const checkoutKeyed = stateKey.startsWith(WORKTREE_PANEL_KEY_PREFIX);
+      for (const snapshot of Object.values(previewState.sessions)) {
         // Server tabs of other environments stream; this desktop's own server tabs render here.
-        return threadRef
-          ? Object.values(previewState.sessions)
-              .filter(
-                (snapshot) =>
-                  snapshot.runtime !== "server" ||
-                  rendersServerTabNatively(threadRef.environmentId, primaryEnvironmentId, snapshot),
-              )
-              .map((snapshot) => ({
-                threadRef,
-                snapshot,
-                runtimeTabId: previewRuntimeTabId(
-                  threadRef,
-                  previewState.serverEpoch,
-                  snapshot.tabId,
-                ),
-                pictureInPicture:
-                  previewState.desktopByTabId[snapshot.tabId]?.pictureInPicture ?? false,
-                zoomFactor: previewState.desktopByTabId[snapshot.tabId]?.zoomFactor ?? 1,
-              }))
-          : [];
-      }),
-    [previewByThreadKey, primaryEnvironmentId],
-  );
+        if (
+          snapshot.runtime === "server" &&
+          !rendersServerTabNatively(environmentId, primaryEnvironmentId, snapshot)
+        ) {
+          continue;
+        }
+        const tabKey = `${environmentId}\u0000${snapshot.tabId}`;
+        const existing = byTab.get(tabKey);
+        if (existing && (existing.checkoutKeyed || !checkoutKeyed)) continue;
+        byTab.set(tabKey, {
+          checkoutKeyed,
+          // The thread that opened the tab: the server and desktop address it by that pair.
+          threadRef: scopeThreadRef(environmentId, ThreadId.make(snapshot.threadId)),
+          snapshot,
+          // Built from the key the panel reads, so both name the same desktop tab.
+          runtimeTabId: previewRuntimeTabIdForKey(
+            environmentId,
+            stateKey,
+            previewState.serverEpoch,
+            snapshot.tabId,
+          ),
+          pictureInPicture: previewState.desktopByTabId[snapshot.tabId]?.pictureInPicture ?? false,
+          zoomFactor: previewState.desktopByTabId[snapshot.tabId]?.zoomFactor ?? 1,
+        });
+      }
+    }
+    return [...byTab.values()];
+  }, [previewByThreadKey, primaryEnvironmentId]);
 
   useEffect(() => {
     const preview = window.desktopBridge?.preview;

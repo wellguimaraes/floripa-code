@@ -1,5 +1,6 @@
 import { ProjectId, type ProjectScript } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { worktreeScopeKey } from "@t3tools/shared/worktreeScope";
 import {
   projectScriptRuntimeEnv,
   resolveProjectScripts,
@@ -30,6 +31,8 @@ export interface ProjectSetupScriptRunnerResultStarted {
   readonly scriptName: string;
   readonly scriptCommand: string;
   readonly terminalId: string;
+  /** The checkout that owns the script's terminal; pass it with `terminalId` to reach it. */
+  readonly scopeKey: string;
   readonly cwd: string;
   /** False when the script's `async` flag asks the agent to wait for it. */
   readonly async: boolean;
@@ -216,7 +219,7 @@ export const make = Effect.gen(function* () {
    * subscription is torn down once the sentinel, an exit, or a close arrives.
    */
   const observeTerminalCompletion = (input: {
-    readonly threadId: string;
+    readonly scopeKey: string;
     readonly terminalId: string;
     /** Per-run sentinel, so only this run's wrapper can settle completion. */
     readonly sentinel: string;
@@ -266,7 +269,10 @@ export const make = Effect.gen(function* () {
         });
 
       const unsubscribe = yield* terminalManager.subscribe((event) => {
-        if (event.threadId !== input.threadId || event.terminalId !== input.terminalId) {
+        if (
+          (event.scopeKey ?? event.threadId) !== input.scopeKey ||
+          event.terminalId !== input.terminalId
+        ) {
           return Effect.void;
         }
         if (event.type === "output") {
@@ -375,13 +381,16 @@ export const make = Effect.gen(function* () {
       } as const;
     }
 
-    // A thread settles again after it is resumed, and an earlier settle shell
-    // may still be busy; typing into it would feed its foreground program.
+    // Script terminals belong to the worktree, shared with every thread working
+    // there. A re-run gets a fresh terminal: an earlier run's shell may still be
+    // busy, and typing into it would feed its foreground program.
+    const scopeKey = worktreeScopeKey({
+      worktreePath: input.worktreePath,
+      workspaceRoot: project.workspaceRoot,
+    });
     const terminalId =
       input.preferredTerminalId ??
-      (trigger === "settle"
-        ? `settle-${script.id}-${(yield* crypto.randomUUIDv4.pipe(Effect.orDie)).slice(0, 8)}`
-        : `setup-${script.id}`);
+      `${trigger}-${script.id}-${(yield* crypto.randomUUIDv4.pipe(Effect.orDie)).slice(0, 8)}`;
     const cwd = input.worktreePath;
     const env = {
       ...projectScriptRuntimeEnv({
@@ -409,6 +418,7 @@ export const make = Effect.gen(function* () {
     yield* terminalManager
       .open({
         threadId: input.threadId,
+        scopeKey,
         terminalId,
         cwd,
         worktreePath: input.worktreePath,
@@ -429,7 +439,7 @@ export const make = Effect.gen(function* () {
     const observed =
       observe && completionToken
         ? yield* observeTerminalCompletion({
-            threadId: input.threadId,
+            scopeKey,
             terminalId,
             sentinel: completionSentinel(completionToken),
             sentinelPattern: completionSentinelPattern(completionToken),
@@ -441,6 +451,7 @@ export const make = Effect.gen(function* () {
     yield* terminalManager
       .write({
         threadId: input.threadId,
+        scopeKey,
         terminalId,
         data: `${commandLine}\r`,
       })
@@ -462,7 +473,7 @@ export const make = Effect.gen(function* () {
     const completion = observed?.completion.pipe(
       Effect.tap(({ exitCode }) =>
         exitCode === 0
-          ? terminalManager.closeIdle({ threadId: input.threadId, terminalId })
+          ? terminalManager.closeIdle({ threadId: input.threadId, scopeKey, terminalId })
           : Effect.void,
       ),
     );
@@ -473,6 +484,7 @@ export const make = Effect.gen(function* () {
       scriptName: script.name,
       scriptCommand: script.command,
       terminalId,
+      scopeKey,
       cwd,
       async: script.async !== false,
       ...(completion ? { completion } : {}),

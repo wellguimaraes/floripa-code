@@ -143,6 +143,10 @@
       "types": "./src/String.ts",
       "import": "./src/String.ts"
     },
+    "./worktreeScope": {
+      "types": "./src/worktreeScope.ts",
+      "import": "./src/worktreeScope.ts"
+    },
     "./projectScripts": {
       "types": "./src/projectScripts.ts",
       "import": "./src/projectScripts.ts"
