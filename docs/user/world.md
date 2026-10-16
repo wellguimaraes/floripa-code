@@ -103,13 +103,12 @@ becomes a new project with its own island.
 
 To start an agent on an island, hover it and click the **+** over an empty rock
 pile. In a git project, the bubble first asks where it works, with one row each
-for the main worktree, a new worktree, and every worktree that already exists.
-Use the up and down arrow keys and `Enter`, or click. It starts on the one the
-project's most recently active agent works in, from the world or the chat, else
-on the project's worktree setting. The select above
-the text then shows your pick and changes it in place. Type what the agent
-should do, pick its colour (it starts on one nobody on that island wears), and
-press `Enter`. Paste, drop, or use the paperclip to attach images or files too.
+for the main worktree, a new worktree, and every worktree that already exists,
+the one an agent used most recently first. Use the up and down arrow keys and
+`Enter`, or click. It starts on the project's worktree setting. Your pick shows
+under the bubble's title; click it to change it. Type what the agent should do
+and press `Enter`. It starts on a colour nobody on that island wears; click its
+portrait to pick another. Paste, drop, or use the paperclip to attach images or files too.
 A new thread starts in that project
 with your text and files as its first message, using the project's default model
 and permissions, and the new agent mines that pile. A closed chat stays closed; an open one switches to the new agent. The colour is

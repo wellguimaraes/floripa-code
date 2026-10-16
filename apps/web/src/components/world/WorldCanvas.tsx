@@ -266,12 +266,12 @@ export default function WorldCanvas(props: {
     // The chat header's colour picker finds its character's family by thread key.
     const families = new Map<string, { readonly island: WorldIsland; readonly seed: string }>();
     for (const island of islands) {
-      const plate = palette.plates[hashString(island.key) % palette.plates.length]!;
+      const plate = signPlate(island.key);
       for (const { facts: character } of island.characters) {
         families.set(character.key, { island, seed: character.lookSeed });
         looks.set(character.key, {
           kid: character.kid,
-          plate: { background: plate, text: signTextColor(plate) },
+          plate,
           hue: island.hues.get(character.lookSeed) ?? 0,
           hat:
             character.worktreePath === null
@@ -883,16 +883,7 @@ export default function WorldCanvas(props: {
     const closeOutside = (event: PointerEvent) => {
       const target = event.target as Node | null;
       if (target === null || bubbleRef.current?.contains(target)) return;
-      // The bubble's own popovers (its colour picker) and dialogs (the voice
-      // key prompt) portal out of it.
-      if (
-        target instanceof Element &&
-        target.closest(
-          '[data-slot="popover-positioner"], [data-slot="dialog-viewport"], [data-slot="dialog-backdrop"]',
-        )
-      ) {
-        return;
-      }
+      if (target instanceof Element && target.closest(PORTALED_LAYERS)) return;
       if (containerRef.current?.querySelector("canvas")?.contains(target)) return;
       setBubbleKey(null);
     };
@@ -907,15 +898,7 @@ export default function WorldCanvas(props: {
     const closeOutside = (event: PointerEvent) => {
       const target = event.target as Node | null;
       if (target === null || newAgentRef.current?.contains(target)) return;
-      // Its workspace select, colour picker and voice key prompt portal out of it.
-      if (
-        target instanceof Element &&
-        target.closest(
-          '[data-slot="select-positioner"], [data-slot="popover-positioner"], [data-slot="dialog-viewport"], [data-slot="dialog-backdrop"]',
-        )
-      ) {
-        return;
-      }
+      if (target instanceof Element && target.closest(PORTALED_LAYERS)) return;
       if (containerRef.current?.querySelector("canvas")?.contains(target)) return;
       if (newAgentDraft.current.trim() === "") setNewAgent(null);
     };
@@ -931,14 +914,7 @@ export default function WorldCanvas(props: {
     const closeOutside = (event: PointerEvent) => {
       const target = event.target as Node | null;
       if (target === null || managerRef.current?.contains(target)) return;
-      if (
-        target instanceof Element &&
-        target.closest(
-          '[data-slot="popover-positioner"], [data-slot="dialog-viewport"], [data-slot="dialog-backdrop"]',
-        )
-      ) {
-        return;
-      }
+      if (target instanceof Element && target.closest(PORTALED_LAYERS)) return;
       if (containerRef.current?.querySelector("canvas")?.contains(target)) return;
       closeManagerOutside();
     };
@@ -1233,6 +1209,7 @@ export default function WorldCanvas(props: {
                 islands.find((island) => island.key === newAgent.islandKey) ?? { hues: new Map() },
                 palette.families.length,
               )}
+              plate={signPlate(newAgent.islandKey)}
               onStarted={(thread) => {
                 const { islandKey, slotIndex } = newAgent;
                 chooseHue(thread.ref.threadId, thread.hue);
@@ -1310,13 +1287,6 @@ export default function WorldCanvas(props: {
                     slotIndex: pile.slotIndex,
                   }),
                 );
-              }}
-              onOpenChat={(ref) => {
-                setManager(null);
-                // A new agent's thread reaches the client a moment after it starts.
-                void waitForThreadShell(ref).then((found) => {
-                  if (found) switchChat({ key: scopedThreadKey(ref), ref });
-                });
               }}
             />
           </div>
@@ -1508,6 +1478,24 @@ function hitsCharacter(event: ThreeEvent<MouseEvent>): boolean {
 }
 
 const FOLLOW_HEIGHT = 1.6;
+/** An island sign's colours, for UI naming the island. */
+function signPlate(islandKey: string) {
+  const background = palette.plates[hashString(islandKey) % palette.plates.length]!;
+  return { background, text: signTextColor(background) };
+}
+/**
+ * What the bubbles' selects, menus, popovers and dialogs portal out of them. A press there is
+ * not outside the bubble. Modal menus (the reasoning picker) also cover the page with an inert
+ * backdrop, so a press anywhere while one is open only closes the menu.
+ */
+const PORTALED_LAYERS = [
+  '[data-slot="select-positioner"]',
+  '[data-slot="menu-positioner"]',
+  '[data-slot="popover-positioner"]',
+  '[data-slot="dialog-viewport"]',
+  '[data-slot="dialog-backdrop"]',
+  "[data-base-ui-inert]",
+].join(", ");
 /** How long the manager holds up his megaphone after you send a message. */
 const MANAGER_CALL_MS = 3000;
 /** The manager wears no hat. */

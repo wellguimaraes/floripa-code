@@ -35,7 +35,7 @@ export function WorkspaceIcon(props: {
 export function NewAgentWorkspacePicker(props: {
   readonly islandName: string;
   readonly workspaces: ReadonlyArray<PickableWorkspace>;
-  /** The button picked first, e.g. the workspace last used in this project. */
+  /** The button picked first: the project's default workspace. */
   readonly defaultValue: string;
   readonly onPick: (workspace: WorldAgentWorkspace) => void;
   readonly onClose: () => void;
@@ -70,7 +70,7 @@ export function NewAgentWorkspacePicker(props: {
   return (
     <div
       tabIndex={-1}
-      className="flex w-96 flex-col gap-2.5 rounded-xl border border-border bg-popover p-2.5 text-popover-foreground shadow-lg outline-none"
+      className="flex w-140 flex-col gap-2.5 rounded-xl border border-border bg-popover p-2.5 text-popover-foreground shadow-lg outline-none"
       onKeyDown={onKeyDown}
     >
       <div className="flex items-start gap-2">

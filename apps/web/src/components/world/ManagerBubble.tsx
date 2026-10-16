@@ -69,8 +69,7 @@ type State =
       readonly pick: Destination;
       /** The step to go back to if sending fails. */
       readonly from: "confirm" | "choose";
-    }
-  | { readonly phase: "sent"; readonly pick: Destination; readonly ref: ScopedThreadRef };
+    };
 
 /** What the manager shows on the island: thinking, or a question balloon. */
 export type ManagerStatus = "idle" | "thinking" | "asking";
@@ -101,7 +100,6 @@ export function ManagerBubble(props: {
     readonly ref: ScopedThreadRef;
     readonly hue: number;
   }) => void;
-  readonly onOpenChat: (ref: ScopedThreadRef) => void;
 }) {
   const {
     islandName,
@@ -113,7 +111,6 @@ export function ManagerBubble(props: {
     onCancel,
     onCall,
     onStarted,
-    onOpenChat,
   } = props;
   const [text, setText] = useState("");
   const [state, setState] = useState<State>({ phase: "compose" });
@@ -211,7 +208,6 @@ export function ManagerBubble(props: {
     onCall(pick.agent?.key ?? null);
     try {
       const outgoing = await attachments.prepareForSend();
-      let ref: ScopedThreadRef;
       if (pick.agent !== null) {
         const shell = readThreadShell(pick.agent.ref);
         if (shell === null) throw new Error("That agent is no longer here.");
@@ -232,7 +228,6 @@ export function ManagerBubble(props: {
           },
         });
         if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-        ref = pick.agent.ref;
       } else {
         const threadId = await startAgent(
           project,
@@ -242,13 +237,12 @@ export function ManagerBubble(props: {
           workspaces.worktreeBaseBranch,
           setup,
         );
-        ref = { environmentId: project.environmentId, threadId };
+        const ref = { environmentId: project.environmentId, threadId };
         onStarted({ key: scopedThreadKey(ref), ref, hue: suggestedHue });
       }
       attachments.sent();
-      // A message to an agent already there needs no receipt; a new one gets the way to its chat.
-      if (pick.agent !== null) onClose();
-      else setState({ phase: "sent", pick, ref });
+      // No receipt: the agent who got it, or the new one walking in, shows it was sent.
+      onClose();
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Could not send the message.");
       setState(
@@ -292,7 +286,7 @@ export function ManagerBubble(props: {
         onTextChange={setText}
         onSubmit={() => void ask()}
         onClose={onClose}
-        narrow
+        width="narrow"
         placeholder="Ask me anything"
         inputLabel={`Message the manager of ${islandName}`}
         submitLabel="Ask"
@@ -305,40 +299,6 @@ export function ManagerBubble(props: {
         header={header("I'll redirect your request to the right agent", "Ask the Manager")}
       />
     );
-
-  if (state.phase === "sent") {
-    const { pick, ref } = state;
-    return (
-      <ManagerPanel onClose={onClose}>
-        {header(`${islandName} · sent`)}
-        <p className="text-sm">
-          {pick.agent !== null ? (
-            <>
-              Sent to <strong>{pick.agent.title}</strong>
-            </>
-          ) : (
-            "Started a new agent"
-          )}{" "}
-          on <strong>{checkoutLabel(pick.workspace)}</strong>.
-        </p>
-        <div className="flex justify-end gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setText("");
-              setState({ phase: "compose" });
-            }}
-          >
-            New message
-          </Button>
-          <Button size="sm" autoFocus onClick={() => onOpenChat(ref)}>
-            Open chat
-          </Button>
-        </div>
-      </ManagerPanel>
-    );
-  }
 
   const guess = state.route;
   const sending = state.phase === "sending";

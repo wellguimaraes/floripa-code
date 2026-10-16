@@ -1,8 +1,9 @@
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ProviderInstanceId, ScopedProjectRef, ScopedThreadRef } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
+import { Select as SelectPrimitive } from "@base-ui/react/select";
 import { XIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
@@ -18,10 +19,12 @@ import { ComposerFooterModeControls, runtimeModeOptions } from "../chat/ChatComp
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import { Button } from "../ui/button";
-import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
+import { cn } from "../../lib/utils";
+import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { Select, SelectItem, SelectPopup, SelectValue } from "../ui/select";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { BubbleComposer } from "./BubbleComposer";
 import { HuePicker } from "./HuePicker";
-import { lastUsedWorkspaceValue } from "./lastUsedWorkspace";
 import {
   NewAgentWorkspacePicker,
   type PickableWorkspace,
@@ -35,6 +38,9 @@ import {
   type WorldAgentSetup,
   type WorldAgentWorkspace,
 } from "./useStartWorldAgent";
+import { worktreesByRecency } from "./worktreesByRecency";
+
+const CharacterPortrait = lazy(() => import("./scene/CharacterPortrait"));
 
 const workspaceValue = (workspace: WorldAgentWorkspace) =>
   workspace.kind === "worktree" ? `worktree:${workspace.path}` : workspace.kind;
@@ -44,7 +50,7 @@ const workspaceValue = (workspace: WorldAgentWorkspace) =>
  * first message of a new thread in that project, with any attached, dropped,
  * or pasted files, using the defaults a fresh draft would; an open chat switches to it.
  * In a repo it first asks where the agent works: the main worktree, a new worktree,
- * or another existing one, starting on the one the project's latest thread uses.
+ * or another existing one, the most recently used first.
  * The model, its traits, permissions and plan mode use the chat's own pickers;
  * a picked model becomes the default for new chats once the agent starts.
  * The text box, files, voice and send live in BubbleComposer, shared by both bubbles.
@@ -54,6 +60,8 @@ export function NewAgentBubble(props: {
   readonly project: ScopedProjectRef;
   /** The family colour picked at first: one nobody on the island wears yet. */
   readonly suggestedHue: number;
+  /** The island sign's colours, for the chip naming it. */
+  readonly plate: { readonly background: string; readonly text: string };
   readonly onClose: () => void;
   readonly onTextChange: (text: string) => void;
   /** The thread exists and its first turn is starting. */
@@ -63,7 +71,7 @@ export function NewAgentBubble(props: {
     readonly hue: number;
   }) => void;
 }) {
-  const { islandName, project, suggestedHue, onClose, onTextChange, onStarted } = props;
+  const { islandName, project, suggestedHue, plate, onClose, onTextChange, onStarted } = props;
   const [hue, setHue] = useState(suggestedHue);
   const startAgent = useStartWorldAgent();
   const [text, setText] = useState("");
@@ -91,7 +99,7 @@ export function NewAgentBubble(props: {
           : `From ${workspaces.worktreeBaseBranch}`,
       workspace: { kind: "new-worktree" },
     },
-    ...workspaces.worktrees.map((worktree) => {
+    ...worktreesByRecency(workspaces.worktrees, projectThreads).map((worktree) => {
       const item: WorldAgentWorkspace = { kind: "worktree", ...worktree };
       return {
         value: workspaceValue(item),
@@ -101,15 +109,7 @@ export function NewAgentBubble(props: {
       };
     }),
   ];
-  // The one the project's latest thread uses while it still exists, else the project's default.
-  const lastUsed = lastUsedWorkspaceValue(
-    projectThreads,
-    new Set(workspaceItems.map((item) => item.value)),
-  );
-  const defaultWorkspace =
-    workspaceItems.find((item) => item.value === lastUsed)?.workspace ??
-    workspaces.defaultWorkspace;
-  const selectedWorkspace = workspace ?? defaultWorkspace;
+  const selectedWorkspace = workspace ?? workspaces.defaultWorkspace;
 
   const providers =
     useServerConfigs().get(project.environmentId)?.providers ?? EMPTY_SERVER_PROVIDERS;
@@ -239,117 +239,179 @@ export function NewAgentBubble(props: {
       onTextChange={changeText}
       onSubmit={() => void start()}
       onClose={onClose}
-      narrow
       placeholder="What should it work on?"
       inputLabel={`Task for a new agent on ${islandName}`}
       submitLabel="Start"
       speakLabel="Speak the task"
-      footerStart={<HuePicker hue={hue} onChange={setHue} />}
+      width="wide"
       error={state.phase === "error" ? state.message : null}
       onError={showError}
       busy={state.phase === "starting"}
-      busyStatus="Starting…"
-      header={
-        <>
-          <div className="flex items-start gap-2">
-            <div className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate text-sm font-medium">New agent</span>
-              <span className="truncate text-xs text-muted-foreground">on {islandName}</span>
-            </div>
-            <Button variant="ghost" size="icon-xs" aria-label="Close" onClick={onClose}>
-              <XIcon />
-            </Button>
-          </div>
-          {workspaces.isRepo ? (
-            <Select
-              modal={false}
-              value={workspaceValue(selectedWorkspace)}
-              items={workspaceItems}
-              disabled={state.phase === "starting"}
-              onValueChange={(value: string | null) => {
-                const item = workspaceItems.find((candidate) => candidate.value === value);
-                if (item !== undefined) setWorkspace(item.workspace);
-              }}
-            >
-              <SelectTrigger size="sm" aria-label="Workspace">
-                <WorkspaceIcon workspace={selectedWorkspace} />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectPopup alignItemWithTrigger={false}>
-                {workspaceItems.map((item) => (
-                  <SelectItem key={item.value} value={item.value}>
-                    <span className="inline-flex min-w-0 items-center gap-1.5">
-                      <WorkspaceIcon workspace={item.workspace} className="size-3" />
-                      <span className="truncate">{item.label}</span>
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-          ) : null}
-        </>
+      busyStatus={
+        selectedWorkspace.kind === "new-worktree" ? "Preparing the new worktree…" : "Starting…"
       }
-    >
-      {setup !== null && providerEntry !== undefined && runtimeMode !== undefined ? (
-        <div className="-mx-1 flex flex-wrap items-center gap-y-1">
-          <ProviderModelPicker
-            activeInstanceId={setup.modelSelection.instanceId}
-            model={setup.modelSelection.model}
-            lockedProvider={null}
-            instanceEntries={providerEntries}
-            modelOptionsByInstance={getCustomModelOptionsByInstance(
-              settings,
-              providers,
-              setup.modelSelection.instanceId,
-              setup.modelSelection.model,
-            )}
-            size="xs"
-            triggerClassName="min-w-0 shrink"
-            open={modelPickerOpen}
-            onOpenChange={setModelPickerOpen}
-            disabled={state.phase === "starting"}
-            onInstanceModelChange={pickModel}
-          />
-          <TraitsPicker
-            provider={providerEntry.driverKind}
-            instanceId={setup.modelSelection.instanceId}
-            models={providerEntry.models}
-            model={setup.modelSelection.model}
-            prompt={text}
-            onPromptChange={changeText}
-            modelOptions={setup.modelSelection.options ?? []}
-            planModeEnabled={settings.planModeEnabled}
-            size="xs"
-            disabled={state.phase === "starting"}
-            onModelOptionsChange={(options) =>
-              setPicked((current) => ({
-                ...current,
-                modelSelection: createModelSelection(
-                  setup.modelSelection.instanceId,
-                  setup.modelSelection.model,
-                  options,
-                ),
-              }))
-            }
-          />
-          <ComposerFooterModeControls
-            showInteractionModeToggle={planModeAvailable}
-            interactionMode={planModeAvailable ? setup.interactionMode : "default"}
-            runtimeMode={runtimeMode}
-            runtimeModeOptions={compatibleRuntimeModeOptions}
-            size="xs"
-            onToggleInteractionMode={() =>
-              setPicked((current) => ({
-                ...current,
-                interactionMode: setup.interactionMode === "plan" ? "default" : "plan",
-              }))
-            }
-            onRuntimeModeChange={(mode) =>
-              setPicked((current) => ({ ...current, runtimeMode: mode }))
-            }
-          />
+      header={
+        <div className="flex items-stretch gap-3">
+          <NewAgentCharacter hue={hue} onHueChange={setHue} />
+          <div className="flex min-w-0 flex-1 flex-col items-start">
+            {/* The island's sign, as the chat header shows its project. */}
+            <span
+              className="mb-0.5 max-w-full truncate rounded-full px-2 text-xs leading-5 font-semibold"
+              style={{ backgroundColor: plate.background, color: plate.text }}
+            >
+              {islandName}
+            </span>
+            <span className="max-w-full truncate text-base font-medium">Start New Agent</span>
+            {workspaces.isRepo ? (
+              <Select
+                modal={false}
+                value={workspaceValue(selectedWorkspace)}
+                items={workspaceItems}
+                disabled={state.phase === "starting"}
+                onValueChange={(value: string | null) => {
+                  const item = workspaceItems.find((candidate) => candidate.value === value);
+                  if (item !== undefined) setWorkspace(item.workspace);
+                }}
+              >
+                <SelectPrimitive.Trigger
+                  aria-label="Workspace"
+                  className={cn(
+                    "flex max-w-full min-w-0 cursor-pointer items-center gap-1 rounded-sm",
+                    "text-xs leading-4 text-muted-foreground outline-none hover:text-foreground",
+                    "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+                    "data-disabled:pointer-events-none data-disabled:opacity-64",
+                  )}
+                >
+                  <WorkspaceIcon workspace={selectedWorkspace} className="size-3 shrink-0" />
+                  <SelectValue />
+                </SelectPrimitive.Trigger>
+                <SelectPopup alignItemWithTrigger={false}>
+                  {workspaceItems.map((item) => (
+                    <SelectItem key={item.value} value={item.value}>
+                      <span className="inline-flex min-w-0 items-center gap-1.5">
+                        <WorkspaceIcon workspace={item.workspace} className="size-3" />
+                        <span className="truncate">{item.label}</span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            ) : null}
+          </div>
+          <Button variant="ghost" size="icon-xs" aria-label="Close" onClick={onClose}>
+            <XIcon />
+          </Button>
         </div>
-      ) : null}
-    </BubbleComposer>
+      }
+      toolbar={
+        setup !== null && providerEntry !== undefined && runtimeMode !== undefined ? (
+          // Only the provider's logo and the labels: the pickers' own icons, chevrons and
+          // dividers don't fit the bubble's single line.
+          <div className="flex flex-wrap items-center gap-y-1 [&_[data-composer-control-chevron]]:hidden [&_[data-composer-control-icon]]:hidden [&_[data-slot=separator]]:hidden">
+            <ProviderModelPicker
+              activeInstanceId={setup.modelSelection.instanceId}
+              model={setup.modelSelection.model}
+              lockedProvider={null}
+              instanceEntries={providerEntries}
+              modelOptionsByInstance={getCustomModelOptionsByInstance(
+                settings,
+                providers,
+                setup.modelSelection.instanceId,
+                setup.modelSelection.model,
+              )}
+              size="sm"
+              triggerClassName="min-w-0 shrink"
+              open={modelPickerOpen}
+              onOpenChange={setModelPickerOpen}
+              disabled={state.phase === "starting"}
+              onInstanceModelChange={pickModel}
+            />
+            <TraitsPicker
+              provider={providerEntry.driverKind}
+              instanceId={setup.modelSelection.instanceId}
+              models={providerEntry.models}
+              model={setup.modelSelection.model}
+              prompt={text}
+              onPromptChange={changeText}
+              modelOptions={setup.modelSelection.options ?? []}
+              planModeEnabled={settings.planModeEnabled}
+              size="sm"
+              disabled={state.phase === "starting"}
+              onModelOptionsChange={(options) =>
+                setPicked((current) => ({
+                  ...current,
+                  modelSelection: createModelSelection(
+                    setup.modelSelection.instanceId,
+                    setup.modelSelection.model,
+                    options,
+                  ),
+                }))
+              }
+            />
+            <ComposerFooterModeControls
+              showInteractionModeToggle={planModeAvailable}
+              interactionMode={planModeAvailable ? setup.interactionMode : "default"}
+              runtimeMode={runtimeMode}
+              runtimeModeOptions={compatibleRuntimeModeOptions}
+              size="sm"
+              onToggleInteractionMode={() =>
+                setPicked((current) => ({
+                  ...current,
+                  interactionMode: setup.interactionMode === "plan" ? "default" : "plan",
+                }))
+              }
+              onRuntimeModeChange={(mode) =>
+                setPicked((current) => ({ ...current, runtimeMode: mode }))
+              }
+            />
+          </div>
+        ) : null
+      }
+    />
+  );
+}
+
+/** The new agent's portrait, in the colour it will arrive in; clicking it picks another. */
+function NewAgentCharacter(props: {
+  readonly hue: number;
+  readonly onHueChange: (hue: number) => void;
+}) {
+  const { hue, onHueChange } = props;
+  const [picking, setPicking] = useState(false);
+  return (
+    <Popover open={picking} onOpenChange={setPicking}>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <PopoverTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label="Change color"
+                  className={cn(
+                    "w-10 shrink-0 cursor-pointer rounded-md outline-none",
+                    "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+                  )}
+                />
+              }
+            />
+          }
+        >
+          <Suspense fallback={<div className="size-full" />}>
+            <CharacterPortrait hue={hue} hat={null} className="size-full" />
+          </Suspense>
+        </TooltipTrigger>
+        <TooltipPopup side="top">Change color</TooltipPopup>
+      </Tooltip>
+      <PopoverPopup side="top" align="start" padding="compact">
+        <HuePicker
+          hue={hue}
+          onChange={(picked) => {
+            onHueChange(picked);
+            setPicking(false);
+          }}
+        />
+      </PopoverPopup>
+    </Popover>
   );
 }

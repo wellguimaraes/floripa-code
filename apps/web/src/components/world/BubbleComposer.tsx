@@ -90,15 +90,15 @@ export function BubbleComposer(props: {
   /** Start listening at once and send what was said: a voice command. */
   readonly listenOnOpen?: boolean;
   readonly header: ReactNode;
-  /** A slimmer frame, for the new-agent bubble. */
-  readonly narrow?: boolean;
+  /** Slimmer for the manager bubble; wider for the new-agent bubble, so its pickers fit one line. */
+  readonly width?: "narrow" | "wide";
   /** Shown between the staged files and the status line. */
   readonly children?: ReactNode;
   /**
-   * Takes the status line's place beside the buttons; the status then shows
-   * on its own line above, only while there is something to say.
+   * Controls inside the text box, under the text, beside the attach, voice and send
+   * buttons, which move in with them: one box, like the chat composer.
    */
-  readonly footerStart?: ReactNode;
+  readonly toolbar?: ReactNode;
 }) {
   const { attachments, text, onTextChange, onSubmit, onError, error, busy } = props;
   const fileInput = useRef<HTMLInputElement>(null);
@@ -303,6 +303,91 @@ export function BubbleComposer(props: {
     if (failure !== null) onError(failure);
   };
 
+  const actions = (
+    <>
+      <input
+        ref={fileInput}
+        type="file"
+        multiple
+        hidden
+        onChange={(event) => {
+          void attach(Array.from(event.target.files ?? []));
+          event.target.value = "";
+        }}
+      />
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Attach files"
+        title="Attach files"
+        disabled={busy}
+        onClick={() => fileInput.current?.click()}
+      >
+        <PaperclipIcon />
+      </Button>
+      <Button
+        variant={listening ? "destructive" : "ghost"}
+        size="icon-sm"
+        aria-label={
+          !voiceInputSupported()
+            ? "Voice input isn't available here"
+            : listening
+              ? "Stop listening"
+              : props.speakLabel
+        }
+        title={
+          listening
+            ? "Stop listening"
+            : `${props.speakLabel} (hold to talk, or hold ${talkKeysLabel})`
+        }
+        aria-pressed={listening}
+        disabled={!voiceInputSupported() || voice.phase === "transcribing" || busy}
+        onPointerDown={(event) => {
+          if (event.button !== 0) return;
+          if (listening) {
+            voice.stop();
+            return;
+          }
+          if (!canTalk()) return;
+          // Letting go outside the button still ends the take.
+          event.currentTarget.setPointerCapture(event.pointerId);
+          micPressedAt.current = performance.now();
+          setTalkHeld(true);
+          startListening(false, true);
+        }}
+        onPointerUp={releaseMic}
+        onPointerCancel={releaseMic}
+        onClick={(event) => {
+          // Pointers are handled on press; this is Enter or Space on the focused button.
+          if (event.detail !== 0) return;
+          if (listening) voice.stop();
+          else startListening(false);
+        }}
+      >
+        {voice.phase === "transcribing" ? (
+          <LoaderIcon className="animate-spin" />
+        ) : listening ? (
+          <SquareIcon className="fill-white text-white" />
+        ) : (
+          <MicIcon />
+        )}
+      </Button>
+      <Button
+        size="icon-sm"
+        aria-label={props.submitLabel}
+        disabled={
+          (text.trim() === "" && attachments.attachments.length === 0) ||
+          attachments.preparing ||
+          busy ||
+          props.submitBlocked === true
+        }
+        onClick={() => onSubmit(text)}
+      >
+        <SendHorizontalIcon />
+      </Button>
+    </>
+  );
+
   return (
     <div
       ref={frame}
@@ -310,7 +395,8 @@ export function BubbleComposer(props: {
       tabIndex={-1}
       className={cn(
         "flex w-108 flex-col gap-2 rounded-xl border border-border bg-popover p-2.5 outline-none",
-        props.narrow && "w-96",
+        props.width === "narrow" && "w-96",
+        props.width === "wide" && "w-140",
         "text-popover-foreground shadow-lg",
         dropping && "border-primary",
       )}
@@ -370,7 +456,6 @@ export function BubbleComposer(props: {
                 ? undefined
                 : composerSuggestionOptionId(suggestionListId, suggestions.activeItem.id)
             }
-            containerClassName="text-[13px]"
             className="max-h-40 min-h-12 overflow-y-auto"
             onChange={(nextValue, nextCursor, expandedCursor, besideChip) => {
               latestText.current = nextValue;
@@ -412,6 +497,12 @@ export function BubbleComposer(props: {
               void attach(files);
             }}
           />
+          {props.toolbar !== undefined ? (
+            <div className="-mx-1 mt-1 flex items-center gap-1">
+              <div className="min-w-0 flex-1">{props.toolbar}</div>
+              {actions}
+            </div>
+          ) : null}
         </div>
         {suggestions.open && menuPlacement !== null ? (
           // Floats over the bubble from the text field, inside the bubble so it moves with it
@@ -443,98 +534,18 @@ export function BubbleComposer(props: {
         onRemove={attachments.remove}
       />
       {props.children}
-      {props.footerStart !== undefined && status !== null ? (
-        <span className="truncate text-xs text-muted-foreground">{status}</span>
-      ) : null}
-      <div className="flex items-center gap-2">
-        {props.footerStart !== undefined ? (
-          <div className="min-w-0 flex-1">{props.footerStart}</div>
-        ) : (
+      {props.toolbar !== undefined ? (
+        status !== null ? (
+          <span className="truncate text-xs text-muted-foreground">{status}</span>
+        ) : null
+      ) : (
+        <div className="flex items-center gap-2">
           <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
             {status ?? props.hint}
           </span>
-        )}
-        <input
-          ref={fileInput}
-          type="file"
-          multiple
-          hidden
-          onChange={(event) => {
-            void attach(Array.from(event.target.files ?? []));
-            event.target.value = "";
-          }}
-        />
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Attach files"
-          title="Attach files"
-          disabled={busy}
-          onClick={() => fileInput.current?.click()}
-        >
-          <PaperclipIcon />
-        </Button>
-        <Button
-          variant={listening ? "destructive" : "ghost"}
-          size="icon-sm"
-          aria-label={
-            !voiceInputSupported()
-              ? "Voice input isn't available here"
-              : listening
-                ? "Stop listening"
-                : props.speakLabel
-          }
-          title={
-            listening
-              ? "Stop listening"
-              : `${props.speakLabel} (hold to talk, or hold ${talkKeysLabel})`
-          }
-          aria-pressed={listening}
-          disabled={!voiceInputSupported() || voice.phase === "transcribing" || busy}
-          onPointerDown={(event) => {
-            if (event.button !== 0) return;
-            if (listening) {
-              voice.stop();
-              return;
-            }
-            if (!canTalk()) return;
-            // Letting go outside the button still ends the take.
-            event.currentTarget.setPointerCapture(event.pointerId);
-            micPressedAt.current = performance.now();
-            setTalkHeld(true);
-            startListening(false, true);
-          }}
-          onPointerUp={releaseMic}
-          onPointerCancel={releaseMic}
-          onClick={(event) => {
-            // Pointers are handled on press; this is Enter or Space on the focused button.
-            if (event.detail !== 0) return;
-            if (listening) voice.stop();
-            else startListening(false);
-          }}
-        >
-          {voice.phase === "transcribing" ? (
-            <LoaderIcon className="animate-spin" />
-          ) : listening ? (
-            <SquareIcon className="fill-white text-white" />
-          ) : (
-            <MicIcon />
-          )}
-        </Button>
-        <Button
-          size="icon-sm"
-          aria-label={props.submitLabel}
-          disabled={
-            (text.trim() === "" && attachments.attachments.length === 0) ||
-            attachments.preparing ||
-            busy ||
-            props.submitBlocked === true
-          }
-          onClick={() => onSubmit(text)}
-        >
-          <SendHorizontalIcon />
-        </Button>
-      </div>
+          {actions}
+        </div>
+      )}
       {voice.keyPrompt !== null ? (
         <VoiceKeyDialog
           environmentId={props.environmentId}
