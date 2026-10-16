@@ -124,6 +124,8 @@ export function observeSelectionActions({
   const onKeyDown = (event: KeyboardEvent) => {
     if (isActionTarget(event.target) && event.key !== "Escape") return;
     if (event.key === "Escape") {
+      // A visible action surface claims the key, so it doesn't also reach page shortcuts.
+      if (getActionElement?.()) event.preventDefault();
       dismiss();
     } else if (!pointerDown) {
       cancelPending();

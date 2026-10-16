@@ -576,6 +576,7 @@ import { useAtomCommand } from "../state/use-atom-command";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { Button, InlineButton } from "./ui/button";
+import { Kbd } from "./ui/kbd";
 import {
   AlertDialog,
   AlertDialogClose,
@@ -4601,6 +4602,10 @@ export default function ChatView(props: ChatViewProps) {
   }, [composerRef]);
   const canInterruptRunningThread =
     canOperateThread && deriveCanInterruptRunningThread(activeThread !== undefined, activeRuntime);
+  // The hint names the stop shortcut only while a press would stop something.
+  const stopShortcutLabel = canInterruptRunningThread
+    ? shortcutLabelForCommand(keybindings, "thread.stop", { context: { terminalFocus: false } })
+    : null;
   const onInterrupt = useCallback(async () => {
     if (
       !activeThread ||
@@ -8311,15 +8316,9 @@ export default function ChatView(props: ChatViewProps) {
         return;
       }
 
-      if (command === "thread.stop") {
-        // An unavailable command should not shadow contextual shortcuts such as Escape to close a dialog.
-        if (!canInterruptRunningThread) return;
-        event.preventDefault();
-        event.stopPropagation();
-        if (event.repeat) return;
-        void onInterrupt();
-        return;
-      }
+      // Stop defaults to Escape, so it waits for the bubbling handler below
+      // and lets menus, dialogs, and the find bar claim the key first.
+      if (command === "thread.stop") return;
 
       const scriptId = projectScriptIdFromCommand(command);
       if (!scriptId || !activeProject || !canOperateTerminal) return;
@@ -8329,27 +8328,37 @@ export default function ChatView(props: ChatViewProps) {
       event.stopPropagation();
       void runProjectScript(script);
     };
-    const dismissFind = (event: KeyboardEvent) => {
-      if (
-        event.key !== "Escape" ||
-        !isThreadFindActive ||
-        event.defaultPrevented ||
-        event.isComposing ||
-        event.keyCode === 229 ||
-        isCommandPaletteOpen()
-      )
-        return;
+    // Runs after contextual handlers, which claim their keys with preventDefault.
+    const handleUnclaimedKey = (event: KeyboardEvent) => {
+      if (event.isComposing || event.keyCode === 229 || isCommandPaletteOpen()) return;
+      // The composer (ProseMirror) prevents every Escape; its menus also stop the event,
+      // so one that gets here from the editor was not used.
+      const fromEditor = event.target instanceof Element && event.target.closest(".ProseMirror");
+      if (event.defaultPrevented && !(fromEditor && event.key === "Escape")) return;
       const context = getShortcutContext(event.target);
-      if (context.terminalFocus || context.previewFocus || context.modelPickerOpen) return;
+      if (event.key === "Escape" && isThreadFindActive) {
+        if (event.defaultPrevented) return;
+        if (context.terminalFocus || context.previewFocus || context.modelPickerOpen) return;
+        event.preventDefault();
+        closeThreadFind();
+        focusComposer();
+        return;
+      }
+      if (!activeThreadId || !canInterruptRunningThread) return;
+      const command = resolveChatShortcutCommand(event, keybindings, scriptKeybindings, {
+        context,
+      });
+      if (command !== "thread.stop") return;
       event.preventDefault();
-      closeThreadFind();
-      focusComposer();
+      event.stopPropagation();
+      if (event.repeat) return;
+      void onInterrupt();
     };
     window.addEventListener("keydown", handler, true);
-    window.addEventListener("keydown", dismissFind);
+    window.addEventListener("keydown", handleUnclaimedKey);
     return () => {
       window.removeEventListener("keydown", handler, true);
-      window.removeEventListener("keydown", dismissFind);
+      window.removeEventListener("keydown", handleUnclaimedKey);
     };
   }, [
     activeProject,
@@ -11625,6 +11634,11 @@ export default function ChatView(props: ChatViewProps) {
                           />
                         </div>
                       </div>
+                    ) : null}
+                    {stopShortcutLabel ? (
+                      <p className="pointer-events-none absolute end-4 bottom-full flex items-center gap-1 pb-1.5 text-muted-foreground text-xs max-sm:hidden">
+                        Press <Kbd variant="outline">{stopShortcutLabel}</Kbd> to stop
+                      </p>
                     ) : null}
                     <div
                       ref={draftHeroTransition.composerAnchorRef}

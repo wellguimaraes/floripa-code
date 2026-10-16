@@ -1286,6 +1286,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                           event.stopPropagation();
                           if (event.key === "Enter") event.currentTarget.blur();
                           if (event.key === "Escape") {
+                            event.preventDefault();
                             event.currentTarget.value = title;
                             event.currentTarget.blur();
                           }
