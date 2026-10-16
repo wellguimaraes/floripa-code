@@ -1766,6 +1766,8 @@ function WorldControls({
     controls.enableRotate = false;
     controls.enableDamping = false;
     controls.screenSpacePanning = true;
+    // The spot under the pointer stays put while zooming, like a map.
+    controls.zoomToCursor = true;
     controls.minZoom = 3;
     controls.maxZoom = 110;
     // A fresh control looks at the origin, which would swing an already panned
