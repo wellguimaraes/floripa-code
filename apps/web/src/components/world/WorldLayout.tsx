@@ -33,40 +33,42 @@ import { WorldNavigation } from "./WorldNavigation";
 import { WorldUsageBar } from "./WorldUsageBar";
 import { islandWorlds } from "./definitions/island";
 import { useWorldModeStore } from "./worldModeStore";
+import { WorldSurfacesWidthContext } from "./worldSurfacesWidth";
 
 // three.js and the scene load only when someone opens the world.
 const WorldCanvas = lazy(() => import("./WorldCanvas"));
 
 const CHAT_MIN_WIDTH = 400;
 const CHAT_DEFAULT_WIDTH = 720;
-// The frame grows by this much while the worktree's surfaces show beside the chat.
-const SURFACES_WIDTH = 560;
-// The surface-type rail on the frame's right edge.
+// The worktree's surfaces, their type rail included.
+const SURFACES_MIN_WIDTH = 360;
+const SURFACES_DEFAULT_WIDTH = 604;
+// The surface-type rail on the frame's right edge, all that shows of closed surfaces.
 const RAILS_WIDTH = 44;
 // Room left of the chat for its close button (4rem) and right of it for the margin (0.75rem).
 const CHAT_GUTTERS = 76;
 
-function readChatMaxWidth(): number {
-  if (typeof window === "undefined") return CHAT_DEFAULT_WIDTH;
-  return Math.max(CHAT_MIN_WIDTH, window.innerWidth - CHAT_GUTTERS);
+function readFrameMaxWidth(): number {
+  if (typeof window === "undefined") return CHAT_DEFAULT_WIDTH + SURFACES_DEFAULT_WIDTH;
+  return window.innerWidth - CHAT_GUTTERS;
 }
 
 /**
- * A width for the floating frame, dragged from its left edge and remembered in this browser.
- * The chat and the surfaces shown alone each keep their own.
+ * A width in the floating frame, dragged and remembered in this browser. `reserved` is
+ * room the frame keeps for whatever shows beside it.
  */
-function useFrameWidth(storageKey: string, defaultWidth: number) {
-  const [maxWidth, setMaxWidth] = useState(readChatMaxWidth);
+function useFrameWidth(storageKey: string, defaultWidth: number, minWidth: number, reserved = 0) {
+  const [frameMaxWidth, setFrameMaxWidth] = useState(readFrameMaxWidth);
   useEffect(() => {
-    const onResize = () => setMaxWidth(readChatMaxWidth());
+    const onResize = () => setFrameMaxWidth(readFrameMaxWidth());
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
   return useResizableWidth({
     storageKey,
     defaultWidth,
-    minWidth: CHAT_MIN_WIDTH,
-    maxWidth,
+    minWidth,
+    maxWidth: Math.max(minWidth, frameMaxWidth - reserved),
     edge: "left",
   });
 }
@@ -95,11 +97,6 @@ export function WorldLayout({
     [],
   );
   const [toolbar, setToolbar] = useState<HTMLDivElement | null>(null);
-  const chatWidth = useFrameWidth("t3code:world-chat-width:v1", CHAT_DEFAULT_WIDTH);
-  const surfacesOnlyWidth = useFrameWidth(
-    "t3code:world-surfaces-width:v1",
-    SURFACES_WIDTH + RAILS_WIDTH,
-  );
   // Only real threads open here. A draft (the new-thread creator) never does: the world
   // starts agents from its own bubble, so a draft route shows the world alone.
   const chatTarget = target?.kind === "server" ? target : null;
@@ -133,12 +130,25 @@ export function WorldLayout({
   const surfaces = useRightPanelStore((state) =>
     selectThreadRightPanelState(state.byPanelKey, heldTarget?.threadRef ?? null),
   );
-  // The drag writes its width straight to the frame. With the chat shown it sizes the chat
-  // and the surfaces add theirs beside it; with the chat collapsed it sizes the surfaces
-  // alone, from a width of their own, so it never moves a width that is not on screen.
+  // The frame remembers the surfaces' width and the chat and surfaces together, so collapsing
+  // either side leaves the other as wide as it was. The edge drag writes straight to the frame:
+  // with the chat shown it moves the chat's side, with the chat collapsed the surfaces'. The
+  // divider between them trades width within the frame.
   const chatShown = !(surfaces.isOpen && surfaces.maximized);
-  const frameWidth = chatShown ? chatWidth : surfacesOnlyWidth;
-  const surfacesWidth = chatShown ? (surfaces.isOpen ? SURFACES_WIDTH : 0) + RAILS_WIDTH : 0;
+  const surfacesWidth = useFrameWidth(
+    "t3code:world-surfaces-width:v2",
+    SURFACES_DEFAULT_WIDTH,
+    SURFACES_MIN_WIDTH,
+    chatShown ? CHAT_MIN_WIDTH : 0,
+  );
+  const chatAndSurfacesWidth = useFrameWidth(
+    "t3code:world-chat-and-surfaces-width:v1",
+    CHAT_DEFAULT_WIDTH + SURFACES_DEFAULT_WIDTH,
+    CHAT_MIN_WIDTH + surfacesWidth.width,
+  );
+  const frameWidth = chatShown ? chatAndSurfacesWidth : surfacesWidth;
+  // Closed surfaces leave only their rail beside the chat.
+  const frameOffset = chatShown && !surfaces.isOpen ? RAILS_WIDTH - surfacesWidth.width : 0;
   const chatArchived = chatThread !== null && chatThread.archivedAt != null;
   const chatWasArchived = useRef<{ key: string | null; archived: boolean }>({
     key: null,
@@ -234,7 +244,7 @@ export function WorldLayout({
           right:
             chatTarget === null
               ? "0.75rem"
-              : `calc(min(${frameWidth.width + surfacesWidth}px, 100% - 4rem) + 1.5rem)`,
+              : `calc(min(${frameWidth.width + frameOffset}px, 100% - 4rem) + 1.5rem)`,
         }}
       >
         <div className="pointer-events-auto min-w-0">
@@ -245,11 +255,11 @@ export function WorldLayout({
         <Activity mode={chatTarget !== null && !covered ? "visible" : "hidden"}>
           <div
             ref={panelRef}
-            className="absolute top-[calc(var(--workspace-topbar-height)+0.25rem)] right-3 bottom-3 w-[min(calc(var(--resizable-width)+var(--world-surfaces-width)),calc(100%-4rem))]"
+            className="absolute top-[calc(var(--workspace-topbar-height)+0.25rem)] right-3 bottom-3 w-[min(calc(var(--resizable-width)+var(--world-frame-offset)),calc(100%-4rem))]"
             style={
               {
                 [RESIZABLE_WIDTH_PROPERTY]: `${frameWidth.width}px`,
-                "--world-surfaces-width": `${surfacesWidth}px`,
+                "--world-frame-offset": `${frameOffset}px`,
                 // The folded sidebar's toggle and window controls sit outside the
                 // floating panel, so its header needs no room for them.
                 "--workspace-titlebar-content-left": "var(--workspace-gutter)",
@@ -280,7 +290,9 @@ export function WorldLayout({
                 } as CSSProperties
               }
             >
-              <ThreadRouteView target={heldTarget} container="bare" />
+              <WorldSurfacesWidthContext value={surfacesWidth}>
+                <ThreadRouteView target={heldTarget} container="bare" />
+              </WorldSurfacesWidthContext>
             </div>
           </div>
         </Activity>

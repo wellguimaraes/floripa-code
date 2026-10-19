@@ -155,6 +155,7 @@ import {
   type SetStateAction,
   Suspense,
   useCallback,
+  useContext,
   useEffect,
   useEffectEvent,
   useLayoutEffect,
@@ -469,6 +470,7 @@ import {
   RightPanelMaximizeControl,
 } from "./chat/PanelLayoutControls";
 import { useWorldModeStore } from "./world/worldModeStore";
+import { WorldSurfacesWidthContext } from "./world/worldSurfacesWidth";
 import { expandedImageKey, type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { ThreadDetailsPanel, type ThreadDetailsPanelProps } from "./chat/ThreadDetailsPanel";
 import { NoActiveThreadState } from "./NoActiveThreadState";
@@ -1794,6 +1796,8 @@ export default function ChatView(props: ChatViewProps) {
     container: workspaceLayoutElement,
     widthStorageKey: `t3code:preview-panel-width:${activeThreadKey}`,
   });
+  // The world's chat frame sizes the surfaces itself.
+  const worldSurfacesSize = useContext(WorldSurfacesWidthContext);
   const activeThreadShell = useThreadShell(isServerThread ? activeThreadRef : null);
   const timelineThreadError =
     serverRuntime?.status === "failed" &&
@@ -11575,7 +11579,7 @@ export default function ChatView(props: ChatViewProps) {
             keybindings={keybindings}
             getShortcutContext={getShortcutContext}
             maximized={rightPanelMaximized}
-            inlineSize={previewPanelInlineSize}
+            inlineSize={worldSurfacesSize ?? previewPanelInlineSize}
             surfaces={renderedRightPanelSurfaces}
             environmentId={activeThreadRef.environmentId}
             activeSurfaceId={renderedRightPanelSurface?.id ?? null}
