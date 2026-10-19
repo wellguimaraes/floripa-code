@@ -5454,6 +5454,18 @@ export default function ChatView(props: ChatViewProps) {
         closePreviewPanel();
         return;
       }
+      // Terminal and Browser start their first tab rather than showing an empty type.
+      const hasTypeSurface = current.surfaces.some(
+        (surface) => rightPanelSurfaceType(surface.kind) === type,
+      );
+      if (type === "terminal" && !hasTypeSurface && hasTerminalWriteAccess()) {
+        addTerminalSurface();
+        return;
+      }
+      if (type === "preview" && !hasTypeSurface && browserAvailable && canOperatePreview) {
+        createBrowserSurface();
+        return;
+      }
       // Diff is one view with no tabs, so picking its type opens it.
       if (type === "diff" && isServerThread && isGitRepo) store.open(activeThreadRef, "diff");
       else store.activateType(activeThreadRef, type);
@@ -5463,7 +5475,18 @@ export default function ChatView(props: ChatViewProps) {
       );
       if (next) activateRightPanelSurface(next);
     },
-    [activateRightPanelSurface, activeThreadRef, closePreviewPanel, isGitRepo, isServerThread],
+    [
+      activateRightPanelSurface,
+      activeThreadRef,
+      addTerminalSurface,
+      browserAvailable,
+      canOperatePreview,
+      closePreviewPanel,
+      createBrowserSurface,
+      hasTerminalWriteAccess,
+      isGitRepo,
+      isServerThread,
+    ],
   );
   // Hides the Terminal type when it shows beside the chat; otherwise shows and
   // focuses it, starting the checkout's first terminal when it has none.
