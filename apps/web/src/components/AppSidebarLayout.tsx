@@ -86,7 +86,6 @@ function SidebarControl() {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { toggleSidebar } = useSidebar();
   const isSidebarVisible = useSidebarVisibility();
-  const worldShown = useWorldModeStore((state) => state.shown);
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
   const stageBackdropVariant = useSidebarStageBackdropVariant(
     environmentIdentificationMode === "artwork",
@@ -154,10 +153,6 @@ function SidebarControl() {
               className={cn(
                 "pointer-events-auto",
                 isSidebarVisible && stageBackdropVariant && "relative top-auto translate-y-0",
-                // Over the world's sky, like the window controls beside it.
-                worldShown &&
-                  !isSidebarVisible &&
-                  "text-white [--control-icon-color:white] [:hover,[data-pressed]]:bg-white/15",
               )}
               aria-label="Toggle main sidebar"
             />
@@ -240,6 +235,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const panelAnimationsSuppressed = usePanelNavigationSuppression(pathname);
   const routePanelAnimationsActive = panelAnimationsActive && !panelAnimationsSuppressed;
   const isOnSettings = pathname === "/settings" || pathname.startsWith("/settings/");
+  const worldShown = useWorldModeStore((state) => state.shown);
   const isMacosDesktop = isElectron && isMacPlatform(navigator.platform);
   const [sidebarWidth, setSidebarWidth] = useState(readInitialThreadSidebarWidth);
   // Subscribed rather than read once: the clamp must track live window size,
@@ -344,10 +340,11 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
           ) : (
             <ThreadSidebar />
           )}
-          <SidebarRail onDoubleClick={resetSidebarWidth} />
+          {worldShown ? null : <SidebarRail onDoubleClick={resetSidebarWidth} />}
         </Sidebar>
         {children}
-        <SidebarControl />
+        {/* The world has no sidebar: it takes the whole window. */}
+        {worldShown ? null : <SidebarControl />}
         <NavigationHistoryShortcuts />
         <MainAppLocationTracker />
       </SidebarProvider>

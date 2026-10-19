@@ -9,6 +9,7 @@ import { WorldLayout } from "../components/world/WorldLayout";
 import { useWorldModeStore } from "../components/world/worldModeStore";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { useClientSettings, useLegacySidebarEnabled } from "../hooks/useSettings";
+import { useIsMobile } from "../hooks/useMediaQuery";
 import { openCommandPalette } from "../commandPaletteBus";
 import { useProjects } from "../state/entities";
 import { isPreviewAvailableFor } from "../browser/previewRuntime";
@@ -108,13 +109,6 @@ function ChatRouteGlobalShortcuts() {
           defaultProjectRef,
           handleNewThread,
         });
-        return;
-      }
-
-      if (command === "world.toggle") {
-        event.preventDefault();
-        event.stopPropagation();
-        useWorldModeStore.getState().toggle();
         return;
       }
 
@@ -237,8 +231,9 @@ function ChatRouteLayout() {
   // matches do, and rendering the landing Outlet for that one render starts a
   // draft that replaces the thread being opened.
   const onLanding = useMatch({ from: "/_chat/", shouldThrow: false, select: () => true }) ?? false;
-  const worldMode =
-    useWorldModeStore((state) => state.enabled) && (Boolean(threadTarget) || onLanding);
+  // The world is the chat layout wherever its map fits; phones and narrow windows keep the
+  // plain thread view.
+  const worldMode = !useIsMobile() && (Boolean(threadTarget) || onLanding);
   return (
     <>
       <ChatRouteGlobalShortcuts />

@@ -4,8 +4,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { resolveStorage } from "../../lib/storage";
 
 interface WorldModeState {
-  readonly enabled: boolean;
-  /** Whether the world is on screen right now; enabled worlds hide on routes like settings. */
+  /** Whether the world is on screen right now; it hides on routes like settings. */
   readonly shown: boolean;
   /** Whether the sidebar was open before the world collapsed it, to reopen it on the way out. */
   readonly sidebarWasOpen: boolean | null;
@@ -23,15 +22,12 @@ interface WorldModeState {
   readonly focusIslandOf: (threadKey: string) => void;
   readonly setSidebarWasOpen: (open: boolean | null) => void;
   readonly setShown: (shown: boolean) => void;
-  readonly setEnabled: (enabled: boolean) => void;
-  readonly toggle: () => void;
 }
 
-/** Whether the chat layout shows the world. Per viewer, so it lives in this browser only. */
+/** The world's view state, per viewer, so it lives in this browser only. */
 export const useWorldModeStore = create<WorldModeState>()(
   persist(
     (set) => ({
-      enabled: false,
       shown: false,
       sidebarWasOpen: null,
       pickingProject: false,
@@ -42,15 +38,13 @@ export const useWorldModeStore = create<WorldModeState>()(
       focusIslandOf: (threadKey) => set({ islandFocusRequest: { threadKey } }),
       setSidebarWasOpen: (sidebarWasOpen) => set({ sidebarWasOpen }),
       setShown: (shown) => set({ shown }),
-      setEnabled: (enabled) => set({ enabled }),
-      toggle: () => set((state) => ({ enabled: !state.enabled })),
     }),
     {
       name: "t3code:world-mode:v1",
       storage: createJSONStorage(() =>
         resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
       ),
-      partialize: (state) => ({ enabled: state.enabled, sidebarWasOpen: state.sidebarWasOpen }),
+      partialize: (state) => ({ sidebarWasOpen: state.sidebarWasOpen }),
     },
   ),
 );

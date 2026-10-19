@@ -54,11 +54,10 @@ beach, an agent and its subagents sit next to each other.
 
 ## Open the world
 
-Press `mod+alt+w`, click the map button at the right of the sidebar's title row,
-or pick **Enter world** from the command palette. The sidebar folds away while
-the world is open. To return to the regular view, open the sidebar again with
-the sidebar button at the top left, or press `mod+alt+w` again. The choice is
-remembered in this browser.
+The world is where your threads live: it fills the window, with no sidebar. Use
+the search button at the top left, or the command palette, to find a thread,
+project or page, and the gear beside it for Settings. On a phone or a narrow
+window, threads show in the regular list instead, where the map would not fit.
 
 Hover an island to see each character's thread title above its head; the one
 under the pointer shows its full title. A resting agent's tag also shows how

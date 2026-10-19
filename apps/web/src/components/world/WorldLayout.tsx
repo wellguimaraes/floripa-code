@@ -23,12 +23,13 @@ import { buildThreadRouteParams, type ThreadRouteTarget } from "../../threadRout
 import { RightPanelResizeHandle } from "../preview/RightPanelResizeHandle";
 import { ThreadRouteView } from "../ThreadRouteView";
 import { Button } from "../ui/button";
-import { SidebarInset, useSidebar, useSidebarVisibility } from "../ui/sidebar";
+import { SidebarInset, useSidebar } from "../ui/sidebar";
 import { ContrastSlider } from "./ContrastSlider";
 import { ManagerToggle } from "./ManagerToggle";
 import { WORLD_MANAGERS_AVAILABLE } from "./worldManagerStore";
 import { TimeSlider } from "./TimeSlider";
 import { WeatherToggle } from "./WeatherToggle";
+import { WorldNavigation } from "./WorldNavigation";
 import { islandWorlds } from "./definitions/island";
 import { useWorldModeStore } from "./worldModeStore";
 
@@ -76,7 +77,6 @@ function useFrameWidth(storageKey: string, defaultWidth: number) {
  */
 export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | null }) {
   const navigate = useNavigate();
-  const setWorldMode = useWorldModeStore((state) => state.setEnabled);
   const panelRef = useRef<HTMLDivElement>(null);
   const readPanel = useCallback(() => panelRef.current, []);
   const [toolbar, setToolbar] = useState<HTMLDivElement | null>(null);
@@ -157,15 +157,6 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
     return () => useWorldModeStore.getState().setShown(false);
   }, []);
 
-  // Opening the sidebar is the way out of the world.
-  const sidebarVisible = useSidebarVisibility();
-  const sidebarWasVisible = useRef(sidebarVisible);
-  useEffect(() => {
-    const wasVisible = sidebarWasVisible.current;
-    sidebarWasVisible.current = sidebarVisible;
-    if (sidebarVisible && !wasVisible) setWorldMode(false);
-  }, [setWorldMode, sidebarVisible]);
-
   useEffect(() => {
     if (chatTarget === null) return;
     // Cmd+Escape (Ctrl+Escape) closes the panel unless something in it (a menu, picker,
@@ -204,10 +195,11 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
           "pointer-events-none absolute inset-x-0 top-0 z-10 flex h-[var(--workspace-topbar-height)] items-center gap-2 pr-3",
           isElectron && "drag-region",
         )}
-        // Clears the window controls and the folded sidebar toggle on the left.
+        // Clears the window controls on the left.
         style={{ paddingLeft: "var(--workspace-titlebar-content-left)" }}
       >
         <div className="pointer-events-auto flex items-center gap-2">
+          <WorldNavigation />
           <ContrastSlider />
           <TimeSlider />
           <WeatherToggle />

@@ -68,7 +68,6 @@ import {
   FolderPlusIcon,
   MessageSquareDashedIcon,
   LinkIcon,
-  MapIcon,
   MessageSquareIcon,
   MonitorIcon,
   MoonIcon,
@@ -79,7 +78,6 @@ import {
   SunIcon,
   TextSearchIcon,
 } from "lucide-react";
-import { useWorldModeStore } from "./world/worldModeStore";
 import { requestThreadFindOpen } from "./chat/threadFindActionBus";
 import {
   useCallback,
@@ -1775,7 +1773,6 @@ function OpenCommandPaletteDialog(props: {
     });
   }, [clearOpenIntent, browseNavigation, openIntent, projectThreadItems, pushPaletteView]);
 
-  const worldModeEnabled = useWorldModeStore((state) => state.enabled);
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
 
   if (projects.length > 0) {
@@ -1828,18 +1825,6 @@ function OpenCommandPaletteDialog(props: {
       run: () => startScratchThread(scratchTargetEnvironmentId),
     });
   }
-
-  actionItems.push({
-    kind: "action",
-    value: "action:toggle-world",
-    searchTerms: ["world", "3d", "island", "characters", "agents", "game"],
-    title: worldModeEnabled ? "Leave world" : "Enter world",
-    icon: <MapIcon className={ITEM_ICON_CLASS} />,
-    shortcutCommand: "world.toggle",
-    run: async () => {
-      useWorldModeStore.getState().toggle();
-    },
-  });
 
   if (activeThreadId && supportsThreadFind) {
     actionItems.push({
