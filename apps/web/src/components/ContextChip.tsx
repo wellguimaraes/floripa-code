@@ -23,7 +23,7 @@ import { cn } from "~/lib/utils";
  * span with tabIndex for a tooltip) gets the focus outline.
  */
 const contextChipVariants = cva(
-  "inline-flex h-[1.41em] max-w-full items-center gap-[0.33em] rounded-[0.5em] border px-[0.5em] align-middle font-medium text-[0.86em] leading-none [&_svg]:block [&_svg]:size-[1.17em] [&_svg]:shrink-0 [&_svg]:self-center [button&,a&,[data-popup-open]&]:cursor-pointer [button&,a&]:transition-colors [button&,a&]:motion-reduce:transition-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-foreground disabled:cursor-default",
+  "inline-flex h-[1.6em] max-w-full items-center gap-[0.33em] rounded-[0.5em] border px-[0.5em] align-middle font-medium text-[0.86em] leading-none [&_svg]:block [&_svg]:size-[1em] [&_svg]:shrink-0 [&_svg]:self-center [button&,a&,[data-popup-open]&]:cursor-pointer [button&,a&]:transition-colors [button&,a&]:motion-reduce:transition-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-foreground disabled:cursor-default",
   {
     defaultVariants: { kind: "neutral" },
     variants: {
@@ -72,8 +72,9 @@ const contextChipVariants = cva(
           "thread",
           "citation",
         ],
+        // Text, icon and fill share the accent's hue and chroma at fixed lightnesses.
         className:
-          "[--context-chip-border:color-mix(in_oklab,var(--context-chip-accent)_34%,var(--contrast-border))] [--context-chip-border-hover:color-mix(in_oklab,var(--context-chip-accent)_48%,var(--contrast-border))] [--context-chip-foreground:color-mix(in_oklab,var(--context-chip-accent)_22%,var(--contrast-foreground))] border-(--context-chip-border) bg-(--context-chip-accent)/11 text-(--context-chip-foreground) [button:enabled&,a&]:hover:border-(--context-chip-border-hover) [button:enabled&,a&]:hover:bg-(--context-chip-accent)/17",
+          "[--context-chip-foreground:oklch(from_var(--context-chip-accent)_0.4_c_h)] dark:[--context-chip-foreground:oklch(from_var(--context-chip-accent)_0.82_c_h)] [--context-chip-fill:oklch(from_var(--context-chip-accent)_0.65_c_h)] border-transparent bg-(--context-chip-fill)/13 text-(--context-chip-foreground) data-[state=unresolved]:border-(--context-chip-foreground)/40 [button:enabled&,a&]:hover:bg-(--context-chip-fill)/20",
       },
       // State colors win over any kind.
       { state: "unresolved", className: "text-foreground" },
