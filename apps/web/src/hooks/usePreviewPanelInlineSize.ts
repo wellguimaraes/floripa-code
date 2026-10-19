@@ -1,4 +1,4 @@
-import { type RefObject, useLayoutEffect, useState } from "react";
+import { type RefObject, useLayoutEffect, useRef, useState } from "react";
 
 import { type ResizableWidthHandlers, useResizableWidth } from "./useResizableWidth";
 import { observeResize } from "../lib/observeResize";
@@ -33,14 +33,26 @@ export function usePreviewPanelInlineSize(
     readonly container?: HTMLElement | null | undefined;
   } = {},
 ): PreviewPanelInlineSize {
-  const maxWidth = useViewportClampedMaxWidth(hostRef, options.enabled ?? true, options.container);
-  return useResizableWidth({
+  const requestedWidthRef = useRef<number>(Infinity);
+  const { maxWidth, remeasure } = useViewportClampedMaxWidth(
+    hostRef,
+    options.enabled ?? true,
+    options.container,
+    requestedWidthRef,
+  );
+  const { width, requestedWidth, handlers } = useResizableWidth({
     storageKey: options.widthStorageKey ?? PREVIEW_PANEL_WIDTH_STORAGE_KEY,
     defaultWidth: options.defaultWidth ?? PREVIEW_PANEL_DEFAULT_WIDTH,
     minWidth: PREVIEW_PANEL_MIN_WIDTH,
     maxWidth,
     edge: "left",
   });
+  // A wider panel may now meet a cap that was skipped while it did not bind.
+  useLayoutEffect(() => {
+    requestedWidthRef.current = requestedWidth;
+    remeasure();
+  }, [remeasure, requestedWidth]);
+  return { width, handlers };
 }
 
 /**
@@ -52,10 +64,13 @@ function useViewportClampedMaxWidth(
   hostRef: RefObject<HTMLElement | null> | undefined,
   enabled: boolean,
   container: HTMLElement | null | undefined,
-): number {
+  requestedWidthRef: RefObject<number>,
+): { readonly maxWidth: number; readonly remeasure: () => void } {
   const [maxWidth, setMaxWidth] = useState(() =>
     getPreviewPanelMaxWidth(typeof window === "undefined" ? 1280 : window.innerWidth),
   );
+  const [measureRef] = useState(() => ({ current: () => {} }));
+  const [remeasure] = useState(() => () => measureRef.current());
   useLayoutEffect(() => {
     if (typeof window === "undefined") return;
     const row = container ?? (enabled ? hostRef?.current?.parentElement : null) ?? null;
@@ -63,10 +78,16 @@ function useViewportClampedMaxWidth(
     // the row on the initial render, not one observer tick later (the panel
     // would flash over-wide on every mount). Only the derived cap is stored: the
     // row resizes every frame of a sidebar drag, but the cap rarely moves, and an
-    // unchanged cap skips re-rendering the panel's owner.
+    // unchanged cap skips re-rendering the panel's owner. A cap above the panel's chosen
+    // width clamps nothing either, so moving within that range keeps the stored cap: the
+    // world's chat frame is this row, and resizing it would otherwise re-render the chat on
+    // every frame.
     const measure = () => {
-      setMaxWidth(getPreviewPanelMaxWidth(window.innerWidth, row?.clientWidth));
+      const next = getPreviewPanelMaxWidth(window.innerWidth, row?.clientWidth);
+      const requested = requestedWidthRef.current;
+      setMaxWidth((current) => (current >= requested && next >= requested ? current : next));
     };
+    measureRef.current = measure;
     measure();
     let frame = 0;
     const onResize = () => {
@@ -83,8 +104,8 @@ function useViewportClampedMaxWidth(
       if (frame !== 0) window.cancelAnimationFrame(frame);
       stopObserving?.();
     };
-  }, [container, hostRef, enabled]);
-  return maxWidth;
+  }, [container, hostRef, enabled, measureRef, requestedWidthRef]);
+  return { maxWidth, remeasure };
 }
 export function getPreviewPanelMaxWidth(viewportWidth: number, containerWidth?: number): number {
   const fractionCap = Math.floor(viewportWidth * PREVIEW_PANEL_MAX_WIDTH_FRACTION);

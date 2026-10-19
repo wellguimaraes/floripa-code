@@ -52,6 +52,8 @@ export interface ResizableWidthHandlers {
  */
 export function useResizableWidth(options: UseResizableWidthOptions): {
   readonly width: number;
+  /** The width the user chose, before `maxWidth` clamps it. */
+  readonly requestedWidth: number;
   readonly handlers: ResizableWidthHandlers;
 } {
   const { storageKey, defaultWidth, minWidth, maxWidth, edge } = options;
@@ -123,5 +125,5 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
   // rewrites the committed width, so re-apply the live pointer position.
   useLayoutEffect(refresh, [clamp, clampedWidth, refresh]);
 
-  return { width: clampedWidth, handlers };
+  return { width: clampedWidth, requestedWidth: widthState.width, handlers };
 }
