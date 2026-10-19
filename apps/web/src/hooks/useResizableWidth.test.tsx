@@ -190,6 +190,24 @@ describe("panel resize cleanup", () => {
     expect(setItem).toHaveBeenCalledExactlyOnceWith("test-panel-width", "800");
   });
 
+  it("recovers when a drag never sees its end", async () => {
+    await act(() => {
+      result.handlers.onPointerDown(pointer());
+      result.handlers.onPointerMove(pointer(50));
+    });
+    await act(() => frame?.(0));
+    expect(hostStyle.get(RESIZABLE_WIDTH_PROPERTY)).toBe("450px");
+    // The release is lost, so the next press starts over from the committed width.
+    await act(() => {
+      result.handlers.onPointerDown(pointer(200));
+      result.handlers.onPointerUp(pointer(150));
+    });
+    expect(result.width).toBe(450);
+    expect(setItem).toHaveBeenCalledExactlyOnceWith("test-panel-width", "450");
+    expect(style.cursor).toBe("");
+    expect(captured).toBe(false);
+  });
+
   it("saves the final width when release is followed by lost capture", async () => {
     await act(() => {
       result.handlers.onPointerDown(pointer());
