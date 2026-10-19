@@ -1,15 +1,13 @@
 import { AuthPreviewOperateScope } from "@t3tools/contracts";
-import { Outlet, createFileRoute, redirect, useMatch, useParams } from "@tanstack/react-router";
+import { Outlet, createFileRoute, redirect } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useMemo } from "react";
 
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { ThreadRouteView } from "../components/ThreadRouteView";
-import { WorldLayout } from "../components/world/WorldLayout";
+import { useWorldRoute } from "../components/world/worldRoute";
 import { useWorldModeStore } from "../components/world/worldModeStore";
-import { resolveThreadRouteTarget } from "../threadRoutes";
 import { useClientSettings, useLegacySidebarEnabled } from "../hooks/useSettings";
-import { useIsMobile } from "../hooks/useMediaQuery";
 import { openCommandPalette } from "../commandPaletteBus";
 import { useProjects } from "../state/entities";
 import { isPreviewAvailableFor } from "../browser/previewRuntime";
@@ -221,29 +219,12 @@ function ChatRouteGlobalShortcuts() {
 function ChatRouteLayout() {
   // Both thread routes render here, not in their own leaf components, so the
   // draft-to-thread promotion keeps one ChatView mounted across the swap.
-  const threadTarget = useParams({
-    strict: false,
-    select: (params) => resolveThreadRouteTarget(params),
-  });
-  // The world stands in for threads and the landing page; other chat pages
-  // such as pull requests still render normally.
-  // Read the landing match, not the location: the location changes before the
-  // matches do, and rendering the landing Outlet for that one render starts a
-  // draft that replaces the thread being opened.
-  const onLanding = useMatch({ from: "/_chat/", shouldThrow: false, select: () => true }) ?? false;
-  // The world is the chat layout wherever its map fits; phones and narrow windows keep the
-  // plain thread view.
-  const worldMode = !useIsMobile() && (Boolean(threadTarget) || onLanding);
+  // In world mode the app shell's `WorldHost` draws the world instead.
+  const { worldMode, target: threadTarget } = useWorldRoute();
   return (
     <>
       <ChatRouteGlobalShortcuts />
-      {worldMode ? (
-        <WorldLayout target={threadTarget ?? null} />
-      ) : threadTarget ? (
-        <ThreadRouteView target={threadTarget} />
-      ) : (
-        <Outlet />
-      )}
+      {worldMode ? null : threadTarget ? <ThreadRouteView target={threadTarget} /> : <Outlet />}
     </>
   );
 }

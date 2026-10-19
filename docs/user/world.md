@@ -56,7 +56,8 @@ beach, an agent and its subagents sit next to each other.
 
 The world is where your threads live: it fills the window, with no sidebar. Use
 the search button at the top left, or the command palette, to find a thread,
-project or page, and the gear beside it for Settings. On a phone or a narrow
+project or page, and the gear beside it for Settings. Settings opens over the
+map, and closing it with `Esc` puts you back where you were. On a phone or a narrow
 window, threads show in the regular list instead, where the map would not fit.
 
 Hover an island to see each character's thread title above its head; the one

@@ -75,8 +75,16 @@ function useFrameWidth(storageKey: string, defaultWidth: number) {
  * The chat layout in world mode. The URL still picks the open thread, so
  * clicking a character navigates to it and its chat floats over the world;
  * everything ChatView does on its own (forks, deletes) keeps working.
+ * `covered` is for while Settings sits over the world: the chat hides, and its
+ * shortcuts with it, until Settings closes onto it again.
  */
-export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | null }) {
+export function WorldLayout({
+  target,
+  covered,
+}: {
+  readonly target: ThreadRouteTarget | null;
+  readonly covered: boolean;
+}) {
   const navigate = useNavigate();
   const panelRef = useRef<HTMLDivElement>(null);
   const readPanel = useCallback(() => panelRef.current, []);
@@ -165,7 +173,7 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
   }, []);
 
   useEffect(() => {
-    if (chatTarget === null) return;
+    if (chatTarget === null || covered) return;
     // Cmd+Escape (Ctrl+Escape) closes the panel unless something in it (a menu, picker,
     // dialog) took it first. Plain Escape is left to the chat, so it can't close it by accident.
     const onKeyDown = (event: KeyboardEvent) => {
@@ -180,7 +188,7 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [chatTarget, navigate]);
+  }, [chatTarget, covered, navigate]);
 
   return (
     <SidebarInset className="h-svh min-h-0 overflow-hidden md:h-dvh">
@@ -234,7 +242,7 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
         </div>
       </div>
       {heldTarget !== null ? (
-        <Activity mode={chatTarget !== null ? "visible" : "hidden"}>
+        <Activity mode={chatTarget !== null && !covered ? "visible" : "hidden"}>
           <div
             ref={panelRef}
             className="absolute top-[calc(var(--workspace-topbar-height)+0.25rem)] right-3 bottom-3 w-[min(calc(var(--resizable-width)+var(--world-surfaces-width)),calc(100%-4rem))]"

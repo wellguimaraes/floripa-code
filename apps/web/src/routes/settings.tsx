@@ -1,7 +1,10 @@
 import { Outlet, createFileRoute, redirect, useLocation } from "@tanstack/react-router";
 import { useState, type ReactNode } from "react";
-import { RotateCcwIcon } from "lucide-react";
+import { RotateCcwIcon, XIcon } from "lucide-react";
 import { Button } from "../components/ui/button";
+import { Dialog, DialogClose, DialogPopup } from "../components/ui/dialog";
+import { SettingsSidebarNav } from "../components/settings/SettingsSidebarNav";
+import { useWorldModeStore } from "../components/world/worldModeStore";
 import { useSettingsRestore } from "../components/settings/SettingsPanels";
 
 import { SettingsBreadcrumb } from "../components/settings/SettingsBreadcrumb";
@@ -113,7 +116,8 @@ function SettingsScopeBoundary({ pathname, children }: { pathname: string; child
 function SettingsContentLayout() {
   const location = useLocation();
   const navigateToMainApp = useNavigateToMainApp();
-  useEscapeToGoBack(navigateToMainApp);
+  // Opened from the world, which stays mounted behind it, Settings is a dialog over the map.
+  const overWorld = useWorldModeStore((state) => state.shown);
   const { search, environment } = useSettingsScope();
   const contentScopeKey =
     location.pathname === "/settings/diagnostics" || location.pathname === "/settings/providers"
@@ -121,29 +125,106 @@ function SettingsContentLayout() {
       : JSON.stringify(search);
   const [restoreSignal, setRestoreSignal] = useState(0);
 
+  const heading = (
+    <div className="flex min-w-0 flex-1 items-center gap-3">
+      <SettingsBreadcrumb pathname={location.pathname} />
+      {location.pathname === "/settings/general" ? (
+        <div className="ms-auto flex shrink-0 items-center">
+          <RestoreDeviceDefaultsButton onRestored={() => setRestoreSignal((value) => value + 1)} />
+        </div>
+      ) : null}
+    </div>
+  );
+  const content = (
+    <div key={`${contentScopeKey}:${restoreSignal}`} className="min-h-0 flex flex-1 flex-col">
+      <SettingsScopeBoundary pathname={location.pathname}>
+        <Outlet />
+      </SettingsScopeBoundary>
+    </div>
+  );
+  if (overWorld) {
+    return (
+      <SettingsDialog pathname={location.pathname} heading={heading} onClose={navigateToMainApp}>
+        {content}
+      </SettingsDialog>
+    );
+  }
+  return (
+    <SettingsPage heading={heading} onClose={navigateToMainApp}>
+      {content}
+    </SettingsPage>
+  );
+}
+
+function SettingsPage({
+  heading,
+  onClose,
+  children,
+}: {
+  heading: ReactNode;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  useEscapeToGoBack(onClose);
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none isolate">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background text-foreground">
-        <WorkspacePageHeader electron={isElectron}>
-          <div className="flex w-full items-center gap-3">
-            <SettingsBreadcrumb pathname={location.pathname} />
-            {location.pathname === "/settings/general" ? (
-              <div className="ms-auto flex shrink-0 items-center">
-                <RestoreDeviceDefaultsButton
-                  onRestored={() => setRestoreSignal((value) => value + 1)}
-                />
-              </div>
-            ) : null}
-          </div>
-        </WorkspacePageHeader>
-
-        <div key={`${contentScopeKey}:${restoreSignal}`} className="min-h-0 flex flex-1 flex-col">
-          <SettingsScopeBoundary pathname={location.pathname}>
-            <Outlet />
-          </SettingsScopeBoundary>
-        </div>
+        <WorkspacePageHeader electron={isElectron}>{heading}</WorkspacePageHeader>
+        {children}
       </div>
     </SidebarInset>
+  );
+}
+
+/**
+ * Settings nearly filling the window, its own nav on the left since the world folds the
+ * sidebar away. Escape, the close button or a click outside it go back to the world.
+ */
+function SettingsDialog({
+  pathname,
+  heading,
+  onClose,
+  children,
+}: {
+  pathname: string;
+  heading: ReactNode;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) void onClose();
+      }}
+    >
+      <DialogPopup
+        aria-label="Settings"
+        showCloseButton={false}
+        bottomStickOnMobile={false}
+        // A title bar's height clear on every side, so it starts below the window controls.
+        className="h-[calc(100dvh-2*var(--workspace-topbar-height))] w-[calc(100vw-2*var(--workspace-topbar-height))] max-w-none flex-row overflow-hidden"
+      >
+        {/* Rows tint with the text colour rather than the sidebar's white, which barely shows here. */}
+        <nav
+          aria-label="Settings"
+          className="flex w-64 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground [--sidebar-row-hover:color-mix(in_srgb,var(--foreground)_5%,transparent)] [--sidebar-row-selected:color-mix(in_srgb,var(--foreground)_9%,transparent)]"
+        >
+          <SettingsSidebarNav pathname={pathname} />
+        </nav>
+        <div className="flex min-w-0 flex-1 flex-col bg-background text-foreground">
+          <header className="flex h-12 shrink-0 items-center gap-3 border-b ps-5 pe-2">
+            {heading}
+            <DialogClose
+              render={<Button variant="ghost" size="icon-sm" aria-label="Close settings" />}
+            >
+              <XIcon />
+            </DialogClose>
+          </header>
+          {children}
+        </div>
+      </DialogPopup>
+    </Dialog>
   );
 }
 

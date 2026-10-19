@@ -35,6 +35,7 @@ import LegacyThreadSidebar from "./LegacySidebar";
 import { useThreadVisitedMigration } from "../hooks/useThreadVisitedMigration";
 import ThreadSidebar from "./Sidebar";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
+import { WorldHost } from "./world/WorldHost";
 import { SidebarBrandWidthProbe, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { MainAppLocationTracker } from "./sidebar/mainAppLocation";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
@@ -330,7 +331,8 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
             onResize: setSidebarWidth,
           }}
         >
-          {isOnSettings ? (
+          {/* Settings over the world carries its own nav, so the folded sidebar keeps the threads. */}
+          {isOnSettings && !worldShown ? (
             <>
               <SidebarChromeHeader isElectron={isElectron} />
               <SettingsSidebarNav pathname={pathname} />
@@ -342,6 +344,8 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
           )}
           {worldShown ? null : <SidebarRail onDoubleClick={resetSidebarWidth} />}
         </Sidebar>
+        {/* Before the routes, so Settings opened from the world draws over it. */}
+        <WorldHost />
         {children}
         {/* The world has no sidebar: it takes the whole window. */}
         {worldShown ? null : <SidebarControl />}
