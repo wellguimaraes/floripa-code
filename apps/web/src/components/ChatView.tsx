@@ -248,6 +248,7 @@ import {
 import { PopoverCreateHandle } from "./ui/popover";
 import {
   pullRequestSurface,
+  threadPullRequestSurfaces,
   selectActiveRightPanel,
   rightPanelSurfaceType,
   selectActiveRightPanelSurface,
@@ -6609,6 +6610,34 @@ export default function ChatView(props: ChatViewProps) {
     useRightPanelStore.getState().openPullRequest(activeThreadRef, pullRequestPanelTarget);
   }, [activeThreadRef, pullRequestPanelTarget, supportsPullRequests]);
   const pullRequestSurfaceAvailable = supportsPullRequests && pullRequestPanelTarget !== null;
+  const pullRequestTabs = activeThread
+    ? threadPullRequestSurfaces({
+        projectId: activeThread.projectId,
+        list:
+          pullRequestsSurfaceAvailable && (visiblePullRequestCount > 1 || !supportsPullRequests),
+        current: supportsPullRequests ? pullRequestPanelTarget : null,
+        links: supportsPullRequests ? visiblePullRequests : [],
+      })
+    : [];
+  const pullRequestTabsKey = pullRequestTabs.map((surface) => surface.id).join("\n");
+  const activeRightPanelSurfaceId = activeRightPanelSurface?.id ?? null;
+  const reconcilePullRequestTabs = useEffectEvent((threadRef: ScopedThreadRef) => {
+    useRightPanelStore.getState().reconcilePullRequestSurfaces(threadRef, pullRequestTabs);
+  });
+  // Pull-request tabs follow the thread. Re-run as the reader moves too, so a pull request
+  // opened from a link goes away once they leave its tab.
+  useEffect(() => {
+    if (!activeThreadRef || !isServerThread || !pullRequestsCapabilityKnown) return;
+    void pullRequestTabsKey;
+    void activeRightPanelSurfaceId;
+    reconcilePullRequestTabs(activeThreadRef);
+  }, [
+    activeRightPanelSurfaceId,
+    activeThreadRef,
+    isServerThread,
+    pullRequestTabsKey,
+    pullRequestsCapabilityKnown,
+  ]);
   const supportsSettlement = serverConfig?.environment.capabilities.threadSettlement === true;
   const supportsSnooze = serverConfig?.environment.capabilities.threadSnooze === true;
   const supportsPinning = serverConfig?.environment.capabilities.threadPinning === true;
@@ -7589,8 +7618,12 @@ export default function ChatView(props: ChatViewProps) {
         event.preventDefault();
         event.stopPropagation();
         if (event.repeat) return;
-        // Diff and the files tree stay open; closing them hides the panel.
-        if (activeRightPanelSurface.kind === "diff" || activeRightPanelSurface.kind === "files") {
+        // Diff, the files tree and pull requests are not the reader's to close; closing hides the panel.
+        if (
+          activeRightPanelSurface.kind === "diff" ||
+          activeRightPanelSurface.kind === "files" ||
+          rightPanelSurfaceType(activeRightPanelSurface.kind) === "pull-request"
+        ) {
           closePreviewPanel();
         } else closeRightPanelSurface(activeRightPanelSurface);
         return;

@@ -15,6 +15,7 @@ import {
   selectThreadPanelVisibility,
   selectThreadRightPanelState,
   setRightPanelScopeResolver,
+  threadPullRequestSurfaces,
   useRightPanelStore,
 } from "./rightPanelStore";
 
@@ -336,6 +337,56 @@ describe("rightPanelStore", () => {
     expect(selectActiveRightPanel(useRightPanelStore.getState().byPanelKey, otherEnvironment)).toBe(
       "file",
     );
+  });
+
+  it("derives one pull-request tab per linked pull request, the list first when several", () => {
+    const link = (number: number) => ({
+      host: "github.com",
+      repository: "pingdotgg/t3code",
+      number,
+      url: `https://github.com/pingdotgg/t3code/pull/${number}`,
+    });
+    const surfaces = threadPullRequestSurfaces({
+      projectId: "project-a",
+      list: true,
+      // The thread's own pull request can lack a host and still match its link.
+      current: { projectId: "project-a", repository: "PingDotGG/t3code", number: 2 },
+      links: [link(1), link(2)],
+    });
+
+    expect(surfaces.map((surface) => surface.id)).toEqual([
+      "pull-requests",
+      pullRequestSurfaceId({ projectId: "project-a", repository: "PingDotGG/t3code", number: 2 }),
+      pullRequestSurface({ projectId: "project-a", ...link(1) }).id,
+    ]);
+  });
+
+  it("keeps pull-request tabs in step with the thread without closing the shown one", () => {
+    const store = useRightPanelStore.getState();
+    const first = pullRequestSurface({ projectId: "project-a", repository: "o/r", number: 1 });
+    const second = pullRequestSurface({ projectId: "project-a", repository: "o/r", number: 2 });
+    const fromLink = pullRequestSurface({ projectId: "project-a", repository: "o/r", number: 9 });
+    store.openFile(refA, "src/app.ts");
+    store.activateType(refA, "pull-request");
+
+    store.reconcilePullRequestSurfaces(refA, [first, second]);
+    // Picked before its tabs arrived, the type shows the first instead of staying empty.
+    expect(panelState().activeSurfaceId).toBe(first.id);
+
+    store.openPullRequest(refA, fromLink);
+    store.reconcilePullRequestSurfaces(refA, [second]);
+    expect(panelState().surfaces.map((surface) => surface.id)).toEqual([
+      "file:src/app.ts",
+      second.id,
+      fromLink.id,
+    ]);
+
+    store.activateSurface(refA, second.id);
+    store.reconcilePullRequestSurfaces(refA, [second]);
+    expect(panelState().surfaces.map((surface) => surface.id)).toEqual([
+      "file:src/app.ts",
+      second.id,
+    ]);
   });
 
   it("does not treat resource reconciliation as a manual choice", () => {

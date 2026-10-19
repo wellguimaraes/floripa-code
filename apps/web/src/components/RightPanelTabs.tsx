@@ -1010,10 +1010,10 @@ function RightPanelTypeEmptyState(props: {
       <p className="text-muted-foreground text-sm">
         {props.available ? `No ${meta.label.toLowerCase()} open in this worktree.` : meta.reason}
       </p>
-      {props.available ? (
+      {props.available && props.type !== "pull-request" ? (
         <Button size="sm" variant="outline" onClick={props.onAdd}>
           <Plus />
-          New {props.type === "pull-request" ? "pull request" : meta.label.toLowerCase()}
+          New {meta.label.toLowerCase()}
         </Button>
       ) : null}
     </div>
@@ -1058,7 +1058,9 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   // With no tabs the row has nothing to show, unless it is also the window's title bar or holds
   // the sheet's layout controls.
   const showsTabBar = showsTabs || reservesTitleBarControls || props.layoutControls != null;
-  const canAddToActiveType = activeTypeAvailable && showsTabs;
+  // Pull-request tabs follow the thread, so the reader neither adds nor closes them.
+  const tabsFollowThread = activeType === "pull-request";
+  const canAddToActiveType = activeTypeAvailable && showsTabs && !tabsFollowThread;
   const addToActiveType = () => {
     switch (activeType) {
       case "preview":
@@ -1261,24 +1263,27 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           }),
         });
       }
-      items.push(
-        { id: "close", label: "Close" },
-        {
-          id: "close-others",
-          label: "Close others",
-          disabled: visibleSurfaces.length <= 1,
-        },
-        {
-          id: "close-to-right",
-          label: "Close to the right",
-          disabled: surfaceIndex >= visibleSurfaces.length - 1,
-        },
-        {
-          id: "close-all",
-          label: "Close all",
-          disabled: visibleSurfaces.length === 0,
-        },
-      );
+      if (!tabsFollowThread) {
+        items.push(
+          { id: "close", label: "Close" },
+          {
+            id: "close-others",
+            label: "Close others",
+            disabled: visibleSurfaces.length <= 1,
+          },
+          {
+            id: "close-to-right",
+            label: "Close to the right",
+            disabled: surfaceIndex >= visibleSurfaces.length - 1,
+          },
+          {
+            id: "close-all",
+            label: "Close all",
+            disabled: visibleSurfaces.length === 0,
+          },
+        );
+      }
+      if (items.length === 0) return;
 
       const action = await api.contextMenu.show(items, { x: event.clientX, y: event.clientY });
       switch (action) {
@@ -1318,7 +1323,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           break;
       }
     },
-    [props, visibleSurfaces],
+    [props, tabsFollowThread, visibleSurfaces],
   );
   const handleTabMouseDown = useCallback((event: ReactMouseEvent) => {
     if (event.button !== 1) return;
@@ -1326,12 +1331,12 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   }, []);
   const handleTabAuxClick = useCallback(
     (event: ReactMouseEvent, surface: RightPanelSurface) => {
-      if (event.button !== 1) return;
+      if (event.button !== 1 || tabsFollowThread) return;
       event.preventDefault();
       event.stopPropagation();
       props.onCloseSurface(surface);
     },
-    [props],
+    [props, tabsFollowThread],
   );
 
   useEffect(() => {
@@ -1457,25 +1462,38 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                             : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
                         )}
                       >
-                        <PanelTabCloseButton
-                          label={`Close ${title}`}
-                          onClick={(event) => props.onCloseSurface(surface, event.currentTarget)}
-                        >
-                          <SurfaceIcon
-                            surface={surface}
-                            sessions={props.previewSessions}
-                            desktopByTabId={props.desktopByTabId}
-                            theme={resolvedTheme}
-                            environmentId={props.environmentId}
-                            pullRequestStatusSeeds={props.pullRequestStatusSeeds}
-                          />
-                          {pending ? (
-                            <span
-                              className="absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full bg-current"
-                              aria-hidden
+                        {tabsFollowThread ? (
+                          <span className="flex size-4 shrink-0 items-center justify-center">
+                            <SurfaceIcon
+                              surface={surface}
+                              sessions={props.previewSessions}
+                              desktopByTabId={props.desktopByTabId}
+                              theme={resolvedTheme}
+                              environmentId={props.environmentId}
+                              pullRequestStatusSeeds={props.pullRequestStatusSeeds}
                             />
-                          ) : null}
-                        </PanelTabCloseButton>
+                          </span>
+                        ) : (
+                          <PanelTabCloseButton
+                            label={`Close ${title}`}
+                            onClick={(event) => props.onCloseSurface(surface, event.currentTarget)}
+                          >
+                            <SurfaceIcon
+                              surface={surface}
+                              sessions={props.previewSessions}
+                              desktopByTabId={props.desktopByTabId}
+                              theme={resolvedTheme}
+                              environmentId={props.environmentId}
+                              pullRequestStatusSeeds={props.pullRequestStatusSeeds}
+                            />
+                            {pending ? (
+                              <span
+                                className="absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full bg-current"
+                                aria-hidden
+                              />
+                            ) : null}
+                          </PanelTabCloseButton>
+                        )}
                         {audio === "none" || !audioRuntimeTabId ? null : (
                           <Tooltip>
                             <TooltipTrigger

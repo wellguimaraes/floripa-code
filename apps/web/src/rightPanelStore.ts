@@ -250,6 +250,14 @@ interface RightPanelStoreState {
     hiddenTabIds?: ReadonlySet<string>,
   ) => void;
   reconcileFileSurfaces: (ref: ScopedThreadRef, workspaceAvailable: boolean) => void;
+  /**
+   * Makes the thread's pull-request tabs exactly `surfaces`, keeping the shown tab so a pull
+   * request opened from a link stays until the reader moves on.
+   */
+  reconcilePullRequestSurfaces: (
+    ref: ScopedThreadRef,
+    surfaces: readonly RightPanelSurface[],
+  ) => void;
   show: (ref: ScopedThreadRef) => void;
   close: (ref: ScopedThreadRef) => void;
   setMaximized: (ref: ScopedThreadRef, maximized: boolean) => void;
@@ -362,6 +370,33 @@ export function pullRequestSurface(target: {
     number: target.number,
     ...(typeof target.url === "string" ? { url: target.url } : {}),
   };
+}
+
+/**
+ * The pull-request tabs beside a thread. The app keeps them in step with the thread rather than
+ * the reader opening and closing them: the list when there is more than one to pick from, the
+ * thread's own pull request, then every other one linked to it.
+ */
+export function threadPullRequestSurfaces(input: {
+  projectId: string;
+  list: boolean;
+  current: Parameters<typeof pullRequestSurface>[0] | null;
+  links: readonly { host: string; repository: string; number: number; url: string }[];
+}): RightPanelSurface[] {
+  const surfaces: RightPanelSurface[] = input.list ? [singletonSurface("pull-requests")] : [];
+  const targets = [
+    ...(input.current ? [input.current] : []),
+    ...input.links.map((link) => ({ ...link, projectId: input.projectId })),
+  ];
+  const seen = new Set<string>();
+  for (const target of targets) {
+    // The thread's own pull request can be stored without a host, so match by repository.
+    const key = `${target.repository.toLowerCase()}#${target.number}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    surfaces.push(pullRequestSurface(target));
+  }
+  return surfaces;
 }
 
 const upsertSurface = (
@@ -963,6 +998,32 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
                 ? current.activeSurfaceId
                 : (surfaces.at(-1)?.id ?? null),
             };
+          }),
+        ),
+      reconcilePullRequestSurfaces: (ref, surfaces) =>
+        set((state) =>
+          automaticUpdate(state, ref, (current) => {
+            const wanted = new Set(surfaces.map((surface) => surface.id));
+            // Filtered in place so the tabs keep the order the reader dragged them into.
+            const kept = current.surfaces.filter(
+              (surface) =>
+                rightPanelSurfaceType(surface.kind) !== "pull-request" ||
+                wanted.has(surface.id) ||
+                surface.id === current.activeSurfaceId,
+            );
+            const knownIds = new Set(kept.map((surface) => surface.id));
+            const added = surfaces.filter((surface) => !knownIds.has(surface.id));
+            if (kept.length === current.surfaces.length && added.length === 0) return current;
+            const next = { ...current, surfaces: [...kept, ...added] };
+            // The type was picked before its tabs arrived; show the first rather than an empty type.
+            const first = next.surfaces.find(
+              (surface) => rightPanelSurfaceType(surface.kind) === "pull-request",
+            );
+            return current.activeSurfaceId === null &&
+              current.activeType === "pull-request" &&
+              first
+              ? { ...next, activeSurfaceId: first.id }
+              : next;
           }),
         ),
       show: (ref) =>
