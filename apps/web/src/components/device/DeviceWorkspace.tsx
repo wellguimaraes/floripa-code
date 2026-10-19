@@ -17,7 +17,7 @@ export function DeviceWorkspace(props: {
   hostLabel: string;
   hostDiagnostics: string | undefined;
   visible: boolean;
-  onFloat: () => void;
+  onFloat?: (() => void) | undefined;
   onClose: () => void;
   onPowerOff: () => void;
 }) {

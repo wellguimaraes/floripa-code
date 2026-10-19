@@ -199,6 +199,8 @@ vi.mock("~/previewMiniPlayerStore", () => {
     },
   );
   return {
+    // The float is off in the app; these tests cover the view with it on.
+    FLOATING_PREVIEW_ENABLED: true,
     browserMiniPlayerSource: (tabId: string) => ({ kind: "browser", tabId }),
     selectThreadPreviewMiniPlayerTabId: (
       byThreadKey: Record<string, { source: { tabId: string }; position: null }>,

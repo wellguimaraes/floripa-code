@@ -8,7 +8,7 @@ import type {
 import { Smartphone, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import { usePreviewMiniPlayerStore } from "~/previewMiniPlayerStore";
+import { FLOATING_PREVIEW_ENABLED, usePreviewMiniPlayerStore } from "~/previewMiniPlayerStore";
 import { useRightPanelStore, type RightPanelSurface } from "~/rightPanelStore";
 import { Button } from "~/components/ui/button";
 import { DiscoveryList, DiscoveryListRow } from "~/components/ui/discovery-list";
@@ -208,7 +208,7 @@ export function DevicePanel(props: {
             }
             hostDiagnostics={state.hostStatusDetail}
             visible={props.visible}
-            onFloat={floatActive}
+            onFloat={FLOATING_PREVIEW_ENABLED ? floatActive : undefined}
             onClose={() => closeActive(false)}
             onPowerOff={() => closeActive(true)}
           />

@@ -11,6 +11,7 @@ import {
 vi.mock("~/previewStateStore", () => ({
   applyPreviewServerSnapshot: vi.fn(),
   isPreviewSupportedInRuntime: () => true,
+  previewClientScopeInput: () => ({}),
 }));
 
 vi.mock("~/rightPanelStore", () => ({

@@ -61,6 +61,13 @@ export const browserMiniPlayerSource = (tabId: string): PreviewMiniPlayerSource 
   tabId,
 });
 
+/**
+ * The floating preview over the chat is turned off: browsers and devices stay in the right
+ * panel, where their tabs belong to the worktree. Its entry points check this; flip it to
+ * bring the float back.
+ */
+export const FLOATING_PREVIEW_ENABLED = false;
+
 export const usePreviewMiniPlayerStore = create<PreviewMiniPlayerStoreState>()((set) => ({
   byThreadKey: {},
   open: (ref, source) =>
