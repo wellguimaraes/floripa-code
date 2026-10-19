@@ -9,6 +9,7 @@ import {
   resolveContextWindowModelDisplayName,
   shouldOfferResumeCompaction,
   shouldReserveContextWindowMeter,
+  skipsResumeCompaction,
 } from "./ContextWindowMeter.logic";
 
 function claudeProvider(input: {
@@ -182,6 +183,21 @@ describe("shouldOfferResumeCompaction", () => {
         now,
       }),
     ).toBe(false);
+  });
+});
+
+describe("skipsResumeCompaction", () => {
+  it("skips compacting first for commands that shed the history", () => {
+    expect(skipsResumeCompaction("/compact")).toBe(true);
+    expect(skipsResumeCompaction(" /Clear ")).toBe(true);
+    expect(skipsResumeCompaction("/new")).toBe(true);
+    expect(skipsResumeCompaction("/compact keep the API notes")).toBe(true);
+  });
+
+  it("compacts first for ordinary messages and other commands", () => {
+    expect(skipsResumeCompaction("clear the cache")).toBe(false);
+    expect(skipsResumeCompaction("/review")).toBe(false);
+    expect(skipsResumeCompaction("/newer")).toBe(false);
   });
 });
 

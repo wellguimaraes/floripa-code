@@ -419,6 +419,17 @@ export function isNativeMaintenanceCommand(message: {
   );
 }
 
+/** A native /clear or /new turn: the provider drops the history, so the next message starts a new task. */
+function isContextResetCommand(message: {
+  readonly text: string;
+  readonly attachments: ReadonlyArray<ChatAttachment>;
+}): boolean {
+  return (
+    message.attachments.length === 0 &&
+    ["/clear", "/new"].includes(message.text.trim().toLowerCase())
+  );
+}
+
 /** A native `/goal` command. It changes the provider's goal, so it never steers a running turn. */
 function isGoalCommand(message: {
   readonly text: string;
@@ -4635,13 +4646,20 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       const userMessages = projection.messages.filter((message) => message.role === "user");
       const onlyMaintenanceHistory =
         userMessages.length > 0 && userMessages.every(isNativeMaintenanceCommand);
+      // The first message after /clear or /new names the thread again, unless the user named it.
+      const previousUserMessage = userMessages.at(-1);
+      const followsContextReset =
+        previousUserMessage !== undefined &&
+        isContextResetCommand(previousUserMessage) &&
+        projection.thread.titleManual !== true;
+      const titlesNothing = isNativeMaintenanceCommand(command) || isContextResetCommand(command);
       if (
-        !isNativeMaintenanceCommand(command) &&
+        !titlesNothing &&
         ((command.titleSeed !== undefined &&
           (yield* projectionStore
             .getMessageCount(command.threadId)
             .pipe(mapDispatchError(command))) === 0) ||
-          (command.createdBy === "user" && onlyMaintenanceHistory))
+          (command.createdBy === "user" && (onlyMaintenanceHistory || followsContextReset)))
       ) {
         const now = yield* DateTime.now;
         const thread: OrchestrationV2AppThread = {
@@ -4670,7 +4688,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         projection = yield* getProjectionWithPendingEvents(command.threadId, events);
       } else if (
         command.createdBy === "user" &&
-        !isNativeMaintenanceCommand(command) &&
+        !titlesNothing &&
         projection.thread.titleManual !== true &&
         userMessages.some((message) => !isNativeMaintenanceCommand(message))
       ) {

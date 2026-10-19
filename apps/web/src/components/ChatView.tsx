@@ -505,6 +505,7 @@ import {
   hasAvailableCompactionProvider,
   hasDismissedResumeCompaction,
   shouldOfferResumeCompaction,
+  skipsResumeCompaction,
 } from "./chat/ContextWindowMeter.logic";
 import { deriveLatestContextWindowSnapshot } from "../lib/contextWindow";
 import {
@@ -8741,11 +8742,11 @@ export default function ChatView(props: ChatViewProps) {
     const messageCreatedAt = new Date().toISOString();
     // A stale Claude session compacts before this message so the turn does not re-read the
     // old history. The message queues behind the /compact run, since steering into it is
-    // rejected.
+    // rejected. /compact, /clear and /new already shed the history, so they skip it.
     const compactBeforeSend =
       resumeCompactionTokens !== null &&
       !keepFullHistory &&
-      messageTextForSend.toLowerCase() !== "/compact";
+      !skipsResumeCompaction(messageTextForSend);
     const turnDispatchMode = compactBeforeSend ? "queue" : dispatchMode;
     const shouldQueueBehindActiveRun =
       compactBeforeSend || (phase === "running" && dispatchMode === "queue");

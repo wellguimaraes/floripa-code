@@ -82,6 +82,14 @@ export function shouldOfferResumeCompaction(input: {
   );
 }
 
+// Commands that compact or drop the history themselves, so compacting before them is wasted work.
+const RESUME_COMPACTION_SKIPPING_COMMANDS = new Set(["/compact", "/clear", "/new"]);
+
+export function skipsResumeCompaction(text: string): boolean {
+  const command = text.trim().split(/\s/u, 1)[0]?.toLowerCase() ?? "";
+  return RESUME_COMPACTION_SKIPPING_COMMANDS.has(command);
+}
+
 export function resolveContextWindowModelDisplayName(
   selection: ModelSelection | null | undefined,
   modelOptionsByInstance: ReadonlyMap<ProviderInstanceId, ReadonlyArray<ModelEsque>>,

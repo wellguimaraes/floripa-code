@@ -698,6 +698,71 @@ it.effect.each([" /COMPACT ", "/logout"])(
     }),
 );
 
+it.effect.each([" /CLEAR ", "/new"])("titles the thread again after %s", (resetCommand) =>
+  Effect.gen(function* () {
+    const harness = makeHarness();
+    yield* Effect.gen(function* () {
+      const launches = yield* ThreadLaunch.ThreadLaunchService;
+      const threads = yield* ThreadManagement.ThreadManagementService;
+      const outbox = yield* EffectOutbox.EffectOutboxV2;
+      const launched = yield* launches.launch(
+        launchInput({
+          command: "reset-title",
+          thread: "reset-title-thread",
+          message: "Fix the parser",
+        }),
+      );
+      const send = (name: string, text: string) =>
+        threads.dispatch({
+          type: "message.dispatch",
+          commandId: CommandId.make(name),
+          threadId: launched.threadId,
+          messageId: MessageId.make(`${name}:message`),
+          createdBy: "user",
+          creationSource: "web",
+          text,
+          attachments: [],
+          dispatchMode: { type: "defer_start" },
+        });
+      const titleRequests = (name: string) =>
+        outbox
+          .listByCommandId(CommandId.make(name))
+          .pipe(
+            Effect.map((effects) =>
+              effects
+                .filter((effect) => effect.request.type === "thread-title.generate")
+                .map((effect) => effect.request),
+            ),
+          );
+
+      yield* send("reset", resetCommand);
+      assert.deepEqual(yield* titleRequests("reset"), []);
+
+      yield* send("after-reset", "Write the release notes");
+      assert.equal(
+        (yield* threads.getThreadProjection(launched.threadId)).thread.titleRegeneration?.requestId,
+        CommandId.make("after-reset"),
+      );
+      assert.deepEqual(yield* titleRequests("after-reset"), [
+        {
+          type: "thread-title.generate",
+          kind: { type: "initial", messageId: MessageId.make("after-reset:message") },
+        },
+      ]);
+
+      yield* threads.dispatch({
+        type: "thread.metadata.update",
+        commandId: CommandId.make("rename"),
+        threadId: launched.threadId,
+        title: "Keep my title",
+      });
+      yield* send("manual-reset", resetCommand);
+      yield* send("after-manual-reset", "Audit the settings page");
+      assert.deepEqual(yield* titleRequests("after-manual-reset"), []);
+    }).pipe(Effect.provide(harness.layer));
+  }),
+);
+
 it.effect("keeps native maintenance commands out of steering and restart messages", () =>
   Effect.gen(function* () {
     const harness = makeHarness();
