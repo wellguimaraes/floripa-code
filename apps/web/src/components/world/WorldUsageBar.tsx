@@ -8,7 +8,7 @@ import {
 } from "@t3tools/shared/usageLimits";
 import * as Schema from "effect/Schema";
 import { Settings2Icon } from "lucide-react";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { useNowMinute } from "../../hooks/useNowMinute";
@@ -22,10 +22,8 @@ import { readUsagePagePreferences } from "../usage/usagePagePreferences";
 
 const MeterShows = Schema.Literals(["left", "used"]);
 type MeterShows = typeof MeterShows.Type;
-/** Each meter is a row of pills, lit in proportion to its percentage. */
-const SEGMENTS = 6;
 
-/** One window: what is left or used, a segmented meter, and when the next reset hands anything back. */
+/** One window: what is left or used, a bar, and when the next reset hands anything back. */
 function WindowMeter({
   window,
   label,
@@ -41,19 +39,14 @@ function WindowMeter({
 }) {
   const nextRefill = window.resets.find((reset) => reset.restoresPercent > 0 && reset.at > now);
   const percent = shows === "used" ? window.usedPercent : window.remainingPercent;
-  // Any quota at all lights one segment, so a sliver never reads as none.
-  const filled = percent > 0 ? Math.max(1, Math.round((percent / 100) * SEGMENTS)) : 0;
   return (
     <span className="flex items-center gap-1.5 whitespace-nowrap">
       <span className="text-muted-foreground">{label}</span>
-      <span className="flex items-center gap-0.5">
-        {Array.from({ length: SEGMENTS }, (_, index) => (
-          <span
-            key={index}
-            className="h-3 w-1 rounded-full bg-foreground/15"
-            style={index < filled ? { backgroundColor: color } : undefined}
-          />
-        ))}
+      <span className="h-2.5 w-12 overflow-hidden rounded-full bg-foreground/25">
+        <span
+          className="block h-full rounded-full"
+          style={{ width: `${percent}%`, backgroundColor: color }}
+        />
       </span>
       <span className="font-medium text-foreground tabular-nums">{percent}%</span>
       {nextRefill ? (
@@ -69,7 +62,7 @@ function WindowMeter({
  * Subscription quota pooled per provider, along the bottom of the world. It
  * reads the same snapshots as Usage → Limits and never refreshes them itself;
  * click it for the full breakdown. Providers hidden on the Usage page stay
- * hidden here. Its gear picks whether the meters show quota left or used.
+ * hidden here, and so are windows nothing has used yet. Its gear picks whether the meters show quota left or used.
  */
 export function WorldUsageBar() {
   const [hiddenProviders] = useState(
@@ -79,9 +72,11 @@ export function WorldUsageBar() {
   const presentations = useLimitPresentations(null, hiddenProviders);
   // Countdowns move a minute at a time, so the bar repaints at most once a minute.
   const now = Date.parse(`${useNowMinute()}:00Z`);
-  const pools = collectLimitPools(collectLimitAccounts(presentations), now).filter(
-    (pool) => pool.windows.length > 0,
-  );
+  // Windows with nothing used yet say nothing worth the room; a provider with none used drops out.
+  const pools = collectLimitPools(collectLimitAccounts(presentations), now).flatMap((pool) => {
+    const windows = displayLimitWindows(pool).filter((window) => window.usedPercent > 0);
+    return windows.length > 0 ? [{ pool, windows }] : [];
+  });
   if (pools.length === 0) return null;
 
   return (
@@ -96,7 +91,7 @@ export function WorldUsageBar() {
             />
           }
         >
-          {pools.map((pool) => {
+          {pools.map(({ pool, windows }) => {
             const label = providerClients.get(pool.driver)?.label ?? String(pool.driver);
             const color = barColor(pool.driver);
             return (
@@ -107,19 +102,23 @@ export function WorldUsageBar() {
                   className="size-4"
                   iconClassName="size-3.5 text-foreground/80"
                 />
-                {displayLimitWindows(pool).map((window) => (
-                  <WindowMeter
-                    key={`${window.kind}:${window.id}`}
-                    window={window}
-                    label={
-                      (pool.driver === "cursor"
-                        ? cursorUsageWindowDetails(window.id)?.label
-                        : null) ?? window.label
-                    }
-                    color={color}
-                    shows={shows}
-                    now={now}
-                  />
+                {windows.map((window, index) => (
+                  <Fragment key={`${window.kind}:${window.id}`}>
+                    {index > 0 ? (
+                      <span aria-hidden className="h-3.5 w-px shrink-0 bg-foreground/20" />
+                    ) : null}
+                    <WindowMeter
+                      window={window}
+                      label={
+                        (pool.driver === "cursor"
+                          ? cursorUsageWindowDetails(window.id)?.label
+                          : null) ?? window.label
+                      }
+                      color={color}
+                      shows={shows}
+                      now={now}
+                    />
+                  </Fragment>
                 ))}
               </span>
             );
@@ -146,7 +145,7 @@ export function WorldUsageBar() {
             />
           }
         >
-          <Settings2Icon />
+          <Settings2Icon className="size-4" />
         </PopoverTrigger>
         <PopoverPopup side="top" align="end" sideOffset={8}>
           <ToggleGroup

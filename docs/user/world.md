@@ -124,5 +124,5 @@ The bar along the bottom shows how much subscription quota is left for each
 provider, pooled across your accounts as in **Usage → Limits**, with the time
 until the next reset hands quota back. Its gear switches the meters between quota
 left and quota used. Click the bar for the full breakdown. Providers
-hidden on the Usage page are hidden here too. The bar shows only when a provider
-reports limits.
+hidden on the Usage page are hidden here too, and so are limits nothing has used
+yet. The bar shows only when some quota is in use.
