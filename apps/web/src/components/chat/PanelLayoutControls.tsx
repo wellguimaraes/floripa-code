@@ -3,7 +3,10 @@ import { Maximize2, Minimize2 } from "lucide";
 import { MorphIcon } from "~/components/MorphIcon";
 import { memo, type ReactElement } from "react";
 
+import type { ScopedThreadRef } from "@t3tools/contracts";
+
 import type { ThreadPanelPresentation } from "../../rightPanelLayout";
+import { selectThreadPanelOpen, useRightPanelStore } from "../../rightPanelStore";
 import { PopoverCreateHandle, PopoverTrigger } from "../ui/popover";
 import { Toggle } from "../ui/toggle";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -15,7 +18,8 @@ export interface PanelLayoutControlsProps {
   terminalAvailable: boolean;
   terminalOpen: boolean;
   terminalShortcutLabel: string | null;
-  threadPanelOpen: boolean;
+  /** Whose details panel the toggle shows; it reads the open state itself. */
+  threadRef: ScopedThreadRef | null;
   threadPanelPresentation: ThreadPanelPresentation;
   threadPanelPopoverHandle?: ReturnType<typeof PopoverCreateHandle>;
   threadPanelShortcutLabel: string | null;
@@ -35,7 +39,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
   terminalAvailable,
   terminalOpen,
   terminalShortcutLabel,
-  threadPanelOpen,
+  threadRef,
   threadPanelPresentation,
   threadPanelPopoverHandle,
   threadPanelShortcutLabel,
@@ -47,6 +51,14 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
   onToggleThreadPanel,
   onToggleRightPanel,
 }: PanelLayoutControlsProps) {
+  // Subscribed here rather than by the chat, so opening the panel re-renders only this toggle.
+  const threadPanelOpen = useRightPanelStore((state) =>
+    selectThreadPanelOpen(
+      state.threadPanelVisibilityByThreadKey,
+      threadRef,
+      threadPanelPresentation,
+    ),
+  );
   const threadPanelToggle = (
     <Toggle
       className="relative shrink-0 [-webkit-app-region:no-drag]"

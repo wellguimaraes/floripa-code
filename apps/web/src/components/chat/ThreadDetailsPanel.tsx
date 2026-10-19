@@ -52,7 +52,6 @@ export interface ThreadDetailsPanelProps extends Pick<
   onStartFromOriginChange: (startFromOrigin: boolean) => void;
   onCheckoutPullRequestRequest?: (reference: string) => void;
   onComposerFocusRequest: () => void;
-  onOpenChanges?: () => void;
   onRunProjectScript: (script: ProjectScript) => void;
   onAddProjectScript: (input: NewProjectScriptInput) => Promise<ProjectScriptActionResult>;
   onUpdateProjectScript: (
@@ -152,9 +151,6 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
               separated={density === "full"}
             >
               <div className="flex flex-col">
-                {props.isGitRepo ? (
-                  <BranchToolbar layout="panel" panelSection="branch" {...branchToolbarProps} />
-                ) : null}
                 {props.activeProjectName ? (
                   <GitActionsControl
                     displayMode="panel"
@@ -165,7 +161,6 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                       threadId: props.threadId,
                     }}
                     {...(props.draftId ? { draftId: props.draftId } : {})}
-                    {...(props.onOpenChanges ? { onOpenChanges: props.onOpenChanges } : {})}
                   />
                 ) : null}
               </div>

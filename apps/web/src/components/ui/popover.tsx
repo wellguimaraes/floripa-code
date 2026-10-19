@@ -98,8 +98,9 @@ function PopoverPopup({
               variant !== "panel" &&
               "shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]",
             width !== "auto" && ["max-w-[calc(100vw-2rem)]", popoverPopupWidthClassName[width]],
+            // The thread details card appears and leaves at once, like its inline placement.
             variant === "panel" &&
-              "w-full overflow-visible rounded-none border-0 bg-transparent shadow-none before:hidden [backdrop-filter:none] [-webkit-backdrop-filter:none]",
+              "w-full overflow-visible rounded-none border-0 bg-transparent shadow-none transition-none before:hidden [backdrop-filter:none] [-webkit-backdrop-filter:none]",
             className,
           )}
           data-slot="popover-popup"

@@ -430,6 +430,8 @@ export default function WorldCanvas(props: {
     dropPendingChat();
     if (key === selectedKey) {
       setSwitchingTo(null);
+      // The chat may be collapsed to its surfaces; picking its agent shows it again.
+      void onExpand(ref);
       return;
     }
     setSwitchingTo(key);
@@ -568,6 +570,17 @@ export default function WorldCanvas(props: {
   };
 
   const [zoomTo, setZoomTo] = useState<{ readonly key: string } | null>(null);
+  // The chat frame's project chip asks for its agent's island.
+  const islandFocusRequest = useWorldModeStore((state) => state.islandFocusRequest);
+  const focusIsland = useEffectEvent((threadKey: string) => {
+    const island = islands.find((entry) =>
+      entry.characters.some((character) => character.facts.key === threadKey),
+    );
+    if (island !== undefined) setZoomTo({ key: island.key });
+  });
+  useEffect(() => {
+    if (islandFocusRequest !== null) focusIsland(islandFocusRequest.threadKey);
+  }, [islandFocusRequest]);
   const [restoringOn, setRestoringOn] = useState<string | null>(null);
   const [branchesOn, setBranchesOn] = useState<string | null>(null);
   const [iconPicking, setIconPicking] = useState<{

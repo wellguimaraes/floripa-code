@@ -10,14 +10,7 @@ import {
   type TerminalOutputUpdate,
   type TerminalSessionState,
 } from "@t3tools/client-runtime/state/terminal";
-import {
-  Plus,
-  Square,
-  SquareSplitHorizontal,
-  SquareSplitVertical,
-  TerminalSquare,
-  Trash2,
-} from "lucide-react";
+import { Square, SquareSplitHorizontal, SquareSplitVertical, TerminalSquare } from "lucide-react";
 import {
   AuthPreviewOperateScope,
   AuthOrchestrationOperateScope,
@@ -31,7 +24,6 @@ import {
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import * as Schema from "effect/Schema";
 import {
-  type ReactNode,
   useCallback,
   useEffect,
   useEffectEvent,
@@ -40,7 +32,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
 import { Button } from "~/components/ui/button";
 import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
@@ -70,7 +61,7 @@ import {
   terminalDeleteShortcutData,
   terminalNavigationShortcutData,
 } from "../keybindings";
-import { MAX_TERMINALS_PER_GROUP, type ThreadTerminalGroup } from "../types";
+import { type ThreadTerminalGroup } from "../types";
 import { readLocalApi } from "~/localApi";
 import { confirmTerminalClose } from "~/lib/terminalCloseConfirm";
 import { useClientSettings } from "../hooks/useSettings";
@@ -1073,11 +1064,7 @@ interface ThreadTerminalDrawerProps {
   terminalGroups: ThreadTerminalGroup[];
   activeTerminalGroupId: string;
   focusRequestId: number;
-  onSplitTerminal: () => void;
-  onSplitTerminalVertical: () => void;
   onNewTerminal: () => void;
-  splitShortcutLabel?: string | undefined;
-  splitVerticalShortcutLabel?: string | undefined;
   newShortcutLabel?: string | undefined;
   closeShortcutLabel?: string | undefined;
   onActiveTerminalChange: (terminalId: string) => void;
@@ -1090,51 +1077,10 @@ interface ThreadTerminalDrawerProps {
   terminalLaunchLocationsById?: ReadonlyMap<string, TerminalLaunchLocation>;
 }
 
-interface TerminalActionButtonProps {
-  label: string;
-  className: string;
-  onClick: () => void;
-  children: ReactNode;
-  disabled?: boolean;
-}
-
-function TerminalActionButton({
-  label,
-  className,
-  onClick,
-  children,
-  disabled,
-}: TerminalActionButtonProps) {
-  return (
-    <Popover>
-      <PopoverTrigger
-        openOnHover
-        render={
-          <button
-            type="button"
-            className={cn(className, disabled && "opacity-45 cursor-not-allowed")}
-            onClick={disabled ? undefined : onClick}
-            aria-label={label}
-            aria-disabled={disabled}
-          />
-        }
-      >
-        {children}
-      </PopoverTrigger>
-      <PopoverPopup
-        tooltipStyle
-        side="bottom"
-        sideOffset={6}
-        align="center"
-        className="pointer-events-none select-none"
-      >
-        {label}
-      </PopoverPopup>
-    </Popover>
-  );
-}
-
-/** The terminals of one right-panel Terminal tab, side by side or stacked. */
+/**
+ * The terminals of one right-panel Terminal tab, side by side or stacked. With no header row
+ * of its own, it draws the divider under the panel's tabs that other surfaces' headers draw.
+ */
 export default function ThreadTerminalDrawer({
   threadRef,
   threadId,
@@ -1148,11 +1094,7 @@ export default function ThreadTerminalDrawer({
   terminalGroups,
   activeTerminalGroupId,
   focusRequestId,
-  onSplitTerminal,
-  onSplitTerminalVertical,
   onNewTerminal,
-  splitShortcutLabel,
-  splitVerticalShortcutLabel,
   newShortcutLabel,
   closeShortcutLabel,
   onActiveTerminalChange,
@@ -1285,7 +1227,6 @@ export default function ThreadTerminalDrawer({
   const showGroupHeaders =
     resolvedTerminalGroups.length > 1 ||
     resolvedTerminalGroups.some((terminalGroup) => terminalGroup.terminalIds.length > 1);
-  const hasReachedSplitLimit = visibleTerminalIds.length >= MAX_TERMINALS_PER_GROUP;
   const terminalLabelById = useMemo(() => {
     const next = new Map<string, string>();
     for (const terminalId of normalizedTerminalIds) {
@@ -1305,30 +1246,9 @@ export default function ThreadTerminalDrawer({
     },
     [cwd, runtimeEnv, terminalLaunchLocationsById, worktreePath],
   );
-  const splitTerminalActionLabel = hasReachedSplitLimit
-    ? `Split Terminal Horizontally (max ${MAX_TERMINALS_PER_GROUP} per group)`
-    : splitShortcutLabel
-      ? `Split Terminal Horizontally (${splitShortcutLabel})`
-      : "Split Terminal Horizontally";
-  const splitTerminalVerticalActionLabel = hasReachedSplitLimit
-    ? `Split Terminal Vertically (max ${MAX_TERMINALS_PER_GROUP} per group)`
-    : splitVerticalShortcutLabel
-      ? `Split Terminal Vertically (${splitVerticalShortcutLabel})`
-      : "Split Terminal Vertically";
   const newTerminalActionLabel = newShortcutLabel
     ? `New Terminal (${newShortcutLabel})`
     : "New Terminal";
-  const closeTerminalActionLabel = closeShortcutLabel
-    ? `Close Terminal (${closeShortcutLabel})`
-    : "Close Terminal";
-  const onSplitTerminalAction = useCallback(() => {
-    if (!canOperateTerminal || hasReachedSplitLimit) return;
-    onSplitTerminal();
-  }, [canOperateTerminal, hasReachedSplitLimit, onSplitTerminal]);
-  const onSplitTerminalVerticalAction = useCallback(() => {
-    if (!canOperateTerminal || hasReachedSplitLimit) return;
-    onSplitTerminalVertical();
-  }, [canOperateTerminal, hasReachedSplitLimit, onSplitTerminalVertical]);
   const onNewTerminalAction = useCallback(() => {
     if (!canOperateTerminal) return;
     onNewTerminal();
@@ -1361,7 +1281,7 @@ export default function ThreadTerminalDrawer({
       <aside
         data-thread-terminal-drawer
         data-terminal-owner="right-panel"
-        className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-background"
+        className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden border-border/60 border-t bg-background"
       >
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-4 py-6 text-center text-sm text-muted-foreground">
           <p>No terminal sessions for this thread yet.</p>
@@ -1384,58 +1304,8 @@ export default function ThreadTerminalDrawer({
     <aside
       data-thread-terminal-drawer
       data-terminal-owner="right-panel"
-      className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-background"
+      className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden border-border/60 border-t bg-background"
     >
-      {!hasTerminalSidebar && (
-        <div className="pointer-events-none absolute right-2 top-2 z-20">
-          <div className="pointer-events-auto inline-flex items-center overflow-hidden rounded-md border border-border/80 bg-background shadow-xs">
-            <TerminalActionButton
-              disabled={!canOperateTerminal}
-              className={`p-1 text-foreground/90 transition-colors ${
-                hasReachedSplitLimit
-                  ? "cursor-not-allowed opacity-64 hover:bg-transparent"
-                  : "hover:bg-accent"
-              }`}
-              onClick={onSplitTerminalAction}
-              label={splitTerminalActionLabel}
-            >
-              <SquareSplitHorizontal className="size-3.25" />
-            </TerminalActionButton>
-            <div className="h-4 w-px bg-border/80" />
-            <TerminalActionButton
-              disabled={!canOperateTerminal}
-              className={`p-1 text-foreground/90 transition-colors ${
-                hasReachedSplitLimit
-                  ? "cursor-not-allowed opacity-64 hover:bg-transparent"
-                  : "hover:bg-accent"
-              }`}
-              onClick={onSplitTerminalVerticalAction}
-              label={splitTerminalVerticalActionLabel}
-            >
-              <SquareSplitVertical className="size-3.25" />
-            </TerminalActionButton>
-            <div className="h-4 w-px bg-border/80" />
-            <TerminalActionButton
-              disabled={!canOperateTerminal}
-              className="p-1 text-foreground/90 transition-colors hover:bg-accent"
-              onClick={onNewTerminalAction}
-              label={newTerminalActionLabel}
-            >
-              <Plus className="size-3.25" />
-            </TerminalActionButton>
-            <div className="h-4 w-px bg-border/80" />
-            <TerminalActionButton
-              disabled={!canOperateTerminal}
-              className="p-1 text-foreground/90 transition-colors hover:bg-accent"
-              onClick={() => confirmCloseTerminal(resolvedActiveTerminalId)}
-              label={closeTerminalActionLabel}
-            >
-              <Trash2 className="size-3.25" />
-            </TerminalActionButton>
-          </div>
-        </div>
-      )}
-
       <div className="min-h-0 w-full flex-1">
         <div
           className={cn(
@@ -1536,51 +1406,6 @@ export default function ThreadTerminalDrawer({
 
           {hasTerminalSidebar && (
             <aside className="flex w-36 min-w-36 flex-col border border-border/70 bg-muted/10">
-              <div className="flex h-[22px] items-stretch justify-end border-b border-border/70">
-                <div className="inline-flex h-full items-stretch">
-                  <TerminalActionButton
-                    disabled={!canOperateTerminal}
-                    className={`inline-flex h-full items-center px-1 text-foreground/90 transition-colors ${
-                      hasReachedSplitLimit
-                        ? "cursor-not-allowed opacity-64 hover:bg-transparent"
-                        : "hover:bg-accent/70"
-                    }`}
-                    onClick={onSplitTerminalAction}
-                    label={splitTerminalActionLabel}
-                  >
-                    <SquareSplitHorizontal className="size-3.25" />
-                  </TerminalActionButton>
-                  <TerminalActionButton
-                    disabled={!canOperateTerminal}
-                    className={`inline-flex h-full items-center border-l border-border/70 px-1 text-foreground/90 transition-colors ${
-                      hasReachedSplitLimit
-                        ? "cursor-not-allowed opacity-64 hover:bg-transparent"
-                        : "hover:bg-accent/70"
-                    }`}
-                    onClick={onSplitTerminalVerticalAction}
-                    label={splitTerminalVerticalActionLabel}
-                  >
-                    <SquareSplitVertical className="size-3.25" />
-                  </TerminalActionButton>
-                  <TerminalActionButton
-                    disabled={!canOperateTerminal}
-                    className="inline-flex h-full items-center border-l border-border/70 px-1 text-foreground/90 transition-colors hover:bg-accent/70"
-                    onClick={onNewTerminalAction}
-                    label={newTerminalActionLabel}
-                  >
-                    <Plus className="size-3.25" />
-                  </TerminalActionButton>
-                  <TerminalActionButton
-                    disabled={!canOperateTerminal}
-                    className="inline-flex h-full items-center border-l border-border/70 px-1 text-foreground/90 transition-colors hover:bg-accent/70"
-                    onClick={() => confirmCloseTerminal(resolvedActiveTerminalId)}
-                    label={closeTerminalActionLabel}
-                  >
-                    <Trash2 className="size-3.25" />
-                  </TerminalActionButton>
-                </div>
-              </div>
-
               <div className="min-h-0 flex-1 overflow-y-auto px-1 py-1">
                 {resolvedTerminalGroups.map((terminalGroup) => {
                   const isGroupActive =

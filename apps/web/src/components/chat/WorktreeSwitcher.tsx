@@ -34,6 +34,11 @@ function lastSegment(path: string): string {
  */
 export const WorktreeSwitcher = memo(function WorktreeSwitcher(props: {
   readonly threadRef: ScopedThreadRef;
+  /**
+   * `title` names the worktree alone, as the heading of the world's chat frame, and hides when
+   * the project has no worktree beyond its own folder.
+   */
+  readonly variant?: "breadcrumb" | "title";
   readonly className?: string;
 }) {
   const navigate = useNavigate();
@@ -83,6 +88,15 @@ export const WorktreeSwitcher = memo(function WorktreeSwitcher(props: {
   const name = scope.worktreePath === null ? "Main worktree" : lastSegment(scope.worktreePath);
   const branch = current?.branch ?? null;
   const showBranch = branch !== null && branch !== name && !branch.endsWith(`/${name}`);
+  const title = props.variant === "title";
+  // As a heading, the worktree only says something when the project works in more than one.
+  if (
+    title &&
+    scope.worktreePath === null &&
+    !entries.some((entry) => entry.scopeKey !== scope.scopeKey)
+  ) {
+    return null;
+  }
   return (
     <Menu>
       <MenuTrigger
@@ -91,15 +105,20 @@ export const WorktreeSwitcher = memo(function WorktreeSwitcher(props: {
             type="button"
             aria-label={`Worktree ${name}${showBranch ? `, branch ${branch}` : ""}`}
             className={cn(
-              "flex min-w-0 cursor-pointer items-center gap-1 rounded-sm text-xs leading-4 text-muted-foreground hover:text-foreground",
+              "flex min-w-0 cursor-pointer items-center gap-1 rounded-sm",
+              title
+                ? "text-sm leading-5 font-medium text-foreground"
+                : "text-xs leading-4 text-muted-foreground hover:text-foreground",
               props.className,
             )}
           />
         }
       >
-        <FolderGit2Icon className="size-3 shrink-0" />
+        <FolderGit2Icon
+          className={cn("shrink-0", title ? "size-3.5 text-muted-foreground" : "size-3")}
+        />
         <span className="truncate">{name}</span>
-        {showBranch ? (
+        {showBranch && !title ? (
           <>
             <span aria-hidden className="text-muted-foreground/60">
               /
@@ -107,9 +126,14 @@ export const WorktreeSwitcher = memo(function WorktreeSwitcher(props: {
             <span className="truncate">{branch}</span>
           </>
         ) : null}
-        <ChevronDownIcon className="size-3 shrink-0" />
+        {title ? null : <ChevronDownIcon className="size-3 shrink-0" />}
       </MenuTrigger>
-      <MenuPopup align="start" side="bottom" sideOffset={6} className="max-w-80">
+      <MenuPopup
+        align={title ? "center" : "start"}
+        side="bottom"
+        sideOffset={6}
+        className="max-w-80"
+      >
         {entries.map((entry) => (
           <MenuItem
             key={entry.scopeKey}

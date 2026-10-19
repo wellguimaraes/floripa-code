@@ -252,7 +252,6 @@ import {
   rightPanelSurfaceType,
   selectActiveRightPanelSurface,
   selectActiveRightPanelType,
-  selectThreadPanelOpen,
   selectThreadRightPanelState,
   type RightPanelSurface,
   type RightPanelSurfaceType,
@@ -275,6 +274,7 @@ import { getConfiguredPreviewUrls } from "./preview/previewEmptyStateLogic";
 
 import {
   browserMiniPlayerSource,
+  FLOATING_PREVIEW_ENABLED,
   previewMiniPlayerSourceKey,
   selectThreadPreviewMiniPlayer,
   usePreviewMiniPlayerStore,
@@ -288,6 +288,7 @@ import { PullRequestDetailGhost } from "./pullRequest/PullRequestGhosts";
 import { PullRequestsUnavailableState } from "./pullRequest/PullRequestsUnavailableState";
 import { RightPanelTabs, RightPanelTypeRail } from "./RightPanelTabs";
 import { WorktreeAgentRail } from "./chat/WorktreeAgentRail";
+import { WorldChatFrameHeader } from "./world/WorldChatFrameHeader";
 import { useThreadWorktreeScope } from "../worktreeScope";
 import { LinkPullRequestDialogHost } from "./pullRequest/LinkPullRequestDialog";
 import { ThreadPullRequestsPanel } from "./pullRequest/ThreadPullRequestsPanel";
@@ -309,6 +310,8 @@ import {
   ChevronDownIcon,
   DownloadIcon,
   GitBranchIcon,
+  SquareSplitHorizontal,
+  SquareSplitVertical,
   TargetIcon,
   WifiOffIcon,
 } from "lucide-react";
@@ -952,13 +955,9 @@ interface PersistentThreadTerminalPanelProps {
   focusRequestId: number;
   keybindings: ResolvedKeybindingsConfig;
   onAddTerminalContext: (selection: TerminalContextSelection) => void;
-  onSplitTerminal: () => void;
-  onSplitTerminalVertical: () => void;
   onNewTerminal: () => void;
   onActiveTerminalChange: (terminalId: string) => void;
   onCloseTerminal: (terminalId: string) => void;
-  splitShortcutLabel?: string | undefined;
-  splitVerticalShortcutLabel?: string | undefined;
   newShortcutLabel?: string | undefined;
   closeShortcutLabel?: string | undefined;
 }
@@ -971,13 +970,9 @@ const PersistentThreadTerminalPanel = memo(function PersistentThreadTerminalPane
   focusRequestId,
   keybindings,
   onAddTerminalContext,
-  onSplitTerminal,
-  onSplitTerminalVertical,
   onNewTerminal,
   onActiveTerminalChange,
   onCloseTerminal,
-  splitShortcutLabel,
-  splitVerticalShortcutLabel,
   newShortcutLabel,
   closeShortcutLabel,
 }: PersistentThreadTerminalPanelProps) {
@@ -1089,11 +1084,7 @@ const PersistentThreadTerminalPanel = memo(function PersistentThreadTerminalPane
       ]}
       activeTerminalGroupId={surface.id}
       focusRequestId={focusRequestId}
-      onSplitTerminal={onSplitTerminal}
-      onSplitTerminalVertical={onSplitTerminalVertical}
       onNewTerminal={onNewTerminal}
-      splitShortcutLabel={splitShortcutLabel}
-      splitVerticalShortcutLabel={splitVerticalShortcutLabel}
       newShortcutLabel={newShortcutLabel}
       closeShortcutLabel={closeShortcutLabel}
       onActiveTerminalChange={onActiveTerminalChange}
@@ -1952,13 +1943,6 @@ export default function ChatView(props: ChatViewProps) {
   const [threadPanelPresentation, setThreadPanelPresentation] =
     useState<ThreadPanelPresentation>("inline");
   const [threadPanelPopoverHandle] = useState(PopoverCreateHandle);
-  const threadPanelOpen = useRightPanelStore((state) =>
-    selectThreadPanelOpen(
-      state.threadPanelVisibilityByThreadKey,
-      activeThreadRef,
-      threadPanelPresentation,
-    ),
-  );
 
   useEffect(() => {
     if (!activeThreadRef || !previewSessionsReady) return;
@@ -4827,9 +4811,6 @@ export default function ChatView(props: ChatViewProps) {
     useRightPanelStore.getState().open(activeThreadRef, "diff");
     onDiffPanelOpen?.();
   }, [activeThreadRef, isGitRepo, isServerThread, onDiffPanelOpen]);
-  const openChangesFromThreadPanel = useCallback(() => {
-    addDiffSurface();
-  }, [addDiffSurface]);
   const addFilesSurface = useCallback(() => {
     if (!activeThreadRef || !activeProject) return;
     useRightPanelStore.getState().open(activeThreadRef, "files");
@@ -4893,7 +4874,7 @@ export default function ChatView(props: ChatViewProps) {
         platform: device.platform,
         name: device.name,
       };
-      if (autoShowFloatingPreview) {
+      if (FLOATING_PREVIEW_ENABLED && autoShowFloatingPreview) {
         usePreviewMiniPlayerStore.getState().open(activeThreadRef, { kind: "device", ...target });
         continue;
       }
@@ -4946,10 +4927,12 @@ export default function ChatView(props: ChatViewProps) {
       );
       if (surface && requested?.force === true) {
         useRightPanelStore.getState().activateSurface(activeThreadRef, surface.id);
-      } else if (!surface) {
+      } else if (!surface && FLOATING_PREVIEW_ENABLED) {
         usePreviewMiniPlayerStore
           .getState()
           .open(activeThreadRef, browserMiniPlayerSource(session.tabId));
+      } else if (!surface) {
+        useRightPanelStore.getState().openBrowser(activeThreadRef, session.tabId);
       }
     }
   }, [
@@ -5247,22 +5230,14 @@ export default function ChatView(props: ChatViewProps) {
     shouldUsePlanSidebarSheet,
     threadDetailLoading,
   ]);
+  // Hiding the panel keeps its tabs in the type rail, so a live browser or device stays where
+  // it was rather than floating over the chat.
   const closePreviewPanel = useCallback(() => {
     if (activeThreadRef) {
-      // Closing the panel on a live browser or device floats it instead of dropping it.
-      if (activeRightPanelSurface?.kind === "preview" && activeRightPanelSurface.resourceId) {
-        usePreviewMiniPlayerStore
-          .getState()
-          .open(activeThreadRef, browserMiniPlayerSource(activeRightPanelSurface.resourceId));
-      } else if (activeRightPanelSurface?.kind === "device" && activeRightPanelSurface.target) {
-        usePreviewMiniPlayerStore
-          .getState()
-          .open(activeThreadRef, { kind: "device", ...activeRightPanelSurface.target });
-      }
       useRightPanelStore.getState().setMaximized(activeThreadRef, false);
       useRightPanelStore.getState().close(activeThreadRef);
     }
-  }, [activeRightPanelSurface, activeThreadRef]);
+  }, [activeThreadRef]);
   const togglePreviewPanel = useCallback(() => {
     if (!activeThreadRef || !browserAvailable) return;
     if (previewPanelOpen) {
@@ -5477,14 +5452,16 @@ export default function ChatView(props: ChatViewProps) {
         closePreviewPanel();
         return;
       }
-      store.activateType(activeThreadRef, type);
+      // Diff is one view with no tabs, so picking its type opens it.
+      if (type === "diff" && isServerThread && isGitRepo) store.open(activeThreadRef, "diff");
+      else store.activateType(activeThreadRef, type);
       const next = selectActiveRightPanelSurface(
         useRightPanelStore.getState().byPanelKey,
         activeThreadRef,
       );
       if (next) activateRightPanelSurface(next);
     },
-    [activateRightPanelSurface, activeThreadRef, closePreviewPanel],
+    [activateRightPanelSurface, activeThreadRef, closePreviewPanel, isGitRepo, isServerThread],
   );
   // Hides the Terminal type when it shows beside the chat; otherwise shows and
   // focuses it, starting the checkout's first terminal when it has none.
@@ -7610,7 +7587,11 @@ export default function ChatView(props: ChatViewProps) {
         if (!activeRightPanelSurface) return;
         event.preventDefault();
         event.stopPropagation();
-        if (!event.repeat) closeRightPanelSurface(activeRightPanelSurface);
+        if (event.repeat) return;
+        // Diff and the files tree stay open; closing them hides the panel.
+        if (activeRightPanelSurface.kind === "diff" || activeRightPanelSurface.kind === "files") {
+          closePreviewPanel();
+        } else closeRightPanelSurface(activeRightPanelSurface);
         return;
       }
 
@@ -7788,6 +7769,7 @@ export default function ChatView(props: ChatViewProps) {
     canInterruptRunningThread,
     terminalPanelOpen,
     activeThreadId,
+    closePreviewPanel,
     closeRightPanelSurface,
     requestClosePanelTerminal,
     runProjectScript,
@@ -10476,13 +10458,9 @@ export default function ChatView(props: ChatViewProps) {
         focusRequestId={terminalFocusRequestId}
         keybindings={keybindings}
         onAddTerminalContext={addTerminalContextToDraft}
-        onSplitTerminal={splitPanelTerminal}
-        onSplitTerminalVertical={splitPanelTerminalVertical}
         onNewTerminal={addTerminalSurface}
         onActiveTerminalChange={activatePanelTerminal}
         onCloseTerminal={closePanelTerminal}
-        splitShortcutLabel={splitTerminalShortcutLabel ?? undefined}
-        splitVerticalShortcutLabel={splitTerminalVerticalShortcutLabel ?? undefined}
         newShortcutLabel={newTerminalShortcutLabel ?? undefined}
         closeShortcutLabel={closeTerminalShortcutLabel ?? undefined}
       />
@@ -10654,7 +10632,6 @@ export default function ChatView(props: ChatViewProps) {
       ? { onCheckoutPullRequestRequest: openPullRequestDialog }
       : {}),
     onComposerFocusRequest: scheduleComposerFocus,
-    ...(isServerThread && isGitRepo ? { onOpenChanges: openChangesFromThreadPanel } : {}),
     onRunProjectScript: runProjectScript,
     onAddProjectScript: saveProjectScript,
     onUpdateProjectScript: updateProjectScript,
@@ -10664,7 +10641,7 @@ export default function ChatView(props: ChatViewProps) {
     terminalAvailable: activeProject !== null,
     terminalOpen: terminalPanelOpen,
     terminalShortcutLabel: shortcutLabelForCommand(keybindings, "terminal.toggle"),
-    threadPanelOpen,
+    threadRef: activeThreadRef,
     threadPanelPresentation,
     threadPanelPopoverHandle,
     threadPanelShortcutLabel: shortcutLabelForCommand(keybindings, "threadPanel.toggle"),
@@ -10737,6 +10714,51 @@ export default function ChatView(props: ChatViewProps) {
     deviceAvailable: activeThreadRef !== null,
   };
   const activeRightPanelType = selectActiveRightPanelType(rightPanelState);
+  const terminalSplitLimitReached =
+    activeRightPanelSurface?.kind === "terminal" &&
+    activeRightPanelSurface.terminalIds.length >= MAX_TERMINALS_PER_GROUP;
+  const terminalSplitActions =
+    activeRightPanelType === "terminal" && activeRightPanelSurface?.kind === "terminal"
+      ? (
+          [
+            {
+              label: "Split terminal side by side",
+              shortcut: splitTerminalShortcutLabel,
+              icon: SquareSplitHorizontal,
+              onClick: () => splitPanelTerminal(),
+            },
+            {
+              label: "Split terminal stacked",
+              shortcut: splitTerminalVerticalShortcutLabel,
+              icon: SquareSplitVertical,
+              onClick: splitPanelTerminalVertical,
+            },
+          ] as const
+        ).map((action) => (
+          <Tooltip key={action.label}>
+            <TooltipTrigger
+              render={
+                <Button
+                  aria-label={action.label}
+                  size="icon-xs"
+                  variant="ghost-muted"
+                  disabled={!canOperateTerminal || terminalSplitLimitReached}
+                  onClick={action.onClick}
+                />
+              }
+            >
+              <action.icon className="size-3.5" />
+            </TooltipTrigger>
+            <TooltipPopup>
+              {terminalSplitLimitReached
+                ? `${action.label} (max ${MAX_TERMINALS_PER_GROUP})`
+                : action.shortcut
+                  ? `${action.label} (${action.shortcut})`
+                  : action.label}
+            </TooltipPopup>
+          </Tooltip>
+        ))
+      : null;
   const startAgentInWorktree =
     activeProjectRef && activeWorktreeScope
       ? () =>
@@ -10763,6 +10785,29 @@ export default function ChatView(props: ChatViewProps) {
         : {})}
     />
   );
+  // The world's chat frame names the project and worktree above the chat and its surfaces,
+  // so the chat itself keeps no top bar there.
+  const worldFrameHeader =
+    worldChatShown && activeThreadRef ? (
+      <WorldChatFrameHeader
+        ref={threadPanelPopoverAnchorRef}
+        threadRef={activeThreadRef}
+        projectName={
+          activeProjectGroupLabel?.slice(activeProjectGroupLabel.lastIndexOf("/") + 1) ||
+          (activeProject?.title ?? null)
+        }
+        project={activeProject ?? null}
+        chatCollapsed={rightPanelMaximized}
+        onToggleChat={toggleChatCollapsed}
+        trailing={
+          <PanelLayoutControls
+            {...panelToggleControlProps}
+            showTerminalControl={false}
+            showRightPanelControl={false}
+          />
+        }
+      />
+    ) : null;
   const chatTopBar = (
     <header
       ref={threadPanelPopoverAnchorRef}
@@ -10788,9 +10833,7 @@ export default function ChatView(props: ChatViewProps) {
       ) : null}
       {!rightPanelControlsAtRoot && !rightPanelControlsInPanel ? panelLayoutControls : null}
       {splitTitleBarControls ? threadPanelHeaderControl : null}
-      {/* The world's floating chat keeps only the panel toggles up here; who you're talking
-          to sits in the composer instead. */}
-      {worldChatShown ? null : chatHeader}
+      {chatHeader}
     </header>
   );
   const workspaceFileDropHandlers = makeWorkspaceFileDropHandlers({
@@ -10801,6 +10844,7 @@ export default function ChatView(props: ChatViewProps) {
 
   return (
     <>
+      {worldFrameHeader}
       <div
         ref={setWorkspaceLayoutElement}
         className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background"
@@ -10828,8 +10872,9 @@ export default function ChatView(props: ChatViewProps) {
             ) : null}
           </WizardPopup>
         </Dialog>
-        {rightPanelControlsAtRoot ? panelLayoutControls : null}
-        {activeThreadRef && !shouldUsePlanSidebarSheet ? (
+        {rightPanelControlsAtRoot && !worldChatShown ? panelLayoutControls : null}
+        {/* The world's map shows the agents itself. */}
+        {activeThreadRef && !shouldUsePlanSidebarSheet && !worldChatShown ? (
           <WorktreeAgentRail
             activeThreadRef={activeThreadRef}
             activeThreadTitle={activeThread.title}
@@ -10838,10 +10883,7 @@ export default function ChatView(props: ChatViewProps) {
             onToggleChat={toggleChatCollapsed}
             onSelectThread={selectWorktreeAgent}
             onNewThread={startAgentInWorktree}
-            className={cn(
-              "border-border border-r",
-              !worldChatShown && "pt-(--workspace-topbar-height)",
-            )}
+            className="border-border border-r pt-(--workspace-topbar-height)"
           />
         ) : null}
         <div
@@ -10851,7 +10893,7 @@ export default function ChatView(props: ChatViewProps) {
           )}
           data-chat-column-maximized-away={rightPanelMaximized ? "true" : "false"}
         >
-          {chatTopBar}
+          {worldChatShown ? null : chatTopBar}
 
           {/* Main content area with optional plan sidebar */}
           <div className="relative flex min-h-0 min-w-0 flex-1">
@@ -11183,8 +11225,7 @@ export default function ChatView(props: ChatViewProps) {
                                 isPreparingWorktree={isPreparingWorktree}
                                 header={
                                   worldChatShown ? (
-                                    // Less at the bottom: the title's text brings its own space there.
-                                    <div className="flex rounded-t-3xl border-b border-border bg-muted px-3 pt-3 pb-1.5 sm:px-4 sm:pt-4 sm:pb-2.5">
+                                    <div className="flex rounded-t-3xl border-b border-border bg-muted px-3 py-2.5 sm:px-4 sm:py-3">
                                       {chatHeader}
                                     </div>
                                   ) : undefined
@@ -11472,6 +11513,7 @@ export default function ChatView(props: ChatViewProps) {
         {rightPanelPresent && !shouldUsePlanSidebarSheet && activeThreadRef ? (
           <RightPanelTabs
             mode="inline"
+            floating={worldChatShown}
             open={rightPanelOpen}
             keybindings={keybindings}
             getShortcutContext={getShortcutContext}
@@ -11507,6 +11549,7 @@ export default function ChatView(props: ChatViewProps) {
             {...rightPanelTypeAvailability}
             activeType={activeRightPanelType}
             onActivateType={activateRightPanelType}
+            typeActions={terminalSplitActions}
           >
             {rightPanelContent}
           </RightPanelTabs>
@@ -11574,6 +11617,7 @@ export default function ChatView(props: ChatViewProps) {
               {...rightPanelTypeAvailability}
               activeType={activeRightPanelType}
               onActivateType={activateRightPanelType}
+              typeActions={terminalSplitActions}
             >
               {rightPanelContent}
             </RightPanelTabs>

@@ -39,7 +39,7 @@ function useWorldChatThread(threadRef: ScopedThreadRef | null) {
 }
 
 /**
- * The world chat's archive action, in its header's top corner.
+ * The world chat's archive action, at its header's end.
  * Elsewhere it lives in the title menu, so it renders nothing outside the world.
  */
 export const WorldArchiveButton = memo(function WorldArchiveButton({
@@ -105,8 +105,7 @@ export const WorldArchiveButton = memo(function WorldArchiveButton({
 });
 
 /**
- * The world chat's character, from the chip's top to the title's baseline: its bottom padding
- * matches the title text's own below the baseline. Clicking it picks the agent's colour when
+ * The world chat's character, leading its title. Clicking it picks the agent's colour when
  * the user may act on the thread; otherwise it is just a portrait.
  */
 export const WorldChatCharacter = memo(function WorldChatCharacter({
@@ -127,7 +126,7 @@ export const WorldChatCharacter = memo(function WorldChatCharacter({
     </Suspense>
   );
   if (chat === null || recolor === null) {
-    return <div className="w-8 shrink-0 self-stretch pb-1.5">{portrait}</div>;
+    return <div className="size-8 shrink-0">{portrait}</div>;
   }
 
   return (
@@ -142,7 +141,7 @@ export const WorldChatCharacter = memo(function WorldChatCharacter({
                   type="button"
                   aria-label="Change color"
                   className={cn(
-                    "w-8 shrink-0 cursor-pointer self-stretch rounded-md pb-1.5 outline-none",
+                    "size-8 shrink-0 cursor-pointer rounded-md outline-none",
                     "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
                   )}
                 />
@@ -168,7 +167,7 @@ export const WorldChatCharacter = memo(function WorldChatCharacter({
   );
 });
 
-/** Regenerates the world chat's title, right after it. Renders nothing outside the world. */
+/** Regenerates the world chat's title, beside archive. Renders nothing outside the world. */
 export const WorldRegenerateTitleButton = memo(function WorldRegenerateTitleButton({
   threadRef,
 }: {

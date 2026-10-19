@@ -1848,7 +1848,7 @@ function PullRequestsRouteView() {
       terminalAvailable={false}
       terminalOpen={false}
       terminalShortcutLabel={null}
-      threadPanelOpen={false}
+      threadRef={null}
       threadPanelPresentation="inline"
       threadPanelShortcutLabel={null}
       onToggleThreadPanel={() => undefined}

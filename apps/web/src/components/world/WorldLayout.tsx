@@ -3,6 +3,7 @@ import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { XIcon } from "lucide-react";
 import {
+  Activity,
   type CSSProperties,
   Suspense,
   lazy,
@@ -38,8 +39,8 @@ const CHAT_MIN_WIDTH = 400;
 const CHAT_DEFAULT_WIDTH = 720;
 // The frame grows by this much while the worktree's surfaces show beside the chat.
 const SURFACES_WIDTH = 560;
-// The agent rail on the left and the surface-type rail on the right.
-const RAILS_WIDTH = 88;
+// The surface-type rail on the frame's right edge.
+const RAILS_WIDTH = 44;
 // Room left of the chat for its close button (4rem) and right of it for the margin (0.75rem).
 const CHAT_GUTTERS = 76;
 
@@ -48,8 +49,11 @@ function readChatMaxWidth(): number {
   return Math.max(CHAT_MIN_WIDTH, window.innerWidth - CHAT_GUTTERS);
 }
 
-/** The floating chat's width: dragged from its left edge, remembered in this browser. */
-function useChatWidth() {
+/**
+ * A width for the floating frame, dragged from its left edge and remembered in this browser.
+ * The chat and the surfaces shown alone each keep their own.
+ */
+function useFrameWidth(storageKey: string, defaultWidth: number) {
   const [maxWidth, setMaxWidth] = useState(readChatMaxWidth);
   useEffect(() => {
     const onResize = () => setMaxWidth(readChatMaxWidth());
@@ -57,8 +61,8 @@ function useChatWidth() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
   return useResizableWidth({
-    storageKey: "t3code:world-chat-width:v1",
-    defaultWidth: CHAT_DEFAULT_WIDTH,
+    storageKey,
+    defaultWidth,
     minWidth: CHAT_MIN_WIDTH,
     maxWidth,
     edge: "left",
@@ -76,14 +80,31 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
   const panelRef = useRef<HTMLDivElement>(null);
   const readPanel = useCallback(() => panelRef.current, []);
   const [toolbar, setToolbar] = useState<HTMLDivElement | null>(null);
-  const chatWidth = useChatWidth();
+  const chatWidth = useFrameWidth("t3code:world-chat-width:v1", CHAT_DEFAULT_WIDTH);
+  const surfacesOnlyWidth = useFrameWidth(
+    "t3code:world-surfaces-width:v1",
+    SURFACES_WIDTH + RAILS_WIDTH,
+  );
   // Only real threads open here. A draft (the new-thread creator) never does: the world
   // starts agents from its own bubble, so a draft route shows the world alone.
   const chatTarget = target?.kind === "server" ? target : null;
   const selectedKey = chatTarget ? scopedThreadKey(chatTarget.threadRef) : null;
+  // The frame stays mounted, hidden, after its chat closes: reopening it (or another agent,
+  // which only changes the chat's props) skips mounting the whole chat and its surfaces.
+  // Hidden, React tears down its effects, so its shortcuts and listeners stop with it.
+  const [heldTarget, setHeldTarget] = useState(chatTarget);
+  if (
+    chatTarget !== null &&
+    (heldTarget === null || scopedThreadKey(heldTarget.threadRef) !== selectedKey)
+  ) {
+    setHeldTarget(chatTarget);
+  }
 
-  const openThread = (ref: ScopedThreadRef) =>
-    navigate({ to: "/$environmentId/$threadId", params: buildThreadRouteParams(ref) });
+  // Picking an agent always shows its chat, even one whose worktree's chat was collapsed.
+  const openThread = (ref: ScopedThreadRef) => {
+    useRightPanelStore.getState().setMaximized(ref, false);
+    return navigate({ to: "/$environmentId/$threadId", params: buildThreadRouteParams(ref) });
+  };
   const closeChat = () => navigate({ to: "/" });
   const closePanel = () => {
     void closeChat();
@@ -93,13 +114,16 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
   // already archived (from Settings → Archived, say) stays open.
   const chatThreadRef = chatTarget?.threadRef ?? null;
   const chatThread = useThreadShell(chatThreadRef);
+  // The held chat's surfaces size the frame, so it keeps its width while hidden.
   const surfaces = useRightPanelStore((state) =>
-    selectThreadRightPanelState(state.byPanelKey, chatThreadRef),
+    selectThreadRightPanelState(state.byPanelKey, heldTarget?.threadRef ?? null),
   );
-  // The dragged width is the chat's alone (the drag writes it straight to the frame);
-  // the surfaces add theirs beside it, or take its place when the chat collapses.
+  // The drag writes its width straight to the frame. With the chat shown it sizes the chat
+  // and the surfaces add theirs beside it; with the chat collapsed it sizes the surfaces
+  // alone, from a width of their own, so it never moves a width that is not on screen.
   const chatShown = !(surfaces.isOpen && surfaces.maximized);
-  const surfacesWidth = (surfaces.isOpen ? SURFACES_WIDTH : 0) + RAILS_WIDTH;
+  const frameWidth = chatShown ? chatWidth : surfacesOnlyWidth;
+  const surfacesWidth = chatShown ? (surfaces.isOpen ? SURFACES_WIDTH : 0) + RAILS_WIDTH : 0;
   const chatArchived = chatThread !== null && chatThread.archivedAt != null;
   const chatWasArchived = useRef<{ key: string | null; archived: boolean }>({
     key: null,
@@ -191,48 +215,49 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
           <div ref={setToolbar} className="flex items-center gap-2" />
         </div>
       </div>
-      {chatTarget !== null ? (
-        <div
-          ref={panelRef}
-          className="absolute top-[calc(var(--workspace-topbar-height)+0.25rem)] right-3 bottom-3 w-[min(calc(var(--resizable-width)*var(--world-chat-shown)+var(--world-surfaces-width)),calc(100%-4rem))]"
-          style={
-            {
-              [RESIZABLE_WIDTH_PROPERTY]: `${chatWidth.width}px`,
-              "--world-chat-shown": chatShown ? 1 : 0,
-              "--world-surfaces-width": `${surfacesWidth}px`,
-              // The folded sidebar's toggle and window controls sit outside the
-              // floating panel, so its header needs no room for them.
-              "--workspace-titlebar-content-left": "var(--workspace-gutter)",
-            } as CSSProperties
-          }
-        >
-          <RightPanelResizeHandle
-            handlers={chatWidth.handlers}
-            showIndicator={false}
-            onDoubleClick={closePanel}
-          />
-          <div className="absolute top-1 -left-10">
-            <Button variant="glass" size="icon-sm" aria-label="Close chat" onClick={closePanel}>
-              <XIcon />
-            </Button>
-          </div>
-          {/* Layout containment makes the frame the anchor for the chat's fixed
-              titlebar controls. The chat's header moves into its composer here, so
-              its bar is a slim row for the panel toggles, level with the close button. */}
+      {heldTarget !== null ? (
+        <Activity mode={chatTarget !== null ? "visible" : "hidden"}>
           <div
-            className="flex size-full flex-col overflow-hidden rounded-xl bg-background shadow-xl [contain:layout]"
+            ref={panelRef}
+            className="absolute top-[calc(var(--workspace-topbar-height)+0.25rem)] right-3 bottom-3 w-[min(calc(var(--resizable-width)+var(--world-surfaces-width)),calc(100%-4rem))]"
             style={
               {
-                "--workspace-controls-top": "0px",
-                "--workspace-topbar-height": "2.5rem",
-                "--workspace-controls-right": "0.75rem",
-                "--workspace-native-controls-inset": "0px",
+                [RESIZABLE_WIDTH_PROPERTY]: `${frameWidth.width}px`,
+                "--world-surfaces-width": `${surfacesWidth}px`,
+                // The folded sidebar's toggle and window controls sit outside the
+                // floating panel, so its header needs no room for them.
+                "--workspace-titlebar-content-left": "var(--workspace-gutter)",
               } as CSSProperties
             }
           >
-            <ThreadRouteView target={chatTarget} container="bare" />
+            <RightPanelResizeHandle
+              handlers={frameWidth.handlers}
+              showIndicator={false}
+              onDoubleClick={closePanel}
+            />
+            <div className="absolute top-3 -left-10">
+              <Button variant="glass" size="icon-sm" aria-label="Close chat" onClick={closePanel}>
+                <XIcon />
+              </Button>
+            </div>
+            {/* Layout containment makes the frame the anchor for the chat's fixed
+              titlebar controls. The chat's header moves into its composer here; the
+              frame's own header names the project and worktree above everything. */}
+            <div
+              className="flex size-full flex-col overflow-hidden rounded-xl bg-background shadow-xl [contain:layout]"
+              style={
+                {
+                  "--workspace-controls-top": "0px",
+                  "--workspace-topbar-height": "2.5rem",
+                  "--workspace-controls-right": "0.75rem",
+                  "--workspace-native-controls-inset": "0px",
+                } as CSSProperties
+              }
+            >
+              <ThreadRouteView target={heldTarget} container="bare" />
+            </div>
           </div>
-        </div>
+        </Activity>
       ) : null}
     </SidebarInset>
   );

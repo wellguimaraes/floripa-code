@@ -100,10 +100,6 @@ export const ChatHeader = memo(function ChatHeader({
   onOpenProjectSettings,
 }: ChatHeaderProps) {
   const activeProjectName = activeProject?.title;
-  // The island sign's name: the sidebar's label for the project, last path segment.
-  const worldProjectName =
-    activeProjectGroupLabel?.slice(activeProjectGroupLabel.lastIndexOf("/") + 1) ||
-    activeProjectName;
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
   const interfaceFont = useClientSettings((settings) => settings.fontFamilySans);
   const breadcrumbContainerRef = useRef<HTMLDivElement>(null);
@@ -346,39 +342,6 @@ export const ChatHeader = memo(function ChatHeader({
             {activeProjectGroupLabel}
           </span>
         ) : null}
-        {/* In the world, the project shows as its island's sign: a chip in the sign's
-            colour above the title, which then stands alone. Where the thread works,
-            main checkout included, follows the chip. */}
-        {worldLook !== null && activeProject ? (
-          <div className="mb-0.5 flex min-w-0 items-center gap-2">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <button
-                    type="button"
-                    aria-label={`New thread in ${worldProjectName}`}
-                    onClick={onNewThreadInProject}
-                    className={cn(
-                      "min-w-0 shrink cursor-pointer truncate rounded-full px-2",
-                      "text-xs leading-5 font-semibold",
-                      "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                    )}
-                    style={{
-                      backgroundColor: worldLook.plate.background,
-                      color: worldLook.plate.text,
-                    }}
-                  />
-                }
-              >
-                {worldProjectName}
-              </TooltipTrigger>
-              <TooltipPopup side="top">New thread in {worldProjectName}</TooltipPopup>
-            </Tooltip>
-            {isServerThread ? (
-              <WorktreeSwitcher threadRef={activeThreadRef} />
-            ) : null}
-          </div>
-        ) : null}
         <WorkspaceBreadcrumb
           ariaLabel="Thread breadcrumb"
           className="overflow-clip [overflow-clip-margin:2px]"
@@ -454,11 +417,7 @@ export const ChatHeader = memo(function ChatHeader({
               </WorkspaceBreadcrumbSeparator>
             </>
           ) : null}
-          <WorkspaceBreadcrumbItem
-            current
-            // In the world the regenerate button follows the title, a small step apart.
-            className={cn("min-w-10 flex-1", worldLook !== null && "gap-1.5")}
-          >
+          <WorkspaceBreadcrumbItem current className="min-w-10 flex-1">
             {renamingTitle !== null ? (
               <input
                 autoFocus
@@ -521,8 +480,7 @@ export const ChatHeader = memo(function ChatHeader({
                   render={
                     <h2
                       aria-label={activeThreadTitle}
-                      // In the world the regenerate button follows the title, not the row's end.
-                      className={cn("min-w-0", worldLook === null && "flex-1")}
+                      className="min-w-0 flex-1"
                       onDoubleClick={
                         isServerThread && canOperateThread ? handleTitleDoubleClick : undefined
                       }
@@ -539,17 +497,14 @@ export const ChatHeader = memo(function ChatHeader({
                 <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
               </Tooltip>
             )}
-            {worldLook !== null && renamingTitle === null && isServerThread ? (
-              <span className="flex shrink-0 items-center">
-                <WorldRegenerateTitleButton threadRef={activeThreadRef} />
-              </span>
-            ) : null}
           </WorkspaceBreadcrumbItem>
         </WorkspaceBreadcrumb>
       </div>
-      {/* Archive closes the chat, so it sits apart in the header's top corner. */}
       {worldLook !== null && isServerThread ? (
-        <span className="flex shrink-0 items-center self-start">
+        <span className="flex shrink-0 items-center gap-0.5">
+          {renamingTitle === null ? (
+            <WorldRegenerateTitleButton threadRef={activeThreadRef} />
+          ) : null}
           <WorldArchiveButton threadRef={activeThreadRef} />
         </span>
       ) : null}

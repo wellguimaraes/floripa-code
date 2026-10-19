@@ -36,7 +36,6 @@ import {
   ChevronDownIcon,
   CloudDownloadIcon,
   CloudUploadIcon,
-  FileDiffIcon,
   GitBranchPlusIcon,
   GitCommitIcon,
   InfoIcon,
@@ -139,7 +138,6 @@ interface GitActionsControlProps {
   onOpenPullRequest?: ((number: number) => void) | undefined;
   displayMode?: "toolbar" | "panel";
   compact?: boolean;
-  onOpenChanges?: () => void;
 }
 
 interface PendingDefaultBranchAction {
@@ -1005,7 +1003,6 @@ export default function GitActionsControl({
   draftId,
   displayMode = "toolbar",
   compact = false,
-  onOpenChanges,
 }: GitActionsControlProps) {
   const isPanel = displayMode === "panel";
   const ActionGroup = isPanel ? "div" : Group;
@@ -1153,8 +1150,6 @@ export default function GitActionsControl({
   const isRepo = gitStatus?.isRepo ?? true;
   const hasPrimaryRemote = gitStatus?.hasPrimaryRemote ?? false;
   const gitStatusForActions = gitStatus;
-  // Matches the diff panel's Changes view. Older servers only report uncommitted totals.
-  const changesTotals = gitStatusForActions?.branchChanges ?? gitStatusForActions?.workingTree;
 
   const allFiles = gitStatusForActions?.workingTree.files ?? [];
   const selectedFiles = allFiles.filter((f) => !excludedFiles.has(f.path));
@@ -1897,24 +1892,6 @@ export default function GitActionsControl({
           )}
         </ActionGroup>
       )}
-
-      {isPanel && isRepo ? (
-        <ThreadDetailsControl
-          type="button"
-          variant="ghost"
-          size="sm"
-          part="row"
-          disabled={!onOpenChanges}
-          onClick={onOpenChanges}
-        >
-          <FileDiffIcon className={THREAD_DETAILS_PANEL_ICON_CLASS} aria-hidden />
-          <span className={cn("flex-1 text-left", THREAD_DETAILS_PANEL_LABEL_CLASS)}>Changes</span>
-          <span className="flex items-center gap-1 font-mono text-2xs tabular-nums">
-            <span className="text-success">+{changesTotals?.insertions ?? 0}</span>
-            <span className="text-destructive">-{changesTotals?.deletions ?? 0}</span>
-          </span>
-        </ThreadDetailsControl>
-      ) : null}
 
       <Dialog
         open={isCommitDialogOpen}

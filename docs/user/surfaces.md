@@ -13,20 +13,22 @@ each has open. Choose a type to see its tabs; choose it again to hide the
 panel. The rail stays visible while the panel is hidden. `mod+alt+1` through
 `mod+alt+6` pick a type from top to bottom, and `mod+t` opens a new tab of the
 type on screen. Closing a type's last tab keeps that type open, empty, with a
-button to open another.
+button to open another. Diff is a single view with no tabs; it opens when you
+choose its type. Files shows the worktree's file tree until you open a file.
 
 ## Agents in the worktree
 
 The rail on the chat's left edge lists the agents working in the same
 worktree. Choose one to switch chats; the panel stays as it is. The worktree
 name in the chat's header shows its branch when that differs, and its menu
-jumps to the project's other worktrees.
+jumps to the project's other worktrees. In the world, the map shows the agents
+instead, and the worktree's name heads the chat's frame.
 
 ## Collapse the chat
 
-The button at the top of the agent rail, or `mod+\`, collapses the chat so the
-surfaces take its place. While it is collapsed no agent is selected; choose
-one to bring the chat back.
+The button at the top of the agent rail (in the world, at the top left of the
+chat's frame), or `mod+\`, collapses the chat so the surfaces take its place.
+While it is collapsed no agent is selected; choose one to bring the chat back.
 
 ## What changes when an agent leaves
 

@@ -18,6 +18,9 @@ interface WorldModeState {
    */
   readonly archiveChatAgent: (() => Promise<void>) | null;
   readonly setArchiveChatAgent: (archive: (() => Promise<void>) | null) => void;
+  /** The latest ask to frame an agent's island; each ask is new, so repeats fly again. */
+  readonly islandFocusRequest: { readonly threadKey: string } | null;
+  readonly focusIslandOf: (threadKey: string) => void;
   readonly setSidebarWasOpen: (open: boolean | null) => void;
   readonly setShown: (shown: boolean) => void;
   readonly setEnabled: (enabled: boolean) => void;
@@ -35,6 +38,8 @@ export const useWorldModeStore = create<WorldModeState>()(
       setPickingProject: (pickingProject) => set({ pickingProject }),
       archiveChatAgent: null,
       setArchiveChatAgent: (archiveChatAgent) => set({ archiveChatAgent }),
+      islandFocusRequest: null,
+      focusIslandOf: (threadKey) => set({ islandFocusRequest: { threadKey } }),
       setSidebarWasOpen: (sidebarWasOpen) => set({ sidebarWasOpen }),
       setShown: (shown) => set({ shown }),
       setEnabled: (enabled) => set({ enabled }),
