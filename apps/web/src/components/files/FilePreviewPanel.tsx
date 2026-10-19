@@ -1252,6 +1252,16 @@ export default function FilePreviewPanel({
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
       {relativePath && attachment === undefined ? (
         <div className={FILE_SURFACE_SUBHEADER_CLASS} data-surface-subheader>
+          {/* Leads the row, above the explorer it opens on the left. */}
+          {!isHostFile && previewPath !== null ? (
+            <FileSurfaceAction
+              label={explorerOpen ? "Hide file explorer" : "Show file explorer"}
+              pressed={explorerOpen}
+              onPress={toggleExplorer}
+            >
+              <FolderTree className="size-3.5" />
+            </FileSurfaceAction>
+          ) : null}
           <ScrollArea
             radius="none"
             ref={breadcrumbRef}
@@ -1313,15 +1323,6 @@ export default function FilePreviewPanel({
           {canOpenInBrowser ? (
             <FileSurfaceAction label="Open file in preview browser" onPress={handleOpenInBrowser}>
               <Globe2 className="size-3.5" />
-            </FileSurfaceAction>
-          ) : null}
-          {!isHostFile && previewPath !== null ? (
-            <FileSurfaceAction
-              label={explorerOpen ? "Hide file explorer" : "Show file explorer"}
-              pressed={explorerOpen}
-              onPress={toggleExplorer}
-            >
-              <FolderTree className="size-3.5" />
             </FileSurfaceAction>
           ) : null}
         </div>
@@ -1480,9 +1481,9 @@ export default function FilePreviewPanel({
         {showExplorer ? (
           <aside
             className={cn(
-              "flex min-h-0 shrink-0 bg-background",
+              "order-first flex min-h-0 shrink-0 bg-background",
               previewPath
-                ? "w-[min(22rem,46%)] min-w-64 border-l border-border/60"
+                ? "w-[min(22rem,46%)] min-w-64 border-r border-border/60"
                 : "min-w-0 flex-1",
             )}
           >

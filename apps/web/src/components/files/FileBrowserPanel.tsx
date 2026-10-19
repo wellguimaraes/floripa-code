@@ -7,10 +7,10 @@ import type { EnvironmentId, ProjectEntry } from "@t3tools/contracts";
 import { FileTree, useFileTree, useFileTreeSearch, useFileTreeSelector } from "@pierre/trees/react";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 import { ChevronsDownUp, ChevronsUpDown } from "lucide";
+import { SearchIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "~/components/ui/button";
-import { InputGroup, InputGroupInput } from "~/components/ui/input-group";
 import { MorphIcon } from "~/components/MorphIcon";
 import { toastManager } from "~/components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
@@ -67,6 +67,9 @@ function RefreshFilesButton(props: { isPending: boolean; onRefresh: () => void }
   );
 }
 
+/**
+ * The tree's search box: borderless, part of the header row.
+ */
 function FileSearchField(props: {
   ariaLabel: string;
   name: string;
@@ -75,15 +78,16 @@ function FileSearchField(props: {
   value: string;
 }) {
   return (
-    <InputGroup variant="ghost" className="h-7 min-w-0 flex-1">
-      <InputGroupInput
+    <label className="flex h-7 min-w-0 flex-1 cursor-text items-center gap-1.5 pl-1">
+      <SearchIcon aria-hidden className="size-4 shrink-0 text-muted-foreground opacity-50" />
+      <input
         type="search"
         name={props.name}
-        size="sm"
         value={props.value}
         aria-label={props.ariaLabel}
         placeholder="Search files"
         spellCheck={false}
+        className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/72"
         onChange={(event) => props.onValueChange(event.target.value)}
         onKeyDown={(event) => {
           if (event.key !== "Escape") return;
@@ -92,7 +96,7 @@ function FileSearchField(props: {
           event.currentTarget.blur();
         }}
       />
-    </InputGroup>
+    </label>
   );
 }
 
@@ -502,14 +506,13 @@ export default function FileBrowserPanel({
   return (
     <div
       ref={panelRef}
-      className="flex min-h-0 flex-1 flex-col bg-background"
+      className="flex min-h-0 flex-1 flex-col bg-code"
       data-file-browser-panel={`${environmentId}:${cwd}`}
     >
       <div
-        className="flex h-10 min-h-10 shrink-0 items-center gap-1 border-b border-border/60 bg-background px-2 in-data-[preview-panel-mode=inline]:mb-1 in-data-[preview-panel-mode=inline]:h-9 in-data-[preview-panel-mode=inline]:min-h-9 in-data-[preview-panel-mode=inline]:border-b-transparent"
+        className="flex h-10 min-h-10 shrink-0 items-center gap-1 border-b border-border/60 bg-background px-2"
         data-surface-subheader
       >
-        <RefreshFilesButton isPending={isPending} onRefresh={handleRefresh} />
         <FileSearchField
           name="project-files-search"
           ariaLabel={`Search ${projectName} files`}
@@ -544,6 +547,7 @@ export default function FileBrowserPanel({
             </TooltipPopup>
           </Tooltip>
         ) : null}
+        <RefreshFilesButton isPending={isPending} onRefresh={handleRefresh} />
       </div>
       {error || pathSearch.error ? (
         <button
@@ -567,7 +571,8 @@ export default function FileBrowserPanel({
       <FileTree
         model={model}
         aria-label={`${projectName} files`}
-        className="min-h-0 flex-1 overflow-hidden"
+        // A step below the header, so the first row's highlight does not touch its divider.
+        className="min-h-0 flex-1 overflow-hidden pt-2"
         style={pierreTreeStyle(resolvedTheme)}
       />
     </div>

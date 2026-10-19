@@ -97,12 +97,12 @@ export type RightPanelSurface =
  * a type shows its surfaces as tabs.
  */
 export const RIGHT_PANEL_SURFACE_TYPES = [
-  "preview",
   "terminal",
+  "preview",
   "pull-request",
-  "diff",
-  "files",
   "device",
+  "files",
+  "diff",
 ] as const;
 export type RightPanelSurfaceType = (typeof RIGHT_PANEL_SURFACE_TYPES)[number];
 
@@ -403,6 +403,14 @@ const trackActiveType = (
   };
 };
 
+/** The Files type never shows empty: with no file selected it shows the checkout's tree. */
+const fallBackToFilesTree = (state: ThreadRightPanelState): ThreadRightPanelState => {
+  if (!state.isOpen || state.activeType !== "files" || state.activeSurfaceId !== null) {
+    return state;
+  }
+  return upsertSurface(state, singletonSurface("files"));
+};
+
 const updatePanelStateMap = (
   byPanelKey: Record<string, ThreadRightPanelState>,
   panelKey: string,
@@ -411,7 +419,7 @@ const updatePanelStateMap = (
   const current = byPanelKey[panelKey] ?? EMPTY_THREAD_STATE;
   const updated = updater(current);
   if (updated === current) return byPanelKey;
-  const next = trackActiveType(current, updated);
+  const next = trackActiveType(current, fallBackToFilesTree(updated));
   if (isEmptyPanelState(next)) {
     if (!(panelKey in byPanelKey)) return byPanelKey;
     const { [panelKey]: _removed, ...rest } = byPanelKey;

@@ -112,9 +112,28 @@ describe("rightPanelStore", () => {
     store.openFile(refA, "src/app.ts");
     store.openDevice(refA, device, true);
 
+    // Closing the first file left the checkout's tree in its place.
     expect(
       selectThreadRightPanelState(useRightPanelStore.getState().byPanelKey, refA).surfaces,
-    ).toEqual([expect.objectContaining({ id: "file:src/app.ts" })]);
+    ).toEqual([
+      expect.objectContaining({ id: "files" }),
+      expect.objectContaining({ id: "file:src/app.ts" }),
+    ]);
+  });
+
+  it("shows the files tree whenever the Files type has no file selected", () => {
+    const store = useRightPanelStore.getState();
+    store.activateType(refA, "files");
+    expect(
+      selectThreadRightPanelState(useRightPanelStore.getState().byPanelKey, refA),
+    ).toMatchObject({ isOpen: true, activeType: "files", activeSurfaceId: "files" });
+
+    store.openFile(refA, "src/app.ts");
+    store.closeSurface(refA, "file:src/app.ts");
+    store.closeSurface(refA, "files");
+    expect(
+      selectThreadRightPanelState(useRightPanelStore.getState().byPanelKey, refA),
+    ).toMatchObject({ isOpen: true, activeType: "files", activeSurfaceId: "files" });
   });
 
   it("records only closed tabs when a panel is hidden or a terminal tab closes", () => {
