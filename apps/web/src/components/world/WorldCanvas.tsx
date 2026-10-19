@@ -56,7 +56,7 @@ import { type AbductedFigure, Abduction } from "./scene/Abduction";
 import { BALLOON_NAME, BALLOON_PX, Character, HITBOX_NAME, WALKING_FLAG } from "./scene/Character";
 import { geometry } from "./scene/geometries";
 import { HAT_COUNT } from "./scene/Hat";
-import { Island, type FurnitureSpot } from "./scene/Island";
+import { Island, LAGOON_REACH, type FurnitureSpot } from "./scene/Island";
 import { afterPaint, whenIdle } from "./scene/frames";
 import { FadedContext, WorldDaylight } from "./scene/lighting";
 import { palette } from "./scene/palette";
@@ -2278,22 +2278,37 @@ function frameView(input: {
   probe.position.copy(target).add(CAMERA_OFFSET);
   probe.lookAt(target);
   probe.updateMatrixWorld();
-  // Measure every island on screen at zoom 1 (one unit per pixel).
+  // Measure every island on screen at zoom 1 (one unit per pixel). Islands are
+  // round, so trace a ring inside each box rather than its corners, which
+  // would stick out on every side of the tilted view. At sea level the ring
+  // takes in the shallows around the sand; up high, it is the island's own.
   let left = Infinity;
   let right = -Infinity;
   let bottom = Infinity;
   let top = -Infinity;
-  const corner = new Vector3();
+  const point = new Vector3();
   for (const island of bounds) {
-    for (const x of [island.minX, island.maxX]) {
-      for (const z of [island.minZ, island.maxZ]) {
-        for (const y of [-0.6, SIGN_TOP]) {
-          corner.set(x, y, z).applyMatrix4(probe.matrixWorldInverse);
-          left = Math.min(left, corner.x);
-          right = Math.max(right, corner.x);
-          bottom = Math.min(bottom, corner.y);
-          top = Math.max(top, corner.y);
-        }
+    const centerX = (island.minX + island.maxX) / 2;
+    const centerZ = (island.minZ + island.maxZ) / 2;
+    const halfX = (island.maxX - island.minX) / 2;
+    const halfZ = (island.maxZ - island.minZ) / 2;
+    for (let index = 0; index < SHORE_SAMPLES; index += 1) {
+      const angle = (index / SHORE_SAMPLES) * Math.PI * 2;
+      for (const [y, reach] of [
+        [-0.6, LAGOON_REACH],
+        [SIGN_TOP, 0],
+      ] as const) {
+        point
+          .set(
+            centerX + Math.cos(angle) * (halfX + reach),
+            y,
+            centerZ + Math.sin(angle) * (halfZ + reach),
+          )
+          .applyMatrix4(probe.matrixWorldInverse);
+        left = Math.min(left, point.x);
+        right = Math.max(right, point.x);
+        bottom = Math.min(bottom, point.y);
+        top = Math.max(top, point.y);
       }
     }
   }
@@ -2303,7 +2318,7 @@ function frameView(input: {
       .transformDirection(probe.matrixWorld)
       .multiplyScalar(Math.hypot((left + right) / 2, (bottom + top) / 2)),
   );
-  const margin = 1.15;
+  const margin = 1.06;
   const zoom = Math.min(
     controls.maxZoom,
     Math.max(

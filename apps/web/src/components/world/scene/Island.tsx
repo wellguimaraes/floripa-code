@@ -73,7 +73,7 @@ const IDLE_SHALLOWS = idleWater(palette.shallows, 0.06);
 const IDLE_FOAM = idleWater(palette.foam, 0.2);
 
 /** How far the outer shallows reach past a sand patch's edge. */
-const LAGOON_REACH = 2.1;
+export const LAGOON_REACH = 2.1;
 
 /**
  * The outline the ripple follows: the outer shallows around the island's sand,
