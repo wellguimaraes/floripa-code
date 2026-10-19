@@ -1,4 +1,5 @@
-import { Suspense, useContext, useMemo } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import { Suspense, useContext, useEffect, useMemo, useRef } from "react";
 import {
   BufferGeometry,
   Color,
@@ -7,6 +8,7 @@ import {
   Float32BufferAttribute,
   IcosahedronGeometry,
   Matrix4,
+  type Mesh,
   SRGBColorSpace,
   Vector3,
 } from "three";
@@ -74,6 +76,13 @@ const IDLE_FOAM = idleWater(palette.foam, 0.2);
 
 /** How far the outer shallows reach past a sand patch's edge. */
 export const LAGOON_REACH = 2.1;
+/** How much farther the outer and inner shallows reach round the open chat's island. */
+const WIDE_LAGOON = 3;
+const WIDE_SHALLOWS = 1;
+/** `LAGOON_REACH` round the open chat's island. */
+export const WIDE_LAGOON_REACH = LAGOON_REACH + WIDE_LAGOON;
+const WIDEN_MS = 350;
+const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 
 /**
  * The outline the ripple follows: the outer shallows around the island's sand,
@@ -101,11 +110,23 @@ export function Island(props: {
   readonly definition: WorldDefinition;
   readonly furniture: ReadonlyArray<FurnitureSpot>;
   readonly ripple: boolean;
+  /** The open chat's island: its shallows reach wider, so it stands out. */
+  readonly wide: boolean;
 }) {
-  const { definition, furniture, ripple } = props;
+  const { definition, furniture, ripple, wide } = props;
   const faded = useContext(FadedContext);
   const { light } = useContext(TimeOfDayContext);
-  const shore = useMemo(() => rippleShore(definition), [definition]);
+  const shore = useMemo(() => {
+    const base = rippleShore(definition);
+    if (!wide) return base;
+    // The ripple follows the widened shallows' outline.
+    const grow = (base.radius + WIDE_LAGOON) / base.radius;
+    return {
+      ...base,
+      radius: base.radius * grow,
+      edge: (angle: number) => base.edge(angle) * grow,
+    };
+  }, [definition, wide]);
   const ground = groundHeight(definition);
   return (
     <group>
@@ -128,12 +149,7 @@ export function Island(props: {
               // paler water over the sand close in. Water, not island, so it
               // keeps its colours on an empty island too.
               <FadedContext value={false}>
-                <mesh geometry={wavyDiscGeometry(patch.radius + LAGOON_REACH)} position-y={-0.24}>
-                  <LitMaterial color={palette.lagoon} />
-                </mesh>
-                <mesh geometry={wavyDiscGeometry(patch.radius + 0.9)} position-y={-0.23}>
-                  <LitMaterial color={faded ? IDLE_SHALLOWS : palette.shallows} />
-                </mesh>
+                <Shallows radius={patch.radius} wide={wide} faded={faded} />
                 {/* Surf where the sand meets the water, over the shallows. */}
                 <mesh geometry={shoreFoamGeometry(patch.radius)} position-y={-0.225}>
                   <LitMaterial color={faded ? IDLE_FOAM : palette.foam} />
@@ -194,6 +210,54 @@ export function Island(props: {
         />
       ))}
     </group>
+  );
+}
+
+/**
+ * The turquoise and paler bands of water round a sand patch. Widening or
+ * narrowing, they grow from the middle over a moment, drawn by scaling the same discs.
+ */
+function Shallows(props: {
+  readonly radius: number;
+  readonly wide: boolean;
+  readonly faded: boolean;
+}) {
+  const { radius, wide, faded } = props;
+  const invalidate = useThree((state) => state.invalidate);
+  const lagoon = useRef<Mesh>(null);
+  const shallows = useRef<Mesh>(null);
+  const goal = wide ? 1 : 0;
+  // How wide the bands are, from 0 to 1, where they are headed, and from where;
+  // already there on the first draw.
+  const move = useRef({ at: goal, from: goal, to: goal, startsAt: 0, done: false });
+  useEffect(() => {
+    if (move.current.to === goal) return;
+    const { at } = move.current;
+    move.current = { at, from: at, to: goal, startsAt: performance.now(), done: false };
+    invalidate();
+  }, [goal, invalidate]);
+  useFrame(() => {
+    if (move.current.done) return;
+    const { from, to, startsAt } = move.current;
+    const t = Math.min(1, (performance.now() - startsAt) / WIDEN_MS);
+    const at = from + (to - from) * easeInOut(t);
+    move.current.at = at;
+    const outer = (radius + LAGOON_REACH + WIDE_LAGOON * at) / (radius + LAGOON_REACH);
+    const inner = (radius + 0.9 + WIDE_SHALLOWS * at) / (radius + 0.9);
+    lagoon.current?.scale.set(outer, 1, outer);
+    shallows.current?.scale.set(inner, 1, inner);
+    if (t < 1) invalidate();
+    else move.current.done = true;
+  });
+  return (
+    <>
+      <mesh ref={lagoon} geometry={wavyDiscGeometry(radius + LAGOON_REACH)} position-y={-0.24}>
+        <LitMaterial color={palette.lagoon} />
+      </mesh>
+      <mesh ref={shallows} geometry={wavyDiscGeometry(radius + 0.9)} position-y={-0.23}>
+        <LitMaterial color={faded ? IDLE_SHALLOWS : palette.shallows} />
+      </mesh>
+    </>
   );
 }
 

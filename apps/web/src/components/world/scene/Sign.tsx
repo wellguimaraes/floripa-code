@@ -1,6 +1,6 @@
 import type { ThreeEvent } from "@react-three/fiber";
-import { useContext, useEffect, useMemo } from "react";
-import { CanvasTexture, Color, Object3D, SRGBColorSpace } from "three";
+import { type Ref, useContext, useEffect, useMemo } from "react";
+import { CanvasTexture, Color, type Group, Object3D, SRGBColorSpace, Vector3 } from "three";
 
 import type { ProjectFaviconProject } from "../../ProjectFavicon";
 import type { WorldSlot } from "../definition/types";
@@ -20,6 +20,29 @@ const DEPTH = 0.5;
 const CAP_TOP = BOARD_LIFT + BOARD_HEIGHT + FRAME + 0.2;
 /** How high the sign reaches, lamps included, so the camera can fit it in. */
 export const SIGN_TOP = CAP_TOP + 0.6;
+
+/**
+ * The corners of a sign's board, cap and lamps in the world, so the camera can
+ * fit the whole board in.
+ */
+export function signCorners(sign: Object3D): Vector3[] {
+  const { boardWidth } = sign.userData as SignUserData;
+  // The cap plank is the widest and deepest part.
+  const halfX = boardWidth / 2 + FRAME + 0.2;
+  const halfZ = (DEPTH + 0.3) / 2;
+  const bottom = BOARD_LIFT - FRAME;
+  const top = SIGN_TOP;
+  sign.updateWorldMatrix(true, false);
+  return [-halfX, halfX].flatMap((x) =>
+    [bottom, top].flatMap((y) =>
+      [-halfZ, halfZ].map((z) => new Vector3(x, y, z).applyMatrix4(sign.matrixWorld)),
+    ),
+  );
+}
+
+interface SignUserData {
+  readonly boardWidth: number;
+}
 /** The lamps' brightness; with `decay` 1 it fades with distance, not its square. */
 const LAMP_INTENSITY = 24;
 /** The lamps tip forward this far from level, to shine down on the island. */
@@ -66,6 +89,8 @@ export function Sign(props: {
   readonly onListClick: (list: "branches" | "worktrees") => void;
   /** Clicking the project's icon, at this point on screen, e.g. to change it. */
   readonly onIconClick: (point: { readonly x: number; readonly y: number }) => void;
+  /** The sign's root, for `signCorners`. */
+  readonly ref: Ref<Group>;
 }) {
   const {
     slot,
@@ -77,6 +102,7 @@ export function Sign(props: {
     worktrees,
     onListClick,
     onIconClick,
+    ref,
   } = props;
   // The icon sits on a white tile, so lucide glyphs take the dark ink whatever the board's colour.
   const icon = useSignIcon(project, palette.signTextDark);
@@ -107,7 +133,12 @@ export function Sign(props: {
   return (
     // Keeps its colours at any contrast, so the project's name stays easy to spot.
     <KeepColorContext value>
-      <group position={slot.position as [number, number, number]} rotation-y={slot.facing}>
+      <group
+        ref={ref}
+        position={slot.position as [number, number, number]}
+        rotation-y={slot.facing}
+        userData={{ boardWidth: width } satisfies SignUserData}
+      >
         {/* One pole, running up behind the board to its middle. */}
         <mesh
           geometry={geometry.box}

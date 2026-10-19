@@ -80,6 +80,12 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
   const navigate = useNavigate();
   const panelRef = useRef<HTMLDivElement>(null);
   const readPanel = useCallback(() => panelRef.current, []);
+  const topBarRef = useRef<HTMLDivElement>(null);
+  const bottomBarRef = useRef<HTMLDivElement>(null);
+  const readBars = useCallback(
+    () => ({ top: topBarRef.current, bottom: bottomBarRef.current }),
+    [],
+  );
   const [toolbar, setToolbar] = useState<HTMLDivElement | null>(null);
   const chatWidth = useFrameWidth("t3code:world-chat-width:v1", CHAT_DEFAULT_WIDTH);
   const surfacesOnlyWidth = useFrameWidth(
@@ -187,11 +193,13 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
             onCollapse={closeChat}
             chatCollapsed={chatTarget !== null && !chatShown}
             panel={readPanel}
+            bars={readBars}
             toolbar={toolbar}
           />
         </Suspense>
       </div>
       <div
+        ref={topBarRef}
         className={cn(
           // Stacked over the chat panel so toolbar popovers drop down on top of it.
           "pointer-events-none absolute inset-x-0 top-0 z-10 flex h-[var(--workspace-topbar-height)] items-center gap-2 pr-3",
@@ -210,6 +218,7 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
         </div>
       </div>
       <div
+        ref={bottomBarRef}
         className="pointer-events-none absolute bottom-3 left-3 z-10 flex"
         // Stops short of the open chat, which also sits on the bottom edge.
         style={{

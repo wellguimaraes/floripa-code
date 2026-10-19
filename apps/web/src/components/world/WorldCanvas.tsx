@@ -56,14 +56,14 @@ import { type AbductedFigure, Abduction } from "./scene/Abduction";
 import { BALLOON_NAME, BALLOON_PX, Character, HITBOX_NAME, WALKING_FLAG } from "./scene/Character";
 import { geometry } from "./scene/geometries";
 import { HAT_COUNT } from "./scene/Hat";
-import { Island, LAGOON_REACH, type FurnitureSpot } from "./scene/Island";
+import { Island, LAGOON_REACH, WIDE_LAGOON_REACH, type FurnitureSpot } from "./scene/Island";
 import { afterPaint, whenIdle } from "./scene/frames";
 import { FadedContext, WorldDaylight } from "./scene/lighting";
 import { palette } from "./scene/palette";
 import { Manager } from "./scene/Manager";
 import { WhaleSightings } from "./scene/Whales";
 import { groundHeight, surfaceAt } from "./scene/terrain";
-import { SIGN_TOP, Sign, signTextColor } from "./scene/Sign";
+import { SIGN_TOP, Sign, signCorners, signTextColor } from "./scene/Sign";
 import { ManagerBubble, type ManagerStatus } from "./ManagerBubble";
 import { MissingFolderPill, useMissingProjects } from "./MissingFolderPill";
 import { NewAgentBubble } from "./NewAgentBubble";
@@ -102,10 +102,13 @@ export default function WorldCanvas(props: {
   readonly chatCollapsed: boolean;
   /** The chat panel, if open; framing the islands keeps clear of it. */
   readonly panel: () => HTMLElement | null;
+  /** The bars over the canvas's top and bottom edges; framing keeps clear of them too. */
+  readonly bars: () => { readonly top: HTMLElement | null; readonly bottom: HTMLElement | null };
   /** The top bar spot where the project visibility menu goes. */
   readonly toolbar: HTMLElement | null;
 }) {
-  const { definitions, selectedKey, onExpand, onCollapse, chatCollapsed, panel, toolbar } = props;
+  const { definitions, selectedKey, onExpand, onCollapse, chatCollapsed, panel, bars, toolbar } =
+    props;
   if (import.meta.env.DEV) definitions.forEach(assertValidDefinition);
   // Rules, pacing and the archipelago's settings are the same at every size.
   const definition = definitions[0]!;
@@ -296,7 +299,6 @@ export default function WorldCanvas(props: {
     });
   }, [islands, setLooks, recolorFamily]);
   useEffect(() => () => setLooks(new Map(), null), [setLooks]);
-  const bounds = useMemo(() => archipelagoBounds(islands), [islands]);
   // Overlays above a hat sit higher, so the hat stays in view.
   const hatted = useMemo(
     () =>
@@ -455,6 +457,8 @@ export default function WorldCanvas(props: {
     if (root === null) roots.current.delete(key);
     else roots.current.set(key, root);
   }, []);
+  // Each island's sign, so framing an island keeps its whole board in view.
+  const signs = useRef(new Map<string, Object3D>());
   const bubbleRef = useRef<HTMLDivElement>(null);
 
   /** One saucer takes everyone archived together. */
@@ -800,6 +804,9 @@ export default function WorldCanvas(props: {
       if (chatCharacter !== undefined) await archiveAll([chatCharacter]);
     };
   });
+  // The open chat's island gets wider shallows, so it stands out.
+  const chatIsland = chatCharacter?.facts.projectKey ?? null;
+  const bounds = useMemo(() => archipelagoBounds(islands, chatIsland), [islands, chatIsland]);
   const chatCharacterKey = chatCharacter?.facts.key ?? null;
   useEffect(() => {
     if (chatCharacterKey === null) return;
@@ -1031,8 +1038,10 @@ export default function WorldCanvas(props: {
             bounds={bounds}
             islands={islandSpots}
             panel={panel}
+            bars={bars}
             focusKey={selectedKey}
             roots={roots}
+            signs={signs}
             zoomTo={zoomTo}
             holdViewOnClose={holdViewOnClose}
             keepInView={keepInView}
@@ -1100,6 +1109,7 @@ export default function WorldCanvas(props: {
                     definition={island.definition}
                     furniture={buildFurniture(island.definition, island.characters)}
                     ripple={island.ripple}
+                    wide={island.key === chatIsland}
                   />
                   {/* The sign names the project, so it keeps its colours on an empty island. */}
                   <FadedContext value={false}>
@@ -1113,6 +1123,10 @@ export default function WorldCanvas(props: {
                       worktrees={signStats.get(island.key)?.worktrees ?? 0}
                       onListClick={(list) => setListOn({ key: island.key, list })}
                       onIconClick={(point) => void showIconMenu(island.key, point)}
+                      ref={(sign) => {
+                        if (sign === null) signs.current.delete(island.key);
+                        else signs.current.set(island.key, sign);
+                      }}
                     />
                   </FadedContext>
                   {/* Like the sign, he keeps his colours on an empty island. */}
@@ -1754,6 +1768,8 @@ interface Bounds {
   readonly minZ: number;
   readonly maxX: number;
   readonly maxZ: number;
+  /** How far the island's shallows reach past its ground, so framing takes them in. */
+  readonly reach: number;
 }
 
 const CAMERA_OFFSET = new Vector3(18, 20, 18);
@@ -1768,8 +1784,10 @@ function WorldControls({
   bounds,
   islands,
   panel,
+  bars,
   focusKey,
   roots,
+  signs,
   zoomTo,
   holdViewOnClose,
   keepInView,
@@ -1780,9 +1798,12 @@ function WorldControls({
   readonly bounds: ReadonlyArray<Bounds> | null;
   readonly islands: ReadonlyArray<IslandSpot>;
   readonly panel: () => HTMLElement | null;
+  readonly bars: () => { readonly top: HTMLElement | null; readonly bottom: HTMLElement | null };
   /** The character whose chat is open: slid into view beside the panel. */
   readonly focusKey: string | null;
   readonly roots: React.RefObject<Map<string, Object3D>>;
+  /** Each island's sign, by island key. */
+  readonly signs: React.RefObject<Map<string, Object3D>>;
   /** An island to frame, from its menu; a new object frames it again. */
   readonly zoomTo: { readonly key: string } | null;
   /** Set here: makes closing the open chat leave the map where it is, instead of going back. */
@@ -1800,14 +1821,31 @@ function WorldControls({
   const size = useThree((state) => state.size);
   const controlsRef = useRef<MapControls | null>(null);
   const fitted = useRef(false);
-  /** How much of the canvas's right side the chat panel hides. */
-  const coveredRight = useCallback(() => {
+  /** How much of the canvas the chat panel hides on the right, and the bars at the top and bottom. */
+  const covered = useCallback((): Covered => {
+    const canvas = element.getBoundingClientRect();
     const panelRect = panel()?.getBoundingClientRect();
-    // The panel's close button sits just outside it, on the left.
-    return panelRect
-      ? element.getBoundingClientRect().right - (panelRect.left - PANEL_CLOSE_SPACE)
-      : 0;
-  }, [element, panel]);
+    const { top, bottom } = bars();
+    const topRect = top?.getBoundingClientRect();
+    const bottomRect = bottom?.getBoundingClientRect();
+    return {
+      top: topRect ? Math.max(0, topRect.bottom - canvas.top) : 0,
+      // The panel's close button sits just outside it, on the left.
+      right: panelRect ? canvas.right - (panelRect.left - PANEL_CLOSE_SPACE) : 0,
+      // An empty bar takes no room.
+      bottom: bottomRect && bottomRect.height > 0 ? Math.max(0, canvas.bottom - bottomRect.top) : 0,
+    };
+  }, [element, panel, bars]);
+  /** The corners of these islands' signs, which stand above and past their ground. */
+  const signsOf = useCallback(
+    (keys: ReadonlyArray<string>) =>
+      keys.flatMap((key) => {
+        const sign = signs.current.get(key);
+        return sign === undefined ? [] : signCorners(sign);
+      }),
+    [signs],
+  );
+  const allSigns = useCallback(() => signsOf(islands.map((spot) => spot.key)), [islands, signsOf]);
   // Camera moves the app makes glide; grabbing the map stops them.
   const flight = useRef<{
     readonly from: View;
@@ -1859,10 +1897,17 @@ function WorldControls({
     applyView(
       camera,
       controls,
-      frameView({ camera, controls, bounds, viewport: size, coveredRight: coveredRight() }),
+      frameView({
+        camera,
+        controls,
+        bounds,
+        signs: allSigns(),
+        viewport: size,
+        covered: covered(),
+      }),
     );
     invalidate();
-  }, [bounds, camera, invalidate, coveredRight, size]);
+  }, [bounds, camera, invalidate, covered, allSigns, size]);
 
   const fly = useCallback(
     (to: View) => {
@@ -1879,8 +1924,17 @@ function WorldControls({
     framedArrangement.current = arrangement;
     const controls = controlsRef.current;
     if (controls === null || bounds === null || !(camera instanceof OrthographicCamera)) return;
-    fly(frameView({ camera, controls, bounds, viewport: size, coveredRight: coveredRight() }));
-  }, [arrangement, bounds, camera, fly, size, coveredRight]);
+    fly(
+      frameView({
+        camera,
+        controls,
+        bounds,
+        signs: allSigns(),
+        viewport: size,
+        covered: covered(),
+      }),
+    );
+  }, [arrangement, bounds, camera, fly, size, covered, allSigns]);
   useFrame((state) => {
     const controls = controlsRef.current;
     const moving = flight.current;
@@ -1918,14 +1972,15 @@ function WorldControls({
           camera,
           controls,
           bounds: island === undefined ? bounds : [island],
+          signs: island === undefined ? allSigns() : signsOf([islands[index]!.key]),
           viewport: size,
-          coveredRight: coveredRight(),
+          covered: covered(),
         }),
       );
     };
     element.addEventListener("dblclick", onDoubleClick);
     return () => element.removeEventListener("dblclick", onDoubleClick);
-  }, [bounds, islands, camera, element, fly, coveredRight, size]);
+  }, [bounds, islands, camera, element, fly, covered, size, allSigns, signsOf]);
 
   // Opening a chat waits for its panel to settle, then frames its character's
   // island beside it, but only when the panel hides part of the island or the
@@ -1953,7 +2008,7 @@ function WorldControls({
           view: currentView(camera, controls),
           points,
           viewport: size,
-          coveredRight: coveredRight(),
+          covered: covered(),
           minZoom: controls.minZoom,
         });
         if (to !== null) fly(to);
@@ -1964,7 +2019,7 @@ function WorldControls({
       keepInViewWait.current?.();
       keepInViewWait.current = null;
     };
-  }, [camera, size, coveredRight, fly, keepInView]);
+  }, [camera, size, covered, fly, keepInView]);
   const waitForPanel = useRef<(() => void) | null>(null);
   const stopWaiting = useCallback(() => {
     waitForPanel.current?.();
@@ -1983,12 +2038,23 @@ function WorldControls({
     const island = bounds[nearest];
     const spot = islands[nearest];
     if (island === undefined || spot === undefined) return;
-    const covered = coveredRight();
+    const hidden = covered();
     const head = focusPoint.clone().setY(focusPoint.y + FOLLOW_HEIGHT * root.scale.y);
-    if (onScreen(camera, [focusPoint, head, ...shorePoints(spot)], size, covered)) return;
+    const sign = signsOf([spot.key]);
+    const shore = shorePoints(spot, island.reach);
+    if (onScreen(camera, [focusPoint, head, ...shore, ...sign], size, hidden)) return;
     // Switching chats keeps the view from before the first move.
     beforeChat.current ??= currentView(camera, controls);
-    fly(frameView({ camera, controls, bounds: [island], viewport: size, coveredRight: covered }));
+    fly(
+      frameView({
+        camera,
+        controls,
+        bounds: [island],
+        signs: sign,
+        viewport: size,
+        covered: hidden,
+      }),
+    );
   });
   const onFocus = useEffectEvent((key: string | null) => {
     stopWaiting();
@@ -2039,8 +2105,9 @@ function WorldControls({
         camera,
         controls,
         bounds: [island],
+        signs: signsOf([key]),
         viewport: size,
-        coveredRight: coveredRight(),
+        covered: covered(),
       }),
     );
   });
@@ -2056,23 +2123,24 @@ function WorldControls({
     if (controls === null || island === undefined || !(camera instanceof OrthographicCamera)) {
       return;
     }
-    const covered = coveredRight();
+    const hidden = covered();
     const point = new Vector3(...position);
     const framed = frameView({
       camera,
       controls,
       bounds: [island],
+      signs: signsOf([islandKey]),
       viewport: size,
-      coveredRight: covered,
+      covered: hidden,
     });
     const current = currentView(camera, controls);
     if (
       current.zoom >= framed.zoom * REVEAL_MIN_ZOOM &&
-      bubbleRoom(camera, current, point, size, covered).equals(ZERO)
+      bubbleRoom(camera, current, point, size, hidden).equals(ZERO)
     ) {
       return;
     }
-    const shift = bubbleRoom(camera, framed, point, size, covered);
+    const shift = bubbleRoom(camera, framed, point, size, hidden);
     fly({ target: framed.target.add(shift), zoom: framed.zoom });
   });
   useEffect(() => {
@@ -2084,7 +2152,7 @@ function WorldControls({
 /** How far in, against framing its island, the map must be to start an agent there as is. */
 const REVEAL_MIN_ZOOM = 0.6;
 /** The new-agent bubble's size above its spot, with a little air. */
-const BUBBLE_ROOM = { width: 464, height: 372, below: 24, top: 56 };
+const BUBBLE_ROOM = { width: 464, height: 372, below: 24, top: 4 };
 const ZERO = new Vector3();
 
 /**
@@ -2097,14 +2165,14 @@ function bubbleRoom(
   view: View,
   point: Vector3,
   viewport: { readonly width: number; readonly height: number },
-  coveredRight: number,
+  covered: Covered,
 ): Vector3 {
   const probe = probeAt(camera, view);
   const { x, y } = toScreen(point, probe, viewport);
   const half = BUBBLE_ROOM.width / 2;
-  const right = Math.max(half, viewport.width - coveredRight - half);
-  const top = BUBBLE_ROOM.top + BUBBLE_ROOM.height;
-  const bottom = Math.max(top, viewport.height - BUBBLE_ROOM.below);
+  const right = Math.max(half, viewport.width - covered.right - half);
+  const top = covered.top + BUBBLE_ROOM.top + BUBBLE_ROOM.height;
+  const bottom = Math.max(top, viewport.height - covered.bottom - BUBBLE_ROOM.below);
   // Pixels the spot must move on screen: right and down are positive.
   const dx = x < half ? half - x : x > right ? right - x : 0;
   const dy = y < top ? top - y : y > bottom ? bottom - y : 0;
@@ -2125,7 +2193,7 @@ function viewShowing(input: {
   readonly view: View;
   readonly points: ReadonlyArray<Vector3>;
   readonly viewport: { readonly width: number; readonly height: number };
-  readonly coveredRight: number;
+  readonly covered: Covered;
   readonly minZoom: number;
 }): View | null {
   const { view, points, viewport } = input;
@@ -2135,9 +2203,9 @@ function viewShowing(input: {
   const xs = screen.map((p) => p.x);
   const ys = screen.map((p) => p.y);
   const left = KEEP_IN_VIEW_MARGIN;
-  const right = Math.max(left, viewport.width - input.coveredRight - KEEP_IN_VIEW_MARGIN);
-  const top = KEEP_IN_VIEW_MARGIN;
-  const bottom = Math.max(top, viewport.height - KEEP_IN_VIEW_MARGIN);
+  const right = Math.max(left, viewport.width - input.covered.right - KEEP_IN_VIEW_MARGIN);
+  const top = input.covered.top + KEEP_IN_VIEW_MARGIN;
+  const bottom = Math.max(top, viewport.height - input.covered.bottom - KEEP_IN_VIEW_MARGIN);
   // Zooming keeps the middle of the canvas still and scales everything about it.
   const fit = Math.min(
     1,
@@ -2214,15 +2282,12 @@ function sameRect(a: DOMRect, b: DOMRect): boolean {
 }
 
 /** True when every point falls inside the part of the canvas the panel leaves visible. */
-/** Points around an island's shoreline, at sea level. */
-function shorePoints(spot: IslandSpot): Vector3[] {
+/** Points around an island's shoreline at sea level, `reach` out into the shallows. */
+function shorePoints(spot: IslandSpot, reach: number): Vector3[] {
+  const radius = spot.shoreRadius + reach;
   return Array.from({ length: SHORE_SAMPLES }, (_, index) => {
     const angle = (index / SHORE_SAMPLES) * Math.PI * 2;
-    return new Vector3(
-      spot.x + Math.cos(angle) * spot.shoreRadius,
-      0,
-      spot.z + Math.sin(angle) * spot.shoreRadius,
-    );
+    return new Vector3(spot.x + Math.cos(angle) * radius, 0, spot.z + Math.sin(angle) * radius);
   });
 }
 
@@ -2230,7 +2295,7 @@ function onScreen(
   camera: OrthographicCamera,
   points: ReadonlyArray<Vector3>,
   viewport: { readonly width: number; readonly height: number },
-  coveredRight: number,
+  covered: Covered,
 ): boolean {
   camera.updateMatrixWorld();
   const projected = new Vector3();
@@ -2238,8 +2303,20 @@ function onScreen(
     projected.copy(point).project(camera);
     const x = ((projected.x + 1) / 2) * viewport.width;
     const y = ((1 - projected.y) / 2) * viewport.height;
-    return x >= 0 && x <= viewport.width - coveredRight && y >= 0 && y <= viewport.height;
+    return (
+      x >= 0 &&
+      x <= viewport.width - covered.right &&
+      y >= covered.top &&
+      y <= viewport.height - covered.bottom
+    );
   });
+}
+
+/** How far in from each edge something sits over the canvas, in pixels. */
+interface Covered {
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
 }
 
 /** Where the map looks and how far in it is zoomed. */
@@ -2260,19 +2337,23 @@ function applyView(camera: OrthographicCamera, controls: MapControls, view: View
   controls.update();
 }
 
-/** The view that fits `bounds` into the part of the canvas the panel leaves visible. */
+/** The view that fits `bounds` into the part of the canvas the panel and bars leave visible. */
 function frameView(input: {
   readonly camera: OrthographicCamera;
   readonly controls: MapControls;
   readonly bounds: ReadonlyArray<Bounds>;
+  /** Points that must show too, like the corners of the islands' signs. */
+  readonly signs: ReadonlyArray<Vector3>;
   readonly viewport: { readonly width: number; readonly height: number };
-  readonly coveredRight: number;
+  readonly covered: Covered;
 }): View {
   const { controls, bounds, viewport } = input;
   // Measured on a copy, so the real camera only moves when the view is applied.
   const probe = input.camera.clone();
   // Keep a usable strip of world even when the panel covers most of the canvas.
-  const coveredRight = Math.max(0, Math.min(input.coveredRight, viewport.width - 320));
+  const coveredRight = Math.max(0, Math.min(input.covered.right, viewport.width - 320));
+  const coveredTop = Math.max(0, Math.min(input.covered.top, viewport.height / 4));
+  const coveredBottom = Math.max(0, Math.min(input.covered.bottom, viewport.height / 4));
   const first = bounds[0]!;
   const target = new Vector3((first.minX + first.maxX) / 2, 0, (first.minZ + first.maxZ) / 2);
   probe.position.copy(target).add(CAMERA_OFFSET);
@@ -2295,7 +2376,7 @@ function frameView(input: {
     for (let index = 0; index < SHORE_SAMPLES; index += 1) {
       const angle = (index / SHORE_SAMPLES) * Math.PI * 2;
       for (const [y, reach] of [
-        [-0.6, LAGOON_REACH],
+        [-0.6, island.reach],
         [SIGN_TOP, 0],
       ] as const) {
         point
@@ -2312,28 +2393,35 @@ function frameView(input: {
       }
     }
   }
+  for (const corner of input.signs) {
+    point.copy(corner).applyMatrix4(probe.matrixWorldInverse);
+    left = Math.min(left, point.x);
+    right = Math.max(right, point.x);
+    bottom = Math.min(bottom, point.y);
+    top = Math.max(top, point.y);
+  }
   // Slide the view sideways onto the middle of that, then zoom to fit.
   target.add(
     new Vector3((left + right) / 2, (bottom + top) / 2, 0)
       .transformDirection(probe.matrixWorld)
       .multiplyScalar(Math.hypot((left + right) / 2, (bottom + top) / 2)),
   );
-  const margin = 1.06;
+  const margin = 1.15;
   const zoom = Math.min(
     controls.maxZoom,
     Math.max(
       controls.minZoom,
       Math.min(
         (viewport.width - coveredRight) / ((right - left) * margin),
-        viewport.height / ((top - bottom) * margin),
+        (viewport.height - coveredTop - coveredBottom) / ((top - bottom) * margin),
       ),
     ),
   );
-  // Centre the islands in the part of the canvas the panel leaves visible.
+  // Centre the islands in the part of the canvas the panel and bars leave visible.
   target.add(
-    new Vector3(1, 0, 0)
+    new Vector3(coveredRight / 2, (coveredTop - coveredBottom) / 2, 0)
       .transformDirection(probe.matrixWorld)
-      .multiplyScalar(coveredRight / 2 / zoom),
+      .multiplyScalar(Math.hypot(coveredRight / 2, (coveredTop - coveredBottom) / 2) / zoom),
   );
   // The screen-space shifts above also move the target up or down; slide it
   // back along the line of sight onto sea level, where the camera aims.
@@ -2368,15 +2456,20 @@ function freePiles(
 }
 
 /** Each island's ground in world coordinates. */
-function archipelagoBounds(islands: ReadonlyArray<WorldIsland>): Bounds[] | null {
+/** Each island's ground, and its shallows' reach: wider round `wideKey`, the open chat's island. */
+function archipelagoBounds(
+  islands: ReadonlyArray<WorldIsland>,
+  wideKey: string | null,
+): Bounds[] | null {
   if (islands.length === 0) return null;
-  return islands.map(({ offset, definition }) => {
+  return islands.map(({ key, offset, definition }) => {
     const island = islandBounds(definition);
     return {
       minX: offset[0] + island.minX,
       maxX: offset[0] + island.maxX,
       minZ: offset[2] + island.minZ,
       maxZ: offset[2] + island.maxZ,
+      reach: key === wideKey ? WIDE_LAGOON_REACH : LAGOON_REACH,
     };
   });
 }
