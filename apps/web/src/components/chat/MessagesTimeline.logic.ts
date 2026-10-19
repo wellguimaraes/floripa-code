@@ -738,7 +738,8 @@ function deriveTerminalAssistantMessageIds(timelineEntries: ReadonlyArray<Timeli
 
 interface TurnFold {
   runId: RunId;
-  anchorEntryId: string;
+  /** The turn's last entry; the fold row follows it. */
+  lastEntryId: string;
   createdAt: string;
   hiddenEntryIds: ReadonlySet<string>;
   label: string;
@@ -1006,7 +1007,7 @@ function failedTimelineRunIds(
 
 /**
  * Settled turns fold activity before their terminal assistant message behind
- * a "Worked for ..." row. Ordinary trailing work joins the fold, while failures
+ * a "Worked for ..." row placed after the turn's last entry. Ordinary trailing work joins the fold, while failures
  * and work still in progress stay visible. A prompt without a run (a
  * provider-native subagent, or a turn imported from V1) folds its response
  * the same way.
@@ -1045,7 +1046,6 @@ function deriveTurnFolds(input: {
      * hold a single instantaneous commentary message.
      */
     startBoundary: string | null;
-    anchorEntryId: string;
   }
   const groupsByRunId = new Map<RunId, TurnGroup>();
   const runlessFailedKeys = new Set<RunId>();
@@ -1054,13 +1054,10 @@ function deriveTurnFolds(input: {
   // stable key of its own. Decide per prompt, not per thread: a V1 thread's
   // first V2 run must not unfold every imported turn above it.
   let runlessKey: RunId | null = null;
-  let pendingBoundary: { createdAt: string; anchorEntryId: string } | null = null;
+  let pendingBoundary: string | null = null;
   for (const [index, entry] of input.timelineEntries.entries()) {
     if (timelineEntryStartsResponse(entry)) {
-      const nextEntry = input.timelineEntries[index + 1];
-      pendingBoundary = nextEntry
-        ? { createdAt: entry.createdAt, anchorEntryId: nextEntry.id }
-        : null;
+      pendingBoundary = input.timelineEntries[index + 1] ? entry.createdAt : null;
       const boundaryRunId =
         entry.kind === "message"
           ? entry.message.runId
@@ -1086,8 +1083,7 @@ function deriveTurnFolds(input: {
         // Each user boundary starts at most one turn; a second turn after the
         // same user message (e.g. a steer-superseded continuation) falls back
         // to its own first entry.
-        startBoundary: pendingBoundary?.createdAt ?? null,
-        anchorEntryId: pendingBoundary?.anchorEntryId ?? entry.id,
+        startBoundary: pendingBoundary,
       };
       pendingBoundary = null;
       groupsByRunId.set(runId, group);
@@ -1103,7 +1099,7 @@ function deriveTurnFolds(input: {
     }
   }
 
-  const foldsByAnchorEntryId = new Map<string, TurnFold>();
+  const foldsByLastEntryId = new Map<string, TurnFold>();
   for (const [runId, group] of groupsByRunId) {
     if (
       input.unfoldedRunIds.has(runId) ||
@@ -1188,15 +1184,15 @@ function deriveTurnFolds(input: {
         ? `Worked for ${duration}`
         : "Worked";
 
-    foldsByAnchorEntryId.set(group.anchorEntryId, {
+    foldsByLastEntryId.set(lastEntry.id, {
       runId,
-      anchorEntryId: group.anchorEntryId,
+      lastEntryId: lastEntry.id,
       createdAt: group.startBoundary ?? firstEntry.createdAt,
       hiddenEntryIds,
       label,
     });
   }
-  return foldsByAnchorEntryId;
+  return foldsByLastEntryId;
 }
 
 /**
@@ -1435,7 +1431,7 @@ export function deriveMessagesTimelineRows(input: {
     isWorking: input.isWorking,
   });
   const runlessWorkActive = input.isWorking && input.runlessWorkActive === true;
-  const foldsByAnchorEntryId = deriveTurnFolds({
+  const foldsByLastEntryId = deriveTurnFolds({
     timelineEntries: timelineEntries,
     terminalAssistantMessageIds,
     latestRun: input.latestRun ?? null,
@@ -1445,7 +1441,7 @@ export function deriveMessagesTimelineRows(input: {
     completeSupersededReplyEntryIds: completeSupersededReplyIds,
   });
   const collapsedEntryIds = new Set<string>();
-  for (const fold of foldsByAnchorEntryId.values()) {
+  for (const fold of foldsByLastEntryId.values()) {
     if (!input.expandedRunIds?.has(fold.runId)) {
       for (const entryId of fold.hiddenEntryIds) {
         collapsedEntryIds.add(entryId);
@@ -1492,7 +1488,6 @@ export function deriveMessagesTimelineRows(input: {
         entry.entry.sourceActivityKind === "context-compaction" ||
         collapsedEntryIds.has(entry.id) ||
         collapsedSupersededEntryIds.has(entry.id) ||
-        foldsByAnchorEntryId.has(entry.id) ||
         supersededFoldsByAnchorEntryId.has(entry.id)
       ) {
         break;
@@ -1572,11 +1567,27 @@ export function deriveMessagesTimelineRows(input: {
     );
   };
 
+  // A turn's fold row follows everything the turn left visible.
+  const appendTurnFoldAfter = (entry: TimelineEntry | undefined) => {
+    const turnFold = entry ? foldsByLastEntryId.get(entry.id) : undefined;
+    if (!turnFold) return;
+    nextRows.push({
+      kind: "turn-fold",
+      id: `turn-fold:${turnFold.runId}`,
+      createdAt: turnFold.createdAt,
+      runId: turnFold.runId,
+      label: turnFold.label,
+      expanded: input.expandedRunIds?.has(turnFold.runId) ?? false,
+    });
+  };
+
   for (let index = 0; index < timelineEntries.length; index += 1) {
     const timelineEntry = timelineEntries[index];
     if (!timelineEntry) {
       continue;
     }
+
+    appendTurnFoldAfter(timelineEntries[index - 1]);
 
     if (input.isWorking && index === activeTurnHeaderIndex) {
       appendWorkingRow();
@@ -1593,18 +1604,6 @@ export function deriveMessagesTimelineRows(input: {
       timelineEntry.projectedItem.item.type === "run_interrupt_request"
     ) {
       continue;
-    }
-
-    const turnFold = foldsByAnchorEntryId.get(timelineEntry.id);
-    if (turnFold) {
-      nextRows.push({
-        kind: "turn-fold",
-        id: `turn-fold:${turnFold.runId}`,
-        createdAt: turnFold.createdAt,
-        runId: turnFold.runId,
-        label: turnFold.label,
-        expanded: input.expandedRunIds?.has(turnFold.runId) ?? false,
-      });
     }
 
     if (collapsedEntryIds.has(timelineEntry.id)) {
@@ -1682,7 +1681,6 @@ export function deriveMessagesTimelineRows(input: {
           activeWorkEntryIds.has(nextEntry.id) ||
           collapsedEntryIds.has(nextEntry.id) ||
           collapsedSupersededEntryIds.has(nextEntry.id) ||
-          foldsByAnchorEntryId.has(nextEntry.id) ||
           supersededFoldsByAnchorEntryId.has(nextEntry.id) ||
           (nextEntry.entry.runId ?? null) !== (timelineEntry.entry.runId ?? null) ||
           nextEntry.attempt?.id !== timelineEntry.attempt?.id
@@ -1893,6 +1891,7 @@ export function deriveMessagesTimelineRows(input: {
           : undefined,
     });
   }
+  appendTurnFoldAfter(timelineEntries.at(-1));
 
   // Until the agent's turn is live, the setup card sits under the send with
   // the working header above it (the header reads "Setting up worktree…" and
