@@ -62,8 +62,8 @@ export function Sign(props: {
   readonly branches: number;
   readonly pullRequests: number;
   readonly worktrees: number;
-  /** Clicking the branch count, e.g. to list the branches. */
-  readonly onBranchesClick: () => void;
+  /** Clicking the branch or worktree count, e.g. to list them. */
+  readonly onListClick: (list: "branches" | "worktrees") => void;
   /** Clicking the project's icon, at this point on screen, e.g. to change it. */
   readonly onIconClick: (point: { readonly x: number; readonly y: number }) => void;
 }) {
@@ -75,7 +75,7 @@ export function Sign(props: {
     branches,
     pullRequests,
     worktrees,
-    onBranchesClick,
+    onListClick,
     onIconClick,
   } = props;
   // The icon sits on a white tile, so lucide glyphs take the dark ink whatever the board's colour.
@@ -92,13 +92,14 @@ export function Sign(props: {
     [text, color, icon, branches, pullRequests, worktrees],
   );
   useEffect(() => () => board.texture.dispose(), [board]);
-  // The icon and the first badge, the branch count, take clicks; the rest of the board doesn't.
+  // The icon and the branch and worktree counts take clicks; the rest of the board doesn't.
   const target = (event: ThreeEvent<PointerEvent | MouseEvent>) => {
     const x = (event.uv?.x ?? -1) * board.pixelWidth;
     const within = (span: { readonly left: number; readonly right: number } | undefined) =>
       span !== undefined && x >= span.left && x <= span.right;
     if (within(board.icon)) return "icon";
     if (within(board.badges[0])) return "branches";
+    if (within(board.badges[1])) return "worktrees";
     return null;
   };
   const width = board.width;
@@ -142,7 +143,7 @@ export function Sign(props: {
             if (clicked === "icon") {
               onIconClick({ x: event.nativeEvent.clientX, y: event.nativeEvent.clientY });
             } else {
-              onBranchesClick();
+              onListClick(clicked);
             }
           }}
           onPointerMove={(event) => {

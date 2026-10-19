@@ -1,9 +1,14 @@
-import { FolderGit2Icon, FolderGitIcon, FolderIcon, XIcon } from "lucide-react";
-import { type KeyboardEvent, useLayoutEffect, useRef, useState } from "react";
+import { FolderGit2Icon, FolderGitIcon, FolderIcon, UserIcon, XIcon } from "lucide-react";
+import { type KeyboardEvent, lazy, Suspense, useLayoutEffect, useRef, useState } from "react";
 
 import { cn } from "../../lib/utils";
+import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import type { WorldAgentWorkspace } from "./useStartWorldAgent";
+
+const HatPortrait = lazy(() =>
+  import("./scene/CharacterPortrait").then((module) => ({ default: module.HatPortrait })),
+);
 
 export interface PickableWorkspace {
   readonly value: string;
@@ -11,6 +16,10 @@ export interface PickableWorkspace {
   /** A second line, such as the branch the main worktree is on. */
   readonly detail: string;
   readonly workspace: WorldAgentWorkspace;
+  /** The hat its agents wear in the world, if any work there. */
+  readonly hat: number | null;
+  /** How many agents on the island work there now. */
+  readonly agents: number;
 }
 
 export function WorkspaceIcon(props: {
@@ -102,8 +111,24 @@ export function NewAgentWorkspacePicker(props: {
               item.value === active && "border-primary bg-accent ring-2 ring-primary/40",
             )}
           >
-            <WorkspaceIcon workspace={item.workspace} className="size-4 shrink-0 opacity-70" />
+            {item.hat === null ? (
+              <WorkspaceIcon workspace={item.workspace} className="size-4 shrink-0 opacity-70" />
+            ) : (
+              <Suspense fallback={<div className="-mx-0.5 size-5 shrink-0" />}>
+                <HatPortrait hat={item.hat} className="-mx-0.5 size-5" />
+              </Suspense>
+            )}
             <span className="min-w-0 flex-1 truncate text-sm font-medium">{item.label}</span>
+            {item.agents > 0 ? (
+              <Badge
+                variant="secondary"
+                size="sm"
+                aria-label={`${item.agents} ${item.agents === 1 ? "agent" : "agents"} working here`}
+              >
+                <UserIcon />
+                {item.agents}
+              </Badge>
+            ) : null}
             <span className="max-w-1/2 shrink-0 truncate text-xs text-muted-foreground">
               {item.detail}
             </span>

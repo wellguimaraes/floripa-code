@@ -100,7 +100,7 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
     setHeldTarget(chatTarget);
   }
 
-  // Picking an agent always shows its chat, even one whose worktree's chat was collapsed.
+  // Opening an agent shows its chat, even one whose worktree's chat was collapsed.
   const openThread = (ref: ScopedThreadRef) => {
     useRightPanelStore.getState().setMaximized(ref, false);
     return navigate({ to: "/$environmentId/$threadId", params: buildThreadRouteParams(ref) });
@@ -184,6 +184,7 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
             selectedKey={selectedKey}
             onExpand={openThread}
             onCollapse={closeChat}
+            chatCollapsed={chatTarget !== null && !chatShown}
             panel={readPanel}
             toolbar={toolbar}
           />

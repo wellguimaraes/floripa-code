@@ -38,6 +38,7 @@ import {
   type WorldAgentSetup,
   type WorldAgentWorkspace,
 } from "./useStartWorldAgent";
+import type { WorldIsland } from "./engine/archipelago";
 import { worktreesByRecency } from "./worktreesByRecency";
 
 const CharacterPortrait = lazy(() => import("./scene/CharacterPortrait"));
@@ -60,6 +61,8 @@ export function NewAgentBubble(props: {
   readonly project: ScopedProjectRef;
   /** The family colour picked at first: one nobody on the island wears yet. */
   readonly suggestedHue: number;
+  /** The island as the world draws it, for its worktree hats and agents; null while it has none. */
+  readonly island: WorldIsland | null;
   /** The island sign's colours, for the chip naming it. */
   readonly plate: { readonly background: string; readonly text: string };
   readonly onClose: () => void;
@@ -71,7 +74,8 @@ export function NewAgentBubble(props: {
     readonly hue: number;
   }) => void;
 }) {
-  const { islandName, project, suggestedHue, plate, onClose, onTextChange, onStarted } = props;
+  const { islandName, project, suggestedHue, island, plate, onClose, onTextChange, onStarted } =
+    props;
   const [hue, setHue] = useState(suggestedHue);
   const startAgent = useStartWorldAgent();
   const [text, setText] = useState("");
@@ -83,12 +87,18 @@ export function NewAgentBubble(props: {
   const [workspace, setWorkspace] = useState<WorldAgentWorkspace | null>(null);
   // The first step, in a repo: where the agent works.
   const [pickingWorkspace, setPickingWorkspace] = useState(true);
+  // Subagents follow their parent, so only top-level agents count.
+  const agentsIn = (worktreePath: string | null) =>
+    island?.characters.filter(({ facts }) => !facts.kid && facts.worktreePath === worktreePath)
+      .length ?? 0;
   const workspaceItems: ReadonlyArray<PickableWorkspace> = [
     {
       value: "local",
       label: "Main worktree",
       detail: workspaces.mainBranch ?? "The project folder",
       workspace: { kind: "local" },
+      hat: null,
+      agents: agentsIn(null),
     },
     {
       value: "new-worktree",
@@ -98,6 +108,8 @@ export function NewAgentBubble(props: {
           ? "From the default branch"
           : `From ${workspaces.worktreeBaseBranch}`,
       workspace: { kind: "new-worktree" },
+      hat: null,
+      agents: 0,
     },
     ...worktreesByRecency(workspaces.worktrees, projectThreads).map((worktree) => {
       const item: WorldAgentWorkspace = { kind: "worktree", ...worktree };
@@ -106,6 +118,8 @@ export function NewAgentBubble(props: {
         label: worktree.branch,
         detail: worktree.path.split(/[\\/]/).findLast((part) => part !== "") ?? worktree.path,
         workspace: item,
+        hat: island?.hats.get(worktree.path) ?? null,
+        agents: agentsIn(worktree.path),
       };
     }),
   ];
@@ -250,7 +264,8 @@ export function NewAgentBubble(props: {
         selectedWorkspace.kind === "new-worktree" ? "Preparing the new worktree…" : "Starting…"
       }
       header={
-        <div className="flex items-stretch gap-3">
+        // Ruled off below, edge to edge, like the other bubbles' headers.
+        <div className="-mx-2.5 flex items-stretch gap-3 mb-1 border-b border-border px-2.5 pb-3">
           <NewAgentCharacter hue={hue} onHueChange={setHue} />
           <div className="flex min-w-0 flex-1 flex-col items-start">
             {/* The island's sign, as the chat header shows its project. */}

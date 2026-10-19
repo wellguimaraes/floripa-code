@@ -53,7 +53,7 @@ import { islandObstacles } from "./engine/route";
 import type { SlotRequest } from "./engine/slots";
 import type { WorldCharacter } from "./engine/world";
 import { type AbductedFigure, Abduction } from "./scene/Abduction";
-import { BALLOON_NAME, BALLOON_PX, Character, HITBOX_NAME } from "./scene/Character";
+import { BALLOON_NAME, BALLOON_PX, Character, HITBOX_NAME, WALKING_FLAG } from "./scene/Character";
 import { geometry } from "./scene/geometries";
 import { HAT_COUNT } from "./scene/Hat";
 import { Island, type FurnitureSpot } from "./scene/Island";
@@ -98,12 +98,14 @@ export default function WorldCanvas(props: {
   readonly onExpand: (ref: ScopedThreadRef) => Promise<void>;
   /** Closes the full chat; settles once it has gone. */
   readonly onCollapse: () => Promise<void>;
+  /** The open chat is hidden behind its worktree's surfaces; clicks then leave it hidden. */
+  readonly chatCollapsed: boolean;
   /** The chat panel, if open; framing the islands keeps clear of it. */
   readonly panel: () => HTMLElement | null;
   /** The top bar spot where the project visibility menu goes. */
   readonly toolbar: HTMLElement | null;
 }) {
-  const { definitions, selectedKey, onExpand, onCollapse, panel, toolbar } = props;
+  const { definitions, selectedKey, onExpand, onCollapse, chatCollapsed, panel, toolbar } = props;
   if (import.meta.env.DEV) definitions.forEach(assertValidDefinition);
   // Rules, pacing and the archipelago's settings are the same at every size.
   const definition = definitions[0]!;
@@ -185,7 +187,8 @@ export default function WorldCanvas(props: {
       readonly figures: ReadonlyArray<AbductedFigure>;
       /** The archived agents' facts, keeping their places until the saucer has gone. */
       readonly held?: ReadonlyArray<CharacterFacts>;
-      readonly arriving?: { readonly landed: boolean };
+      /** Where on its island the new agent lands, so it walks on from there to its spot. */
+      readonly arriving?: { readonly landed: boolean; readonly at: Vec3 };
     }>
   >([]);
   const abductionId = useRef(0);
@@ -335,7 +338,8 @@ export default function WorldCanvas(props: {
       ? null
       : (islands.flatMap((island) => island.characters).find((c) => c.facts.key === bubbleKey) ??
         null);
-  // A character's bubble closes as it sets off, rather than riding along over its head.
+  // A character's bubble closes as it sets off from finished work. Other walks keep it open,
+  // waiting where it was until the character arrives.
   const closeBubbleOf = useCallback(
     (key: string) => setBubbleKey((current) => (current === key ? null : current)),
     [],
@@ -349,8 +353,10 @@ export default function WorldCanvas(props: {
   const toggleBubble = (character: WorldCharacter) => {
     setPicked(new Set());
     setListenKey(null);
-    // With a chat open, a click switches the chat to that character instead.
-    if (selectedKey !== null) {
+    // With a chat shown, a click switches the chat to that character instead. A collapsed
+    // chat stays collapsed: the click opens the bubble, whose expand button shows the chat.
+    if (selectedKey !== null && !chatCollapsed) {
+      setBubbleKey(null);
       switchChat(character.facts);
       return;
     }
@@ -454,10 +460,13 @@ export default function WorldCanvas(props: {
   /** One saucer takes everyone archived together. */
   const abduct = (characters: ReadonlyArray<WorldCharacter>) => {
     const islandKeys = new Set<string>();
+    // Their feet and heads, so the map can make sure they are seen leaving.
+    const seen: Vector3[] = [];
     const figures = characters.flatMap((character): AbductedFigure[] => {
       const root = roots.current.get(character.facts.key);
       if (root === undefined) return [];
       const at = root.getWorldPosition(new Vector3());
+      seen.push(at, at.clone().setY(at.y + FOLLOW_HEIGHT * root.scale.y));
       const island = islands.find((i) => i.characters.includes(character));
       if (island !== undefined) islandKeys.add(island.key);
       const hue = island?.hues.get(character.facts.lookSeed) ?? 0;
@@ -482,6 +491,7 @@ export default function WorldCanvas(props: {
         held: characters.map((character) => character.facts),
       },
     ]);
+    keepInView.current?.(seen);
   };
   /** The saucer brings a new agent down onto its pile. */
   const arrive = (
@@ -512,7 +522,7 @@ export default function WorldCanvas(props: {
             shades: palette.families[thread.hue]!,
           },
         ],
-        arriving: { landed: false },
+        arriving: { landed: false, at: slot.position },
       },
     ]);
   };
@@ -521,16 +531,27 @@ export default function WorldCanvas(props: {
       a.arriving?.landed === true ? [] : a.figures.map((figure) => figure.key),
     ),
   );
+  const landedAt = new Map(
+    abductions.flatMap((a) =>
+      a.arriving?.landed === true
+        ? a.figures.map((figure): [string, Vec3] => [figure.key, a.arriving!.at])
+        : [],
+    ),
+  );
   // An island keeps its colour while a saucer is over it, taking or bringing agents.
   const leaving = new Set(abductions.flatMap((a) => a.islandKeys));
 
-  const frameVisibleOnClose = useRef<(() => void) | null>(null);
+  const holdViewOnClose = useRef<(() => void) | null>(null);
+  const keepInView = useRef<((points: ReadonlyArray<Vector3>) => void) | null>(null);
   const { archiveThread } = useThreadActions();
   // Archive, not delete: each can be undone from its toast or Settings → Archived.
   const archiveAll = async (characters: ReadonlyArray<WorldCharacter>) => {
     setPicked(new Set());
     setBubbleKey(null);
     const keys = new Set(characters.map((character) => character.facts.key));
+    // The open chat closes when its agent is archived, maybe before the archive call
+    // returns; the map stays where it is rather than going back to its view before the chat.
+    if (selectedKey !== null && keys.has(selectedKey)) holdViewOnClose.current?.();
     setArchiving((all) => [...all, ...characters.map((character) => character.facts)]);
     const results = await Promise.all(
       characters.map(async (character) => ({
@@ -540,10 +561,8 @@ export default function WorldCanvas(props: {
     );
     const archived = results.filter((r) => r.result._tag === "Success").map((r) => r.character);
     try {
-      // The open chat of an archived agent closes first, so its saucer is seen leaving,
-      // and the map frames the islands that showed beside it.
+      // The open chat of an archived agent closes first, so its saucer is seen leaving.
       if (archived.some((character) => character.facts.key === selectedKey)) {
-        frameVisibleOnClose.current?.();
         await onCollapse();
       }
       abduct(archived);
@@ -582,7 +601,10 @@ export default function WorldCanvas(props: {
     if (islandFocusRequest !== null) focusIsland(islandFocusRequest.threadKey);
   }, [islandFocusRequest]);
   const [restoringOn, setRestoringOn] = useState<string | null>(null);
-  const [branchesOn, setBranchesOn] = useState<string | null>(null);
+  const [listOn, setListOn] = useState<{
+    readonly key: string;
+    readonly list: "branches" | "worktrees";
+  } | null>(null);
   const [iconPicking, setIconPicking] = useState<{
     readonly key: string;
     readonly picker: "icon" | "file";
@@ -1012,7 +1034,8 @@ export default function WorldCanvas(props: {
             focusKey={selectedKey}
             roots={roots}
             zoomTo={zoomTo}
-            frameVisibleOnClose={frameVisibleOnClose}
+            holdViewOnClose={holdViewOnClose}
+            keepInView={keepInView}
             reveal={reveal}
             arrangement={arrangement}
           />
@@ -1020,6 +1043,7 @@ export default function WorldCanvas(props: {
             roots={roots}
             keys={bubble === null ? [] : [bubble.facts.key]}
             hatted={hatted}
+            holdWhileWalking
             onMove={moveBubble}
           />
           <FollowTracker
@@ -1087,7 +1111,7 @@ export default function WorldCanvas(props: {
                       branches={signStats.get(island.key)?.branches ?? 0}
                       pullRequests={signStats.get(island.key)?.pullRequests ?? 0}
                       worktrees={signStats.get(island.key)?.worktrees ?? 0}
-                      onBranchesClick={() => setBranchesOn(island.key)}
+                      onListClick={(list) => setListOn({ key: island.key, list })}
                       onIconClick={(point) => void showIconMenu(island.key, point)}
                     />
                   </FadedContext>
@@ -1125,6 +1149,7 @@ export default function WorldCanvas(props: {
                       <Character
                         key={character.facts.key}
                         character={character}
+                        startAt={landedAt.get(character.facts.key)}
                         shades={palette.families[island.hues.get(character.facts.lookSeed) ?? 0]!}
                         hat={
                           character.facts.worktreePath === null
@@ -1145,7 +1170,7 @@ export default function WorldCanvas(props: {
                         onMenu={(target, point) => void showMenu(target, point)}
                         onRoot={registerRoot}
                         onHover={onHover}
-                        onWalk={closeBubbleOf}
+                        onWalkOffWork={closeBubbleOf}
                       />
                     ))}
                 </group>
@@ -1160,7 +1185,9 @@ export default function WorldCanvas(props: {
               onLanded={() =>
                 setAbductions((all) =>
                   all.map((a) =>
-                    a.id === abduction.id ? { ...a, arriving: { landed: true } } : a,
+                    a.id === abduction.id && a.arriving !== undefined
+                      ? { ...a, arriving: { ...a.arriving, landed: true } }
+                      : a,
                   ),
                 )
               }
@@ -1250,6 +1277,7 @@ export default function WorldCanvas(props: {
                 islands.find((island) => island.key === newAgent.islandKey) ?? { hues: new Map() },
                 palette.families.length,
               )}
+              island={islands.find((island) => island.key === newAgent.islandKey) ?? null}
               plate={signPlate(newAgent.islandKey)}
               onStarted={(thread) => {
                 const { islandKey, slotIndex } = newAgent;
@@ -1367,12 +1395,13 @@ export default function WorldCanvas(props: {
           onClose={() => setIconPicking(null)}
         />
       ) : null}
-      {branchesOn !== null ? (
+      {listOn !== null ? (
         <IslandBranchesDialog
-          title={projectTitles.get(branchesOn) ?? "this island"}
-          color={palette.plates[hashString(branchesOn) % palette.plates.length]!}
-          targets={signStats.get(branchesOn)?.targets ?? []}
-          onClose={() => setBranchesOn(null)}
+          list={listOn.list}
+          title={projectTitles.get(listOn.key) ?? "this island"}
+          color={palette.plates[hashString(listOn.key) % palette.plates.length]!}
+          targets={signStats.get(listOn.key)?.targets ?? []}
+          onClose={() => setListOn(null)}
         />
       ) : null}
       {toolbar !== null
@@ -1562,26 +1591,37 @@ function FollowTracker(props: {
   readonly keys: ReadonlyArray<string>;
   /** Characters wearing a hat, followed from higher up. */
   readonly hatted: ReadonlySet<string>;
+  /** Stay where a walk began, in the world, and catch up once the character arrives. */
+  readonly holdWhileWalking?: boolean;
   /** Called once per drawn frame with every followed character's screen point. */
   readonly onMove: (points: ReadonlyArray<ScreenPoint>) => void;
 }) {
-  const { roots, keys, hatted, onMove } = props;
+  const { roots, keys, hatted, holdWhileWalking = false, onMove } = props;
   const invalidate = useThree((state) => state.invalidate);
+  const held = useRef(new Map<string, Vector3>());
   const signature = keys.join("\u0000");
   useEffect(() => {
     if (signature !== "") invalidate();
   }, [signature, invalidate]);
   useFrame((state) => {
+    for (const key of held.current.keys()) if (!keys.includes(key)) held.current.delete(key);
     if (keys.length === 0) return;
     const points: ScreenPoint[] = [];
     for (const key of keys) {
       const root = roots.current.get(key);
       if (root === undefined) continue;
-      root.getWorldPosition(followPoint);
-      followPoint.y += (FOLLOW_HEIGHT + (hatted.has(key) ? HAT_LIFT : 0)) * root.scale.y;
+      const walking = holdWhileWalking && root.userData[WALKING_FLAG] === true;
+      const start = walking ? held.current.get(key) : undefined;
+      if (start !== undefined) followPoint.copy(start);
+      else {
+        root.getWorldPosition(followPoint);
+        followPoint.y += (FOLLOW_HEIGHT + (hatted.has(key) ? HAT_LIFT : 0)) * root.scale.y;
+      }
+      if (walking) held.current.set(key, start ?? followPoint.clone());
+      else held.current.delete(key);
       followPoint.project(state.camera);
       let y = ((1 - followPoint.y) / 2) * state.size.height;
-      const balloon = root.getObjectByName(BALLOON_NAME);
+      const balloon = walking ? undefined : root.getObjectByName(BALLOON_NAME);
       if (balloon !== undefined) {
         balloon.getWorldPosition(balloonPoint).project(state.camera);
         const top = ((1 - balloonPoint.y) / 2) * state.size.height - BALLOON_PX / 2;
@@ -1731,7 +1771,8 @@ function WorldControls({
   focusKey,
   roots,
   zoomTo,
-  frameVisibleOnClose,
+  holdViewOnClose,
+  keepInView,
   reveal,
   arrangement,
 }: {
@@ -1744,11 +1785,10 @@ function WorldControls({
   readonly roots: React.RefObject<Map<string, Object3D>>;
   /** An island to frame, from its menu; a new object frames it again. */
   readonly zoomTo: { readonly key: string } | null;
-  /**
-   * Set here: makes closing the open chat frame the islands showing beside its panel now,
-   * instead of going back to the view from before the chat.
-   */
-  readonly frameVisibleOnClose: React.RefObject<(() => void) | null>;
+  /** Set here: makes closing the open chat leave the map where it is, instead of going back. */
+  readonly holdViewOnClose: React.RefObject<(() => void) | null>;
+  /** Set here: moves the map as little as it takes to show every point, if any is hidden. */
+  readonly keepInView: React.RefObject<((points: ReadonlyArray<Vector3>) => void) | null>;
   /** A spot that must show with room above it for the new-agent bubble; a new object checks again. */
   readonly reveal: { readonly islandKey: string; readonly position: Vec3 } | null;
   /** How the islands line up; a new one frames them all where they now stand. */
@@ -1891,24 +1931,40 @@ function WorldControls({
   // island beside it, but only when the panel hides part of the island or the
   // character. Closing it flies back to wherever the map was before.
   const beforeChat = useRef<View | null>(null);
-  const afterChat = useRef<ReadonlyArray<Bounds> | null>(null);
   useEffect(() => {
-    frameVisibleOnClose.current = () => {
-      if (bounds === null || !(camera instanceof OrthographicCamera)) return;
-      const covered = coveredRight();
-      const visible = bounds.filter((_, index) => {
-        const spot = islands[index];
-        // The middle counts too, for an island zoomed in past its shoreline.
-        const points =
-          spot === undefined ? [] : [new Vector3(spot.x, 0, spot.z), ...shorePoints(spot)];
-        return points.some((point) => onScreen(camera, [point], size, covered));
-      });
-      afterChat.current = visible.length > 0 ? visible : bounds;
+    holdViewOnClose.current = () => {
+      beforeChat.current = null;
     };
     return () => {
-      frameVisibleOnClose.current = null;
+      holdViewOnClose.current = null;
     };
-  }, [bounds, islands, camera, size, coveredRight, frameVisibleOnClose]);
+  }, [holdViewOnClose]);
+  const keepInViewWait = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    keepInView.current = (points) => {
+      keepInViewWait.current?.();
+      // Measured after the next paint, once a chat closing with it has left the map.
+      keepInViewWait.current = afterPaint(() => {
+        keepInViewWait.current = null;
+        const controls = controlsRef.current;
+        if (controls === null || !(camera instanceof OrthographicCamera)) return;
+        const to = viewShowing({
+          camera,
+          view: currentView(camera, controls),
+          points,
+          viewport: size,
+          coveredRight: coveredRight(),
+          minZoom: controls.minZoom,
+        });
+        if (to !== null) fly(to);
+      });
+    };
+    return () => {
+      keepInView.current = null;
+      keepInViewWait.current?.();
+      keepInViewWait.current = null;
+    };
+  }, [camera, size, coveredRight, fly, keepInView]);
   const waitForPanel = useRef<(() => void) | null>(null);
   const stopWaiting = useCallback(() => {
     waitForPanel.current?.();
@@ -1937,22 +1993,8 @@ function WorldControls({
   const onFocus = useEffectEvent((key: string | null) => {
     stopWaiting();
     if (key === null) {
-      const controls = controlsRef.current;
-      if (afterChat.current !== null && controls !== null && camera instanceof OrthographicCamera) {
-        fly(
-          frameView({
-            camera,
-            controls,
-            bounds: afterChat.current,
-            viewport: size,
-            coveredRight: coveredRight(),
-          }),
-        );
-      } else if (beforeChat.current !== null) {
-        fly(beforeChat.current);
-      }
+      if (beforeChat.current !== null) fly(beforeChat.current);
       beforeChat.current = null;
-      afterChat.current = null;
       return;
     }
     // The panel mounts with the chat; its width can still change as the
@@ -2057,15 +2099,8 @@ function bubbleRoom(
   viewport: { readonly width: number; readonly height: number },
   coveredRight: number,
 ): Vector3 {
-  const probe = camera.clone();
-  probe.position.copy(view.target).add(CAMERA_OFFSET);
-  probe.lookAt(view.target);
-  probe.zoom = view.zoom;
-  probe.updateProjectionMatrix();
-  probe.updateMatrixWorld();
-  const projected = point.clone().project(probe);
-  const x = ((projected.x + 1) / 2) * viewport.width;
-  const y = ((1 - projected.y) / 2) * viewport.height;
+  const probe = probeAt(camera, view);
+  const { x, y } = toScreen(point, probe, viewport);
   const half = BUBBLE_ROOM.width / 2;
   const right = Math.max(half, viewport.width - coveredRight - half);
   const top = BUBBLE_ROOM.top + BUBBLE_ROOM.height;
@@ -2074,10 +2109,93 @@ function bubbleRoom(
   const dx = x < half ? half - x : x > right ? right - x : 0;
   const dy = y < top ? top - y : y > bottom ? bottom - y : 0;
   if (dx === 0 && dy === 0) return new Vector3();
+  return targetShift(probe, dx, dy, view.zoom);
+}
+
+/** Room kept between points brought into view and the edges of the visible canvas. */
+const KEEP_IN_VIEW_MARGIN = 48;
+
+/**
+ * The view nearest `view` that shows every point in the part of the canvas the
+ * panel leaves visible: slid just far enough, and zoomed out only when they
+ * cannot fit otherwise. Null when they all show already.
+ */
+function viewShowing(input: {
+  readonly camera: OrthographicCamera;
+  readonly view: View;
+  readonly points: ReadonlyArray<Vector3>;
+  readonly viewport: { readonly width: number; readonly height: number };
+  readonly coveredRight: number;
+  readonly minZoom: number;
+}): View | null {
+  const { view, points, viewport } = input;
+  if (points.length === 0) return null;
+  const probe = probeAt(input.camera, view);
+  const screen = points.map((point) => toScreen(point, probe, viewport));
+  const xs = screen.map((p) => p.x);
+  const ys = screen.map((p) => p.y);
+  const left = KEEP_IN_VIEW_MARGIN;
+  const right = Math.max(left, viewport.width - input.coveredRight - KEEP_IN_VIEW_MARGIN);
+  const top = KEEP_IN_VIEW_MARGIN;
+  const bottom = Math.max(top, viewport.height - KEEP_IN_VIEW_MARGIN);
+  // Zooming keeps the middle of the canvas still and scales everything about it.
+  const fit = Math.min(
+    1,
+    (right - left) / Math.max(1, Math.max(...xs) - Math.min(...xs)),
+    (bottom - top) / Math.max(1, Math.max(...ys) - Math.min(...ys)),
+  );
+  const zoom = Math.max(input.minZoom, Math.min(view.zoom, view.zoom * fit));
+  const scale = zoom / view.zoom;
+  const scaled = (values: ReadonlyArray<number>, middle: number) =>
+    values.map((value) => middle + (value - middle) * scale);
+  const dx = edgeShift(scaled(xs, viewport.width / 2), left, right);
+  const dy = edgeShift(scaled(ys, viewport.height / 2), top, bottom);
+  if (dx === 0 && dy === 0 && zoom === view.zoom) return null;
+  return { target: view.target.clone().add(targetShift(probe, dx, dy, zoom)), zoom };
+}
+
+/** How far to move values, all at once, to bring them between `low` and `high`. */
+function edgeShift(values: ReadonlyArray<number>, low: number, high: number): number {
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  // Too spread out to fit even zoomed all the way out: centre them instead.
+  if (max - min > high - low) return (low + high - min - max) / 2;
+  return min < low ? low - min : max > high ? high - max : 0;
+}
+
+/** A copy of the camera placed for `view`, to measure with. */
+function probeAt(camera: OrthographicCamera, view: View): OrthographicCamera {
+  const probe = camera.clone();
+  probe.position.copy(view.target).add(CAMERA_OFFSET);
+  probe.lookAt(view.target);
+  probe.zoom = view.zoom;
+  probe.updateProjectionMatrix();
+  probe.updateMatrixWorld();
+  return probe;
+}
+
+/** Where `point` shows on the canvas, in pixels from its top left corner. */
+function toScreen(
+  point: Vector3,
+  probe: OrthographicCamera,
+  viewport: { readonly width: number; readonly height: number },
+): { readonly x: number; readonly y: number } {
+  const projected = point.clone().project(probe);
+  return {
+    x: ((projected.x + 1) / 2) * viewport.width,
+    y: ((1 - projected.y) / 2) * viewport.height,
+  };
+}
+
+/**
+ * How far to move the view's target, at `zoom`, so what shows on screen moves
+ * `dx` right and `dy` down. The shift stays at sea level, where the camera aims.
+ */
+function targetShift(probe: OrthographicCamera, dx: number, dy: number, zoom: number): Vector3 {
   // Moving the target the other way moves the spot this way on screen.
   const shift = new Vector3(-dx, dy, 0)
     .transformDirection(probe.matrixWorld)
-    .multiplyScalar(Math.hypot(dx, dy) / view.zoom);
+    .multiplyScalar(Math.hypot(dx, dy) / zoom);
   const sight = new Vector3().copy(CAMERA_OFFSET).normalize();
   return shift.addScaledVector(sight, -shift.y / sight.y);
 }

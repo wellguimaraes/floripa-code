@@ -1,10 +1,10 @@
 import { Canvas, useThree } from "@react-three/fiber";
-import { Suspense, useLayoutEffect, useRef } from "react";
+import { Suspense, useLayoutEffect, useRef, useState } from "react";
 import { Box3, type Group, type SkinnedMesh, Vector3 } from "three";
 
 import { cn } from "../../../lib/utils";
 import { CharacterModel } from "./CharacterModel";
-import { Hat } from "./Hat";
+import { Hat, HAT_COUNT } from "./Hat";
 import { palette } from "./palette";
 
 const notWalking = () => false;
@@ -51,6 +51,59 @@ export default function CharacterPortrait(props: {
       </Canvas>
     </div>
   );
+}
+
+/** Each hat style drawn once, kept as an image so a list of hats holds no WebGL contexts. */
+const hatImages = new Map<number, string>();
+
+/** A worktree's hat on its own, as the world's agents wear it. */
+export function HatPortrait(props: { readonly hat: number; readonly className?: string }) {
+  const style = props.hat % HAT_COUNT;
+  const [image, setImage] = useState(() => hatImages.get(style));
+  const hat = useRef<Group>(null);
+  if (image !== undefined)
+    return <img src={image} alt="" aria-hidden className={cn("shrink-0", props.className)} />;
+  return (
+    <div aria-hidden className={cn("relative shrink-0", props.className)}>
+      <Canvas
+        style={{ position: "absolute", inset: 0 }}
+        frameloop="never"
+        dpr={[1, 2]}
+        gl={{ antialias: true, alpha: true }}
+        orthographic
+        camera={{ position: [0, 0, 5], rotation: [0, 0, 0], zoom: 23 }}
+      >
+        <hemisphereLight args={[palette.skyLight, palette.groundLight, 1.7]} />
+        <directionalLight position={[6, 14, 9]} intensity={1.6} />
+        {/* Tipped toward the viewer, so the crown and brim both read. */}
+        <group ref={hat} rotation={[0.35, -0.4, 0]}>
+          <Hat style={style} />
+        </group>
+        <FitFigure figure={hat} />
+        <Snapshot
+          onImage={(url) => {
+            hatImages.set(style, url);
+            setImage(url);
+          }}
+        />
+      </Canvas>
+    </div>
+  );
+}
+
+/** Draws the scene once it has a size and hands it back as an image. */
+function Snapshot(props: { readonly onImage: (url: string) => void }) {
+  const { onImage } = props;
+  const get = useThree((state) => state.get);
+  const { width, height } = useThree((state) => state.size);
+  useLayoutEffect(() => {
+    if (width === 0 || height === 0) return;
+    const { gl, scene, camera } = get();
+    gl.render(scene, camera);
+    // Read in the same task as the render, before the drawing buffer clears.
+    onImage(gl.domElement.toDataURL());
+  }, [get, onImage, width, height]);
+  return null;
 }
 
 /**

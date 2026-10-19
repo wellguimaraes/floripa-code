@@ -10,14 +10,6 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { useWorldLook } from "./worldLookStore";
 import { useWorldModeStore } from "./worldModeStore";
 
-// Four hard 1px shadows, one per side, draw a white outline that follows the icon's shape.
-const ICON_RIM = [
-  "drop-shadow(1px 0 0 white)",
-  "drop-shadow(-1px 0 0 white)",
-  "drop-shadow(0 1px 0 white)",
-  "drop-shadow(0 -1px 0 white)",
-].join(" ");
-
 /**
  * The world chat frame's top row, above both the chat and the worktree's surfaces: the chat
  * toggle, then the project's island sign over the worktree that owns the surfaces. The sign
@@ -39,7 +31,7 @@ export function WorldChatFrameHeader(props: {
   return (
     <header
       ref={props.ref}
-      className="relative flex h-14 shrink-0 items-center border-border border-b px-3"
+      className="relative flex h-16 shrink-0 items-center border-border border-b px-3"
       data-world-chat-frame-header
     >
       <Tooltip>
@@ -67,22 +59,26 @@ export function WorldChatFrameHeader(props: {
                   type="button"
                   aria-label={`Show ${props.projectName} on the map`}
                   onClick={() => focusIslandOf(threadKey)}
-                  className="pointer-events-auto flex max-w-full cursor-pointer items-center gap-1.5 rounded-full px-3 py-1 text-sm leading-5 font-semibold focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                  style={
-                    worldLook
-                      ? { backgroundColor: worldLook.plate.background, color: worldLook.plate.text }
-                      : undefined
-                  }
+                  className="pointer-events-auto flex max-w-full cursor-pointer items-center gap-1.5 rounded-full text-sm leading-5 font-semibold focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                 />
               }
             >
               {props.project ? (
-                // The white rim traces the icon's own outline (its alpha), whatever its shape.
-                <span className="flex shrink-0" style={{ filter: ICON_RIM }}>
-                  <ProjectFavicon project={props.project} className="size-3.5" />
+                // A white tile keeps any icon legible on any background.
+                <span className="flex shrink-0 rounded-sm bg-white">
+                  <ProjectFavicon project={props.project} className="size-6" />
                 </span>
               ) : null}
-              <span className="truncate">{props.projectName}</span>
+              <span
+                className="truncate rounded-full px-2.5 py-0.5"
+                style={
+                  worldLook
+                    ? { backgroundColor: worldLook.plate.background, color: worldLook.plate.text }
+                    : undefined
+                }
+              >
+                {props.projectName}
+              </span>
             </TooltipTrigger>
             <TooltipPopup side="bottom">Show {props.projectName} on the map</TooltipPopup>
           </Tooltip>

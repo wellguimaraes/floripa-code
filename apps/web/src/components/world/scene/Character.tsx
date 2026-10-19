@@ -39,6 +39,8 @@ export const BALLOON_PX = 46;
 export const BALLOON_NAME = "balloon";
 /** The hitbox's name, so the island under a character can tell the click was the character's. */
 export const HITBOX_NAME = "character-hitbox";
+/** Set on a character's root while it walks, so overlays can wait for it to arrive. */
+export const WALKING_FLAG = "walking";
 /** On-screen length of the string between the raised hand and the balloon. */
 const STRING_PX = 30;
 /** Where the hand is before the model loads, in the character's own units. */
@@ -55,6 +57,8 @@ interface Motion {
 
 export function Character(props: {
   readonly character: WorldCharacter;
+  /** Where a new agent landed; it walks from there to its spot. */
+  readonly startAt?: Vec3 | undefined;
   /** The family's colour; kids get their parent's. */
   readonly shades: FamilyShades;
   /** The worktree's hat; null in the project checkout. */
@@ -78,11 +82,12 @@ export function Character(props: {
   readonly onRoot: (key: string, root: Group | null) => void;
   /** Screen point to anchor a label at, or null when the pointer leaves. */
   readonly onHover: (character: WorldCharacter, point: { x: number; y: number } | null) => void;
-  /** Called as the character sets off for a new spot, so its bubble can close first. */
-  readonly onWalk: (key: string) => void;
+  /** Called as the character sets off because it stopped working, so its bubble can close first. */
+  readonly onWalkOffWork: (key: string) => void;
 }) {
   const {
     character,
+    startAt,
     shades,
     hat,
     obstacles,
@@ -92,7 +97,7 @@ export function Character(props: {
     selected,
     onRoot,
     onHover,
-    onWalk,
+    onWalkOffWork,
   } = props;
   const { onSelect, onOpen, onPick, onMenu } = props;
   const { facts, placement, activity, intent } = character;
@@ -128,14 +133,17 @@ export function Character(props: {
   const armRight = useRef<Group>(null);
   const legLeft = useRef<Group>(null);
   const legRight = useRef<Group>(null);
-  // Starts at its spot: a character first appears in place, not walking in from nowhere.
+  // Starts at its spot: a character first appears in place, not walking in from
+  // nowhere. A new agent instead starts where the saucer set it down.
   const motion = useRef<Motion>({
-    position: [...placement.position],
+    position: [...(startAt ?? placement.position)],
     heading: placement.facing,
     route: [],
   });
   const lastPlacement = useRef<Placement | null>(null);
   const lastSurface = useRef(surface);
+  // The status as of the last commit, so a move can tell whether a finished turn caused it.
+  const lastStatus = useRef(facts.status);
   useEffect(() => {
     onRoot(facts.key, root.current);
     return () => onRoot(facts.key, null);
@@ -146,13 +154,26 @@ export function Character(props: {
     lastPlacement.current = placement;
     const resized = lastSurface.current !== surface;
     lastSurface.current = surface;
-    if (previous === null || samePlacement(previous, placement)) return;
     const current = motion.current;
+    if (previous === null) {
+      if (startAt === undefined || sameVec(startAt, placement.position)) return;
+      let from = startAt;
+      for (const to of [placement.via, placement.position]) {
+        if (to === undefined) continue;
+        current.route.push(...planRoute({ from, to, obstacles }));
+        from = to;
+      }
+      if (root.current !== null) root.current.userData[WALKING_FLAG] = current.route.length > 0;
+      invalidate();
+      return;
+    }
+    if (samePlacement(previous, placement)) return;
     // An island that shrank can leave its resters out at sea; rather than wade
     // back, they are simply at their new spot.
     if (resized && surface(current.position[0], current.position[2]) === null) {
       [current.position[0], current.position[1], current.position[2]] = placement.position;
       current.route = [];
+      if (root.current !== null) root.current.userData[WALKING_FLAG] = false;
       invalidate();
       return;
     }
@@ -167,9 +188,20 @@ export function Character(props: {
       current.route.push(...planRoute({ from, to, obstacles }));
       from = to;
     }
-    if (current.route.length > 0) onWalk(facts.key);
+    if (root.current !== null) root.current.userData[WALKING_FLAG] = current.route.length > 0;
+    if (
+      current.route.length > 0 &&
+      lastStatus.current === "working" &&
+      facts.status !== "working"
+    ) {
+      onWalkOffWork(facts.key);
+    }
     invalidate();
-  }, [placement, surface, obstacles, invalidate, onWalk, facts.key]);
+  }, [placement, startAt, surface, obstacles, invalidate, onWalkOffWork, facts.key, facts.status]);
+  // Runs after the move above, which reads the status from before this commit.
+  useEffect(() => {
+    lastStatus.current = facts.status;
+  }, [facts.status]);
 
   const speed = movement.walkSpeed * (facts.kid ? movement.kidSpeedScale : 1);
   useFrame((state, frameDelta) => {
@@ -203,6 +235,7 @@ export function Character(props: {
       // Keep frames coming until the walk ends, plus one to draw the arrival
       // pose, at a capped rate rather than the display's.
       drawSoon(state.invalidate, movement.walkFps);
+      group.userData[WALKING_FLAG] = current.route.length > 0;
     }
     if (balloon.current !== null) {
       // Balloons keep one size on screen, so they stay easy to spot zoomed out:
