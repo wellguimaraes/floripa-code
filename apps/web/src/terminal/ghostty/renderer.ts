@@ -5,6 +5,7 @@ import {
   type GhosttyColor,
   type GhosttySnapshot,
 } from "./core";
+import { drawGhosttyCustomGlyph, isGhosttyCustomGlyph } from "./customGlyphs";
 
 export interface GhosttyCellMetrics {
   readonly width: number;
@@ -106,6 +107,8 @@ export function renderGhosttySnapshot(options: {
   readonly hoveredLinkRange?: GhosttyCellRange | null;
   /** Vertical origin of row 0; defaults to the horizontal padding. */
   readonly originY?: number;
+  /** Device pixels per CSS pixel, used to snap cell-filling glyphs. */
+  readonly pixelRatio?: number;
 }): void {
   const {
     context,
@@ -122,6 +125,7 @@ export function renderGhosttySnapshot(options: {
   const selectionBackground = options.selectionBackground ?? DEFAULT_SELECTION_BACKGROUND;
   const hoveredLinkRange = options.hoveredLinkRange ?? null;
   const originY = options.originY ?? padding;
+  const pixelRatio = options.pixelRatio ?? 1;
   const rowsToDraw = forceFull
     ? Array.from({ length: snapshot.rows }, (_, index) => index)
     : [...snapshot.dirtyRows];
@@ -193,7 +197,27 @@ export function renderGhosttySnapshot(options: {
         runStart += 1;
         continue;
       }
-      const runEnd = ghosttyTextRunEnd(row.cells, runStart, (cell) => sameTextStyle(cell, first));
+      if (isGhosttyCustomGlyph(first.text)) {
+        if (!first.invisible) {
+          context.fillStyle = cssColor(first.foreground);
+          drawGhosttyCustomGlyph(
+            context,
+            first.text,
+            padding + runStart * metrics.width,
+            top,
+            metrics.width,
+            metrics.height,
+            pixelRatio,
+          );
+        }
+        runStart += 1;
+        continue;
+      }
+      const runEnd = ghosttyTextRunEnd(
+        row.cells,
+        runStart,
+        (cell) => !isGhosttyCustomGlyph(cell.text) && sameTextStyle(cell, first),
+      );
       const text = row.cells
         .slice(runStart, runEnd)
         .map((cell) => cell.text)
@@ -263,9 +287,21 @@ export function renderGhosttySnapshot(options: {
       context.fillRect(left, top, metrics.width, metrics.height);
       const cell = snapshot.rowData[snapshot.cursorY]?.cells[snapshot.cursorX];
       if (cell?.text) {
-        context.font = fontForCell(cell, fontSize, fontFamily);
         context.fillStyle = cssColor(snapshot.background);
-        context.fillText(cell.text, left, top + metrics.baseline, metrics.width);
+        if (
+          !drawGhosttyCustomGlyph(
+            context,
+            cell.text,
+            left,
+            top,
+            metrics.width,
+            metrics.height,
+            pixelRatio,
+          )
+        ) {
+          context.font = fontForCell(cell, fontSize, fontFamily);
+          context.fillText(cell.text, left, top + metrics.baseline, metrics.width);
+        }
       }
     }
   }
