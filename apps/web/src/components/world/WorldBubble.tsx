@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { formatShortcutLabel } from "../../keybindings";
+import { stripInlineContextReferences } from "../../lib/composerContextReferences";
 import { cn, newMessageId } from "../../lib/utils";
 import {
   readEnvironmentSupportsTitleRegeneration,
@@ -111,8 +112,10 @@ export function WorldBubble(props: {
   }, [text]);
   useEffect(
     () => () => {
-      if (keepDraft.current && latestText.current.trim() !== "") {
-        unsentDrafts.set(facts.key, latestText.current);
+      // The staged files go with the bubble, so their chips don't stay in the draft.
+      const kept = stripInlineContextReferences(latestText.current);
+      if (keepDraft.current && kept.trim() !== "") {
+        unsentDrafts.set(facts.key, kept);
       } else {
         unsentDrafts.delete(facts.key);
       }
@@ -143,7 +146,7 @@ export function WorldBubble(props: {
     setState({ phase: "sending" });
     let outgoing;
     try {
-      outgoing = await attachments.prepareForSend();
+      outgoing = await attachments.prepareForSend(message);
     } catch (error) {
       setState({
         phase: "error",
@@ -158,8 +161,9 @@ export function WorldBubble(props: {
         message: {
           messageId: newMessageId(),
           role: "user",
-          text: message || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
-          attachments: outgoing,
+          text: outgoing.text || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
+          attachments: [...outgoing.attachments],
+          ...(outgoing.context !== undefined ? { context: outgoing.context } : {}),
         },
         runtimeMode: thread.runtimeMode,
         interactionMode: thread.interactionMode,

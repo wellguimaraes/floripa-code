@@ -1,13 +1,15 @@
 import {
   type ChatAttachment,
   type EnvironmentId,
+  type OrchestrationMessageContext,
   getProviderAttachmentLimitError,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   type UploadChatAttachment,
 } from "@t3tools/contracts";
 import { fileAttachmentTooLargeMessage } from "@t3tools/client-runtime/state/attachments";
-import { useEffect, useRef, useState } from "react";
+import { serializeLegacyContextMessage } from "@t3tools/shared/composerContextLegacySend";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   type ComposerFileAttachment,
@@ -25,6 +27,7 @@ import {
 } from "../../lib/attachmentUploadQueue";
 import { prepareImageForAttachment, readFileAsDataUrl } from "../../lib/imageCompression";
 import { randomUUID } from "../../lib/utils";
+import { buildMessageContext } from "../../lib/composerContextRecords";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { environmentServerConfigsAtom } from "../../state/server";
 import { videoMimeType } from "../../types";
@@ -33,14 +36,23 @@ import {
   fileAttachmentStagingLimit,
   normalizeComposerImageFileMimeType,
 } from "../chat/composerAttachmentFiles";
+import { composerContextRecordsFromDraft } from "../composerContextPresentation";
 
 export type BubbleAttachment = ComposerImageAttachment | ComposerFileAttachment;
+
+/** A bubble's message as it goes out: its text, files, and the context its chips point into. */
+export interface OutgoingMessage {
+  readonly text: string;
+  readonly attachments: ReadonlyArray<ChatAttachment | UploadChatAttachment>;
+  readonly context?: OrchestrationMessageContext;
+}
 
 function readUploadCapabilities(environmentId: EnvironmentId) {
   const config = appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId) ?? null;
   const supportsAttachmentUploads = config?.environment.capabilities.attachmentUploads === true;
   return {
     supportsAttachmentUploads,
+    supportsInlineMessageContext: config?.environment.capabilities.inlineMessageContext === true,
     fileLimit: fileAttachmentStagingLimit({
       attachmentUploadsCapabilityKnown: config !== null,
       supportsAttachmentUploads,
@@ -73,13 +85,26 @@ export function useBubbleAttachments(environmentId: EnvironmentId) {
   }, [attachments]);
   useEffect(() => () => discard(owned.current), []);
 
-  /** Stages files; resolves to an error to show, or null when all were taken. */
-  const add = async (files: ReadonlyArray<File>): Promise<string | null> => {
+  // What the text box's chips show, keyed by the id each chip carries.
+  const records = useMemo(
+    () =>
+      composerContextRecordsFromDraft({
+        terminalContexts: [],
+        images: attachments.filter((attachment) => attachment.type === "image"),
+        files: attachments.filter((attachment) => attachment.type === "file"),
+      }),
+    [attachments],
+  );
+
+  /** Stages files; resolves to what was staged and an error to show, if any. */
+  const add = async (
+    files: ReadonlyArray<File>,
+  ): Promise<{ staged: BubbleAttachment[]; error: string | null }> => {
     const { fileLimit } = readUploadCapabilities(environmentId);
     let error: string | null = null;
     let room = PROVIDER_SEND_TURN_MAX_ATTACHMENTS - owned.current.length;
     const images: File[] = [];
-    const staged: ComposerFileAttachment[] = [];
+    const staged: BubbleAttachment[] = [];
     for (const file of files) {
       if (room <= 0) {
         error = `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} files per message.`;
@@ -124,7 +149,7 @@ export function useBubbleAttachments(environmentId: EnvironmentId) {
       room -= 1;
     }
     if (staged.length > 0) setAttachments((current) => [...current, ...staged]);
-    if (images.length === 0) return error;
+    if (images.length === 0) return { staged, error };
 
     setPreparing((count) => count + images.length);
     try {
@@ -146,12 +171,13 @@ export function useBubbleAttachments(environmentId: EnvironmentId) {
           previewUrl: URL.createObjectURL(prepared.file),
           file: prepared.file,
         };
+        staged.push(image);
         setAttachments((current) => [...current, image]);
       }
     } finally {
       setPreparing((count) => count - images.length);
     }
-    return error;
+    return { staged, error };
   };
 
   const remove = (id: string) => {
@@ -161,10 +187,10 @@ export function useBubbleAttachments(environmentId: EnvironmentId) {
     setAttachments((current) => current.filter((candidate) => candidate.id !== id));
   };
 
-  /** What to put on the outgoing message. Throws with a reason it can't send. */
-  const prepareForSend = async (): Promise<Array<ChatAttachment | UploadChatAttachment>> => {
-    const staged = owned.current;
-    if (staged.length === 0) return [];
+  /** The files as the server takes them: uploaded where it can, else inline images. */
+  const prepareFiles = async (
+    staged: ReadonlyArray<BubbleAttachment>,
+  ): Promise<Array<ChatAttachment | UploadChatAttachment>> => {
     const limitError = getProviderAttachmentLimitError(staged);
     if (limitError !== undefined) throw new Error(limitError);
     const { supportsAttachmentUploads } = readUploadCapabilities(environmentId);
@@ -203,6 +229,35 @@ export function useBubbleAttachments(environmentId: EnvironmentId) {
     );
   };
 
+  /**
+   * The message to send with the given text: the staged files, and the records that bind the
+   * text's chips to them. Throws with a reason it can't send.
+   */
+  const prepareForSend = async (text: string): Promise<OutgoingMessage> => {
+    const staged = owned.current;
+    if (staged.length === 0) return { text, attachments: [] };
+    const attachments = await prepareFiles(staged);
+    // Bound by the id the server knows: the upload's, or the local one on the data-URL path.
+    const context = buildMessageContext({
+      terminalContexts: [],
+      reviewComments: [],
+      previewAnnotations: [],
+      attachments: staged.map((attachment, index) => ({
+        attachment,
+        attachmentId: attachments[index]?.id ?? attachment.id,
+      })),
+    });
+    if (context === undefined) return { text, attachments };
+    // A server without inline context drops the records, so the chips go out as their names.
+    if (!readUploadCapabilities(environmentId).supportsInlineMessageContext) {
+      return {
+        text: serializeLegacyContextMessage({ text, records: context.records }),
+        attachments,
+      };
+    }
+    return { text, attachments, context };
+  };
+
   /** The message went out: drop the staged files the way the chat composer does. */
   const sent = () => {
     discard(owned.current);
@@ -226,5 +281,14 @@ export function useBubbleAttachments(environmentId: EnvironmentId) {
     setAttachments(owned.current);
   };
 
-  return { attachments, preparing: preparing > 0, add, remove, prepareForSend, sent, handOff };
+  return {
+    attachments,
+    records,
+    preparing: preparing > 0,
+    add,
+    remove,
+    prepareForSend,
+    sent,
+    handOff,
+  };
 }

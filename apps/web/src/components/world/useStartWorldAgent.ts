@@ -1,7 +1,6 @@
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { deriveThreadTitleSeed } from "@t3tools/client-runtime/operations";
 import {
-  type ChatAttachment,
   DEFAULT_SERVER_SETTINGS,
   type EnvironmentId,
   type ModelSelection,
@@ -11,7 +10,6 @@ import {
   type ServerProvider,
   type ThreadId,
   type UnifiedSettings,
-  type UploadChatAttachment,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
@@ -23,6 +21,7 @@ import {
   mergeEnvironmentSettings,
   useEnvironmentSettings,
 } from "../../hooks/useSettings";
+import { stripInlineContextReferences } from "../../lib/composerContextReferences";
 import { newMessageId, newThreadId } from "../../lib/utils";
 import { readT3ProjectFile } from "../../lib/t3ProjectFileDefaults";
 import { resolveAppModelSelectionForInstance } from "../../modelSelection";
@@ -44,6 +43,7 @@ import {
   resolveComposerProviderSelection,
 } from "../ChatView.logic";
 import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "../chat/composerPromptHistory";
+import type { OutgoingMessage } from "./useBubbleAttachments";
 
 /** Where a new agent works: the project checkout, a new worktree, or an existing one. */
 export type WorldAgentWorkspace =
@@ -231,8 +231,7 @@ export function useStartWorldAgent() {
   return useCallback(
     async (
       projectRef: ScopedProjectRef,
-      text: string,
-      attachments: ReadonlyArray<ChatAttachment | UploadChatAttachment> = [],
+      outgoing: OutgoingMessage,
       workspace: WorldAgentWorkspace | null = null,
       worktreeBaseBranch: string | null = null,
       setup: WorldAgentSetup | null = null,
@@ -264,12 +263,13 @@ export function useStartWorldAgent() {
       if (workspaceKind === "new-worktree" && baseBranch === null)
         throw new Error("Could not find a branch to base the worktree on.");
 
+      const { text, attachments } = outgoing;
       const threadId = newThreadId();
       const createdAt = new Date().toISOString();
       // Named like the chat composer names it: the text, else the first image or file.
       const firstFile = attachments.find((attachment) => attachment.type === "file");
       const title = deriveThreadTitleSeed({
-        text,
+        text: stripInlineContextReferences(text),
         attachments: attachments.filter((attachment) => attachment.type === "image"),
         fallbackLabels: [firstFile && `File: ${firstFile.name}`],
       });
@@ -282,6 +282,7 @@ export function useStartWorldAgent() {
             role: "user",
             text: text || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
             attachments: [...attachments],
+            ...(outgoing.context !== undefined ? { context: outgoing.context } : {}),
           },
           modelSelection,
           titleSeed: title,

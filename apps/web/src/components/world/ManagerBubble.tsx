@@ -207,7 +207,7 @@ export function ManagerBubble(props: {
     setState({ phase: "sending", route: guess, pick, from });
     onCall(pick.agent?.key ?? null);
     try {
-      const outgoing = await attachments.prepareForSend();
+      const outgoing = await attachments.prepareForSend(text.trim());
       if (pick.agent !== null) {
         const shell = readThreadShell(pick.agent.ref);
         if (shell === null) throw new Error("That agent is no longer here.");
@@ -218,8 +218,9 @@ export function ManagerBubble(props: {
             message: {
               messageId: newMessageId(),
               role: "user",
-              text: text.trim(),
-              attachments: outgoing,
+              text: outgoing.text,
+              attachments: [...outgoing.attachments],
+              ...(outgoing.context !== undefined ? { context: outgoing.context } : {}),
             },
             runtimeMode: shell.runtimeMode,
             interactionMode: shell.interactionMode,
@@ -231,7 +232,6 @@ export function ManagerBubble(props: {
       } else {
         const threadId = await startAgent(
           project,
-          text.trim(),
           outgoing,
           pick.workspace,
           workspaces.worktreeBaseBranch,

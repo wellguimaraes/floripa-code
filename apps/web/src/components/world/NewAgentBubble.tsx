@@ -187,10 +187,9 @@ export function NewAgentBubble(props: {
     if (state.phase === "starting" || attachments.preparing || empty) return;
     setState({ phase: "starting" });
     try {
-      const outgoing = await attachments.prepareForSend();
+      const outgoing = await attachments.prepareForSend(text.trim());
       const threadId = await startAgent(
         project,
-        text.trim(),
         outgoing,
         workspace,
         workspaces.worktreeBaseBranch,
