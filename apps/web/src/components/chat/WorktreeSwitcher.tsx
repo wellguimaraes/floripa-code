@@ -89,6 +89,8 @@ export const WorktreeSwitcher = memo(function WorktreeSwitcher(props: {
   const branch = current?.branch ?? null;
   const showBranch = branch !== null && branch !== name && !branch.endsWith(`/${name}`);
   const title = props.variant === "title";
+  // Worktree folders are often generated (e.g. `t3-8f432bc3`), so the heading names the branch.
+  const label = title && scope.worktreePath !== null && branch !== null ? branch : name;
   // As a heading, the worktree only says something when the project works in more than one.
   if (
     title &&
@@ -117,7 +119,7 @@ export const WorktreeSwitcher = memo(function WorktreeSwitcher(props: {
         <FolderGit2Icon
           className={cn("shrink-0", title ? "size-3.5 text-muted-foreground" : "size-3")}
         />
-        <span className="truncate">{name}</span>
+        <span className="truncate">{label}</span>
         {showBranch && !title ? (
           <>
             <span aria-hidden className="text-muted-foreground/60">
