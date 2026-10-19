@@ -16,6 +16,7 @@ import { useEnvironmentQuery } from "~/state/query";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Button } from "../ui/button";
 import { ScrollArea } from "../ui/scroll-area";
+import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
 import { groupPullRequestChecks } from "./pullRequestDetail.logic";
@@ -184,7 +185,15 @@ export function PullRequestChecksPopover({
         }
         onClick={(event) => event.stopPropagation()}
       >
-        <presentation.Icon aria-hidden className={cn("size-3.5", presentation.toneClassName)} />
+        {/* The rollup's dot also stands for checks awaiting approval, so the spinner waits for a
+            check that is actually running. */}
+        {!stale && runningCount > 0 ? (
+          <span className={cn("inline-flex", presentation.toneClassName)}>
+            <Spinner aria-hidden size="sm" />
+          </span>
+        ) : (
+          <presentation.Icon aria-hidden className={cn("size-3.5", presentation.toneClassName)} />
+        )}
         {variant === "count" ? (
           <>
             {checks !== undefined && runningCount > 0 ? (
