@@ -16,6 +16,12 @@ vi.mock("~/localApi", () => ({
   readLocalApi: () => readLocalApiMock(),
 }));
 
+import {
+  readConfirmDialogState,
+  registerConfirmDialogHost,
+  resetConfirmDialogForTests,
+  respondToConfirmDialog,
+} from "~/confirmDialog";
 import { confirmTerminalClose, isTerminalCloseConfirmPending } from "./terminalCloseConfirm";
 
 describe("terminal close confirmation", () => {
@@ -23,6 +29,21 @@ describe("terminal close confirmation", () => {
     confirmMock.mockReset();
     readLocalApiMock.mockReset();
     readLocalApiMock.mockReturnValue({ dialogs: { confirm: confirmMock } });
+  });
+
+  it("opens beside the clicked button when given one", async () => {
+    resetConfirmDialogForTests();
+    const unregister = registerConfirmDialogHost();
+    const button = {} as Element;
+
+    const confirmation = confirmTerminalClose(["Terminal 2"], button);
+    const state = readConfirmDialogState();
+    expect(state.status === "confirming" && state.anchor).toBe(button);
+    expect(confirmMock).not.toHaveBeenCalled();
+
+    respondToConfirmDialog(true);
+    await expect(confirmation).resolves.toBe(true);
+    unregister();
   });
 
   it("tracks pending state until the confirmation settles", async () => {

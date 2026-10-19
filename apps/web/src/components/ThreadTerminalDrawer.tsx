@@ -1254,10 +1254,10 @@ export default function ThreadTerminalDrawer({
     onNewTerminal();
   }, [canOperateTerminal, onNewTerminal]);
   const confirmCloseTerminal = useCallback(
-    (terminalId: string) => {
+    (terminalId: string, anchor: Element) => {
       if (!canOperateTerminal) return;
       const label = terminalLabelById.get(terminalId) ?? getTerminalLabel(terminalId);
-      void confirmTerminalClose([label]).then((confirmed) => {
+      void confirmTerminalClose([label], anchor).then((confirmed) => {
         if (confirmed && readEnvironmentScope(threadRef.environmentId, AuthTerminalOperateScope)) {
           onCloseTerminal(terminalId);
         }
@@ -1466,7 +1466,9 @@ export default function ThreadTerminalDrawer({
                               {canOperateTerminal ? (
                                 <PanelTabCloseButton
                                   label={closeTerminalLabel}
-                                  onClick={() => confirmCloseTerminal(terminalId)}
+                                  onClick={(event) =>
+                                    confirmCloseTerminal(terminalId, event.currentTarget)
+                                  }
                                   tooltip={closeTerminalLabel}
                                 >
                                   <TerminalSquare className="size-3 shrink-0" />

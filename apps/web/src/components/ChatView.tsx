@@ -5626,7 +5626,7 @@ export default function ChatView(props: ChatViewProps) {
     [activeThreadRef, cleanupRightPanelSurfaces, syncActivePreviewSurface],
   );
   const closeRightPanelSurface = useCallback(
-    (surface: RightPanelSurface) => {
+    (surface: RightPanelSurface, anchor?: Element) => {
       if (!activeThreadRef) return;
       const finishClose = () => finishRightPanelSurfaceClose([surface]);
       if (surface.kind === "preview") {
@@ -5648,7 +5648,7 @@ export default function ChatView(props: ChatViewProps) {
         .map(
           (terminalId) => activeTerminalLabelsById.get(terminalId) ?? getTerminalLabel(terminalId),
         );
-      void confirmTerminalClose([activeLabel, ...otherLabels]).then((confirmed) => {
+      void confirmTerminalClose([activeLabel, ...otherLabels], anchor).then((confirmed) => {
         if (confirmed) {
           finishClose();
         }

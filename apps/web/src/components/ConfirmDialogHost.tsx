@@ -17,6 +17,7 @@ import {
   AlertDialogTitle,
 } from "./ui/alert-dialog";
 import { Button } from "./ui/button";
+import { Popover, PopoverClose, PopoverPopup, PopoverTitle } from "./ui/popover";
 
 type ConfirmationCopy = {
   readonly title: string;
@@ -62,8 +63,38 @@ export function ConfirmDialogHost() {
 
   const copy = resolveConfirmDialogCopy(state.status === "idle" ? "" : state.message);
   const confirmVariant = state.status === "idle" ? "default" : state.variant;
+  const anchor = state.status === "idle" ? null : state.anchor;
   const onCancel = () => respondToConfirmDialog(false);
   const onConfirm = () => respondToConfirmDialog(true);
+
+  if (anchor) {
+    return (
+      <Popover
+        open={state.status === "confirming"}
+        onOpenChange={(open) => {
+          if (!open) onCancel();
+        }}
+        onOpenChangeComplete={(open) => {
+          if (!open) completeConfirmDialogClose();
+        }}
+      >
+        <PopoverPopup anchor={anchor} side="bottom" align="start" width="sm">
+          <PopoverTitle>{copy.title}</PopoverTitle>
+          {copy.description ? (
+            <p className="mt-2 whitespace-pre-line text-muted-foreground text-sm">
+              {copy.description}
+            </p>
+          ) : null}
+          <div className="mt-4 flex justify-end gap-2">
+            <PopoverClose render={<Button variant="outline" size="sm" />}>Cancel</PopoverClose>
+            <Button variant={confirmVariant} size="sm" onClick={onConfirm}>
+              Confirm
+            </Button>
+          </div>
+        </PopoverPopup>
+      </Popover>
+    );
+  }
 
   return (
     <AlertDialog

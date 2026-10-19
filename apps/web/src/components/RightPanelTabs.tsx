@@ -139,7 +139,8 @@ interface RightPanelTabsProps {
   terminalLabelsById: ReadonlyMap<string, string>;
   onActivate: (surface: RightPanelSurface) => void;
   onRenameDevice?: (surfaceId: string, title: string) => void;
-  onCloseSurface: (surface: RightPanelSurface) => void;
+  /** `anchor` is the clicked close button, for a confirmation to open beside it. */
+  onCloseSurface: (surface: RightPanelSurface, anchor?: Element) => void;
   onCloseOtherSurfaces: (surface: RightPanelSurface) => void;
   onCloseSurfacesToRight: (surface: RightPanelSurface) => void;
   onCloseAllSurfaces: () => void;
@@ -1458,7 +1459,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                       >
                         <PanelTabCloseButton
                           label={`Close ${title}`}
-                          onClick={() => props.onCloseSurface(surface)}
+                          onClick={(event) => props.onCloseSurface(surface, event.currentTarget)}
                         >
                           <SurfaceIcon
                             surface={surface}

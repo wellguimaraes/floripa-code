@@ -1,3 +1,4 @@
+import { requestConfirmDialog } from "~/confirmDialog";
 import { readLocalApi } from "~/localApi";
 
 let pendingConfirmations = 0;
@@ -11,16 +12,17 @@ export function isTerminalCloseConfirmPending(): boolean {
  * Confirmation for individual terminal close actions: drawer buttons, panel
  * buttons, the `terminal.close` keybinding, and closing a terminal surface from
  * the tab strip. Auto-exit cleanup and bulk tab closes skip this path and close
- * directly.
+ * directly. A click passes its button as `anchor`, so the confirmation opens beside it.
  */
 export async function confirmTerminalClose(
   labels: readonly [string, ...string[]],
+  anchor?: Element | null,
 ): Promise<boolean> {
   const localApi = readLocalApi();
   if (!localApi) return true;
   pendingConfirmations += 1;
   try {
-    return await localApi.dialogs.confirm(
+    const message =
       labels.length === 1
         ? [
             `Close terminal "${labels[0]}"?`,
@@ -31,9 +33,12 @@ export async function confirmTerminalClose(
             `This stops their running processes and clears their histories: ${labels
               .map((label) => `"${label}"`)
               .join(", ")}.`,
-          ].join("\n"),
-      { variant: "destructive" },
-    );
+          ].join("\n");
+    if (anchor) {
+      const anchored = requestConfirmDialog(message, { variant: "destructive", anchor });
+      if (anchored) return await anchored;
+    }
+    return await localApi.dialogs.confirm(message, { variant: "destructive" });
   } catch {
     return false;
   } finally {

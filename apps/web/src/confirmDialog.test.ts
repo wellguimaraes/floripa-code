@@ -37,6 +37,7 @@ describe("confirm dialog coordinator", () => {
       status: "confirming",
       message: "Delete this thread?",
       variant: "destructive",
+      anchor: null,
     });
 
     respondToConfirmDialog(true);
@@ -47,6 +48,7 @@ describe("confirm dialog coordinator", () => {
       status: "closing",
       message: "Delete this thread?",
       variant: "destructive",
+      anchor: null,
     });
 
     completeConfirmDialogClose();
@@ -66,6 +68,7 @@ describe("confirm dialog coordinator", () => {
       status: "closing",
       message: "Delete the project?",
       variant: "default",
+      anchor: null,
     });
 
     completeConfirmDialogClose();
@@ -73,6 +76,7 @@ describe("confirm dialog coordinator", () => {
       status: "confirming",
       message: "Delete the worktree too?",
       variant: "default",
+      anchor: null,
     });
 
     respondToConfirmDialog(true);
