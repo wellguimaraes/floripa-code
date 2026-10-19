@@ -17,7 +17,6 @@ import { cn, isMacPlatform } from "../../lib/utils";
 import {
   inlineContextReferenceReplacement,
   removeInlineContextReference,
-  stripInlineContextReferences,
 } from "../../lib/composerContextReferences";
 import { fileContextReference, imageContextReference } from "../../lib/composerContextRecords";
 import { ComposerPromptEditor, type ComposerPromptEditorHandle } from "../ComposerPromptEditor";
@@ -302,19 +301,15 @@ export function BubbleComposer(props: {
   }, []);
 
   // Staged files get a chip at the caret, as in the chat composer, so the text can say
-  // which one it means. Images that land before any prose stay on the shelf alone.
+  // which one it means.
   const attach = async (files: ReadonlyArray<File>) => {
     if (files.length === 0) return;
     onError(null);
-    // Read before preparing: images are downscaled first, and the text may change meanwhile.
-    const imagesGetChips = stripInlineContextReferences(latestText.current).trim() !== "";
     const { staged, error: failure } = await attachments.add(files);
-    const references = staged.flatMap((attachment) =>
+    const references = staged.map((attachment) =>
       attachment.type === "file"
-        ? [fileContextReference(attachment)]
-        : imagesGetChips
-          ? [imageContextReference(attachment)]
-          : [],
+        ? fileContextReference(attachment)
+        : imageContextReference(attachment),
     );
     if (references.length > 0) {
       const current = latestText.current;
