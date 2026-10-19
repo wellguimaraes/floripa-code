@@ -334,29 +334,20 @@ export function ResetCredits({
 }
 
 /**
- * Subscription quota across every connected environment's providers and hubs,
- * pooled per provider. The page advances `now` on explicit refresh rather than
- * ticking: a live clock would repaint the page for no decision-changing gain.
+ * Connected environments' presentations narrowed to the selected environments
+ * and visible providers. Hidden drivers leave both native accounts and hub
+ * accounts, so their bars, notices, and external links all drop out together.
  */
-export function UsageLimitsSection({
-  selectedEnvironmentIds,
-  hiddenProviders,
-  now,
-  cursorPrompt,
-}: {
-  readonly selectedEnvironmentIds: ReadonlySet<EnvironmentId> | null;
-  readonly hiddenProviders: ReadonlySet<UsageProviderKind>;
-  readonly now: number;
-  readonly cursorPrompt?: ReactNode;
-}) {
+export function useLimitPresentations(
+  selectedEnvironmentIds: ReadonlySet<EnvironmentId> | null,
+  hiddenProviders: ReadonlySet<UsageProviderKind>,
+) {
   const presentations = useAtomValue(environmentPresentations.presentationsAtom);
   const hiddenDrivers = new Set<ServerProvider["driver"]>(
     [...hiddenProviders].map((provider) => PROVIDER_PRESENTATION[provider].driverKind),
   );
   const isVisible = (driver: ServerProvider["driver"]) => !hiddenDrivers.has(driver);
-  // Hidden drivers leave both native accounts and hub accounts, so their
-  // bars, notices, and external links all drop out together.
-  const selected = new Map(
+  return new Map(
     [...presentations].flatMap(([id, presentation]) => {
       if (selectedEnvironmentIds !== null && !selectedEnvironmentIds.has(id)) return [];
       const config = presentation.serverConfig;
@@ -382,5 +373,24 @@ export function UsageLimitsSection({
       ];
     }),
   );
+}
+
+/**
+ * Subscription quota across every connected environment's providers and hubs,
+ * pooled per provider. The page advances `now` on explicit refresh rather than
+ * ticking: a live clock would repaint the page for no decision-changing gain.
+ */
+export function UsageLimitsSection({
+  selectedEnvironmentIds,
+  hiddenProviders,
+  now,
+  cursorPrompt,
+}: {
+  readonly selectedEnvironmentIds: ReadonlySet<EnvironmentId> | null;
+  readonly hiddenProviders: ReadonlySet<UsageProviderKind>;
+  readonly now: number;
+  readonly cursorPrompt?: ReactNode;
+}) {
+  const selected = useLimitPresentations(selectedEnvironmentIds, hiddenProviders);
   return <UsageLimitsPooled presentations={selected} now={now} cursorPrompt={cursorPrompt} />;
 }

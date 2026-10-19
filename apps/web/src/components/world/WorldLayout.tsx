@@ -30,6 +30,7 @@ import { WORLD_MANAGERS_AVAILABLE } from "./worldManagerStore";
 import { TimeSlider } from "./TimeSlider";
 import { WeatherToggle } from "./WeatherToggle";
 import { WorldNavigation } from "./WorldNavigation";
+import { WorldUsageBar } from "./WorldUsageBar";
 import { islandWorlds } from "./definitions/island";
 import { useWorldModeStore } from "./worldModeStore";
 
@@ -206,6 +207,20 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
           <WeatherToggle />
           {WORLD_MANAGERS_AVAILABLE ? <ManagerToggle /> : null}
           <div ref={setToolbar} className="flex items-center gap-2" />
+        </div>
+      </div>
+      <div
+        className="pointer-events-none absolute bottom-3 left-3 z-10 flex"
+        // Stops short of the open chat, which also sits on the bottom edge.
+        style={{
+          right:
+            chatTarget === null
+              ? "0.75rem"
+              : `calc(min(${frameWidth.width + surfacesWidth}px, 100% - 4rem) + 1.5rem)`,
+        }}
+      >
+        <div className="pointer-events-auto min-w-0">
+          <WorldUsageBar />
         </div>
       </div>
       {heldTarget !== null ? (

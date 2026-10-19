@@ -119,3 +119,10 @@ The map then glides to that island if needed and opens the new-agent bubble over
 its first free pile. With only one island, it skips the question.
 
 The world shows the 30 most recently updated threads.
+
+The bar along the bottom shows how much subscription quota is left for each
+provider, pooled across your accounts as in **Usage → Limits**, with the time
+until the next reset hands quota back. Its gear switches the meters between quota
+left and quota used. Click the bar for the full breakdown. Providers
+hidden on the Usage page are hidden here too. The bar shows only when a provider
+reports limits.
