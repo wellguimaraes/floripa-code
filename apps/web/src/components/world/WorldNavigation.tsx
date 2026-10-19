@@ -24,7 +24,7 @@ export function WorldNavigation() {
             />
           }
         >
-          <SearchIcon />
+          <SearchIcon className="size-4" />
         </TooltipTrigger>
         <TooltipPopup side="bottom">Search threads, projects and commands</TooltipPopup>
       </Tooltip>
@@ -39,7 +39,7 @@ export function WorldNavigation() {
             />
           }
         >
-          <SettingsIcon />
+          <SettingsIcon className="size-4" />
         </TooltipTrigger>
         <TooltipPopup side="bottom">Settings</TooltipPopup>
       </Tooltip>

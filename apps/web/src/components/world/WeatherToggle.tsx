@@ -31,7 +31,7 @@ export function WeatherToggle() {
         onPressedChange={setRaining}
         aria-label="Rain"
       >
-        <CloudRainIcon />
+        <CloudRainIcon className="size-4" />
       </Toggle>
       <Toggle
         variant="pill"
@@ -40,7 +40,7 @@ export function WeatherToggle() {
         onPressedChange={setStorm}
         aria-label="Storm"
       >
-        <CloudLightningIcon />
+        <CloudLightningIcon className="size-4" />
       </Toggle>
       <Toggle
         variant="pill"

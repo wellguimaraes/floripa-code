@@ -205,8 +205,9 @@ export function WorldLayout({ target }: { readonly target: ThreadRouteTarget | n
           "pointer-events-none absolute inset-x-0 top-0 z-10 flex h-[var(--workspace-topbar-height)] items-center gap-2 pr-3",
           isElectron && "drag-region",
         )}
-        // Clears the window controls on the left.
-        style={{ paddingLeft: "var(--workspace-titlebar-content-left)" }}
+        // Clears the window controls on the left. The sidebar stays folded here, so no room
+        // is kept for its toggle.
+        style={{ paddingLeft: "var(--workspace-controls-left)" }}
       >
         <div className="pointer-events-auto flex items-center gap-2">
           <WorldNavigation />

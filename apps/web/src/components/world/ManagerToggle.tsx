@@ -16,7 +16,7 @@ export function ManagerToggle() {
         onPressedChange={setEnabled}
         aria-label={enabled ? "Hide the island managers" : "Show the island managers"}
       >
-        {enabled ? <MegaphoneIcon /> : <MegaphoneOffIcon />}
+        {enabled ? <MegaphoneIcon className="size-4" /> : <MegaphoneOffIcon className="size-4" />}
       </Toggle>
     </div>
   );
