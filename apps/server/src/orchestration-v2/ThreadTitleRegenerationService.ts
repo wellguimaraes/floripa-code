@@ -74,7 +74,10 @@ const make = Effect.gen(function* () {
     const thread = projection.thread;
     if (thread.titleManual === true || thread.titleRegeneration != null) return;
     const messages = projection.messages.filter(
-      (message) => !message.streaming && !isNativeMaintenanceCommand(message),
+      (message) =>
+        !message.streaming &&
+        message.notification === undefined &&
+        !isNativeMaintenanceCommand(message),
     );
     const latestIndex = messages.findIndex((message) => message.id === input.messageId);
     const latest = messages[latestIndex];
@@ -86,11 +89,13 @@ const make = Effect.gen(function* () {
       latestMessage: latest.text,
     });
     if (!retitle) return;
+    // The whole-thread regeneration keeps the original subject, which drift just ruled out.
     yield* threads.dispatch({
       type: "thread.metadata.update",
       commandId: CommandId.make(`${input.requestId}:title-drift`),
       threadId: input.threadId,
       regenerateTitle: true,
+      regenerateTitleFrom: latest.id,
     });
   });
 
@@ -146,7 +151,9 @@ const make = Effect.gen(function* () {
             : { message: message.text, attachments: message.attachments };
       } else {
         context = formatThreadTitleContext(
-          projection.messages.filter((message) => !message.streaming),
+          projection.messages.filter(
+            (message) => !message.streaming && message.notification === undefined,
+          ),
         );
       }
       if (context.message.length === 0 && context.attachments.length === 0) {

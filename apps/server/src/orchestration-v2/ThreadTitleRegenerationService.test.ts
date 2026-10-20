@@ -510,9 +510,12 @@ describe("ThreadTitleRegenerationService", () => {
     }),
   );
 
-  it.effect("asks for a regenerated title when a follow-up starts a new task", () =>
+  it.effect("titles the new task when a follow-up moves the thread on", () =>
     Effect.gen(function* () {
-      const harness = makeHarness({ shouldRetitle: () => Effect.succeed(true) });
+      const harness = makeHarness({
+        shouldRetitle: () => Effect.succeed(true),
+        generateTitle: () => Effect.succeed({ title: "Settings Dark Mode" }),
+      });
       yield* Effect.gen(function* () {
         const threads = yield* ThreadManagement.ThreadManagementService;
         const outbox = yield* EffectOutbox.EffectOutboxV2;
@@ -549,9 +552,23 @@ describe("ThreadTitleRegenerationService", () => {
         const requestId = CommandId.make("command:title:drift:2:title-drift");
         const projection = yield* threads.getThreadProjection(threadId);
         assert.equal(projection.thread.titleRegeneration?.requestId, requestId);
+        const kind = {
+          type: "initial",
+          messageId: MessageId.make("command:title:drift:2:message"),
+        } as const;
         assert.deepEqual(
           (yield* outbox.listByCommandId(requestId)).map((effect) => effect.request),
-          [{ type: "thread-title.generate", kind: { type: "regenerate" } }],
+          [{ type: "thread-title.generate", kind }],
+        );
+
+        yield* titleRegeneration.execute({ threadId, requestId, kind });
+
+        const call = harness.generateThreadTitle.mock.calls[0]?.[0];
+        assert.equal(call?.message, "Now add dark mode to the settings page");
+        assert.isUndefined(call?.previousTitle);
+        assert.equal(
+          (yield* threads.getThreadProjection(threadId)).thread.title,
+          "Settings Dark Mode",
         );
       }).pipe(Effect.provide(harness.layer));
     }),

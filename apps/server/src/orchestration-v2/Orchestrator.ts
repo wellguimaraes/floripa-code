@@ -3277,9 +3277,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     if (command.type === "thread.metadata.update" && command.regenerateTitle === true) {
       yield* Ref.update(effects, (existing) => [
         ...existing,
-        pendingThreadTitleGenerationEffect(command.commandId, command.threadId, {
-          type: "regenerate",
-        }),
+        pendingThreadTitleGenerationEffect(
+          command.commandId,
+          command.threadId,
+          command.regenerateTitleFrom === undefined
+            ? { type: "regenerate" }
+            : { type: "initial", messageId: command.regenerateTitleFrom },
+        ),
       ]);
     }
 
