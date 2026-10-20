@@ -51,6 +51,7 @@ import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
@@ -628,23 +629,59 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
         cause: result,
       });
     }
-    if (device.platform === "ios") {
-      // Booting alone does not attach a serve-sim helper; the grid start
-      // does both and is idempotent for a booted simulator.
-      yield* HttpClientRequest.post(
-        `${ready.hub.origin}${vendorPrefix("ios")}/grid/api/start`,
-      ).pipe(
-        HttpClientRequest.bodyJson({ udid: device.id }),
-        Effect.mapError(
-          (cause) =>
-            new DeviceOperationError({ operation: "boot", reason: "invalid_payload", cause }),
-        ),
-        Effect.flatMap((request) =>
-          hubJson(request, HubActionResult, "attach stream", BOOT_TIMEOUT),
-        ),
-      );
-    }
     return result.serial ?? result.id ?? device.id;
+  });
+
+  /**
+   * Gives a booted simulator a capture: the serve-sim preview when a client on
+   * the host machine asked for one, otherwise the hub's helper. A running
+   * preview already captures, and a second capture would starve both, so
+   * every session on that simulator shares it. Returns the preview URL when
+   * there is one.
+   */
+  const attachIosStream = Effect.fn("DeviceService.attachIosStream")(function* (
+    host: DeviceHost.DeviceHost["Service"],
+    ready: DeviceReadiness,
+    udid: DeviceId,
+    preview: boolean,
+  ) {
+    if (preview && host.openSimPreview) {
+      const url = yield* host.openSimPreview(udid).pipe(
+        Effect.tapError((cause) =>
+          Effect.logWarning("Simulator preview unavailable; using the hub stream", { cause }),
+        ),
+        Effect.option,
+      );
+      if (Option.isSome(url)) return url.value;
+    } else if (host.currentSimPreview) {
+      const url = yield* host.currentSimPreview(udid);
+      if (url) return url;
+    }
+    // The grid start attaches a serve-sim helper and is idempotent for a
+    // booted simulator.
+    yield* HttpClientRequest.post(`${ready.hub.origin}${vendorPrefix("ios")}/grid/api/start`).pipe(
+      HttpClientRequest.bodyJson({ udid }),
+      Effect.mapError(
+        (cause) =>
+          new DeviceOperationError({ operation: "open", reason: "invalid_payload", cause }),
+      ),
+      Effect.flatMap((request) => hubJson(request, HubActionResult, "attach stream", BOOT_TIMEOUT)),
+    );
+    return undefined;
+  });
+
+  /** Stops a simulator's preview once no session shows it. */
+  const releaseSimPreview = Effect.fn("DeviceService.releaseSimPreview")(function* (
+    hostId: DeviceHostId,
+    deviceId: DeviceId,
+  ) {
+    const host = hosts.get(hostId);
+    if (!host?.closeSimPreview) return;
+    const { state } = yield* SynchronizedRef.get(stateRef);
+    const shown = state.sessions.some(
+      (session) => session.hostId === hostId && session.deviceId === deviceId && session.previewUrl,
+    );
+    if (!shown) yield* host.closeSimPreview(deviceId);
   });
 
   const open: DeviceService["Service"]["open"] = Effect.fn("DeviceService.open")(function* (input) {
@@ -656,6 +693,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
     if (!device) {
       return yield* new DeviceNotFoundError({ hostId: host.id, deviceId: input.deviceId });
     }
+    const running = device.booted || input.boot !== false;
     if (!device.booted && input.boot !== false) {
       const booting = { ...device, threadId: input.threadId };
       yield* publish((current) => ({
@@ -682,21 +720,13 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
       if (!device) {
         return yield* new DeviceNotFoundError({ hostId: host.id, deviceId: bootedId });
       }
-    } else if (device.platform === "ios" && device.booted) {
-      // A simulator booted outside T3 has no helper attached yet.
-      yield* HttpClientRequest.post(
-        `${ready.hub.origin}${vendorPrefix("ios")}/grid/api/start`,
-      ).pipe(
-        HttpClientRequest.bodyJson({ udid: device.id }),
-        Effect.mapError(
-          (cause) =>
-            new DeviceOperationError({ operation: "open", reason: "invalid_payload", cause }),
-        ),
-        Effect.flatMap((request) =>
-          hubJson(request, HubActionResult, "attach stream", BOOT_TIMEOUT),
-        ),
-      );
     }
+    // Booting alone does not attach a capture, and a simulator booted outside
+    // T3 has none yet.
+    const previewUrl =
+      device.platform === "ios" && running
+        ? yield* attachIosStream(host, ready, device.id, input.preview === true)
+        : undefined;
     if (hosts.get(host.id) !== host)
       return yield* new DeviceHostUnavailableError({
         hostId: host.id,
@@ -709,6 +739,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
       deviceId: device.id,
       platform: device.platform,
       openedAt,
+      ...(previewUrl ? { previewUrl } : {}),
     };
     yield* lifecycleLock.withPermit(
       Effect.gen(function* () {
@@ -791,6 +822,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
         (session) => !(session.hostId === ready.hostId && session.deviceId === deviceId),
       ),
     }));
+    yield* releaseSimPreview(ready.hostId, deviceId);
     // Discovery can stall while an emulator saves its snapshot. A failed
     // refresh must not turn an accepted shutdown into an action failure.
     yield* refresh(ready).pipe(
@@ -814,6 +846,11 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
         ...current,
         sessions: current.sessions.filter((session) => !closing.includes(session)),
       }));
+      yield* Effect.forEach(
+        closing,
+        (session) => releaseSimPreview(session.hostId, session.deviceId),
+        { discard: true },
+      );
       if (input.shutdown) {
         yield* Effect.forEach(
           closing,

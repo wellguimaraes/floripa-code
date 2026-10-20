@@ -1,9 +1,11 @@
 import type { DeviceToolVersions } from "@t3tools/contracts";
 /**
- * Pinned installs of the two external tools device support is built on.
+ * Pinned installs of the external tools device support is built on.
  *
  * `expo-device-hub` streams simulator and emulator screens and `agent-device`
- * drives them. Each is npm-installed separately after its matching consent
+ * drives them. `serve-sim` serves the iOS preview page that clients on the
+ * host machine embed; it is installed on first use, under the hub's consent.
+ * Each is npm-installed separately after its matching consent
  * step into `<baseDir>/tools/<name>/<version>` and executed from there with the
  * resolved Node runtime, never `npx`: an ephemeral
  * npx cache would make every first `device_open` after a reboot depend on the
@@ -29,6 +31,8 @@ const DEVICE_HUB_PACKAGE = "expo-device-hub";
 export const DEVICE_HUB_VERSION = "0.15.3";
 const AGENT_DEVICE_PACKAGE = "agent-device";
 export const AGENT_DEVICE_VERSION = "0.21.23";
+const SERVE_SIM_PACKAGE = "serve-sim";
+export const SERVE_SIM_VERSION = "0.1.48";
 
 const INSTALL_TIMEOUT = Duration.minutes(10);
 const installLock = Semaphore.makeUnsafe(1);
@@ -43,6 +47,7 @@ export interface DeviceToolPaths {
 export interface DeviceToolchainPaths {
   readonly hub: DeviceToolPaths;
   readonly agentDevice: DeviceToolPaths;
+  readonly serveSim: DeviceToolPaths;
 }
 
 export class DeviceToolchainInstallError extends Schema.TaggedError<DeviceToolchainInstallError>()(
@@ -78,6 +83,12 @@ const AGENT_DEVICE_SPEC: ToolSpec = {
   entry: ["bin", "agent-device.mjs"],
 };
 
+const SERVE_SIM_SPEC: ToolSpec = {
+  name: SERVE_SIM_PACKAGE,
+  version: SERVE_SIM_VERSION,
+  entry: ["dist", "serve-sim.js"],
+};
+
 const toolPaths = (path: Path.Path, baseDir: string, spec: ToolSpec): DeviceToolPaths => {
   const installDir = path.join(baseDir, "tools", spec.name, spec.version);
   return {
@@ -90,6 +101,7 @@ const toolPaths = (path: Path.Path, baseDir: string, spec: ToolSpec): DeviceTool
 const deviceToolchainPaths = (path: Path.Path, baseDir: string): DeviceToolchainPaths => ({
   hub: toolPaths(path, baseDir, HUB_SPEC),
   agentDevice: toolPaths(path, baseDir, AGENT_DEVICE_SPEC),
+  serveSim: toolPaths(path, baseDir, SERVE_SIM_SPEC),
 });
 
 /** Keep daemon state (daemon.json, sessions) in userdata, separate from tool installs. */
@@ -205,6 +217,9 @@ export const ensureDeviceHub = (baseDir: string) =>
 
 export const ensureAgentDevice = (baseDir: string) =>
   ensureTool(baseDir, AGENT_DEVICE_SPEC, (paths) => paths.agentDevice);
+
+export const ensureServeSim = (baseDir: string) =>
+  ensureTool(baseDir, SERVE_SIM_SPEC, (paths) => paths.serveSim);
 
 const isToolInstalled = Effect.fn("DeviceToolchain.isToolInstalled")(function* (
   baseDir: string,

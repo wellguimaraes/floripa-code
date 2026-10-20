@@ -740,3 +740,137 @@ it.effect("failed manual installation leaves lifecycle state unchanged and can b
     expect(agentStarts).toEqual([]);
   }).pipe(Effect.scoped),
 );
+
+describe("iOS simulator previews", () => {
+  const deviceId = DeviceId.make("33333333-3333-3333-3333-333333333333");
+  const ready: DeviceHost.DeviceHostReady = {
+    nodePath: process.execPath,
+    hub: { origin: "http://device.test" },
+    helpers: { serveSimAxSettings: null, serveSimCli: null },
+    run: () => Effect.succeed({ code: 0, stdout: "", stderr: "" }),
+  };
+  const makeService = (previewFails: boolean) =>
+    Effect.gen(function* () {
+      const hubStarts: string[] = [];
+      let preview: string | undefined;
+      let previewsOpened = 0;
+      const host: DeviceHost.DeviceHost["Service"] = {
+        id: LOCAL_DEVICE_HOST_ID,
+        summary: Effect.succeed({
+          id: LOCAL_DEVICE_HOST_ID,
+          kind: "local",
+          label: "Simulator host",
+          platforms: [{ platform: "ios", available: true }],
+          hubInstalled: true,
+          agentDeviceInstalled: false,
+        }),
+        platformAvailability: (platform) => Effect.succeed({ platform, available: true }),
+        ensureReady: () => Effect.succeed(ready),
+        ensureAgentReady: () => Effect.die("Agent access is not used in this test"),
+        openSimPreview: (udid) =>
+          previewFails
+            ? Effect.fail(
+                new DeviceHost.DeviceHostError({
+                  hostId: LOCAL_DEVICE_HOST_ID,
+                  step: "starting simulator preview",
+                  cause: "port taken",
+                }),
+              )
+            : Effect.sync(() => {
+                previewsOpened++;
+                preview ??= `http://127.0.0.1:4100/?device=${udid}`;
+                return preview;
+              }),
+        closeSimPreview: () =>
+          Effect.sync(() => {
+            preview = undefined;
+          }),
+        currentSimPreview: () => Effect.sync(() => preview),
+        current: Effect.succeed(ready),
+        stopAgent: Effect.void,
+        stop: Effect.void,
+      };
+      const http = HttpClient.make((request) =>
+        Effect.sync(() => {
+          const path = new URL(request.url).pathname;
+          if (path === "/api/devices") {
+            return HttpClientResponse.fromWeb(
+              request,
+              Response.json({
+                emulators: [],
+                simulators: [
+                  {
+                    id: deviceId,
+                    name: "iPhone",
+                    platform: "ios",
+                    version: "26",
+                    physical: false,
+                    booted: true,
+                  },
+                ],
+              }),
+            );
+          }
+          if (path !== "/vendor/serve-sim/grid/api/start")
+            throw new Error(`Unexpected hub path: ${path}`);
+          hubStarts.push(path);
+          return HttpClientResponse.fromWeb(request, Response.json({ ok: true, id: deviceId }));
+        }),
+      );
+      const service = yield* DeviceService.makeWithHosts(new Map([[host.id, host]])).pipe(
+        Effect.provide(NodeCrypto.layer),
+        Effect.provideService(HttpClient.HttpClient, http),
+      );
+      return {
+        service,
+        hubStarts,
+        previewsOpened: () => previewsOpened,
+        preview: () => preview,
+      };
+    });
+
+  it.effect("sessions share one preview capture, which stops when the last one closes", () =>
+    Effect.gen(function* () {
+      const { service, hubStarts, previewsOpened, preview } = yield* makeService(false);
+      const panel = ThreadId.make("panel");
+      const agent = ThreadId.make("agent");
+      const url = `http://127.0.0.1:4100/?device=${deviceId}`;
+      const opened = yield* service.open({
+        threadId: panel,
+        deviceId,
+        platform: "ios",
+        preview: true,
+      });
+      expect(opened.previewUrl).toBe(url);
+      // Without asking for a preview, a session still joins the running one
+      // instead of attaching a competing hub capture.
+      const joined = yield* service.open({ threadId: agent, deviceId, platform: "ios" });
+      expect(joined.previewUrl).toBe(url);
+      expect(hubStarts).toEqual([]);
+      expect(previewsOpened()).toBe(1);
+
+      yield* service.close({ threadId: panel, deviceId });
+      expect(preview()).toBe(url);
+      yield* service.close({ threadId: agent, deviceId });
+      expect(preview()).toBeUndefined();
+
+      const fallback = yield* service.open({ threadId: agent, deviceId, platform: "ios" });
+      expect(fallback.previewUrl).toBeUndefined();
+      expect(hubStarts).toHaveLength(1);
+    }).pipe(Effect.provide(ServerSettings.layerTest({ enableDeviceSupport: true })), Effect.scoped),
+  );
+
+  it.effect("a preview that fails to start falls back to the hub stream", () =>
+    Effect.gen(function* () {
+      const { service, hubStarts } = yield* makeService(true);
+      const opened = yield* service.open({
+        threadId: ThreadId.make("panel"),
+        deviceId,
+        platform: "ios",
+        preview: true,
+      });
+      expect(opened.previewUrl).toBeUndefined();
+      expect(hubStarts).toHaveLength(1);
+    }).pipe(Effect.provide(ServerSettings.layerTest({ enableDeviceSupport: true })), Effect.scoped),
+  );
+});

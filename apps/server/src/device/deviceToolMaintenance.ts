@@ -3,7 +3,7 @@ import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import * as Path from "effect/Path";
 import * as ProcessRunner from "../processRunner.ts";
-import { AGENT_DEVICE_VERSION, DEVICE_HUB_VERSION } from "./DeviceToolchain.ts";
+import { AGENT_DEVICE_VERSION, DEVICE_HUB_VERSION, SERVE_SIM_VERSION } from "./DeviceToolchain.ts";
 
 /** Shared with the SSH bootstrap. Cleanup runs only after successful startup. */
 export const deviceToolMaintenanceScript = String.raw`
@@ -144,7 +144,14 @@ export const pruneLocalDeviceTools = Effect.fn("DeviceToolchain.prune")(function
   const path = yield* Path.Path;
   yield* runMaintenance(
     nodePath,
-    `pruneTools(${JSON.stringify(path.join(baseDir, "tools"))}, ${JSON.stringify(tool === "hub" ? [["expo-device-hub", DEVICE_HUB_VERSION]] : [["agent-device", AGENT_DEVICE_VERSION]])}, false)`,
+    `pruneTools(${JSON.stringify(path.join(baseDir, "tools"))}, ${JSON.stringify(
+      tool === "hub"
+        ? [
+            ["expo-device-hub", DEVICE_HUB_VERSION],
+            ["serve-sim", SERVE_SIM_VERSION],
+          ]
+        : [["agent-device", AGENT_DEVICE_VERSION]],
+    )}, false)`,
     "prune",
     tool,
   );

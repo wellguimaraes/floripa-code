@@ -113,3 +113,17 @@ export function resolveDiscoveredServerUrl(environmentId: EnvironmentId, rawUrl:
     return rawUrl;
   }
 }
+
+/**
+ * Whether this client can load a page served on the environment host's own
+ * loopback: the desktop app on its local backend, or a browser that reached
+ * the environment through a loopback address and so runs on that machine.
+ */
+export function canReachEnvironmentLoopback(environmentId: EnvironmentId): boolean {
+  const connection = readPreparedConnection(environmentId);
+  if (!connection) return false;
+  return (
+    reachesEnvironmentLoopback(connection.target) ||
+    isLocalLoopbackHost(new URL(connection.httpBaseUrl).hostname.replace(/^\[|\]$/g, ""))
+  );
+}

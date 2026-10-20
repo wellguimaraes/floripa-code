@@ -124,6 +124,11 @@ export const DeviceSession = Schema.Struct({
   deviceId: DeviceId,
   platform: DevicePlatform,
   openedAt: Schema.String,
+  /**
+   * Loopback URL of the simulator's serve-sim preview page, when a client on
+   * the host machine opened it with `preview`. Other clients cannot reach it.
+   */
+  previewUrl: Schema.optional(Schema.String),
 });
 export type DeviceSession = typeof DeviceSession.Type;
 
@@ -178,6 +183,11 @@ export const DeviceOpenInput = Schema.Struct({
   platform: DevicePlatform,
   /** Boot the simulator or emulator when it is not running. Defaults to true. */
   boot: Schema.optional(Schema.Boolean),
+  /**
+   * The client runs on the host machine and embeds an iOS simulator's
+   * serve-sim page instead of the hub stream. Ignored where unsupported.
+   */
+  preview: Schema.optional(Schema.Boolean),
 });
 export type DeviceOpenInput = typeof DeviceOpenInput.Type;
 

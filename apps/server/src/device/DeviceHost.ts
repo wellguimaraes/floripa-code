@@ -98,6 +98,18 @@ export class DeviceHost extends Context.Service<
       DeviceHostAgentReady,
       DeviceHostError | DeviceHostTimeoutError | NodeRuntimeUnavailableError
     >;
+    /**
+     * Serves a booted simulator's serve-sim preview page on this machine's
+     * loopback and returns its URL. Only a host that is the server's own
+     * machine has one: the page is reachable from clients on that machine only.
+     */
+    readonly openSimPreview?: (
+      udid: string,
+    ) => Effect.Effect<string, DeviceHostError | NodeRuntimeUnavailableError>;
+    /** Stops the preview for a simulator, if one is running. */
+    readonly closeSimPreview?: (udid: string) => Effect.Effect<void>;
+    /** URL of the preview serving this simulator now, if any. */
+    readonly currentSimPreview?: (udid: string) => Effect.Effect<string | undefined>;
     /** Current endpoints when already running, without starting anything. */
     readonly current: Effect.Effect<DeviceHostReady | null>;
     /** Stops only agent-device. Manual viewing through the hub stays available. */

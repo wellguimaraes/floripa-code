@@ -6,7 +6,11 @@ import {
 } from "@t3tools/client-runtime/device/screenshot";
 import { refreshDeviceHubAccess, useDeviceHubAccess } from "~/state/device";
 import { DeviceControlsRail } from "./DeviceControlsRail";
-import { DeviceStreamView, type DeviceStreamHandle } from "./DeviceStreamView";
+import {
+  DeviceStreamView,
+  type DeviceStreamHandle,
+  type DeviceViewControls,
+} from "./DeviceStreamView";
 import { DeviceToolsPanel } from "./DeviceToolsPanel";
 import { useDeviceControls } from "./useDeviceControls";
 
@@ -16,6 +20,8 @@ export function DeviceWorkspace(props: {
   device: DeviceSummary;
   hostLabel: string;
   hostDiagnostics: string | undefined;
+  /** The simulator's serve-sim page on the host's loopback, shown instead of the hub stream. */
+  previewUrl?: string | undefined;
   visible: boolean;
   onFloat?: (() => void) | undefined;
   onClose: () => void;
@@ -76,6 +82,21 @@ export function DeviceWorkspace(props: {
         }
       });
   };
+  const rail = (view: DeviceViewControls | null) => (
+    <DeviceControlsRail
+      platform={props.device.platform}
+      handle={handle}
+      view={view}
+      controls={controls}
+      screenshotPending={screenshotPending}
+      onScreenshot={() => void saveScreenshot()}
+      toolsOpen={toolsOpen}
+      onTools={() => setToolsOpen(!toolsOpen)}
+      onFloat={props.onFloat}
+      onClose={props.onClose}
+      onPowerOff={props.onPowerOff}
+    />
+  );
   return (
     <>
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
@@ -84,34 +105,36 @@ export function DeviceWorkspace(props: {
             {screenshotError ?? controls.error}
           </p>
         ) : null}
-        <div className="min-h-0 flex-1">
-          <DeviceStreamView
-            environmentId={props.environmentId}
-            platform={props.device.platform}
-            deviceName={props.device.name}
-            deviceDescription={`${props.hostLabel} · ${props.device.version}`}
-            deviceId={props.device.id}
-            hostId={props.device.hostId}
-            visible={props.visible}
-            axOverlay={axOverlay}
-            allowPhoneView
-            onHandle={setHandle}
-            renderControls={(view) => (
-              <DeviceControlsRail
-                platform={props.device.platform}
-                handle={handle}
-                view={view}
-                controls={controls}
-                screenshotPending={screenshotPending}
-                onScreenshot={() => void saveScreenshot()}
-                toolsOpen={toolsOpen}
-                onTools={() => setToolsOpen(!toolsOpen)}
-                onFloat={props.onFloat}
-                onClose={props.onClose}
-                onPowerOff={props.onPowerOff}
-              />
-            )}
-          />
+        <div className="relative min-h-0 flex-1">
+          {props.previewUrl ? (
+            <>
+              {/* Unmounted while hidden so the page stops streaming. */}
+              {props.visible ? (
+                // oxlint-disable-next-line react/iframe-missing-sandbox -- the page needs its own origin for its API and input socket; it is cross-origin to the app.
+                <iframe
+                  src={props.previewUrl}
+                  title={`${props.device.name} simulator`}
+                  allow="clipboard-read; clipboard-write; fullscreen"
+                  className="size-full border-0"
+                />
+              ) : null}
+              {rail(null)}
+            </>
+          ) : (
+            <DeviceStreamView
+              environmentId={props.environmentId}
+              platform={props.device.platform}
+              deviceName={props.device.name}
+              deviceDescription={`${props.hostLabel} · ${props.device.version}`}
+              deviceId={props.device.id}
+              hostId={props.device.hostId}
+              visible={props.visible}
+              axOverlay={axOverlay}
+              allowPhoneView
+              onHandle={setHandle}
+              renderControls={rail}
+            />
+          )}
         </div>
       </div>
       {toolsOpen ? (

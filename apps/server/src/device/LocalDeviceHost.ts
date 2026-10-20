@@ -8,6 +8,10 @@ import { deviceToolInstallMessage } from "@t3tools/contracts";
  * lazy: the device service requires explicit setup consent before it calls
  * ensureReady to install tools or start helper processes.
  *
+ * iOS previews for clients on this machine are a separate serve-sim server per
+ * simulator, started when such a client opens one. Its page embeds directly;
+ * the hub's own serve-sim build is slower and would compete for frames.
+ *
  * The hub runs in its standalone mode (origin root). The T3 proxy strips its
  * own prefix, and the Device panel derives stream and socket URLs from the
  * prefix itself rather than from anything the hub prints.
@@ -52,6 +56,7 @@ import {
   type DeviceToolPaths,
   ensureAgentDevice,
   ensureDeviceHub,
+  ensureServeSim,
   isAgentDeviceInstalled,
   isDeviceHubInstalled,
   deviceToolVersions,
@@ -93,6 +98,20 @@ interface HubProcess {
   readonly origin: string;
   readonly startedAtMillis: number;
 }
+
+/** A serve-sim preview server for one simulator, with its capture in-process. */
+interface SimPreviewProcess {
+  readonly child: ChildProcessSpawner.ChildProcessHandle;
+  readonly scope: Scope.Closeable;
+  readonly url: string;
+}
+
+/** What `serve-sim --list <udid> -q` prints. */
+const SimStreamListing = Schema.Struct({
+  running: Schema.Boolean,
+  pid: Schema.optional(Schema.Int),
+});
+const decodeSimStreamListing = Schema.decodeUnknownEffect(Schema.fromJsonString(SimStreamListing));
 
 interface RunningHost {
   readonly hub: HubProcess;
@@ -754,6 +773,182 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
     Effect.map((running) => (running ? toReady(running) : null)),
   );
 
+  const previewsRef = yield* Ref.make(new Map<string, SimPreviewProcess>());
+  const previewLock = yield* Semaphore.make(1);
+
+  const stopPreview = (preview: SimPreviewProcess | undefined) =>
+    preview ? Scope.close(preview.scope, Exit.void).pipe(Effect.ignore) : Effect.void;
+
+  /**
+   * serve-sim keeps one stream record per simulator, shared by every serve-sim
+   * on the machine. A capture T3 started earlier (the hub's helper, or a
+   * preview a previous server left behind) would compete with a new preview
+   * for frames, so it is stopped. A serve-sim the user started is left alone.
+   */
+  const stopOwnedSimStream = Effect.fn("LocalDeviceHost.stopOwnedSimStream")(function* (
+    nodePath: string,
+    entryPath: string,
+    udid: string,
+  ) {
+    const listed = yield* run(nodePath, [entryPath, "--list", udid, "-q"], { timeoutMs: 10_000 });
+    const stream = yield* decodeSimStreamListing(listed.stdout.trim()).pipe(Effect.option);
+    if (Option.isNone(stream) || !stream.value.running || stream.value.pid === undefined) return;
+    const pid = stream.value.pid;
+    const commandLine = yield* run("ps", ["-o", "command=", "-p", String(pid)], {
+      timeoutMs: 5_000,
+    });
+    if (!commandLine.stdout.includes(`${path.join(config.baseDir, "tools")}${path.sep}`)) return;
+    yield* Effect.logInfo("Stopping a T3 simulator capture before starting the preview", {
+      pid,
+      udid,
+    });
+    yield* Effect.sync(() => {
+      try {
+        process.kill(pid, "SIGTERM");
+      } catch {
+        // Already gone.
+      }
+    });
+  });
+
+  const spawnSimPreview = Effect.fn("LocalDeviceHost.spawnSimPreview")(function* (
+    udid: string,
+    nodePath: string,
+    entryPath: string,
+  ) {
+    const fail = (step: string) => (cause: unknown) =>
+      new DeviceHost.DeviceHostError({ hostId, step, cause });
+    const port = yield* net
+      .reserveLoopbackPort("127.0.0.1")
+      .pipe(Effect.mapError(fail("reserving a port for the simulator preview")));
+    const origin = `http://127.0.0.1:${port}`;
+    const scope = yield* Scope.make("sequential");
+    return yield* Effect.gen(function* () {
+      const child = yield* spawner
+        .spawn(
+          ChildProcess.make(
+            nodePath,
+            [entryPath, "--panes", "none", "--host", "127.0.0.1", "--port", String(port), udid],
+            {
+              detached: false,
+              shell: false,
+              stdout: "pipe",
+              stderr: "pipe",
+              env: yield* hubEnvironment(hostEnvironment).pipe(
+                Effect.provideService(FileSystem.FileSystem, fs),
+                Effect.provideService(HostProcess.Platform, hostPlatform),
+              ),
+            },
+          ),
+        )
+        .pipe(
+          Effect.provideService(Scope.Scope, scope),
+          Effect.mapError(fail("starting the simulator preview")),
+        );
+      yield* Effect.forkIn(
+        child.all.pipe(
+          Stream.decodeText(),
+          Stream.splitLines,
+          Stream.map((line) => line.trim()),
+          Stream.filter((line) => line.length > 0),
+          Stream.runForEach((line) =>
+            Effect.logDebug("Simulator preview output", { pid: Number(child.pid), output: line }),
+          ),
+          Effect.ignoreCause,
+        ),
+        scope,
+      );
+      yield* waitForHttpReady({
+        baseUrl: origin,
+        timeoutMs: HUB_READY_TIMEOUT_MS,
+        makeError: (info) => fail("waiting for the simulator preview to answer")(info.cause),
+      }).pipe(Effect.provideService(HttpClient.HttpClient, httpClient));
+      yield* Effect.logInfo("Simulator preview started", { pid: Number(child.pid), port, udid });
+      return { child, scope, url: `${origin}/?device=${encodeURIComponent(udid)}` };
+    }).pipe(Effect.onError(() => Scope.close(scope, Exit.void).pipe(Effect.ignore)));
+  });
+
+  const openSimPreview: NonNullable<DeviceHost.DeviceHost["Service"]["openSimPreview"]> = (udid) =>
+    previewLock.withPermits(1)(
+      Effect.gen(function* () {
+        if (!/^[0-9A-Fa-f-]+$/.test(udid)) {
+          return yield* new DeviceHost.DeviceHostError({
+            hostId,
+            step: "validating the simulator id",
+            cause: udid,
+          });
+        }
+        const existing = (yield* Ref.get(previewsRef)).get(udid);
+        if (existing) {
+          if (yield* existing.child.isRunning.pipe(Effect.orElseSucceed(() => false))) {
+            return existing.url;
+          }
+          yield* stopPreview(existing);
+        }
+        const running = yield* Ref.get(runningRef);
+        if (!running) {
+          return yield* new DeviceHost.DeviceHostError({
+            hostId,
+            step: "starting the simulator preview",
+            cause: "The device hub is not running.",
+          });
+        }
+        const serveSim = yield* ensureServeSim(config.baseDir).pipe(
+          Effect.provideService(FileSystem.FileSystem, fs),
+          Effect.provideService(Path.Path, path),
+          Effect.provideService(ProcessRunner.ProcessRunner, runner),
+          Effect.mapError(
+            (cause) =>
+              new DeviceHost.DeviceHostError({
+                hostId,
+                step: "installing the simulator preview",
+                cause,
+              }),
+          ),
+        );
+        yield* stopOwnedSimStream(running.hub.nodePath, serveSim.entryPath, udid);
+        const preview = yield* spawnSimPreview(udid, running.hub.nodePath, serveSim.entryPath);
+        yield* Ref.update(previewsRef, (previews) => new Map(previews).set(udid, preview));
+        return preview.url;
+      }),
+    );
+
+  const closeSimPreview: NonNullable<DeviceHost.DeviceHost["Service"]["closeSimPreview"]> = (
+    udid,
+  ) =>
+    previewLock.withPermits(1)(
+      Effect.gen(function* () {
+        const previews = yield* Ref.get(previewsRef);
+        yield* stopPreview(previews.get(udid));
+        const next = new Map(previews);
+        next.delete(udid);
+        yield* Ref.set(previewsRef, next);
+      }),
+    );
+
+  const currentSimPreview: NonNullable<DeviceHost.DeviceHost["Service"]["currentSimPreview"]> = (
+    udid,
+  ) =>
+    Ref.get(previewsRef).pipe(
+      Effect.flatMap((previews) => {
+        const preview = previews.get(udid);
+        return preview
+          ? preview.child.isRunning.pipe(
+              Effect.orElseSucceed(() => false),
+              Effect.map((alive) => (alive ? preview.url : undefined)),
+            )
+          : Effect.succeed(undefined);
+      }),
+    );
+
+  const stopPreviews = previewLock.withPermits(1)(
+    Ref.getAndSet(previewsRef, new Map()).pipe(
+      Effect.flatMap((previews) =>
+        Effect.forEach(previews.values(), stopPreview, { discard: true }),
+      ),
+    ),
+  );
+
   const stopAgent: DeviceHost.DeviceHost["Service"]["stopAgent"] = startLock.withPermits(1)(
     Effect.gen(function* () {
       yield* stopAgentDeviceDaemon(agentToolRef);
@@ -766,6 +961,7 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
   const stop: DeviceHost.DeviceHost["Service"]["stop"] = startLock.withPermits(1)(
     Effect.gen(function* () {
       const running = yield* Ref.getAndSet(runningRef, null);
+      yield* stopPreviews;
       yield* stopHub(running?.hub);
       yield* fs.remove(hubStatePath(), { force: true }).pipe(Effect.ignore);
       yield* stopAgentDeviceDaemon(agentToolRef);
@@ -781,6 +977,9 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
     platformAvailability,
     ensureReady,
     ensureAgentReady,
+    openSimPreview,
+    closeSimPreview,
+    currentSimPreview,
     current,
     stopAgent,
     stop,

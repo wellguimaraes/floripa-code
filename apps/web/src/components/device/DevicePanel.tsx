@@ -15,6 +15,7 @@ import { DiscoveryList, DiscoveryListRow } from "~/components/ui/discovery-list"
 import { Dialog } from "~/components/ui/dialog";
 import { WizardPopup } from "~/components/ui/wizard";
 import { Spinner } from "~/components/ui/spinner";
+import { canReachEnvironmentLoopback } from "~/browser/browserTargetResolver";
 import { cn } from "~/lib/utils";
 import { deviceEnvironment, useDeviceState } from "~/state/device";
 import { formatEnvironmentQueryError } from "~/state/query";
@@ -72,6 +73,45 @@ export function DevicePanel(props: {
       )
     : undefined;
 
+  // iOS simulators show serve-sim's own page when this client runs on the
+  // host machine. Sessions opened elsewhere (an agent, another client) are
+  // reopened once with `preview`; a host that cannot serve one answers
+  // without a URL and the hub stream stays.
+  const embedsPreview = (device: DeviceSummary) =>
+    device.platform === "ios" && canReachEnvironmentLoopback(environmentId);
+  const [previewAnswer, setPreviewAnswer] = useState<{
+    readonly key: string;
+    readonly previewUrl: string | undefined;
+  } | null>(null);
+  const activeKey = activeDevice ? deviceKey(activeDevice) : null;
+  const previewUrl =
+    activeSession?.previewUrl ??
+    (previewAnswer && previewAnswer.key === activeKey ? previewAnswer.previewUrl : undefined);
+  const previewPending =
+    activeDevice !== undefined &&
+    embedsPreview(activeDevice) &&
+    previewUrl === undefined &&
+    previewAnswer?.key !== activeKey;
+  useEffect(() => {
+    if (!props.visible || !previewPending || !activeDevice || activeKey === null) return;
+    void open({
+      environmentId,
+      input: {
+        threadId,
+        hostId: activeDevice.hostId,
+        deviceId: activeDevice.id,
+        platform: activeDevice.platform,
+        boot: false,
+        preview: true,
+      },
+    }).then((result) =>
+      setPreviewAnswer({
+        key: activeKey,
+        previewUrl: result._tag === "Success" ? result.value.previewUrl : undefined,
+      }),
+    );
+  }, [activeDevice, activeKey, environmentId, open, previewPending, props.visible, threadId]);
+
   const grouped = useMemo(() => groupDevices(state), [state]);
 
   const selectDevice = async (value: string) => {
@@ -87,16 +127,20 @@ export function DevicePanel(props: {
           hostId: device.hostId,
           deviceId: device.id,
           platform: device.platform,
+          ...(embedsPreview(device) ? { preview: true } : {}),
         },
       });
       if (result._tag === "Failure") setOperationError(formatEnvironmentQueryError(result.cause));
-      else
+      else {
+        if (embedsPreview(device))
+          setPreviewAnswer({ key: deviceKey(device), previewUrl: result.value.previewUrl });
         useRightPanelStore.getState().openDevice(props.threadRef, {
           hostId: result.value.hostId,
           deviceId: result.value.deviceId,
           platform: device.platform,
           name: device.name,
         });
+      }
     } finally {
       setPendingDevice(null);
     }
@@ -198,7 +242,14 @@ export function DevicePanel(props: {
         </div>
       ) : null}
       <div className="@container relative flex min-h-0 flex-1">
-        {activeDevice && activeSession ? (
+        {activeDevice && activeSession && previewPending ? (
+          <DeviceLoadingView
+            name={activeDevice.name}
+            description={`${state.hosts.find((host) => host.id === activeDevice.hostId)?.label ?? "Device host"} · ${activeDevice.version}`}
+            stage="opening"
+            message="Opening device…"
+          />
+        ) : activeDevice && activeSession ? (
           <DeviceWorkspace
             key={`${environmentId}\u0000${deviceKey(activeDevice)}`}
             environmentId={environmentId}
@@ -207,6 +258,7 @@ export function DevicePanel(props: {
               state.hosts.find((host) => host.id === activeDevice.hostId)?.label ?? "Device host"
             }
             hostDiagnostics={state.hostStatusDetail}
+            previewUrl={previewUrl}
             visible={props.visible}
             onFloat={FLOATING_PREVIEW_ENABLED ? floatActive : undefined}
             onClose={() => closeActive(false)}
