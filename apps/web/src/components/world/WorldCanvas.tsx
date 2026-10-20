@@ -352,9 +352,24 @@ export default function WorldCanvas(props: {
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   // The bubble opened by "Send voice command" starts listening right away.
   const [listenKey, setListenKey] = useState<string | null>(null);
-  const toggleBubble = (character: WorldCharacter) => {
+  const selectCharacter = (character: WorldCharacter, clicks: number) => {
+    const { key } = character.facts;
     setPicked(new Set());
     setListenKey(null);
+    // The second click of a double-click trades the bubble for the chat, and the chat for
+    // the bubble.
+    if (clicks === 2 && bubbleKey === key) {
+      openChat(character);
+      return;
+    }
+    if (clicks === 2 && chatKey === key && !chatCollapsed) {
+      dropPendingChat();
+      setSwitchingTo(null);
+      closeManager();
+      setBubbleKey(key);
+      void onCollapse();
+      return;
+    }
     // With a chat shown, a click switches the chat to that character instead. A collapsed
     // chat stays collapsed: the click opens the bubble, whose expand button shows the chat.
     if (selectedKey !== null && !chatCollapsed) {
@@ -363,9 +378,10 @@ export default function WorldCanvas(props: {
       return;
     }
     // Opening a character's bubble drops a new-agent bubble nothing was typed into.
-    if (bubbleKey !== character.facts.key) dropUntypedNewAgent();
+    // Clicking it again leaves the bubble open.
+    if (bubbleKey !== key) dropUntypedNewAgent();
     closeManager();
-    setBubbleKey((current) => (current === character.facts.key ? null : character.facts.key));
+    setBubbleKey(key);
   };
   // One island's manager popover at a time. Closed while he is thinking or
   // waiting on an answer, it stays mounted but hidden, so the question waits
@@ -943,8 +959,8 @@ export default function WorldCanvas(props: {
     containerRef.current
       ?.querySelector("canvas")
       ?.dispatchEvent(new WheelEvent("wheel", event.nativeEvent));
-  // A press anywhere outside the bubble closes it. The canvas decides for
-  // itself: a character click toggles or switches, empty ground closes.
+  // A press anywhere outside the bubble closes it. The canvas and name tags decide
+  // for themselves: a character click keeps or switches, empty ground closes.
   const bubbleOpen = bubbleKey !== null;
   useEffect(() => {
     if (!bubbleOpen) return;
@@ -953,6 +969,7 @@ export default function WorldCanvas(props: {
       if (target === null || bubbleRef.current?.contains(target)) return;
       if (target instanceof Element && target.closest(PORTALED_LAYERS)) return;
       if (containerRef.current?.querySelector("canvas")?.contains(target)) return;
+      if ([...tagRefs.current.values()].some((tag) => tag.contains(target))) return;
       setBubbleKey(null);
     };
     document.addEventListener("pointerdown", closeOutside, true);
@@ -1178,7 +1195,7 @@ export default function WorldCanvas(props: {
                           character.facts.key === (bubble?.facts.key ?? chatKey) ||
                           picked.has(character.facts.key)
                         }
-                        onSelect={toggleBubble}
+                        onSelect={selectCharacter}
                         onOpen={openChat}
                         onPick={togglePicked}
                         onMenu={(target, point) => void showMenu(target, point)}
@@ -1484,7 +1501,7 @@ export default function WorldCanvas(props: {
                 if (event.altKey) openChat(character);
                 else if (event.metaKey || event.ctrlKey) togglePicked(character);
                 else if (character.intent.balloon !== undefined) openChat(character);
-                else toggleBubble(character);
+                else selectCharacter(character, event.detail);
               }}
               onContextMenu={(event) => {
                 event.preventDefault();
