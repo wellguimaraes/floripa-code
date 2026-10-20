@@ -3799,13 +3799,24 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const stageProdResourcesDir = path.join(stageAppDir, "apps/desktop/prod-resources");
   yield* fs.copy(stageResourcesDir, stageProdResourcesDir);
 
-  const configuredMacPasskeySigning =
-    options.platform === "mac" && options.signed
-      ? yield* Effect.try({
-          try: () => resolveMacPasskeySigningConfiguration(loadRepoEnv({ repoRoot })),
-          catch: MacPasskeySigningConfigurationResolutionError.fromCause,
-        })
-      : undefined;
+  const repoEnv = options.platform === "mac" && options.signed ? loadRepoEnv({ repoRoot }) : {};
+  // Without a provisioning profile the app is still Developer ID signed, just
+  // without passkey entitlements, so forks can sign under their own team.
+  const wantsMacPasskeys =
+    options.platform === "mac" &&
+    options.signed &&
+    (repoEnv.FLORIPACODE_MACOS_PROVISIONING_PROFILE?.trim() ?? "") !== "";
+  if (options.platform === "mac" && options.signed && !wantsMacPasskeys) {
+    yield* Effect.logWarning(
+      "FLORIPACODE_MACOS_PROVISIONING_PROFILE is not set; signing without passkey entitlements.",
+    );
+  }
+  const configuredMacPasskeySigning = wantsMacPasskeys
+    ? yield* Effect.try({
+        try: () => resolveMacPasskeySigningConfiguration(repoEnv),
+        catch: MacPasskeySigningConfigurationResolutionError.fromCause,
+      })
+    : undefined;
   const macPasskeySigning = configuredMacPasskeySigning
     ? {
         ...configuredMacPasskeySigning,
