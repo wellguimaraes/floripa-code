@@ -106,6 +106,14 @@ export const RIGHT_PANEL_SURFACE_TYPES = [
 ] as const;
 export type RightPanelSurfaceType = (typeof RIGHT_PANEL_SURFACE_TYPES)[number];
 
+/** Off: the rail and add menus offer no Device surface. Flip to bring it back. */
+export const DEVICE_SURFACE_ENABLED = false;
+
+/** The types the rail shows. */
+export const RIGHT_PANEL_SHOWN_SURFACE_TYPES = RIGHT_PANEL_SURFACE_TYPES.filter(
+  (type) => type !== "device" || DEVICE_SURFACE_ENABLED,
+);
+
 export function rightPanelSurfaceType(kind: RightPanelKind): RightPanelSurfaceType {
   switch (kind) {
     case "file":

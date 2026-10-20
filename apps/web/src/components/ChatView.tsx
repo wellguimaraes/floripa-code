@@ -248,6 +248,7 @@ import {
 } from "../rightPanelLayout";
 import { PopoverCreateHandle } from "./ui/popover";
 import {
+  DEVICE_SURFACE_ENABLED,
   pullRequestSurface,
   threadPullRequestSurfaces,
   selectActiveRightPanel,
@@ -727,7 +728,7 @@ const RIGHT_PANEL_TYPE_COMMANDS: Partial<Record<string, RightPanelSurfaceType>> 
   "rightPanel.showPullRequests": "pull-request",
   "rightPanel.showDiff": "diff",
   "rightPanel.showFiles": "files",
-  "rightPanel.showDevice": "device",
+  ...(DEVICE_SURFACE_ENABLED ? { "rightPanel.showDevice": "device" as const } : {}),
 };
 
 const EMPTY_PENDING_FILE_SURFACE_IDS: ReadonlySet<string> = new Set();

@@ -54,7 +54,8 @@ import {
 import { isElectron } from "~/env";
 import type { DesktopPreviewOverlay } from "~/previewStateStore";
 import {
-  RIGHT_PANEL_SURFACE_TYPES,
+  DEVICE_SURFACE_ENABLED,
+  RIGHT_PANEL_SHOWN_SURFACE_TYPES,
   rightPanelSurfaceType,
   type RightPanelSurface,
   type RightPanelSurfaceType,
@@ -418,15 +419,19 @@ function RightPanelEmptyState(props: {
       disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequests,
       onClick: props.onAddPullRequests,
     },
-    {
-      label: "Device",
-      description: "Watch an iOS Simulator or Android Emulator.",
-      icon: Smartphone,
-      shortcut: "M",
-      available: props.deviceAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.device,
-      onClick: props.onAddDevice,
-    },
+    ...(DEVICE_SURFACE_ENABLED
+      ? [
+          {
+            label: "Device",
+            description: "Watch an iOS Simulator or Android Emulator.",
+            icon: Smartphone,
+            shortcut: "M",
+            available: props.deviceAvailable,
+            disabledReason: SURFACE_UNAVAILABLE_HINTS.device,
+            onClick: props.onAddDevice,
+          } as const,
+        ]
+      : []),
   ] as const;
 
   type SurfaceAction = (typeof actions)[number];
@@ -958,7 +963,7 @@ export function RightPanelTypeRail(
       className={cn("flex w-11 shrink-0 flex-col items-stretch gap-0.5 py-1", props.className)}
       data-right-panel-type-rail
     >
-      {RIGHT_PANEL_SURFACE_TYPES.map((type) => {
+      {RIGHT_PANEL_SHOWN_SURFACE_TYPES.map((type) => {
         const meta = SURFACE_TYPE_META[type];
         const Icon = meta.icon;
         const count = counts.get(type) ?? 0;
@@ -1208,14 +1213,18 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       disabledReason: SURFACE_DISABLED_REASONS.pullRequests,
       onClick: props.onAddPullRequests,
     },
-    {
-      label: "Device",
-      icon: Smartphone,
-      shortcut: "M",
-      available: props.deviceAvailable,
-      disabledReason: SURFACE_DISABLED_REASONS.device,
-      onClick: props.onAddDevice,
-    },
+    ...(DEVICE_SURFACE_ENABLED
+      ? [
+          {
+            label: "Device",
+            icon: Smartphone,
+            shortcut: "M",
+            available: props.deviceAvailable,
+            disabledReason: SURFACE_DISABLED_REASONS.device,
+            onClick: props.onAddDevice,
+          } as const,
+        ]
+      : []),
   ] as const;
 
   const handleAddSurfaceMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
