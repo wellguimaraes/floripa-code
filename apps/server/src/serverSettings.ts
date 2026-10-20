@@ -16,6 +16,7 @@ import {
   DEFAULT_MODEL_BY_PROVIDER,
   DEFAULT_SERVER_SETTINGS,
   ModelSelection,
+  type OpenRouterApiKeyProblem,
   ProjectId,
   ProjectScript,
   ProjectSettingsOverrides,
@@ -36,6 +37,7 @@ import {
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
@@ -174,6 +176,54 @@ export function resolveOpenRouterApiKey(voice: ServerSettings["voice"]): string 
   return voice.openRouterApiKey || (process.env.OPENROUTER_API_KEY?.trim() ?? "");
 }
 
+/**
+ * What an OpenRouter response says about the key: null when it worked, a reason
+ * when OpenRouter turned the key down, undefined when the failure was something else.
+ */
+export function openRouterApiKeyProblemReason(
+  status: number,
+): OpenRouterApiKeyProblem["reason"] | null | undefined {
+  if (status < 400) return null;
+  // OpenRouter answers 403 for flagged input, not for a bad key.
+  if (status === 401) return "rejected";
+  if (status === 402) return "no-credits";
+  return undefined;
+}
+
+function withOpenRouterApiKeyProblem(
+  settings: ServerSettings,
+  problem: OpenRouterApiKeyProblem | undefined,
+): ServerSettings {
+  const { openRouterApiKeyProblem: _previous, ...voice } = settings.voice;
+  return {
+    ...settings,
+    voice: problem === undefined ? voice : { ...voice, openRouterApiKeyProblem: problem },
+  };
+}
+
+/** Writes only when the key's state changes, so working calls cost no settings write. */
+function recordOpenRouterResponseWith(
+  current: Effect.Effect<ServerSettings, ServerSettingsError>,
+  update: (
+    change: (settings: ServerSettings) => Effect.Effect<ServerSettings, ServerSettingsError>,
+  ) => Effect.Effect<ServerSettings, ServerSettingsError>,
+) {
+  return (status: number): Effect.Effect<void> =>
+    Effect.gen(function* () {
+      const reason = openRouterApiKeyProblemReason(status);
+      if (reason === undefined) return;
+      const previous = (yield* current).voice.openRouterApiKeyProblem;
+      if ((previous?.reason ?? null) === reason) return;
+      const problem =
+        reason === null ? undefined : { reason, at: DateTime.formatIso(yield* DateTime.now) };
+      yield* update((settings) => Effect.succeed(withOpenRouterApiKeyProblem(settings, problem)));
+    }).pipe(
+      Effect.catch((error) =>
+        Effect.logWarning("Could not record the OpenRouter key status", { error }),
+      ),
+    );
+}
+
 const redactSecret = (value: string) => (value.length > 0 ? SECRET_REDACTED : "");
 
 function redactProviderEnvironmentVariable(
@@ -303,6 +353,12 @@ export class ServerSettingsService extends Context.Service<
      * snapshot and a lazily started stream must not be lost.
      */
     readonly subscribeChanges: Effect.Effect<Stream.Stream<ServerSettings>, never, Scope.Scope>;
+
+    /**
+     * Record what an OpenRouter response status says about the saved key, so
+     * clients can tell the user when it stops working. Never fails.
+     */
+    readonly recordOpenRouterResponse: (status: number) => Effect.Effect<void>;
   }
 >()("t3/serverSettings/ServerSettingsService") {
   /** @deprecated Import and use `layerTest` from this module. */
@@ -363,6 +419,10 @@ const makeTest = (overrides: DeepPartial<ServerSettings> = {}) =>
         writeSemaphore.withPermits(1)(getSettings.pipe(Effect.flatMap(use))),
       streamChanges: Stream.empty,
       subscribeChanges: Effect.succeed(Stream.empty),
+      recordOpenRouterResponse: recordOpenRouterResponseWith(
+        Ref.get(currentSettingsRef),
+        updateTestSettings,
+      ),
     } satisfies ServerSettingsService["Service"];
   });
 
@@ -1205,6 +1265,10 @@ const make = Effect.gen(function* () {
       }
 
       const voice = { ...next.voice };
+      // A new key gets a fresh chance; the old key's problem does not carry over.
+      if (voice.openRouterApiKey !== current.voice.openRouterApiKey) {
+        delete voice.openRouterApiKeyProblem;
+      }
       let openRouterApiKey = voice.openRouterApiKey;
       // As for Bitbucket: the marker keeps the saved key; a plaintext key hand-edited into
       // settings.json is not in the secret store yet, so it moves there.
@@ -1498,6 +1562,10 @@ const make = Effect.gen(function* () {
         Effect.map((subscription) => materializeChanges(Stream.fromSubscription(subscription))),
       );
     },
+    recordOpenRouterResponse: recordOpenRouterResponseWith(
+      getSettingsFromCache,
+      updateAndPersistSettings,
+    ),
   } satisfies ServerSettingsService["Service"];
 });
 

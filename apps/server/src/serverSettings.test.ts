@@ -1515,6 +1515,34 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       }).pipe(Effect.provide(layerServerSettingsWithSecrets())),
   );
 
+  it.effect("tracks whether OpenRouter accepts the saved key", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const problem = serverSettings.getSettings.pipe(
+        Effect.map((settings) => settings.voice.openRouterApiKeyProblem),
+      );
+      yield* serverSettings.updateSettings({ voice: { openRouterApiKey: "sk-or-old" } });
+
+      yield* serverSettings.recordOpenRouterResponse(401);
+      const rejected = yield* problem;
+      assert.equal(rejected?.reason, "rejected");
+      // Repeats and failures that say nothing about the key leave the first report alone.
+      yield* serverSettings.recordOpenRouterResponse(401);
+      yield* serverSettings.recordOpenRouterResponse(500);
+      assert.deepEqual(yield* problem, rejected);
+
+      // A new key starts clean; a working call clears the problem too.
+      yield* serverSettings.updateSettings({ voice: { openRouterApiKey: "sk-or-new" } });
+      assert.isUndefined(yield* problem);
+      yield* serverSettings.recordOpenRouterResponse(402);
+      assert.equal((yield* problem)?.reason, "no-credits");
+      yield* serverSettings.updateSettings({ voice: { transcriptionModel: "openai/whisper-1" } });
+      assert.equal((yield* problem)?.reason, "no-credits");
+      yield* serverSettings.recordOpenRouterResponse(200);
+      assert.isUndefined(yield* problem);
+    }).pipe(Effect.provide(layerServerSettingsWithSecrets())),
+  );
+
   it.effect("removes a Bitbucket secret once its token is cleared by hand in settings.json", () =>
     Effect.gen(function* () {
       const serverConfig = yield* ServerConfig.ServerConfig;

@@ -76,6 +76,7 @@ const make = Effect.gen(function* () {
         Effect.mapError(() => failed("Could not reach OpenRouter.")),
       );
     const body = yield* response.json.pipe(Effect.orElseSucceed((): unknown => null));
+    yield* settingsService.recordOpenRouterResponse(response.status);
     if (response.status === 401) {
       return yield* new VoiceTranscriptionError({
         reason: "rejectedKey",

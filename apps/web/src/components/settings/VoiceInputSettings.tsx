@@ -90,6 +90,13 @@ export function VoiceInputSettings({
               Create a key
               <ExternalLinkIcon aria-hidden className="size-3" />
             </InlineButton>
+            {voice.openRouterApiKeyProblem ? (
+              <span className="block text-destructive">
+                {voice.openRouterApiKeyProblem.reason === "rejected"
+                  ? "OpenRouter rejected this key."
+                  : "This key is out of OpenRouter credits."}
+              </span>
+            ) : null}
           </>
         }
         control={

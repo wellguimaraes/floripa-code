@@ -2278,6 +2278,7 @@ it.layer(
         updateSettings: () => Effect.fail(settingsError),
         updateProviderInstance: () => Effect.fail(settingsError),
         withSettingsSnapshot: () => Effect.fail(settingsError),
+        recordOpenRouterResponse: () => Effect.void,
         streamChanges: Stream.empty,
         subscribeChanges: Effect.succeed(Stream.empty),
       });
@@ -2526,7 +2527,9 @@ it.layer(
           Layer.provide(ServerSecretStore.layer),
           Layer.provide(SqlitePersistence.layerMemory),
           Layer.provide(
-            ServerConfig.layerTest(process.cwd(), { prefix: "t3code-terminal-provider-restart-" }),
+            ServerConfig.layerTest(process.cwd(), {
+              prefix: "floripacode-terminal-provider-restart-",
+            }),
           ),
         ),
       ),

@@ -102,6 +102,7 @@ const make = Effect.gen(function* () {
         Effect.mapError(() => failed("Could not reach OpenRouter.")),
       );
     const body = yield* response.json.pipe(Effect.orElseSucceed((): unknown => null));
+    yield* settingsService.recordOpenRouterResponse(response.status);
     if (response.status >= 400) {
       return yield* failed(`OpenRouter answered ${response.status}.`);
     }

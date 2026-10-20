@@ -250,6 +250,7 @@ const make = Effect.gen(function* () {
         Effect.mapError(() => failed("Could not reach OpenRouter.")),
       );
     const body = yield* response.json.pipe(Effect.orElseSucceed((): unknown => null));
+    yield* settingsService.recordOpenRouterResponse(response.status);
     if (response.status === 401 || response.status === 403) {
       return yield* new ManagerRouteError({
         reason: "rejectedKey",

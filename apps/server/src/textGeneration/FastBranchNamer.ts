@@ -109,6 +109,7 @@ const make = Effect.gen(function* () {
         Effect.timeout(MODEL_TIMEOUT),
         Effect.mapError(() => failed(`Could not reach ${model} in time.`)),
       );
+    yield* settingsService.recordOpenRouterResponse(response.status);
     if (response.status >= 400) {
       return yield* failed(`OpenRouter answered ${response.status} for ${model}.`);
     }

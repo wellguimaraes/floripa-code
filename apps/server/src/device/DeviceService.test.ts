@@ -155,6 +155,7 @@ const fixture = Effect.fn("fixture")(function* (
             deviceOnboardingCompleted:
               patch.deviceOnboardingCompleted ?? current.deviceOnboardingCompleted,
           })),
+        recordOpenRouterResponse: () => Effect.void,
         streamChanges: Stream.empty,
         subscribeChanges: Effect.succeed(Stream.empty),
       }),

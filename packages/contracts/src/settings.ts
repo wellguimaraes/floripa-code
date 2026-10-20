@@ -12,6 +12,7 @@ import * as SchemaTransformation from "effect/SchemaTransformation";
 import {
   ForwardCompatibleNullable,
   ForwardCompatibleOptional,
+  IsoDateTime,
   OmittedWhenNull,
   ProjectId,
   ThreadId,
@@ -821,6 +822,12 @@ export type BitbucketSettings = typeof BitbucketSettings.Type;
 /** OpenRouter's speech-to-text model used until another one is picked. */
 export const DEFAULT_TRANSCRIPTION_MODEL = "elevenlabs/scribe-v2";
 
+export const OpenRouterApiKeyProblem = Schema.Struct({
+  reason: Schema.Literals(["rejected", "no-credits"]),
+  at: IsoDateTime,
+});
+export type OpenRouterApiKeyProblem = typeof OpenRouterApiKeyProblem.Type;
+
 /**
  * Voice input for this environment: the server turns recorded speech into
  * text through OpenRouter. The API key lives in the server's secret store;
@@ -830,6 +837,11 @@ export const VoiceSettings = Schema.Struct({
   openRouterApiKey: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   /** Set for clients when no key is saved but the server has `OPENROUTER_API_KEY`, which it uses. */
   openRouterApiKeyFromEnv: Schema.optionalKey(Schema.Boolean),
+  /**
+   * Set by the server when OpenRouter turned the key down. A call that works or
+   * a new key clears it. `at` is when it first failed.
+   */
+  openRouterApiKeyProblem: ForwardCompatibleOptional(OpenRouterApiKeyProblem),
   transcriptionModel: TrimmedNonEmptyString.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_TRANSCRIPTION_MODEL)),
   ),

@@ -374,6 +374,7 @@ function makeMutableServerSettingsService(
           return next;
         }),
       withSettingsSnapshot: (use) => Ref.get(settingsRef).pipe(Effect.flatMap(use)),
+      recordOpenRouterResponse: () => Effect.void,
       get streamChanges() {
         return Stream.fromPubSub(changes);
       },
@@ -2839,6 +2840,7 @@ it.layer(
         );
         const serverSettings = {
           ...mutableServerSettings,
+          recordOpenRouterResponse: () => Effect.void,
           streamChanges: Stream.unwrap(
             Deferred.await(allowLazySettingsStream).pipe(
               Effect.as(mutableServerSettings.streamChanges),
