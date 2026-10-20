@@ -50,6 +50,7 @@ const IOS_ACTIONS: ReadonlySet<DeviceActionType> = new Set([
   "launchApp",
   "terminateApp",
   "sendPush",
+  "repairInput",
 ]);
 
 const ANDROID_ACTIONS: ReadonlySet<DeviceActionType> = new Set([
@@ -303,6 +304,9 @@ const runIos = Effect.fn("DeviceActions.runIos")(function* (
       );
       return;
     }
+    case "repairInput":
+      yield* repairIosInput(run, udid);
+      return;
     case "shake":
     case "setOrientation":
       return yield* new DeviceActionUnavailableError({
@@ -312,6 +316,20 @@ const runIos = Effect.fn("DeviceActions.runIos")(function* (
       });
   }
 });
+
+/**
+ * What `serve-sim repair-input` does. While Xcode's Device Hub holds the
+ * simulator's HID input (`dtuhidd`), touches and keys from the stream are
+ * dropped. Clearing that flag and restarting backboardd hands input back,
+ * which also restarts SpringBoard and closes running apps.
+ */
+const repairIosInput = (run: Runner, udid: string) =>
+  Effect.gen(function* () {
+    const spawn = (args: ReadonlyArray<string>) =>
+      run("xcrun", ["simctl", "spawn", udid, ...args]).pipe(Effect.flatMap(ok("repair input")));
+    yield* spawn(["notifyutil", "-s", "com.apple.coredevice.dtuhidd.active", "0"]);
+    yield* spawn(["launchctl", "kickstart", "-k", "system/com.apple.backboardd"]);
+  });
 
 const serveSimPermissions = (
   ready: DeviceHostReady,
@@ -451,6 +469,7 @@ const runAndroid = Effect.fn("DeviceActions.runAndroid")(function* (
     case "setColorFilter":
     case "shake":
     case "sendPush":
+    case "repairInput":
       return yield* new DeviceActionUnavailableError({
         operation: input.type,
         platform: "android",

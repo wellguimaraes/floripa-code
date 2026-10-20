@@ -16,6 +16,7 @@ import {
 import { Spinner } from "~/components/ui/spinner";
 import { Switch } from "~/components/ui/switch";
 import { Toggle, ToggleGroup } from "~/components/ui/toggle-group";
+import { requestConfirmDialog } from "~/confirmDialog";
 import { cn } from "~/lib/utils";
 import type { DeviceControls } from "./useDeviceControls";
 import { type DeviceEventLogEntry, subscribeDeviceEventLog } from "./deviceHubApi";
@@ -95,6 +96,15 @@ export function DeviceToolsPanel(props: {
   const { detail, pending, error, foregroundApp, disabled, act } = controls;
   const settings = detail?.settings;
   const isIos = device.platform === "ios";
+
+  const repairInput = async (anchor: Element) => {
+    const confirmed =
+      (await requestConfirmDialog(
+        "Repair simulator input?\nUse this when taps or typing stop reaching the simulator. It restarts the simulator's home screen and closes running apps.",
+        { anchor },
+      )) ?? true;
+    if (confirmed) await act({ type: "repairInput" });
+  };
 
   return (
     <div
@@ -268,6 +278,16 @@ export function DeviceToolsPanel(props: {
                 disabled={disabled}
                 onChange={(value) => act({ type: "setToggle", setting: "voiceOver", value })}
               />
+              <Row label="Input">
+                <Button
+                  size="xs"
+                  variant="outline"
+                  disabled={disabled}
+                  onClick={(event) => void repairInput(event.currentTarget)}
+                >
+                  Repair
+                </Button>
+              </Row>
             </>
           ) : (
             <SwitchRow

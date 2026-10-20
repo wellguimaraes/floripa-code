@@ -346,6 +346,8 @@ export const DeviceActionInput = Schema.Union([
     appId: TrimmedNonEmptyString,
   }),
   Schema.Struct({ ...DeviceTarget, type: Schema.Literal("shake") }),
+  /** Resets the simulator's touch and keyboard input. Restarts its UI and closes running apps. */
+  Schema.Struct({ ...DeviceTarget, type: Schema.Literal("repairInput") }),
   Schema.Struct({
     ...DeviceTarget,
     type: Schema.Literal("sendPush"),

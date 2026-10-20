@@ -213,6 +213,17 @@ describe("runDeviceAction", () => {
       expect(calls[0]?.stdin).toBe('{"aps":{"alert":"Hello"}}');
     }),
   );
+
+  it.effect("repairs iOS input by releasing Device Hub before restarting backboardd", () =>
+    Effect.gen(function* () {
+      const { ready, calls } = makeReady();
+      yield* runDeviceAction(ready, "ios", { type: "repairInput", deviceId: udid });
+      expect(calls.map((call) => call.args.join(" "))).toEqual([
+        `simctl spawn ${udid} notifyutil -s com.apple.coredevice.dtuhidd.active 0`,
+        `simctl spawn ${udid} launchctl kickstart -k system/com.apple.backboardd`,
+      ]);
+    }),
+  );
 });
 
 describe("readDeviceDetail", () => {
