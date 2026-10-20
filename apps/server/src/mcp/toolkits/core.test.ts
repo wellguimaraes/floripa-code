@@ -105,8 +105,12 @@ it("publishes unique tool names with reference-free object-root inputs", () => {
         definition?.labels.every((label) => label.trim().length > 0),
         tool.name,
       ).toBe(true);
-      for (const name of [tool.name, `mcp__t3-code__${tool.name}`, `T3-code.${tool.name}`]) {
-        expect(resolveT3McpToolPresentation(name)?.logo, name).toBe("t3-code");
+      for (const name of [
+        tool.name,
+        `mcp__floripa-code__${tool.name}`,
+        `Floripa-code.${tool.name}`,
+      ]) {
+        expect(resolveT3McpToolPresentation(name)?.logo, name).toBe("floripa-code");
         expect(resolveT3McpToolSummaryAction(name), name).not.toBeNull();
       }
     }
@@ -268,12 +272,15 @@ it.effect("returns an HTML render reference that Codex and Claude tool rows both
         Effect.provideService(McpSchema.McpServerClient, client),
       );
     const reference = htmlRenderFromToolItem({
-      toolName: "t3-code.html_render",
+      toolName: "floripa-code.html_render",
       output: result.structuredContent,
     });
     expect(reference).toMatchObject({ title: "Revenue", height: 240 });
     expect(
-      htmlRenderFromToolItem({ toolName: "mcp__t3-code__html_render", output: result.content }),
+      htmlRenderFromToolItem({
+        toolName: "mcp__floripa-code__html_render",
+        output: result.content,
+      }),
     ).toEqual(reference);
   }).pipe(
     Effect.provide(

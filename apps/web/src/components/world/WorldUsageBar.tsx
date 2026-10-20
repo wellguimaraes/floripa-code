@@ -68,7 +68,7 @@ export function WorldUsageBar() {
   const [hiddenProviders] = useState(
     () => new Set(readUsagePagePreferences().hiddenProviders ?? []),
   );
-  const [shows, setShows] = useLocalStorage("t3code:world-usage-shows:v1", "left", MeterShows);
+  const [shows, setShows] = useLocalStorage("floripacode:world-usage-shows:v1", "left", MeterShows);
   const presentations = useLimitPresentations(null, hiddenProviders);
   // Countdowns move a minute at a time, so the bar repaints at most once a minute.
   const now = Date.parse(`${useNowMinute()}:00Z`);

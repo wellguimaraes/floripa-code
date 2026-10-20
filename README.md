@@ -45,19 +45,19 @@ Install the latest version of the desktop app from [GitHub Releases](https://git
 #### Windows (`winget`)
 
 ```bash
-winget install T3Tools.T3Code
+winget install T3Tools.FloripaCode
 ```
 
 #### Windows (`scoop`)
 
 ```bash
-scoop install extras/t3code
+scoop install extras/floripacode
 ```
 
 #### macOS (Homebrew)
 
 ```bash
-brew install --cask t3-code
+brew install --cask floripa-code
 ```
 
 #### Debian, Ubuntu (`.deb`)
@@ -65,7 +65,7 @@ brew install --cask t3-code
 Download the `.deb` from [GitHub Releases](https://github.com/pingdotgg/t3code/releases), then:
 
 ```bash
-sudo apt install ./T3-Code-*.deb
+sudo apt install ./Floripa-Code-*.deb
 ```
 
 #### Arch Linux (AUR)
@@ -73,13 +73,13 @@ sudo apt install ./T3-Code-*.deb
 Stable:
 
 ```bash
-yay -S t3code-bin
+yay -S floripacode-bin
 ```
 
 Nightly:
 
 ```bash
-yay -S t3code-nightly-bin
+yay -S floripacode-nightly-bin
 ```
 
 The AUR packaging is maintained in this repository under [`packaging/aur`](./packaging/aur).

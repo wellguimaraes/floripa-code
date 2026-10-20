@@ -263,7 +263,7 @@ const createManager = (
   Effect.flatMap(Effect.service(FileSystem.FileSystem), (fs) =>
     Effect.gen(function* () {
       const { join } = yield* Path.Path;
-      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-terminal-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "floripacode-terminal-" });
       const logsDir = join(baseDir, "userdata", "logs", "terminals");
       const ptyAdapter = options.ptyAdapter ?? new FakePtyAdapter();
 
@@ -508,7 +508,7 @@ it.layer(
       const unsubscribe = yield* manager.attachStream(
         openInput({
           env: {
-            T3CODE_WORKTREE_PATH: "/tmp/should-not-restart",
+            FLORIPACODE_WORKTREE_PATH: "/tmp/should-not-restart",
           },
           worktreePath: "/tmp/should-not-restart",
         }),
@@ -546,7 +546,7 @@ it.layer(
         {
           ...openInput({
             env: {
-              T3CODE_WORKTREE_PATH: "/tmp/restart-requested",
+              FLORIPACODE_WORKTREE_PATH: "/tmp/restart-requested",
             },
             worktreePath: "/tmp/restart-requested",
           }),
@@ -2082,7 +2082,7 @@ it.layer(
       const { manager, ptyAdapter } = yield* createManager(5, {
         env: {
           PORT: "5173",
-          T3CODE_PORT: "3773",
+          FLORIPACODE_PORT: "3773",
           VITE_DEV_SERVER_URL: "http://localhost:5173",
           TEST_TERMINAL_KEEP: "keep-me",
         },
@@ -2093,7 +2093,7 @@ it.layer(
       if (!spawnInput) return;
 
       expect(spawnInput.env.PORT).toBeUndefined();
-      expect(spawnInput.env.T3CODE_PORT).toBeUndefined();
+      expect(spawnInput.env.FLORIPACODE_PORT).toBeUndefined();
       expect(spawnInput.env.VITE_DEV_SERVER_URL).toBeUndefined();
       // Arbitrary host env vars must pass through — terminals inherit the
       // user's environment apart from the explicit blocklist.
@@ -2123,12 +2123,12 @@ it.layer(
 
   it.effect("strips AppImage runtime env from terminal sessions", () =>
     Effect.gen(function* () {
-      const appDir = "/tmp/.mount_T3Codeabc123";
+      const appDir = "/tmp/.mount_FloripaCodeabc123";
       const { manager, ptyAdapter } = yield* createManager(5, {
         env: {
-          APPIMAGE: "/home/user/T3-Code.AppImage",
+          APPIMAGE: "/home/user/Floripa-Code.AppImage",
           APPDIR: appDir,
-          ARGV0: "/home/user/T3-Code.AppImage",
+          ARGV0: "/home/user/Floripa-Code.AppImage",
           OWD: "/home/user/project",
           PATH: `${appDir}/usr/bin:${appDir}:/usr/local/bin:/usr/bin:/bin`,
           LD_LIBRARY_PATH: `${appDir}/usr/lib:/home/user/.local/lib`,
@@ -2191,8 +2191,8 @@ it.layer(
       yield* manager.open(
         openInput({
           env: {
-            T3CODE_PROJECT_ROOT: "/repo",
-            T3CODE_WORKTREE_PATH: "/repo/worktree-a",
+            FLORIPACODE_PROJECT_ROOT: "/repo",
+            FLORIPACODE_WORKTREE_PATH: "/repo/worktree-a",
             CUSTOM_FLAG: "1",
             NO_COLOR: "1",
             FORCE_COLOR: "0",
@@ -2203,8 +2203,8 @@ it.layer(
       expect(spawnInput).toBeDefined();
       if (!spawnInput) return;
 
-      assert.equal(spawnInput.env.T3CODE_PROJECT_ROOT, "/repo");
-      assert.equal(spawnInput.env.T3CODE_WORKTREE_PATH, "/repo/worktree-a");
+      assert.equal(spawnInput.env.FLORIPACODE_PROJECT_ROOT, "/repo");
+      assert.equal(spawnInput.env.FLORIPACODE_WORKTREE_PATH, "/repo/worktree-a");
       assert.equal(spawnInput.env.CUSTOM_FLAG, "1");
       assert.equal(spawnInput.env.NO_COLOR, "1");
       assert.equal(spawnInput.env.FORCE_COLOR, "0");
@@ -2215,7 +2215,7 @@ it.layer(
     Effect.gen(function* () {
       const providerInstanceId = ProviderInstanceId.make("codex_work");
       const { manager, ptyAdapter } = yield* createManager(5, {
-        env: { T3CODE_SECRET: "server-only" },
+        env: { FLORIPACODE_SECRET: "server-only" },
         resolveProviderInstanceEnvironment: (requestedId, env) =>
           Effect.succeed({
             ...env,
@@ -2231,7 +2231,7 @@ it.layer(
       expect(ptyAdapter.spawnInputs[0]?.env.PROVIDER_SECRET).toBe("secret-value");
       expect(ptyAdapter.spawnInputs[0]?.env.CODEX_HOME).toBe("/accounts/codex-work");
       expect(ptyAdapter.spawnInputs[0]?.env.CLIENT_FLAG).toBe("1");
-      expect(ptyAdapter.spawnInputs[0]?.env.T3CODE_SECRET).toBeUndefined();
+      expect(ptyAdapter.spawnInputs[0]?.env.FLORIPACODE_SECRET).toBeUndefined();
       expect(snapshot).not.toHaveProperty("env");
       expect(snapshot).not.toHaveProperty("providerInstanceId");
     }),

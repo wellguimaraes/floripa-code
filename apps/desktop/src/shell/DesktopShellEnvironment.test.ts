@@ -26,9 +26,9 @@ const isDesktopShellEnvironmentCommandError = Schema.is(
 function envOutput(values: Readonly<Record<string, string>>): string {
   return Object.entries(values)
     .flatMap(([name, value]) => [
-      `__T3CODE_ENV_${name}_START__`,
+      `__FLORIPACODE_ENV_${name}_START__`,
       value,
-      `__T3CODE_ENV_${name}_END__`,
+      `__FLORIPACODE_ENV_${name}_END__`,
     ])
     .join("\n");
 }
@@ -357,13 +357,13 @@ describe("DesktopShellEnvironment", () => {
           envOutput({
             PATH: "/home/linuxbrew/.linuxbrew/bin:/usr/bin",
             SSH_AUTH_SOCK: "/tmp/secretive.sock",
-            T3CODE_TELEMETRY_ENABLED: "false",
+            FLORIPACODE_TELEMETRY_ENABLED: "false",
           }),
       });
 
       assert.equal(env.PATH, "/home/linuxbrew/.linuxbrew/bin:/usr/bin");
       assert.equal(env.SSH_AUTH_SOCK, "/tmp/secretive.sock");
-      assert.equal(env.T3CODE_TELEMETRY_ENABLED, "false");
+      assert.equal(env.FLORIPACODE_TELEMETRY_ENABLED, "false");
     }),
   );
 

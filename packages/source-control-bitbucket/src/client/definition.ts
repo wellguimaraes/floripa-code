@@ -39,7 +39,7 @@ export const definition = defineSourceControlClient({
     headRepositoryNameWithOwner &&
     repositoryName.test(headRepositoryNameWithOwner) &&
     safeShellArgument.test(headBranch)
-      ? `git clone --single-branch --branch ${headBranch} https://bitbucket.org/${headRepositoryNameWithOwner}.git t3code-pr-${number}`
+      ? `git clone --single-branch --branch ${headBranch} https://bitbucket.org/${headRepositoryNameWithOwner}.git floripacode-pr-${number}`
       : null,
   authorProfileUrl: () => null,
   referenceAutolinkRepositoryUrl: () => null,

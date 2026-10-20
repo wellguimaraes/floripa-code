@@ -11,12 +11,12 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SchemaIssue from "effect/SchemaIssue";
 
-declare const __T3CODE_BUILD_RELAY_URL__: string | undefined;
-declare const __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__: string | undefined;
-declare const __T3CODE_BUILD_CLERK_CLI_OAUTH_CLIENT_ID__: string | undefined;
-declare const __T3CODE_BUILD_RELAY_CLIENT_OTLP_TRACES_URL__: string | undefined;
-declare const __T3CODE_BUILD_RELAY_CLIENT_OTLP_TRACES_DATASET__: string | undefined;
-declare const __T3CODE_BUILD_RELAY_CLIENT_OTLP_TRACES_TOKEN__: string | undefined;
+declare const __FLORIPACODE_BUILD_RELAY_URL__: string | undefined;
+declare const __FLORIPACODE_BUILD_CLERK_PUBLISHABLE_KEY__: string | undefined;
+declare const __FLORIPACODE_BUILD_CLERK_CLI_OAUTH_CLIENT_ID__: string | undefined;
+declare const __FLORIPACODE_BUILD_RELAY_CLIENT_OTLP_TRACES_URL__: string | undefined;
+declare const __FLORIPACODE_BUILD_RELAY_CLIENT_OTLP_TRACES_DATASET__: string | undefined;
+declare const __FLORIPACODE_BUILD_RELAY_CLIENT_OTLP_TRACES_TOKEN__: string | undefined;
 
 const CLOUD_CLI_OAUTH_LOOPBACK_PORT = 34338;
 const CLOUD_CLI_OAUTH_SCOPES = CONNECT_OAUTH_SCOPES;
@@ -50,34 +50,34 @@ function normalizeSecureUrl(value: string): string | null {
 }
 
 const buildTimeRelayUrl =
-  typeof __T3CODE_BUILD_RELAY_URL__ === "undefined"
+  typeof __FLORIPACODE_BUILD_RELAY_URL__ === "undefined"
     ? ""
-    : (normalizeSecureRelayUrl(__T3CODE_BUILD_RELAY_URL__) ?? "");
+    : (normalizeSecureRelayUrl(__FLORIPACODE_BUILD_RELAY_URL__) ?? "");
 const buildTimeClerkPublishableKey = readBuildTimeValue(
-  typeof __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__ === "undefined"
+  typeof __FLORIPACODE_BUILD_CLERK_PUBLISHABLE_KEY__ === "undefined"
     ? undefined
-    : __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__,
+    : __FLORIPACODE_BUILD_CLERK_PUBLISHABLE_KEY__,
 );
 const buildTimeClerkCliOAuthClientId = readBuildTimeValue(
-  typeof __T3CODE_BUILD_CLERK_CLI_OAUTH_CLIENT_ID__ === "undefined"
+  typeof __FLORIPACODE_BUILD_CLERK_CLI_OAUTH_CLIENT_ID__ === "undefined"
     ? undefined
-    : __T3CODE_BUILD_CLERK_CLI_OAUTH_CLIENT_ID__,
+    : __FLORIPACODE_BUILD_CLERK_CLI_OAUTH_CLIENT_ID__,
 );
 const buildTimeRelayClientTracing = {
   tracesUrl: readBuildTimeValue(
-    typeof __T3CODE_BUILD_RELAY_CLIENT_OTLP_TRACES_URL__ === "undefined"
+    typeof __FLORIPACODE_BUILD_RELAY_CLIENT_OTLP_TRACES_URL__ === "undefined"
       ? undefined
-      : __T3CODE_BUILD_RELAY_CLIENT_OTLP_TRACES_URL__,
+      : __FLORIPACODE_BUILD_RELAY_CLIENT_OTLP_TRACES_URL__,
   ),
   tracesDataset: readBuildTimeValue(
-    typeof __T3CODE_BUILD_RELAY_CLIENT_OTLP_TRACES_DATASET__ === "undefined"
+    typeof __FLORIPACODE_BUILD_RELAY_CLIENT_OTLP_TRACES_DATASET__ === "undefined"
       ? undefined
-      : __T3CODE_BUILD_RELAY_CLIENT_OTLP_TRACES_DATASET__,
+      : __FLORIPACODE_BUILD_RELAY_CLIENT_OTLP_TRACES_DATASET__,
   ),
   tracesToken: readBuildTimeValue(
-    typeof __T3CODE_BUILD_RELAY_CLIENT_OTLP_TRACES_TOKEN__ === "undefined"
+    typeof __FLORIPACODE_BUILD_RELAY_CLIENT_OTLP_TRACES_TOKEN__ === "undefined"
       ? undefined
-      : __T3CODE_BUILD_RELAY_CLIENT_OTLP_TRACES_TOKEN__,
+      : __FLORIPACODE_BUILD_RELAY_CLIENT_OTLP_TRACES_TOKEN__,
   ),
 } as const;
 
@@ -85,10 +85,11 @@ export function resolveRelayClientTracingConfig(
   env: Readonly<Record<string, string | undefined>> = process.env,
   fallback = buildTimeRelayClientTracing,
 ) {
-  const tracesUrl = env.T3CODE_RELAY_CLIENT_OTLP_TRACES_URL?.trim() || fallback.tracesUrl;
+  const tracesUrl = env.FLORIPACODE_RELAY_CLIENT_OTLP_TRACES_URL?.trim() || fallback.tracesUrl;
   const tracesDataset =
-    env.T3CODE_RELAY_CLIENT_OTLP_TRACES_DATASET?.trim() || fallback.tracesDataset;
-  const tracesToken = env.T3CODE_RELAY_CLIENT_OTLP_TRACES_TOKEN?.trim() || fallback.tracesToken;
+    env.FLORIPACODE_RELAY_CLIENT_OTLP_TRACES_DATASET?.trim() || fallback.tracesDataset;
+  const tracesToken =
+    env.FLORIPACODE_RELAY_CLIENT_OTLP_TRACES_TOKEN?.trim() || fallback.tracesToken;
   const normalizedTracesUrl = normalizeSecureUrl(tracesUrl);
   return normalizedTracesUrl && tracesDataset && tracesToken
     ? { tracesUrl: normalizedTracesUrl, tracesDataset, tracesToken }
@@ -96,7 +97,7 @@ export function resolveRelayClientTracingConfig(
 }
 
 export function makeRelayUrlConfig(fallback = buildTimeRelayUrl) {
-  const runtimeConfig = Config.NonEmptyString("T3CODE_RELAY_URL");
+  const runtimeConfig = Config.NonEmptyString("FLORIPACODE_RELAY_URL");
   return (fallback ? runtimeConfig.pipe(Config.withDefault(fallback)) : runtimeConfig).pipe(
     Config.mapEffect(validateRelayUrl),
   );
@@ -110,7 +111,7 @@ export const relayUrlConfig = makeRelayUrlConfig();
  * matching hosted deployment.
  */
 export const hostedAppUrlConfig = makePublicValueConfig(
-  "T3CODE_HOSTED_APP_URL",
+  "FLORIPACODE_HOSTED_APP_URL",
   DEFAULT_HOSTED_APP_URL,
 ).pipe(Config.mapEffect(validateHostedAppUrl));
 
@@ -174,11 +175,11 @@ export function makeCloudCliOAuthConfig({
 } = {}) {
   return Config.all({
     clerkPublishableKey: makePublicValueConfig(
-      "T3CODE_CLERK_PUBLISHABLE_KEY",
+      "FLORIPACODE_CLERK_PUBLISHABLE_KEY",
       clerkPublishableKeyFallback,
     ),
     clientId: makePublicValueConfig(
-      "T3CODE_CLERK_CLI_OAUTH_CLIENT_ID",
+      "FLORIPACODE_CLERK_CLI_OAUTH_CLIENT_ID",
       clerkCliOAuthClientIdFallback,
     ),
   }).pipe(
@@ -212,7 +213,7 @@ export function makeCloudCliOAuthConfig({
 export const cloudCliOAuthConfig = makeCloudCliOAuthConfig();
 
 export const hasCloudPublicConfig = Boolean(
-  (normalizeSecureRelayUrl(process.env.T3CODE_RELAY_URL ?? "") ?? buildTimeRelayUrl) &&
-  (process.env.T3CODE_CLERK_PUBLISHABLE_KEY?.trim() || buildTimeClerkPublishableKey) &&
-  (process.env.T3CODE_CLERK_CLI_OAUTH_CLIENT_ID?.trim() || buildTimeClerkCliOAuthClientId),
+  (normalizeSecureRelayUrl(process.env.FLORIPACODE_RELAY_URL ?? "") ?? buildTimeRelayUrl) &&
+  (process.env.FLORIPACODE_CLERK_PUBLISHABLE_KEY?.trim() || buildTimeClerkPublishableKey) &&
+  (process.env.FLORIPACODE_CLERK_CLI_OAUTH_CLIENT_ID?.trim() || buildTimeClerkCliOAuthClientId),
 );

@@ -158,7 +158,7 @@ describe("work entry labels", () => {
   ] as const)("uses the same friendly %s label in both views", (toolLifecycleStatus, label) => {
     const browserEntry = {
       ...entry,
-      toolTitle: "T3-code.preview_click",
+      toolTitle: "Floripa-code.preview_click",
       detail: '{"ok":true}',
       toolLifecycleStatus,
     };
@@ -181,7 +181,7 @@ describe("work entry labels", () => {
       toolLifecycleStatus,
       structuredPayload: {
         type: "dynamic_tool",
-        toolName: "t3-code.t3_thread_read",
+        toolName: "floripa-code.t3_thread_read",
         input: { threadId: " thread-child ", view: "activity" },
       } as never,
     };
@@ -194,13 +194,17 @@ describe("work entry labels", () => {
     const payload = (toolName: string, input: unknown) => ({
       structuredPayload: { type: "dynamic_tool", toolName, input } as never,
     });
-    expect(threadReadTargetId(payload("t3-code.t3_thread_wait", { threadId: "t" }))).toBeNull();
-    expect(threadReadTargetId(payload("t3-code.t3_thread_read", { threadId: "  " }))).toBeNull();
-    expect(threadReadTargetId(payload("t3-code.t3_thread_read", null))).toBeNull();
+    expect(
+      threadReadTargetId(payload("floripa-code.t3_thread_wait", { threadId: "t" })),
+    ).toBeNull();
+    expect(
+      threadReadTargetId(payload("floripa-code.t3_thread_read", { threadId: "  " })),
+    ).toBeNull();
+    expect(threadReadTargetId(payload("floripa-code.t3_thread_read", null))).toBeNull();
   });
 
   it("uses the active summary state for legacy tools without a lifecycle status", () => {
-    const browserEntry = { ...entry, toolTitle: "T3-code.preview_click" };
+    const browserEntry = { ...entry, toolTitle: "Floripa-code.preview_click" };
     expect(liveWorkEntryLabel(browserEntry, undefined, true)).toBe(
       "Clicking in the preview browser",
     );
@@ -212,7 +216,7 @@ describe("work entry labels", () => {
   it("keeps the latest live activity in the present tense after the call completes", () => {
     const browserEntry = {
       ...entry,
-      toolTitle: "T3-code.preview_click",
+      toolTitle: "Floripa-code.preview_click",
       toolLifecycleStatus: "completed" as const,
     };
     expect(liveWorkEntryLabel(browserEntry, undefined, true)).toBe(
@@ -364,7 +368,7 @@ describe("work entry labels", () => {
             entry: {
               ...entry,
               itemType: "dynamic_tool",
-              toolData: { server: "t3-code", tool },
+              toolData: { server: "floripa-code", tool },
             },
           },
         ],
@@ -788,7 +792,7 @@ describe("deriveMessagesTimelineRows", () => {
         id: TurnItemId.make("list"),
         status: "completed",
         title: "Custom provider title",
-        toolName: "T3-code.t3_project_list",
+        toolName: "Floripa-code.t3_project_list",
         input: {},
         output: { projects: [] },
       },
@@ -798,7 +802,7 @@ describe("deriveMessagesTimelineRows", () => {
         id: TurnItemId.make("clone"),
         status: "completed",
         title: "Custom provider title",
-        toolName: "mcp__t3_code__t3_project_clone",
+        toolName: "mcp__floripa_code__t3_project_clone",
         input: {},
         output: { cwd: "/tmp/repo" },
       },
@@ -829,7 +833,7 @@ describe("deriveMessagesTimelineRows", () => {
     expect(
       resolveTimelineToolPresentation(items[1]!.type === "dynamic_tool" ? items[1].toolName : null)
         ?.logo,
-    ).toBe("t3-code");
+    ).toBe("floripa-code");
     const rows = deriveMessagesTimelineRows({
       timelineEntries: entries,
       isWorking: false,
@@ -3212,7 +3216,7 @@ describe("deriveMessagesTimelineRows", () => {
           toolCallId: `call-${index}`,
           createdAt,
           runId,
-          label: "t3-code.preview_snapshot",
+          label: "floripa-code.preview_snapshot",
           tone: "tool" as const,
           toolLifecycleStatus:
             isWorking && index === 999 ? ("inProgress" as const) : ("completed" as const),
@@ -3575,23 +3579,23 @@ describe("computeStableMessagesTimelineRows", () => {
 
 describe("resolveTimelineToolPresentation", () => {
   it("pretty prints Claude and Cursor T3 MCP tool names", () => {
-    expect(resolveTimelineToolPresentation("mcp__t3-code__t3_thread_read")).toEqual({
+    expect(resolveTimelineToolPresentation("mcp__floripa-code__t3_thread_read")).toEqual({
       displayName: "Read a T3 thread",
-      logo: "t3-code",
+      logo: "floripa-code",
     });
   });
 
   it("pretty prints Codex T3 MCP tool names", () => {
-    expect(resolveTimelineToolPresentation("t3-code.create_threads")).toEqual({
+    expect(resolveTimelineToolPresentation("floripa-code.create_threads")).toEqual({
       displayName: "Create T3 threads",
-      logo: "t3-code",
+      logo: "floripa-code",
     });
   });
 
   it("pretty prints bare T3 MCP toolkit names", () => {
     expect(resolveTimelineToolPresentation("list_scheduled_tasks")).toEqual({
       displayName: "List scheduled tasks",
-      logo: "t3-code",
+      logo: "floripa-code",
     });
   });
 
@@ -4628,7 +4632,7 @@ describe("linked timeline resources", () => {
               runId,
               type: "dynamic_tool",
               status: failed ? "failed" : status,
-              toolName: "t3-code.delegate_task",
+              toolName: "floripa-code.delegate_task",
               input: { task: taskId === "b" ? "a" : taskId, role },
               ...(status === "completed"
                 ? {

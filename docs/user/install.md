@@ -22,8 +22,8 @@ irm https://t3.codes/install.ps1 | iex
 
 This installs the `t3` binary to `~/.local/bin`. If your shell reports `command not found`
 afterwards, that directory is not on your `PATH` yet; the installer prints the
-line to add. Set `T3CODE_CHANNEL=nightly` to install the nightly train, or
-`T3CODE_VERSION` to pin an exact version.
+line to add. Set `FLORIPACODE_CHANNEL=nightly` to install the nightly train, or
+`FLORIPACODE_VERSION` to pin an exact version.
 
 | Task                                             | Command                                                   |
 | ------------------------------------------------ | --------------------------------------------------------- |
@@ -52,7 +52,7 @@ run a server there, build it from source with Node.js 24 and `vp`
 
 ```bash
 git clone https://github.com/pingdotgg/t3code
-cd t3code && vp i && vp run build:desktop
+cd floripacode && vp i && vp run build:desktop
 node apps/server/dist/bin.mjs
 ```
 
@@ -64,13 +64,13 @@ update it with `git pull` and a rebuild.
 Download a release from [GitHub Releases](https://github.com/pingdotgg/t3code/releases),
 or use a package manager:
 
-| Platform           | Install                            |
-| ------------------ | ---------------------------------- |
-| Windows            | `winget install T3Tools.T3Code`    |
-| macOS              | `brew install --cask t3-code`      |
-| Debian, Ubuntu     | `sudo apt install ./T3-Code-*.deb` |
-| Arch Linux         | `yay -S t3code-bin`                |
-| Arch Linux nightly | `yay -S t3code-nightly-bin`        |
+| Platform           | Install                                 |
+| ------------------ | --------------------------------------- |
+| Windows            | `winget install T3Tools.FloripaCode`    |
+| macOS              | `brew install --cask floripa-code`      |
+| Debian, Ubuntu     | `sudo apt install ./Floripa-Code-*.deb` |
+| Arch Linux         | `yay -S floripacode-bin`                |
+| Arch Linux nightly | `yay -S floripacode-nightly-bin`        |
 
 The `.deb` updates itself like the other desktop builds. It asks for your
 password to install each update. If your desktop has no password prompt, the
@@ -117,8 +117,8 @@ Nightly builds need the beta app. The store apps cannot connect to them. A Night
 shows these links as QR codes in **Settings → General → Mobile app**.
 
 - **iPhone and iPad:** join the [TestFlight beta](https://testflight.apple.com/join/XgaxaRtd).
-- **Android:** join the [beta group](https://groups.google.com/g/t3-code-v2-beta). With the same
-  Google account, open the [Google Play testing page](https://play.google.com/apps/testing/com.t3tools.t3code)
+- **Android:** join the [beta group](https://groups.google.com/g/floripa-code-v2-beta). With the same
+  Google account, open the [Google Play testing page](https://play.google.com/apps/testing/com.floripacode)
   and become a tester.
 
 If the app crashes during launch, open Settings → Diagnostics on the next launch

@@ -81,10 +81,10 @@ If no credentials are saved, Floripa Code falls back to these variables in the s
 Restart the server after changing them:
 
 ```bash
-export T3CODE_BITBUCKET_ACCESS_TOKEN="your-access-token"
+export FLORIPACODE_BITBUCKET_ACCESS_TOKEN="your-access-token"
 # or
-export T3CODE_BITBUCKET_EMAIL="you@example.com"
-export T3CODE_BITBUCKET_API_TOKEN="your-token"
+export FLORIPACODE_BITBUCKET_EMAIL="you@example.com"
+export FLORIPACODE_BITBUCKET_API_TOKEN="your-token"
 ```
 
 ### Azure DevOps

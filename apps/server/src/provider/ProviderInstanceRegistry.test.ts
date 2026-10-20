@@ -366,7 +366,11 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
             driver: ProviderDriverKind.make("codex"),
             enabled: true,
             environment: [
-              { name: "T3_CODEX_COLLAB_SCRIPT", value: fixtures.codexScriptPath, sensitive: false },
+              {
+                name: "FLORIPA_CODEX_COLLAB_SCRIPT",
+                value: fixtures.codexScriptPath,
+                sensitive: false,
+              },
             ],
             config: makeCodexConfig({ enabled: true, binaryPath: fixtures.codexBinaryPath }),
           },
@@ -394,7 +398,7 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
           enabled: true,
           environment: [
             {
-              name: "T3_CODEX_COLLAB_SCRIPT",
+              name: "FLORIPA_CODEX_COLLAB_SCRIPT",
               value: fixtures.codexScriptPath,
               sensitive: false,
             },

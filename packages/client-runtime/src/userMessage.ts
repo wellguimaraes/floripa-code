@@ -21,7 +21,7 @@ export function resolveUserMessagePresentation(message: {
 }): {
   readonly text: string;
   /** Who sent a user-role message the user did not type. */
-  readonly attribution: "automation" | "agent" | "t3code" | null;
+  readonly attribution: "automation" | "agent" | "floripacode" | null;
   readonly scheduledTaskId: ScheduledTaskId | undefined;
 } {
   if (message.role !== "user") {
@@ -52,7 +52,7 @@ export function resolveUserMessagePresentation(message: {
       message.createdBy !== "agent"
         ? null
         : message.creationSource === "server"
-          ? "t3code"
+          ? "floripacode"
           : "agent",
     scheduledTaskId: undefined,
   };

@@ -5,10 +5,10 @@
  * keep them directly available. Pi loads this TypeScript via `--extension`; the
  * server writes it to a cache so packaged builds need no sibling .ts file.
  *
- * Do not import t3code modules from the string body. The Pi process resolves
+ * Do not import floripacode modules from the string body. The Pi process resolves
  * `@earendil-works/pi-coding-agent` and `typebox` from the user's pi install.
  */
-import { T3_CODE_ORCHESTRATION_INSTRUCTIONS } from "@t3tools/provider-core/server/orchestrationInstructions";
+import { FLORIPA_CODE_ORCHESTRATION_INSTRUCTIONS } from "@t3tools/provider-core/server/orchestrationInstructions";
 
 export const PI_T3_MCP_EXTENSION_FILENAME = "pi-t3-mcp-extension.ts";
 
@@ -31,7 +31,7 @@ import { Type } from "typebox";
 const URL_ENV = ${JSON.stringify(T3_MCP_URL_ENV)};
 const TOKEN_ENV = ${JSON.stringify(T3_MCP_BEARER_ENV)};
 const RUNTIME_MODE_ENV = ${JSON.stringify(T3_PI_RUNTIME_MODE_ENV)};
-const ORCHESTRATION_INSTRUCTIONS = ${JSON.stringify(T3_CODE_ORCHESTRATION_INSTRUCTIONS.trim())};
+const ORCHESTRATION_INSTRUCTIONS = ${JSON.stringify(FLORIPA_CODE_ORCHESTRATION_INSTRUCTIONS.trim())};
 const PROTOCOL = "2025-06-18";
 const READ_ONLY_TOOLS = new Set(["read", "grep", "find", "ls"]);
 const FILE_CHANGE_TOOLS = new Set(${JSON.stringify(PI_FILE_CHANGE_TOOLS)});
@@ -297,7 +297,7 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
   if (endpoint === undefined || token === undefined) {
     pi.on("session_start", async (_event, ctx) => {
       ctx.ui.notify(
-        "t3-code MCP unavailable: T3_MCP_URL or T3_MCP_BEARER_TOKEN is missing.",
+        "floripa-code MCP unavailable: T3_MCP_URL or T3_MCP_BEARER_TOKEN is missing.",
         "warning",
       );
     });
@@ -317,11 +317,11 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
   const registerTools = () => {
     // Preserve public names for saved loadouts and tool selectors. Hidden
     // canonical names reserve ownership against Pi's configured MCP servers.
-    const prefixes = supportsExposure ? ["mcp__t3-code__", "mcp__t3_code__"] : ["mcp__t3-code__"];
+    const prefixes = supportsExposure ? ["mcp__floripa-code__", "mcp__floripa_code__"] : ["mcp__floripa-code__"];
     for (const tool of catalog) {
       const name = tool.name;
       for (const prefix of prefixes) {
-        const exposure = prefix === "mcp__t3_code__" ? "hidden" :
+        const exposure = prefix === "mcp__floripa_code__" ? "hidden" :
           deferOptionalTools && !directTools.has(name) ? "deferred" : "direct";
         pi.registerTool({
           name: \`\${prefix}\${name}\`,
@@ -338,7 +338,7 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
             const text = formatMcpContent(result);
             return {
               content: [{ type: "text", text }],
-              details: { server: "t3-code", tool: name },
+              details: { server: "floripa-code", tool: name },
               ...(isMcpToolError(result) ? { isError: true } : {}),
             };
           },
@@ -388,7 +388,7 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
       await ensureStarted();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      ctx.ui.notify(\`t3-code MCP unavailable: \${message}\`, "warning");
+      ctx.ui.notify(\`floripa-code MCP unavailable: \${message}\`, "warning");
     }
   });
 

@@ -35,7 +35,7 @@ const bitbucketPullRequest = {
   source: {
     branch: { name: "feature/source-control" },
     repository: {
-      full_name: "octocat/t3code",
+      full_name: "octocat/floripacode",
       workspace: { slug: "octocat" },
     },
   },
@@ -160,9 +160,9 @@ function makeLayer(input: {
       ConfigProvider.layer(
         ConfigProvider.fromEnv({
           env: input.env ?? {
-            T3CODE_BITBUCKET_API_BASE_URL: "https://api.test.local/2.0",
-            T3CODE_BITBUCKET_EMAIL: "user@example.com",
-            T3CODE_BITBUCKET_API_TOKEN: "token",
+            FLORIPACODE_BITBUCKET_API_BASE_URL: "https://api.test.local/2.0",
+            FLORIPACODE_BITBUCKET_EMAIL: "user@example.com",
+            FLORIPACODE_BITBUCKET_API_TOKEN: "token",
           },
         }),
       ),
@@ -198,7 +198,7 @@ it.effect("parses pull request responses from the Bitbucket REST API", () => {
       state: "open",
       updatedAt: Option.some(DateTime.makeUnsafe("2026-01-02T00:00:00.000Z")),
       isCrossRepository: true,
-      headRepositoryNameWithOwner: "octocat/t3code",
+      headRepositoryNameWithOwner: "octocat/floripacode",
       headRepositoryOwnerLogin: "octocat",
     });
     assert.strictEqual(
@@ -354,7 +354,7 @@ it.effect.each([false, true])(
 
     return Effect.gen(function* () {
       const bitbucket = yield* BitbucketApi.BitbucketApi;
-      for (const repository of ["t3code", "", " \t "]) {
+      for (const repository of ["floripacode", "", " \t "]) {
         const error = yield* bitbucket
           .getRepositoryCloneUrls({
             cwd: "/repo",
@@ -670,7 +670,7 @@ it.effect("never puts a saved token that is unsafe for an HTTP header on the wir
 it.effect("reports saved credentials as configured when Bitbucket cannot confirm them", () => {
   const { layer } = makeLayer({
     response: () => new Response(null, { status: 401 }),
-    env: { T3CODE_BITBUCKET_API_BASE_URL: "https://api.test.local/2.0" },
+    env: { FLORIPACODE_BITBUCKET_API_BASE_URL: "https://api.test.local/2.0" },
   });
 
   return Effect.gen(function* () {
@@ -922,15 +922,15 @@ it.effect("preserves Git checkout failures without deriving the domain message f
 it.effect("checks out fork pull requests through an ensured fork remote", () => {
   const { git, layer } = makeLayer({
     response: (request) => {
-      if (request.url.endsWith("/repositories/octocat/t3code")) {
+      if (request.url.endsWith("/repositories/octocat/floripacode")) {
         return Response.json({
           ...repositoryJson,
-          full_name: "octocat/t3code",
+          full_name: "octocat/floripacode",
           links: {
-            html: { href: "https://bitbucket.org/octocat/t3code" },
+            html: { href: "https://bitbucket.org/octocat/floripacode" },
             clone: [
-              { name: "https", href: "https://bitbucket.org/octocat/t3code.git" },
-              { name: "ssh", href: "git@bitbucket.org:octocat/t3code.git" },
+              { name: "https", href: "https://bitbucket.org/octocat/floripacode.git" },
+              { name: "ssh", href: "git@bitbucket.org:octocat/floripacode.git" },
             ],
           },
         });
@@ -940,7 +940,7 @@ it.effect("checks out fork pull requests through an ensured fork remote", () => 
         source: {
           branch: { name: "main" },
           repository: {
-            full_name: "octocat/t3code",
+            full_name: "octocat/floripacode",
             workspace: { slug: "octocat" },
           },
         },
@@ -959,23 +959,23 @@ it.effect("checks out fork pull requests through an ensured fork remote", () => 
     assert.deepStrictEqual(git.ensureRemote.mock.calls[0]?.[0], {
       cwd: "/repo",
       preferredName: "octocat",
-      url: "git@bitbucket.org:octocat/t3code.git",
+      url: "git@bitbucket.org:octocat/floripacode.git",
     });
     assert.deepStrictEqual(git.fetchRemoteBranch.mock.calls[0]?.[0], {
       cwd: "/repo",
       remoteName: "octocat",
       remoteBranch: "main",
-      localBranch: "t3code/pr-42/main",
+      localBranch: "floripacode/pr-42/main",
     });
     assert.deepStrictEqual(git.setBranchUpstream.mock.calls[0]?.[0], {
       cwd: "/repo",
-      branch: "t3code/pr-42/main",
+      branch: "floripacode/pr-42/main",
       remoteName: "octocat",
       remoteBranch: "main",
     });
     assert.deepStrictEqual(git.switchRef.mock.calls[0]?.[0], {
       cwd: "/repo",
-      refName: "t3code/pr-42/main",
+      refName: "floripacode/pr-42/main",
     });
   }).pipe(Effect.provide(layer));
 });

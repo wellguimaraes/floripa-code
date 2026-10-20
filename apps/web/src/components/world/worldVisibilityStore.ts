@@ -34,7 +34,7 @@ export const useWorldVisibilityStore = create<WorldVisibilityState>()(
       setMenuOpen: (menuOpen) => set({ menuOpen }),
     }),
     {
-      name: "t3code:world-visibility:v1",
+      name: "floripacode:world-visibility:v1",
       storage: createJSONStorage(() =>
         resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
       ),

@@ -225,7 +225,7 @@ any missing libraries with apt. It is safe to run again. Without `sudo`, it
 only reports what it would change.
 
 The browser always runs in Chrome's sandbox. Where you cannot change the host,
-set `T3CODE_SERVER_BROWSER_SANDBOX=0` for the environment to run without it.
+set `FLORIPACODE_SERVER_BROWSER_SANDBOX=0` for the environment to run without it.
 
 ## Connect an outside agent
 
@@ -323,7 +323,7 @@ when SSH closes, see [background-service troubleshooting](./background-service.m
 | HTTP 408, 429, or 5xx                                     | Check network and relay availability. Startup retries temporary failures for up to ten minutes.                                             |
 
 After fixing a permanent rejection, restart the host's server. On Linux, use
-`systemctl --user restart t3code.service` for the background service. For a
+`systemctl --user restart floripacode.service` for the background service. For a
 foreground server, stop it and run `t3 serve` again with your usual options.
 Include the diagnostic message and trace ID when reporting a persistent failure.
 

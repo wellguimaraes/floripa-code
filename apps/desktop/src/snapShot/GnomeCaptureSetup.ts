@@ -69,7 +69,7 @@ export async function installGnomeCaptureBundle({ bundle, dataHome }: SetupPaths
     }
     await NodeFSP.chmod(staged, 0o755);
     if (existing) {
-      const backupParent = NodePath.join(dataHome, "t3code", "extension-backups");
+      const backupParent = NodePath.join(dataHome, "floripacode", "extension-backups");
       await NodeFSP.mkdir(backupParent, { recursive: true });
       backup = NodePath.join(
         await NodeFSP.mkdtemp(NodePath.join(backupParent, "capture-")),

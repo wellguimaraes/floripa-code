@@ -10,7 +10,7 @@ import { makeComponentLogger } from "./DesktopObservability.ts";
 // to run (`sudo t3 browser setup`) had nothing to call. The app keeps a small
 // launcher for its bundled CLI in the T3 home, which is never on PATH and so
 // never shadows another `t3`, and the server names it by absolute path in those
-// commands through T3CODE_CLI_PATH. An AppImage mounts somewhere new each run,
+// commands through FLORIPACODE_CLI_PATH. An AppImage mounts somewhere new each run,
 // so its launcher mounts the AppImage itself instead of pointing into it.
 const { logInfo, logWarning } = makeComponentLogger("desktop-cli-shim");
 
@@ -48,7 +48,7 @@ export const renderCliShim = (input: {
     const utf8 = [target.executable, target.entry, input.shimPath, input.t3Home].some((value) =>
       [...value].some((character) => character.codePointAt(0)! > 0x7f),
     );
-    const restore = utf8 ? ["chcp %t3_codepage% >nul"] : [];
+    const restore = utf8 ? ["chcp %floripa_codepage% >nul"] : [];
     return [
       "@echo off",
       `rem ${MARKER}`,
@@ -59,12 +59,12 @@ export const renderCliShim = (input: {
       // switch is left out for the common all-ASCII install.
       ...(utf8
         ? [
-            `for /f "tokens=2 delims=:." %%c in ('chcp') do set "t3_codepage=%%c"`,
+            `for /f "tokens=2 delims=:." %%c in ('chcp') do set "floripa_codepage=%%c"`,
             "chcp 65001 >nul",
           ]
         : []),
-      `set "T3CODE_CLI_PATH=${cmdText(input.shimPath)}"`,
-      `if not defined T3CODE_HOME set "T3CODE_HOME=${cmdText(input.t3Home)}"`,
+      `set "FLORIPACODE_CLI_PATH=${cmdText(input.shimPath)}"`,
+      `if not defined FLORIPACODE_HOME set "FLORIPACODE_HOME=${cmdText(input.t3Home)}"`,
       'set "ELECTRON_RUN_AS_NODE=1"',
       // A goto, not a parenthesized block: "Program Files (x86)" would close the block early.
       `if exist ${cmdWord(target.executable)} goto run`,
@@ -82,9 +82,9 @@ export const renderCliShim = (input: {
   const header = [
     "#!/bin/sh",
     `# ${MARKER}`,
-    `export T3CODE_CLI_PATH=${shellWord(input.shimPath)}`,
+    `export FLORIPACODE_CLI_PATH=${shellWord(input.shimPath)}`,
     `home=${shellWord(input.t3Home)}`,
-    'export T3CODE_HOME="${T3CODE_HOME:-$home}"',
+    'export FLORIPACODE_HOME="${FLORIPACODE_HOME:-$home}"',
     "export ELECTRON_RUN_AS_NODE=1",
     `app=${shellWord(target.kind === "appimage" ? target.appImage : target.executable)}`,
     'if [ ! -x "$app" ]; then',
@@ -135,7 +135,7 @@ export const launcherPath = (environment: DesktopEnvironment.DesktopEnvironment[
 
 /**
  * Writes the packaged app's launcher to `<T3 home>/bin` and returns its path
- * for the backend's T3CODE_CLI_PATH. Development builds run from a checkout
+ * for the backend's FLORIPACODE_CLI_PATH. Development builds run from a checkout
  * and get none.
  */
 export const install = Effect.gen(function* () {

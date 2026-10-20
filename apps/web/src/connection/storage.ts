@@ -39,7 +39,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import { projectFaviconCache } from "../assets/projectFaviconCache";
 
-const DATABASE_NAME = "t3code:connection-runtime";
+const DATABASE_NAME = "floripacode:connection-runtime";
 const DATABASE_VERSION = 4;
 const CATALOG_STORE_NAME = "catalog";
 const SHELL_STORE_NAME = "shell";
@@ -500,8 +500,8 @@ export const makeCatalogStore = Effect.fn("web.connectionStorage.makeCatalogStor
   return { read, update } satisfies CatalogStore;
 });
 
-const GITHUB_ROUTING_KEY_PREFIX = "t3code:github-routing:";
-const GITHUB_ROUTING_CHANGED = "t3code:github-routing-changed";
+const GITHUB_ROUTING_KEY_PREFIX = "floripacode:github-routing:";
+const GITHUB_ROUTING_CHANGED = "floripacode:github-routing-changed";
 const isStoredGitHubRoutingPermission = Schema.is(StoredGitHubRoutingPermission);
 const encodeStoredGitHubRoutingPermission = Schema.encodeSync(
   Schema.fromJsonString(StoredGitHubRoutingPermission),

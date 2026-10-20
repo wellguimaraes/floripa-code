@@ -10,7 +10,7 @@ To reproduce the current archive with Node 24 and the repository's pinned Yarn:
 
 ```sh
 git clone --branch t3-v5.0.0-t3.17 https://github.com/juliusmarminge/react-native-screens.git /tmp/t3-screens-fork
-yarn --cwd /tmp/t3-screens-fork pack:t3 /absolute/path/to/t3code/apps/mobile/deps
+yarn --cwd /tmp/t3-screens-fork pack:t3 /absolute/path/to/floripacode/apps/mobile/deps
 ```
 
 For an update, sync the fork's `main` with upstream, merge it and the required

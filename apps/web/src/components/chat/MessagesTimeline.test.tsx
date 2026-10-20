@@ -473,7 +473,7 @@ function buildSnapShotTimelineEntry(previewUrl?: string) {
             kind: "snap-shot" as const,
             capturedAt: "2026-03-17T19:12:28.000Z",
             appName: "Terminal",
-            windowTitle: "t3code — Tests",
+            windowTitle: "floripacode — Tests",
             appIconDataUrl: "data:image/png;base64,aWNvbg==",
           },
         },
@@ -1081,7 +1081,7 @@ describe("MessagesTimeline", () => {
     );
 
     expect(markup).toContain("Terminal");
-    expect(markup).toContain("t3code — Tests");
+    expect(markup).toContain("floripacode — Tests");
     expect(markup).toContain('src="data:image/png;base64,aWNvbg=="');
     expect(onAnchorReady).toHaveBeenCalledOnce();
     expect(onAnchorReady).toHaveBeenCalledWith(firstEntry.message.id, 0);
@@ -1094,7 +1094,7 @@ describe("MessagesTimeline", () => {
 
     expect(markup).toContain("screenshot.png");
     expect(markup).not.toContain("Terminal");
-    expect(markup).not.toContain("t3code — Tests");
+    expect(markup).not.toContain("floripacode — Tests");
     expect(markup).not.toContain('src="data:image/png;base64,aWNvbg=="');
     expect(markup).not.toContain("h-28 w-52 max-w-full");
   });
@@ -2312,7 +2312,7 @@ describe("MessagesTimeline", () => {
       completedAt: null,
       updatedAt: {},
       type: "dynamic_tool",
-      toolName: "mcp__t3-code__t3_thread_read",
+      toolName: "mcp__floripa-code__t3_thread_read",
       input: { threadId: "thread-child" },
       output: { messages: [] },
     } as const;
@@ -2365,7 +2365,7 @@ describe("MessagesTimeline", () => {
     // The T3 wordmark replaces the generic tool icon for T3 MCP calls.
     expect(markup).toContain('viewBox="15.5309 37 94.3941 56.96"');
     expect(markup).toContain("Read a T3 thread");
-    expect(markup).not.toContain("mcp__t3-code__t3_thread_read");
+    expect(markup).not.toContain("mcp__floripa-code__t3_thread_read");
   });
 
   it("formats changed file paths from the workspace root", async () => {
@@ -2397,16 +2397,18 @@ describe("MessagesTimeline", () => {
               tone: "tool",
               itemType: "file_change",
               toolLifecycleStatus: "completed",
-              changedFiles: ["C:/Users/mike/dev-stuff/t3code/apps/web/src/session-logic.ts"],
+              changedFiles: ["C:/Users/mike/dev-stuff/floripacode/apps/web/src/session-logic.ts"],
             },
           },
         ]}
-        workspaceRoot="C:/Users/mike/dev-stuff/t3code"
+        workspaceRoot="C:/Users/mike/dev-stuff/floripacode"
       />,
     );
 
-    expect(markup).toContain("t3code/apps/web/src/session-logic.ts");
-    expect(markup).not.toContain("C:/Users/mike/dev-stuff/t3code/apps/web/src/session-logic.ts");
+    expect(markup).toContain("floripacode/apps/web/src/session-logic.ts");
+    expect(markup).not.toContain(
+      "C:/Users/mike/dev-stuff/floripacode/apps/web/src/session-logic.ts",
+    );
   });
 
   it("renders review comment contexts as structured cards instead of raw tags", () => {

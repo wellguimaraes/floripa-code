@@ -414,7 +414,7 @@ export const make = Effect.gen(function* () {
               HttpClientRequest.bearerToken(Redacted.value(token)),
               HttpClientRequest.setHeaders({
                 "x-github-api-version": API_VERSION,
-                "user-agent": "t3code",
+                "user-agent": "floripacode",
               }),
             ),
           )

@@ -41,7 +41,7 @@ it("formats package runner commands from their cache entry paths", () => {
 it("treats stable installs as direct invocations", () => {
   for (const entryPath of [
     "/usr/local/lib/node_modules/t3/dist/bin.mjs",
-    "/home/theo/Code/work/t3code/apps/server/dist/bin.mjs",
+    "/home/theo/Code/work/floripacode/apps/server/dist/bin.mjs",
     "/home/theo/.t3/runtime/0.0.31/node_modules/t3/dist/bin.mjs",
     "",
   ]) {
@@ -153,9 +153,9 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
       yield* fs.makeDirectory(path.dirname(shim), { recursive: true });
       yield* fs.writeFileString(shim, "#!/bin/sh\n", { mode: 0o755 });
       const desktop = {
-        node: "/tmp/.mount_T3abc/t3code",
+        node: "/tmp/.mount_T3abc/floripacode",
         entry: "/tmp/.mount_T3abc/resources/app.asar/apps/server/dist/bin.mjs",
-        env: { T3CODE_CLI_PATH: shim },
+        env: { FLORIPACODE_CLI_PATH: shim },
       };
       // The desktop app's shim, quoted for the shell and run as root as is.
       expect(yield* rootCommand(desktop)).toBe(`sudo '${shim}' browser setup`);
@@ -173,7 +173,7 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
       ).toBe("sudo /opt/t3/t3 browser setup");
       // A stale shim path, then no launcher at all, fall back to plain `t3`.
       expect(
-        yield* rootCommand({ ...desktop, env: { T3CODE_CLI_PATH: path.join(home, "gone") } }),
+        yield* rootCommand({ ...desktop, env: { FLORIPACODE_CLI_PATH: path.join(home, "gone") } }),
       ).toBe('sudo env "PATH=$PATH" t3 browser setup');
     }).pipe(Effect.scoped),
   );
@@ -187,7 +187,7 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
       const root = yield* fs.makeTempDirectoryScoped();
       for (const [relative, kind] of [
         ["npm/_npx/hash/node_modules/t3/dist/bin.mjs", "npx"],
-        ["npm/_npx/hash/node_modules/@t3code/t3-linux-x64/t3", "npx"],
+        ["npm/_npx/hash/node_modules/@floripacode/t3-linux-x64/t3", "npx"],
         ["pnpm/dlx/hash/node_modules/t3/dist/bin.mjs", "pnpm-dlx"],
         [".bun/install/cache/t3/dist/bin.mjs", "bunx"],
       ] as const) {
@@ -243,7 +243,7 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
       const prefix = path.join(root, "bunx-tools");
       const packageRoot = path.join(prefix, "lib/node_modules/t3");
       const launcher = path.join(packageRoot, "bin/t3.js");
-      const entry = path.join(packageRoot, "node_modules/@t3code/t3-linux-x64/t3");
+      const entry = path.join(packageRoot, "node_modules/@floripacode/t3-linux-x64/t3");
       yield* fs.makeDirectory(path.dirname(launcher), { recursive: true });
       yield* fs.makeDirectory(path.dirname(entry), { recursive: true });
       yield* fs.makeDirectory(path.join(prefix, "bin"));
@@ -251,7 +251,7 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
       yield* fs.writeFileString(entry, "");
       yield* fs.writeFileString(
         path.join(packageRoot, "package.json"),
-        '{"name":"t3","version":"0.0.45","bin":{"t3":"./bin/t3.js"},"optionalDependencies":{"@t3code/t3-linux-x64":"0.0.45"}}',
+        '{"name":"t3","version":"0.0.45","bin":{"t3":"./bin/t3.js"},"optionalDependencies":{"@floripacode/t3-linux-x64":"0.0.45"}}',
       );
       yield* fs.symlink(launcher, path.join(prefix, "bin/t3"));
       const resolve = resolveServerInstallation.pipe(
@@ -265,7 +265,7 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
       ]) {
         yield* fs.writeFileString(
           path.join(path.dirname(entry), "package.json"),
-          `{"name":"@t3code/t3-linux-x64","version":"${version}"}`,
+          `{"name":"@floripacode/t3-linux-x64","version":"${version}"}`,
         );
         expect(yield* resolve).toEqual(expected);
       }

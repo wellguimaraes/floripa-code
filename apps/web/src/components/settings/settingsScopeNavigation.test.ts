@@ -14,7 +14,7 @@ import { retainSettingsScope, validateSettingsRouteSearch } from "./settingsScop
 import { validateScheduledTasksSearch } from "./scheduledTasksSettings.logic";
 
 const checkoutSearch = {
-  project: "repository:t3code",
+  project: "repository:floripacode",
   machine: "remote-server",
   checkout: "remote-server:/home/user/Floripa Code",
 };
@@ -131,7 +131,7 @@ describe("settings scope navigation", () => {
       const router = createSettingsRouter();
       await router.navigate({ to, search: checkoutSearch });
 
-      const regroupedCheckout = { ...checkoutSearch, project: "separate:t3code" };
+      const regroupedCheckout = { ...checkoutSearch, project: "separate:floripacode" };
       await router.navigate({
         from: "/settings",
         to: router.state.location.pathname,

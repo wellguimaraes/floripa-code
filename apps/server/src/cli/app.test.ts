@@ -152,7 +152,7 @@ describe("t3 server command safety", () => {
     withTempDirectory("t3-cli-help-", (root) =>
       Effect.gen(function* () {
         const baseDir = NodePath.join(root, "home");
-        const help = yield* runCli(["help"], { T3CODE_HOME: baseDir }).pipe(Effect.flip);
+        const help = yield* runCli(["help"], { FLORIPACODE_HOME: baseDir }).pipe(Effect.flip);
         expect(help).toMatchObject({ _tag: "ShowHelp", commandPath: ["t3"], errors: [] });
         expect(yield* pathExists(baseDir)).toBe(false);
       }),
@@ -186,7 +186,7 @@ describe("t3 server command safety", () => {
           [newDirectory],
           ["start", newDirectory],
         ]) {
-          const error = yield* runCli(args, { T3CODE_HOME: baseDir }).pipe(
+          const error = yield* runCli(args, { FLORIPACODE_HOME: baseDir }).pipe(
             Effect.provideService(
               HostProcess.Platform,
               args[0] === "C:new-project" ? "win32" : platform,
@@ -261,7 +261,7 @@ describe("t3 app", () => {
     ),
   );
 
-  it.effect("uses T3CODE_HOME or --base-dir and sends the default or explicit path", () =>
+  it.effect("uses FLORIPACODE_HOME or --base-dir and sends the default or explicit path", () =>
     withTempDirectory("t3-app-command-test-", (root) =>
       Effect.gen(function* () {
         const baseDir = NodePath.join(root, "t3-home");
@@ -270,7 +270,7 @@ describe("t3 app", () => {
         const workingDirectory = yield* HostProcess.WorkingDirectory;
         const desktop = yield* fakeDesktop({ baseDir });
 
-        yield* runCli(["app"], { T3CODE_HOME: baseDir });
+        yield* runCli(["app"], { FLORIPACODE_HOME: baseDir });
         yield* runCli(["app", explicitPath, "--base-dir", baseDir]);
 
         expect(desktop.received.map((request) => request.workspaceRoot)).toEqual([
@@ -304,7 +304,7 @@ describe("t3 app", () => {
         const development = yield* fakeDesktop({ baseDir, stateSubdirectory: "dev" });
 
         yield* runCli(["app"]);
-        yield* runCli(["app"], { T3CODE_HOME: "   " });
+        yield* runCli(["app"], { FLORIPACODE_HOME: "   " });
 
         expect(development.received).toHaveLength(2);
         expect(yield* pathExists(baseDir)).toBe(false);
@@ -319,7 +319,7 @@ describe("t3 app", () => {
         const development = yield* fakeDesktop({ baseDir, stateSubdirectory: "dev" });
 
         const flagError = yield* runCli(["app", "--base-dir", baseDir]).pipe(Effect.flip);
-        const envError = yield* runCli(["app"], { T3CODE_HOME: baseDir }).pipe(Effect.flip);
+        const envError = yield* runCli(["app"], { FLORIPACODE_HOME: baseDir }).pipe(Effect.flip);
 
         expect(flagError).toMatchObject({ _tag: "DesktopAppUnreachableError" });
         expect(envError).toMatchObject({ _tag: "DesktopAppUnreachableError" });

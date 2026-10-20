@@ -2379,10 +2379,10 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             "Sent by automation"
           )}
         </p>
-      ) : userMessage.attribution === "t3code" ? (
+      ) : userMessage.attribution === "floripacode" ? (
         <p
           className="me-1 text-2xs text-muted-foreground/70"
-          data-user-message-attribution="t3code"
+          data-user-message-attribution="floripacode"
         >
           Sent by Floripa Code
         </p>
@@ -4073,7 +4073,7 @@ function toolGroupSummaryIconName(
     case "command":
       return "terminal";
     case "thread-create":
-      return "t3-code";
+      return "floripa-code";
     case "browser":
       return "browser";
     case "device":
@@ -4953,7 +4953,7 @@ type WorkEntryIconName =
   | "square-pen"
   | "terminal"
   | "pull-request"
-  | "t3-code"
+  | "floripa-code"
   | "wrench"
   | "x"
   | "zap";
@@ -5145,7 +5145,7 @@ function WorkEntryIcon({ name, className }: { name: WorkEntryIconName; className
       return <ComputerUseAppIcon className={className} />;
     case "device":
       return <SmartphoneIcon className={className} aria-hidden />;
-    case "t3-code":
+    case "floripa-code":
       return <T3Wordmark className={className} aria-hidden />;
     case "check":
       return <CheckIcon className={className} aria-hidden />;
@@ -5286,7 +5286,7 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
       case "background_task":
         return "zap";
       case "system":
-        return "t3-code";
+        return "floripa-code";
       default:
         source satisfies never;
         return "zap";

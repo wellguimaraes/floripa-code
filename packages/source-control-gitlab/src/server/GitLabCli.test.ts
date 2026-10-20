@@ -45,7 +45,7 @@ layer("GitLabCli.layer", (it) => {
               source_project_id: 101,
               target_project_id: 100,
               source_project: {
-                path_with_namespace: "octocat/t3code",
+                path_with_namespace: "octocat/floripacode",
               },
             }),
           ),
@@ -70,7 +70,7 @@ layer("GitLabCli.layer", (it) => {
         closedAt: "2026-08-23T10:00:00Z",
         mergedAt: null,
         isCrossRepository: true,
-        headRepositoryNameWithOwner: "octocat/t3code",
+        headRepositoryNameWithOwner: "octocat/floripacode",
         headRepositoryOwnerLogin: "octocat",
       });
       expect(mockedRun).toHaveBeenCalledWith(
@@ -157,10 +157,10 @@ layer("GitLabCli.layer", (it) => {
         Effect.succeed(
           processOutput(
             JSON.stringify({
-              path_with_namespace: "octocat/t3code",
-              web_url: "https://gitlab.com/octocat/t3code",
-              http_url_to_repo: "https://gitlab.com/octocat/t3code.git",
-              ssh_url_to_repo: "git@gitlab.com:octocat/t3code.git",
+              path_with_namespace: "octocat/floripacode",
+              web_url: "https://gitlab.com/octocat/floripacode",
+              http_url_to_repo: "https://gitlab.com/octocat/floripacode.git",
+              ssh_url_to_repo: "git@gitlab.com:octocat/floripacode.git",
             }),
           ),
         ),
@@ -170,14 +170,14 @@ layer("GitLabCli.layer", (it) => {
         const glab = yield* GitLabCli.GitLabCli;
         return yield* glab.getRepositoryCloneUrls({
           cwd: "/repo",
-          repository: "octocat/t3code",
+          repository: "octocat/floripacode",
         });
       });
 
       assert.deepStrictEqual(result, {
-        nameWithOwner: "octocat/t3code",
-        url: "https://gitlab.com/octocat/t3code",
-        sshUrl: "git@gitlab.com:octocat/t3code.git",
+        nameWithOwner: "octocat/floripacode",
+        url: "https://gitlab.com/octocat/floripacode",
+        sshUrl: "git@gitlab.com:octocat/floripacode.git",
       });
     }),
   );
@@ -227,10 +227,10 @@ layer("GitLabCli.layer", (it) => {
           Effect.succeed(
             processOutput(
               JSON.stringify({
-                path_with_namespace: "octocat/t3code",
-                web_url: "https://gitlab.com/octocat/t3code",
-                http_url_to_repo: "https://gitlab.com/octocat/t3code.git",
-                ssh_url_to_repo: "git@gitlab.com:octocat/t3code.git",
+                path_with_namespace: "octocat/floripacode",
+                web_url: "https://gitlab.com/octocat/floripacode",
+                http_url_to_repo: "https://gitlab.com/octocat/floripacode.git",
+                ssh_url_to_repo: "git@gitlab.com:octocat/floripacode.git",
               }),
             ),
           ),
@@ -239,14 +239,14 @@ layer("GitLabCli.layer", (it) => {
       const glab = yield* GitLabCli.GitLabCli;
       const result = yield* glab.createRepository({
         cwd: "/repo",
-        repository: "octocat/t3code",
+        repository: "octocat/floripacode",
         visibility: "public",
       });
 
       assert.deepStrictEqual(result, {
-        nameWithOwner: "octocat/t3code",
-        url: "https://gitlab.com/octocat/t3code",
-        sshUrl: "git@gitlab.com:octocat/t3code.git",
+        nameWithOwner: "octocat/floripacode",
+        url: "https://gitlab.com/octocat/floripacode",
+        sshUrl: "git@gitlab.com:octocat/floripacode.git",
       });
       expect(mockedRun).toHaveBeenNthCalledWith(
         1,
@@ -267,9 +267,9 @@ layer("GitLabCli.layer", (it) => {
             "POST",
             "projects",
             "--raw-field",
-            "path=t3code",
+            "path=floripacode",
             "--raw-field",
-            "name=t3code",
+            "name=floripacode",
             "--raw-field",
             "visibility=public",
             "--raw-field",

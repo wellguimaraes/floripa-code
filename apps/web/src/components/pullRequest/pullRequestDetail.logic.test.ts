@@ -91,8 +91,8 @@ describe("pull request checkout commands", () => {
     [
       "bitbucket",
       "feature/checkout",
-      "maria/t3code",
-      "git clone --single-branch --branch feature/checkout https://bitbucket.org/maria/t3code.git t3code-pr-42",
+      "maria/floripacode",
+      "git clone --single-branch --branch feature/checkout https://bitbucket.org/maria/floripacode.git floripacode-pr-42",
     ],
     ["unknown", "feature", null, null],
   ] as const)("builds the %s command", (provider, branch, repository, expected) => {

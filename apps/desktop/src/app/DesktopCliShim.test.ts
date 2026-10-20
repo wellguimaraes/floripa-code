@@ -41,7 +41,7 @@ const run = (shim: string, args: ReadonlyArray<string>, env: NodeJS.ProcessEnv =
 
 /** An app executable that reports its environment and arguments. */
 const REPORTER =
-  '#!/bin/sh\necho "node=$ELECTRON_RUN_AS_NODE cli=$T3CODE_CLI_PATH home=$T3CODE_HOME"\nprintf "%s\\n" "$@"\nexit 3\n';
+  '#!/bin/sh\necho "node=$ELECTRON_RUN_AS_NODE cli=$FLORIPACODE_CLI_PATH home=$FLORIPACODE_HOME"\nprintf "%s\\n" "$@"\nexit 3\n';
 
 /**
  * A stand-in AppImage whose image holds the reporter. `--appimage-mount`
@@ -52,7 +52,7 @@ const REPORTER =
 const fakeAppImage = (canMount = true) => {
   const root = tempRoot();
   const image = NodePath.join(root, "image");
-  writeExecutable(NodePath.join(image, "t3code"), REPORTER);
+  writeExecutable(NodePath.join(image, "floripacode"), REPORTER);
   const appImage = NodePath.join(root, "Floripa Code.AppImage");
   writeExecutable(
     appImage,
@@ -67,7 +67,7 @@ const fakeAppImage = (canMount = true) => {
       "",
     ].join("\n"),
   );
-  const shim = writeShim(root, { kind: "appimage", appImage, executableName: "t3code" });
+  const shim = writeShim(root, { kind: "appimage", appImage, executableName: "floripacode" });
   return { root, image, appImage, shim };
 };
 
@@ -112,7 +112,7 @@ describe("renderCliShim", () => {
     });
     // sudo clears the environment, so the launcher supplies its own.
     expect(run(shim, []).stdout).toContain(`home=${root}/home`);
-    expect(run(shim, [], { T3CODE_HOME: "/elsewhere" }).stdout).toContain("home=/elsewhere");
+    expect(run(shim, [], { FLORIPACODE_HOME: "/elsewhere" }).stdout).toContain("home=/elsewhere");
     // Run by a relative path, it still names itself absolutely.
     const relative = NodeChildProcess.spawnSync("./bin/t3", [], { cwd: root, encoding: "utf8" });
     expect(relative.stdout).toContain(`cli=${shim}`);
@@ -120,7 +120,7 @@ describe("renderCliShim", () => {
 
   it("runs an installed app's server directly", () => {
     const root = tempRoot();
-    const executable = NodePath.join(root, "opt", "Floripa Code", "t3code");
+    const executable = NodePath.join(root, "opt", "Floripa Code", "floripacode");
     writeExecutable(executable, REPORTER);
     const shim = writeShim(root, {
       kind: "direct",
@@ -165,7 +165,7 @@ describe("renderCliShim", () => {
       (line) => line.includes("whoami") && !/"[^"]*whoami[^"]*"/.test(line),
     );
     expect(bare).toEqual([]);
-    expect(lines).toContain('set "T3CODE_CLI_PATH=C:\\Users\\José\\.t3\\bin\\t3.cmd"');
+    expect(lines).toContain('set "FLORIPACODE_CLI_PATH=C:\\Users\\José\\.t3\\bin\\t3.cmd"');
   });
 
   it("switches the Windows console to UTF-8 only when a path needs it", () => {

@@ -20,7 +20,7 @@ export const useWorldManagerStore = create<WorldManagerState>()(
       setEnabled: (enabled) => set({ enabled }),
     }),
     {
-      name: "t3code:world-managers:v1",
+      name: "floripacode:world-managers:v1",
       storage: createJSONStorage(() =>
         resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
       ),

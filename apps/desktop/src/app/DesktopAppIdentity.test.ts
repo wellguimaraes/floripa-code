@@ -135,7 +135,7 @@ const withIdentity = <A, E, R>(
                     input.legacyPathExists === true && /T3 Code \((Alpha|Dev)\)/.test(path),
                   ),
             readFileString: () =>
-              Effect.succeed(input.packageJson ?? '{"t3codeCommitHash":"abcdef1234567890"}'),
+              Effect.succeed(input.packageJson ?? '{"floripacodeCommitHash":"abcdef1234567890"}'),
           }),
         ),
         Layer.provideMerge(layerAssets(input.pngIconPath ?? Option.none())),
@@ -153,7 +153,7 @@ describe("DesktopAppIdentity", () => {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
         const userDataPath = yield* identity.resolveUserDataPath;
 
-        assert.equal(userDataPath, "/Users/alice/Library/Application Support/t3code-v2");
+        assert.equal(userDataPath, "/Users/alice/Library/Application Support/floripacode-v2");
       }),
       { legacyPathExists: true },
     ),
@@ -229,7 +229,7 @@ describe("DesktopAppIdentity", () => {
         calls,
         environment: {
           env: {
-            T3CODE_COMMIT_HASH: "0123456789abcdef",
+            FLORIPACODE_COMMIT_HASH: "0123456789abcdef",
           },
         },
         pngIconPath: Option.some("/icon.png"),

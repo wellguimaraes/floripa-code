@@ -47,7 +47,7 @@ const layerRejectedBeforeSession = Layer.succeed(
  */
 const withImporter = Effect.fnUntraced(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
-  const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3code-import-" });
+  const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "floripacode-import-" });
   const layerEnvironment = Layer.succeed(HostProcess.Environment, { HOME: home });
   const context = yield* sourcePathContext.pipe(
     Effect.provideService(HostProcess.Environment, { HOME: home }),
@@ -92,7 +92,7 @@ describe("BrowserImport.importCookies", () => {
             sourceProfileDirectory: "../../../../secrets",
             targetProfileId: "default",
           },
-          scope: "persist:t3code-preview-test",
+          scope: "persist:floripacode-preview-test",
           persistent: true,
         })
         .pipe(Effect.flip);
@@ -119,7 +119,7 @@ describe("BrowserImport.importCookies", () => {
               sourceProfileDirectory: "Default",
               targetProfileId: "default",
             },
-            scope: "persist:t3code-preview-test",
+            scope: "persist:floripacode-preview-test",
             persistent: true,
           })
           .pipe(Effect.flip);

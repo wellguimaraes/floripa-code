@@ -135,7 +135,7 @@ export const hashBundle = Effect.fn("hashBundle")(function* (root: string) {
 });
 type FileSystemError = import("effect/PlatformError").PlatformError;
 
-const bundleId = "com.t3tools.t3code.dev";
+const bundleId = "com.floripacode.dev";
 const roots = Effect.gen(function* () {
   const path = yield* Path.Path;
   const repo = yield* path.fromFileUrl(new URL("../", import.meta.url));
@@ -182,7 +182,7 @@ const command = Effect.fn("nativeClient.command")(function* (
         ...environment,
         APP_VARIANT: "development",
         MOBILE_VERSION_POLICY: "appVersion",
-        T3CODE_IOS_PERSONAL_TEAM: "0",
+        FLORIPACODE_IOS_PERSONAL_TEAM: "0",
         CI: "1",
         EXPO_NO_GIT_STATUS: "1",
       },
@@ -303,7 +303,7 @@ const main = Command.make(
       });
     const recordPath = path.join(
       home,
-      ".cache/t3code/native-clients",
+      ".cache/floripacode/native-clients",
       platform,
       `${yield* digest(device)}.json`,
     );
@@ -348,9 +348,9 @@ const main = Command.make(
             [
               "xcodebuild",
               "-workspace",
-              path.join(mobile, "ios/T3CodeDev.xcworkspace"),
+              path.join(mobile, "ios/FloripaCodeDev.xcworkspace"),
               "-scheme",
-              "T3CodeDev",
+              "FloripaCodeDev",
               "-configuration",
               "Debug",
               "-destination",
@@ -367,7 +367,7 @@ const main = Command.make(
               "simctl",
               "install",
               device,
-              path.join(output, "Build/Products/Debug-iphonesimulator/T3CodeDev.app"),
+              path.join(output, "Build/Products/Debug-iphonesimulator/FloripaCodeDev.app"),
             ],
             true,
           );

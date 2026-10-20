@@ -1794,7 +1794,7 @@ export default function ChatView(props: ChatViewProps) {
   const browserAvailable = isPreviewSupportedInRuntime() || activeEnvironmentServerBrowser;
   const previewPanelInlineSize = usePreviewPanelInlineSize(undefined, {
     container: workspaceLayoutElement,
-    widthStorageKey: `t3code:preview-panel-width:${activeThreadKey}`,
+    widthStorageKey: `floripacode:preview-panel-width:${activeThreadKey}`,
   });
   // The world's chat frame sizes the surfaces itself.
   const worldSurfacesSize = useContext(WorldSurfacesWidthContext);
@@ -3736,7 +3736,7 @@ export default function ChatView(props: ChatViewProps) {
   );
   const [resumeCompactionPermanentlyDismissed, setResumeCompactionPermanentlyDismissed] =
     useLocalStorage(
-      `t3code:resume-compaction-dismissed:${environmentId}:${activeProviderInstanceId ?? "claudeAgent"}`,
+      `floripacode:resume-compaction-dismissed:${environmentId}:${activeProviderInstanceId ?? "claudeAgent"}`,
       false,
       Schema.Boolean,
     );

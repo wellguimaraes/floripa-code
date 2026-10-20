@@ -136,13 +136,13 @@ export function WorldLayout({
   // divider between them trades width within the frame.
   const chatShown = !(surfaces.isOpen && surfaces.maximized);
   const surfacesWidth = useFrameWidth(
-    "t3code:world-surfaces-width:v2",
+    "floripacode:world-surfaces-width:v2",
     SURFACES_DEFAULT_WIDTH,
     SURFACES_MIN_WIDTH,
     chatShown ? CHAT_MIN_WIDTH : 0,
   );
   const chatAndSurfacesWidth = useFrameWidth(
-    "t3code:world-chat-and-surfaces-width:v1",
+    "floripacode:world-chat-and-surfaces-width:v1",
     CHAT_DEFAULT_WIDTH + SURFACES_DEFAULT_WIDTH,
     CHAT_MIN_WIDTH + surfacesWidth.width,
   );

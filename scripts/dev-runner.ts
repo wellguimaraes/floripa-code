@@ -87,7 +87,7 @@ const MODE_ARGS = {
 
 type DevMode = keyof typeof MODE_ARGS;
 /**
- * `role` matters because only the backend honours `--host`/`T3CODE_HOST`; the
+ * `role` matters because only the backend honours `--host`/`FLORIPACODE_HOST`; the
  * web port is always loopback. Passed explicitly rather than inferred from the
  * port number, which stops distinguishing them under a large port offset.
  */
@@ -121,7 +121,7 @@ export class DevRunnerConfigurationError extends Schema.TaggedError<DevRunnerCon
 export class DevRunnerInvalidPortOffsetError extends Schema.TaggedError<DevRunnerInvalidPortOffsetError>()(
   "DevRunnerInvalidPortOffsetError",
   {
-    configKey: Schema.Literal("T3CODE_PORT_OFFSET"),
+    configKey: Schema.Literal("FLORIPACODE_PORT_OFFSET"),
     portOffset: Schema.Number,
     minimum: Schema.Number,
   },
@@ -211,8 +211,8 @@ const optionalIntegerConfig = (name: string): Config.Config<number | undefined> 
     Config.map((value) => Option.getOrUndefined(value)),
   );
 const OffsetConfig = Config.all({
-  portOffset: optionalIntegerConfig("T3CODE_PORT_OFFSET"),
-  devInstance: optionalStringConfig("T3CODE_DEV_INSTANCE"),
+  portOffset: optionalIntegerConfig("FLORIPACODE_PORT_OFFSET"),
+  devInstance: optionalStringConfig("FLORIPACODE_DEV_INSTANCE"),
 });
 
 export function resolveOffset(config: {
@@ -227,7 +227,7 @@ export function resolveOffset(config: {
     if (config.portOffset < 0) {
       return Effect.fail(
         new DevRunnerInvalidPortOffsetError({
-          configKey: "T3CODE_PORT_OFFSET",
+          configKey: "FLORIPACODE_PORT_OFFSET",
           portOffset: config.portOffset,
           minimum: 0,
         }),
@@ -235,7 +235,7 @@ export function resolveOffset(config: {
     }
     return Effect.succeed({
       offset: config.portOffset,
-      source: `T3CODE_PORT_OFFSET=${config.portOffset}`,
+      source: `FLORIPACODE_PORT_OFFSET=${config.portOffset}`,
     });
   }
 
@@ -244,12 +244,12 @@ export function resolveOffset(config: {
     if (/^\d+$/.test(seed)) {
       return Effect.succeed({
         offset: Number(seed),
-        source: `numeric T3CODE_DEV_INSTANCE=${seed}`,
+        source: `numeric FLORIPACODE_DEV_INSTANCE=${seed}`,
       });
     }
 
     const offset = ((Hash.string(seed) >>> 0) % MAX_HASH_OFFSET) + 1;
-    return Effect.succeed({ offset, source: `hashed T3CODE_DEV_INSTANCE=${seed}` });
+    return Effect.succeed({ offset, source: `hashed FLORIPACODE_DEV_INSTANCE=${seed}` });
   }
 
   // Worktrees get ports derived from their path so each one is stable across
@@ -309,7 +309,7 @@ export function createDevRunnerEnv({
   return Effect.gen(function* () {
     const serverPort = port ?? BASE_SERVER_PORT + serverOffset;
     const webPort = BASE_WEB_PORT + webOffset;
-    // Precedence (--home-dir > worktree .t3 > ambient T3CODE_HOME) is resolved
+    // Precedence (--home-dir > worktree .t3 > ambient FLORIPACODE_HOME) is resolved
     // by the caller; an unset t3Home here genuinely means "use the default".
     const configuredBaseDir = t3Home?.trim() || undefined;
     const resolvedBaseDir = yield* resolveBaseDir(configuredBaseDir);
@@ -324,9 +324,9 @@ export function createDevRunnerEnv({
     };
 
     if (configuredBaseDir !== undefined) {
-      output.T3CODE_HOME = resolvedBaseDir;
+      output.FLORIPACODE_HOME = resolvedBaseDir;
     } else {
-      delete output.T3CODE_HOME;
+      delete output.FLORIPACODE_HOME;
     }
 
     // A dev-runner server is never launcher-managed. When the shell that runs
@@ -338,7 +338,7 @@ export function createDevRunnerEnv({
     delete output.T3_BOOT_SERVICE_UNIT;
 
     if (!isDesktopMode) {
-      output.T3CODE_PORT = String(serverPort);
+      output.FLORIPACODE_PORT = String(serverPort);
       // HOST is Vite's own bind address, and the desktop branch below is the
       // only place we set it. An inherited one (an exported HOST, a container,
       // a `HOST=0.0.0.0 npm start` habit) would otherwise reach Vite and pin
@@ -361,58 +361,58 @@ export function createDevRunnerEnv({
         // with either URL in their `.env` would get it back and silently lose
         // single-origin mode. This states the intent positively so Vite can
         // ignore those values rather than infer from their absence.
-        output.T3CODE_SINGLE_ORIGIN_DEV = "1";
+        output.FLORIPACODE_SINGLE_ORIGIN_DEV = "1";
       } else {
         output.VITE_HTTP_URL = `http://localhost:${serverPort}`;
         output.VITE_WS_URL = `ws://localhost:${serverPort}`;
-        delete output.T3CODE_SINGLE_ORIGIN_DEV;
+        delete output.FLORIPACODE_SINGLE_ORIGIN_DEV;
       }
     } else {
-      output.T3CODE_PORT = String(serverPort);
+      output.FLORIPACODE_PORT = String(serverPort);
       output.VITE_HTTP_URL = `http://${DESKTOP_DEV_LOOPBACK_HOST}:${serverPort}`;
       output.VITE_WS_URL = `ws://${DESKTOP_DEV_LOOPBACK_HOST}:${serverPort}`;
       // Desktop pins the renderer to loopback on purpose; an ambient marker
       // must not make Vite drop those URLs.
-      delete output.T3CODE_SINGLE_ORIGIN_DEV;
-      delete output.T3CODE_MODE;
-      delete output.T3CODE_NO_BROWSER;
-      delete output.T3CODE_HOST;
-      delete output.T3CODE_DEV_AUTH_TOKEN;
+      delete output.FLORIPACODE_SINGLE_ORIGIN_DEV;
+      delete output.FLORIPACODE_MODE;
+      delete output.FLORIPACODE_NO_BROWSER;
+      delete output.FLORIPACODE_HOST;
+      delete output.FLORIPACODE_DEV_AUTH_TOKEN;
     }
 
     if (!isDesktopMode && host !== undefined) {
-      output.T3CODE_HOST = host;
+      output.FLORIPACODE_HOST = host;
     }
 
     if (!isDesktopMode) {
-      output.T3CODE_NO_BROWSER = browser === true ? "0" : "1";
+      output.FLORIPACODE_NO_BROWSER = browser === true ? "0" : "1";
     }
 
     if (autoBootstrapProjectFromCwd !== undefined) {
-      output.T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD = autoBootstrapProjectFromCwd ? "1" : "0";
+      output.FLORIPACODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD = autoBootstrapProjectFromCwd ? "1" : "0";
     } else {
-      delete output.T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD;
+      delete output.FLORIPACODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD;
     }
 
     if (logWebSocketEvents !== undefined) {
-      output.T3CODE_LOG_WS_EVENTS = logWebSocketEvents ? "1" : "0";
+      output.FLORIPACODE_LOG_WS_EVENTS = logWebSocketEvents ? "1" : "0";
     } else {
-      delete output.T3CODE_LOG_WS_EVENTS;
+      delete output.FLORIPACODE_LOG_WS_EVENTS;
     }
 
     if (mode === "dev") {
-      output.T3CODE_MODE = "web";
-      delete output.T3CODE_DESKTOP_WS_URL;
+      output.FLORIPACODE_MODE = "web";
+      delete output.FLORIPACODE_DESKTOP_WS_URL;
     }
 
     if (mode === "dev:server" || mode === "dev:web") {
-      output.T3CODE_MODE = "web";
-      delete output.T3CODE_DESKTOP_WS_URL;
+      output.FLORIPACODE_MODE = "web";
+      delete output.FLORIPACODE_DESKTOP_WS_URL;
     }
 
     if (isDesktopMode) {
       output.HOST = DESKTOP_DEV_LOOPBACK_HOST;
-      delete output.T3CODE_DESKTOP_WS_URL;
+      delete output.FLORIPACODE_DESKTOP_WS_URL;
     }
 
     return output;
@@ -449,7 +449,7 @@ export function checkPortAvailabilityOnHosts<R>(
  * Hosts to probe for a dev server bound to `configuredHost`.
  *
  * Loopback is always checked because the web server and the desktop renderer
- * target reach it there. When `--host`/`T3CODE_HOST` moves the backend onto
+ * target reach it there. When `--host`/`FLORIPACODE_HOST` moves the backend onto
  * another interface, that interface decides whether the bind actually
  * succeeds — probing only loopback would hand back a port that is free here
  * and taken there, and the server would fail to start.
@@ -626,7 +626,7 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
       Effect.mapError(
         (cause) =>
           new DevRunnerConfigurationError({
-            configKeys: ["T3CODE_PORT_OFFSET", "T3CODE_DEV_INSTANCE"],
+            configKeys: ["FLORIPACODE_PORT_OFFSET", "FLORIPACODE_DEV_INSTANCE"],
             cause,
           }),
       ),
@@ -666,7 +666,7 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
     const hostEnvironment = yield* HostProcess.Environment;
     // A dev server started inside a worktree defaults to that worktree's own
     // (gitignored) `.t3` — see @t3tools/shared/devHome for why this must
-    // outrank an ambient T3CODE_HOME. `--home-dir` still wins.
+    // outrank an ambient FLORIPACODE_HOME. `--home-dir` still wins.
     const worktreeHome = yield* resolveWorktreeT3Home(yield* HostProcess.WorkingDirectory);
     // Trim before choosing: `--home-dir ""` is not a selection, and treating it
     // as one would skip the worktree default and land on the shared home —
@@ -674,7 +674,7 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
     const resolvedT3Home =
       (input.t3Home?.trim() || undefined) ??
       worktreeHome ??
-      (hostEnvironment.T3CODE_HOME?.trim() || undefined);
+      (hostEnvironment.FLORIPACODE_HOME?.trim() || undefined);
     const env = yield* createDevRunnerEnv({
       mode: input.mode,
       baseEnv: hostEnvironment,
@@ -693,10 +693,10 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
       serverOffset !== offset || webOffset !== offset
         ? ` selectedOffset(server=${serverOffset},web=${webOffset})`
         : "";
-    const baseDir = env.T3CODE_HOME ?? (yield* DEFAULT_T3_HOME);
+    const baseDir = env.FLORIPACODE_HOME ?? (yield* DEFAULT_T3_HOME);
 
     yield* Effect.logInfo(
-      `[dev-runner] mode=${input.mode} source=${source}${selectionSuffix} serverPort=${String(env.T3CODE_PORT)} webPort=${String(env.PORT)} baseDir=${baseDir}`,
+      `[dev-runner] mode=${input.mode} source=${source}${selectionSuffix} serverPort=${String(env.FLORIPACODE_PORT)} webPort=${String(env.PORT)} baseDir=${baseDir}`,
     );
 
     // Before the share block: --dry-run only resolves and prints. Sharing would
@@ -766,8 +766,8 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
           // The app is reached from the tailnet origin. Vite already allows
           // *.ts.net hosts; the backend needs the origin for credentialed
           // requests that bypass the proxy (desktop renderer, direct calls).
-          env.T3CODE_DEV_ALLOWED_ORIGINS = [
-            env.T3CODE_DEV_ALLOWED_ORIGINS,
+          env.FLORIPACODE_DEV_ALLOWED_ORIGINS = [
+            env.FLORIPACODE_DEV_ALLOWED_ORIGINS,
             new URL(shared.url).origin,
           ]
             .filter((entry) => entry && entry.length > 0)
@@ -781,10 +781,10 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
           // A shared origin serves a remote browser, where unbundled dev's
           // per-module requests each pay a tailnet round trip — a cold module
           // graph takes minutes to first paint. Bundled dev collapses that to
-          // a few chunk requests. Only defaulted, so T3CODE_BUNDLED_DEV=0
+          // a few chunk requests. Only defaulted, so FLORIPACODE_BUNDLED_DEV=0
           // still opts a --share run back out.
-          if (env.T3CODE_BUNDLED_DEV === undefined) {
-            env.T3CODE_BUNDLED_DEV = "1";
+          if (env.FLORIPACODE_BUNDLED_DEV === undefined) {
+            env.FLORIPACODE_BUNDLED_DEV = "1";
           }
           yield* Effect.logInfo(`[dev-runner] shared on tailnet: ${shared.url}`);
         }
@@ -850,7 +850,7 @@ const devRunnerCli = Command.make("dev-runner", {
   ),
   t3Home: Flag.String("home-dir").pipe(
     Flag.withDescription(
-      "Explicit Floripa Code data directory; runtime state is stored under userdata (equivalent to T3CODE_HOME). Inside a git worktree this defaults to that worktree's own .t3 so dev state stays off the shared home.",
+      "Explicit Floripa Code data directory; runtime state is stored under userdata (equivalent to FLORIPACODE_HOME). Inside a git worktree this defaults to that worktree's own .t3 so dev state stays off the shared home.",
     ),
     Flag.optional,
     Flag.map(Option.getOrUndefined),
@@ -861,23 +861,25 @@ const devRunnerCli = Command.make("dev-runner", {
   ),
   autoBootstrapProjectFromCwd: Flag.Boolean("auto-bootstrap-project-from-cwd").pipe(
     Flag.withDescription(
-      "Auto-bootstrap toggle (equivalent to T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD).",
+      "Auto-bootstrap toggle (equivalent to FLORIPACODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD).",
     ),
-    Flag.withFallbackConfig(optionalBooleanConfig("T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD")),
+    Flag.withFallbackConfig(optionalBooleanConfig("FLORIPACODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD")),
   ),
   logWebSocketEvents: Flag.Boolean("log-websocket-events").pipe(
-    Flag.withDescription("WebSocket event logging toggle (equivalent to T3CODE_LOG_WS_EVENTS)."),
+    Flag.withDescription(
+      "WebSocket event logging toggle (equivalent to FLORIPACODE_LOG_WS_EVENTS).",
+    ),
     Flag.withAlias("log-ws-events"),
-    Flag.withFallbackConfig(optionalBooleanConfig("T3CODE_LOG_WS_EVENTS")),
+    Flag.withFallbackConfig(optionalBooleanConfig("FLORIPACODE_LOG_WS_EVENTS")),
   ),
   host: Flag.String("host").pipe(
-    Flag.withDescription("Server host/interface override (forwards to T3CODE_HOST)."),
-    Flag.withFallbackConfig(optionalStringConfig("T3CODE_HOST")),
+    Flag.withDescription("Server host/interface override (forwards to FLORIPACODE_HOST)."),
+    Flag.withFallbackConfig(optionalStringConfig("FLORIPACODE_HOST")),
   ),
   port: Flag.Int("port").pipe(
     Flag.withSchema(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65535 }))),
-    Flag.withDescription("Server port override (forwards to T3CODE_PORT)."),
-    Flag.withFallbackConfig(optionalPortConfig("T3CODE_PORT")),
+    Flag.withDescription("Server port override (forwards to FLORIPACODE_PORT)."),
+    Flag.withFallbackConfig(optionalPortConfig("FLORIPACODE_PORT")),
   ),
   devUrl: Flag.String("dev-url").pipe(
     Flag.withSchema(Schema.URLFromString),

@@ -130,7 +130,7 @@ export function callAcpMcpTool(
       params: {
         protocolVersion: MCP_PROTOCOL_VERSION,
         capabilities: {},
-        clientInfo: { name: "t3-code-acp-cli", version: "0.0.0" },
+        clientInfo: { name: "floripa-code-acp-cli", version: "0.0.0" },
       },
     });
     const initializeResponse = initialized.find((entry) => asEnvelope(entry)?.id === initializeId);

@@ -1284,7 +1284,7 @@ function toSessionKey(owner: TerminalOwner, terminalId: string): string {
 
 function shouldExcludeTerminalEnvKey(key: string): boolean {
   const normalizedKey = key.toUpperCase();
-  if (normalizedKey.startsWith("T3CODE_")) {
+  if (normalizedKey.startsWith("FLORIPACODE_")) {
     return true;
   }
   if (normalizedKey.startsWith("VITE_")) {

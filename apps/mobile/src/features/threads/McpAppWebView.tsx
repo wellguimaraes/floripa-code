@@ -304,7 +304,7 @@ export function ThreadMcpApp(props: {
         platform: "mobile",
         locale: Intl.DateTimeFormat().resolvedOptions().locale,
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        userAgent: `t3-code/${Constants.expoConfig?.version ?? "0.0.0"}`,
+        userAgent: `floripa-code/${Constants.expoConfig?.version ?? "0.0.0"}`,
         deviceCapabilities: { touch: true, hover: false },
         // The full-screen modal keeps the top and bottom insets for its
         // header and the home indicator; only the sides reach the app.

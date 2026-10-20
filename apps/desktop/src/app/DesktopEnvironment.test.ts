@@ -44,17 +44,17 @@ describe("DesktopEnvironment", () => {
       const environment = yield* makeEnvironment(
         {},
         {
-          T3CODE_HOME: " /tmp/t3 ",
-          T3CODE_COMMIT_HASH: " 0123456789abcdef ",
-          T3CODE_PORT: "4949",
+          FLORIPACODE_HOME: " /tmp/t3 ",
+          FLORIPACODE_COMMIT_HASH: " 0123456789abcdef ",
+          FLORIPACODE_PORT: "4949",
           VITE_DEV_SERVER_URL: "http://localhost:5173",
-          T3CODE_DEV_REMOTE_T3_SERVER_ENTRY_PATH: " /remote/server.mjs ",
-          T3CODE_OTLP_TRACES_URL: " http://127.0.0.1:4318/v1/traces ",
-          T3CODE_OTLP_METRICS_URL: " http://127.0.0.1:4318/v1/metrics ",
-          T3CODE_OTLP_LOGS_URL: " http://127.0.0.1:4318/v1/logs ",
-          T3CODE_OTLP_EXPORT_INTERVAL_MS: "2500",
-          T3CODE_OTLP_HEADERS: "authorization=Basic%20abc%3D%3D,x-tenant=t3",
-          T3CODE_OTLP_PROTOCOL: "http/protobuf",
+          FLORIPACODE_DEV_REMOTE_T3_SERVER_ENTRY_PATH: " /remote/server.mjs ",
+          FLORIPACODE_OTLP_TRACES_URL: " http://127.0.0.1:4318/v1/traces ",
+          FLORIPACODE_OTLP_METRICS_URL: " http://127.0.0.1:4318/v1/metrics ",
+          FLORIPACODE_OTLP_LOGS_URL: " http://127.0.0.1:4318/v1/logs ",
+          FLORIPACODE_OTLP_EXPORT_INTERVAL_MS: "2500",
+          FLORIPACODE_OTLP_HEADERS: "authorization=Basic%20abc%3D%3D,x-tenant=t3",
+          FLORIPACODE_OTLP_PROTOCOL: "http/protobuf",
         },
       );
 
@@ -76,9 +76,9 @@ describe("DesktopEnvironment", () => {
       assert.equal(environment.serverRoot, "/repo");
       assert.equal(environment.backendEntryPath, "/repo/apps/server/dist/bin.mjs");
       assert.equal(environment.backendCwd, "/repo");
-      assert.equal(environment.appUserModelId, "com.t3tools.t3code.dev");
-      assert.equal(environment.linuxWmClass, "t3code-dev");
-      assert.equal(environment.linuxDesktopEntryName, "com.t3tools.T3Code.Development.desktop");
+      assert.equal(environment.appUserModelId, "com.floripacode.dev");
+      assert.equal(environment.linuxWmClass, "floripacode-dev");
+      assert.equal(environment.linuxDesktopEntryName, "com.floripacode.Development.desktop");
       assert.deepEqual(
         Option.map(environment.devServerUrl, (url) => url.href),
         Option.some("http://localhost:5173/"),
@@ -106,7 +106,7 @@ describe("DesktopEnvironment", () => {
       const environment = yield* makeEnvironment(
         {},
         {
-          T3CODE_HOME: "/tmp/t3",
+          FLORIPACODE_HOME: "/tmp/t3",
         },
       );
 
@@ -146,11 +146,11 @@ describe("DesktopEnvironment", () => {
       const environment = yield* makeEnvironment({
         platform: "linux",
         isPackaged: true,
-        appPath: "/tmp/.mount_t3code/resources/app.asar",
-        resourcesPath: "/tmp/.mount_t3code/resources",
+        appPath: "/tmp/.mount_floripacode/resources/app.asar",
+        resourcesPath: "/tmp/.mount_floripacode/resources",
       });
 
-      assert.equal(environment.linuxDesktopEntryName, "com.t3tools.T3Code.desktop");
+      assert.equal(environment.linuxDesktopEntryName, "com.floripacode.desktop");
     }),
   );
 
@@ -172,12 +172,12 @@ describe("DesktopEnvironment", () => {
       const environment = yield* makeEnvironment(
         {},
         {
-          T3CODE_DESKTOP_APP_USER_MODEL_ID: " com.t3tools.t3code.dev.local ",
+          FLORIPACODE_DESKTOP_APP_USER_MODEL_ID: " com.floripacode.dev.local ",
           VITE_DEV_SERVER_URL: "http://localhost:5173",
         },
       );
 
-      assert.equal(environment.appUserModelId, "com.t3tools.t3code.dev.local");
+      assert.equal(environment.appUserModelId, "com.floripacode.dev.local");
     }),
   );
 

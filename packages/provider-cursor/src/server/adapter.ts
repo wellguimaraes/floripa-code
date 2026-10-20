@@ -208,7 +208,7 @@ export function cursorMcpServers(
     return undefined;
   }
   return {
-    "t3-code": {
+    "floripa-code": {
       type: "http",
       url: session.endpoint,
       headers: {

@@ -40,7 +40,7 @@ export const useWorldModeStore = create<WorldModeState>()(
       setShown: (shown) => set({ shown }),
     }),
     {
-      name: "t3code:world-mode:v1",
+      name: "floripacode:world-mode:v1",
       storage: createJSONStorage(() =>
         resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
       ),

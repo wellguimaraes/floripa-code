@@ -187,23 +187,23 @@ describe("Pi MCP tool exposure", () => {
         .filter((tool) => tool.exposure !== "hidden")
         .map((tool) => [tool.name, tool.exposure]),
       [
-        ["mcp__t3-code__orchestrator_capabilities", "direct"],
-        ["mcp__t3-code__delegate_task", "direct"],
-        ["mcp__t3-code__task_status", "direct"],
-        ["mcp__t3-code__preview_snapshot", "deferred"],
+        ["mcp__floripa-code__orchestrator_capabilities", "direct"],
+        ["mcp__floripa-code__delegate_task", "direct"],
+        ["mcp__floripa-code__task_status", "direct"],
+        ["mcp__floripa-code__preview_snapshot", "deferred"],
       ],
     );
     assert.deepEqual(
       bridge.tools.filter((tool) => tool.exposure === "hidden").map((tool) => tool.name),
       [
-        "mcp__t3_code__orchestrator_capabilities",
-        "mcp__t3_code__delegate_task",
-        "mcp__t3_code__task_status",
-        "mcp__t3_code__preview_snapshot",
+        "mcp__floripa_code__orchestrator_capabilities",
+        "mcp__floripa_code__delegate_task",
+        "mcp__floripa_code__task_status",
+        "mcp__floripa_code__preview_snapshot",
       ],
     );
     const result = await bridge.tools
-      .find((tool) => tool.name === "mcp__t3-code__preview_snapshot")!
+      .find((tool) => tool.name === "mcp__floripa-code__preview_snapshot")!
       .execute("call-1", { depth: 2 });
     assert.equal(result.content[0]?.text, "browser snapshot");
     assert.equal(bridge.requests.at(-1)?.method, "tools/call");
@@ -227,7 +227,7 @@ describe("Pi MCP tool exposure", () => {
           .filter((tool) => tool.exposure !== "hidden")
           .every((tool) => tool.exposure === undefined || tool.exposure === "direct"),
       );
-      const tool = bridge.tools.find((tool) => tool.name === "mcp__t3-code__preview_snapshot");
+      const tool = bridge.tools.find((tool) => tool.name === "mcp__floripa-code__preview_snapshot");
       assert.isDefined(tool);
       const controller = new AbortController();
       const result = await tool!.execute("call-1", { depth: 2 }, controller.signal);
@@ -251,7 +251,7 @@ describe("Pi MCP tool exposure", () => {
       modern: true,
       toolSearchAvailable: true,
       allowsTool: (name) =>
-        name === "read" || name === "tool_search" || name.startsWith("mcp__t3-code__"),
+        name === "read" || name === "tool_search" || name.startsWith("mcp__floripa-code__"),
     });
     await bridge.handlers.get("session_start")!(
       { systemPrompt: "" },
@@ -259,7 +259,7 @@ describe("Pi MCP tool exposure", () => {
     );
     assert.equal(bridge.tools.length, 4);
     assert.equal(bridge.tools.filter((tool) => tool.exposure === "direct").length, 3);
-    const tool = bridge.tools.find((tool) => tool.name === "mcp__t3-code__preview_snapshot");
+    const tool = bridge.tools.find((tool) => tool.name === "mcp__floripa-code__preview_snapshot");
     assert.isDefined(tool);
     assert.equal((await tool!.execute("selected", {})).content[0]?.text, "browser snapshot");
   });
@@ -271,7 +271,7 @@ describe("Pi MCP tool exposure", () => {
         modern: true,
         toolSearchAvailable: true,
         allowsTool: (name) =>
-          name !== "mcp__t3-code__delegate_task" && (!excludeSearch || name !== "tool_search"),
+          name !== "mcp__floripa-code__delegate_task" && (!excludeSearch || name !== "tool_search"),
       });
       await bridge.handlers.get("session_start")!(
         { systemPrompt: "" },
@@ -279,16 +279,16 @@ describe("Pi MCP tool exposure", () => {
       );
       bridge.restoreActiveTools([
         "read",
-        "mcp__t3-code__task_status",
-        "mcp__t3-code__preview_snapshot",
+        "mcp__floripa-code__task_status",
+        "mcp__floripa-code__preview_snapshot",
       ]);
       const tree = bridge.handlers.get("session_tree");
       assert.isDefined(tree);
       await tree!({ systemPrompt: "" }, { ui: { notify: () => undefined } });
       assert.deepEqual(bridge.getActiveTools(), [
         "read",
-        "mcp__t3-code__task_status",
-        "mcp__t3-code__preview_snapshot",
+        "mcp__floripa-code__task_status",
+        "mcp__floripa-code__preview_snapshot",
         ...(!excludeSearch ? ["tool_search"] : []),
       ]);
       assert.isFalse(
@@ -337,9 +337,12 @@ describe("Pi tool discovery permissions", () => {
       await toolCall!({ toolName: "tool_search", input: { query: "preview_snapshot" } }, ctx),
     );
     assert.equal(confirmations.length, 0);
-    const result = await toolCall!({ toolName: "mcp__t3-code__preview_snapshot", input: {} }, ctx);
+    const result = await toolCall!(
+      { toolName: "mcp__floripa-code__preview_snapshot", input: {} },
+      ctx,
+    );
     assert.equal(result?.block, true);
-    assert.deepEqual(confirmations, ["Allow mcp__t3-code__preview_snapshot?"]);
+    assert.deepEqual(confirmations, ["Allow mcp__floripa-code__preview_snapshot?"]);
 
     // An extension that replaces the search builtin is not known to be read-only.
     searchPath = "/extensions/custom-search.ts";

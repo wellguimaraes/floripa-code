@@ -501,7 +501,7 @@ const layerTest = (
           DesktopEnvironment.DesktopEnvironment.of({
             platform,
             stateDir: "/state",
-            linuxDesktopEntryName: "com.t3tools.T3Code.desktop",
+            linuxDesktopEntryName: "com.floripacode.desktop",
             appRoot: "/repo",
             linuxApplicationsDir: "/test-data/applications",
           } as DesktopEnvironment.DesktopEnvironment["Service"]),
@@ -939,7 +939,7 @@ it.effect.each(["win32", "darwin", "linux"] as const)(
     const t3 = {
       id: 42,
       title: "Floripa Code",
-      appIdentifier: "com.t3tools.T3Code.desktop",
+      appIdentifier: "com.floripacode.desktop",
       owner: { name: "Floripa Code", processId: 123 },
       bounds,
       png: Buffer.from([1, 2, 3]),
@@ -2625,8 +2625,8 @@ it.each([
 );
 
 it.each([
-  { names: ["⠙ t3code"], expected: "Verified text" },
-  { names: ["⠋ t3code", "⠙ t3code"], expected: undefined },
+  { names: ["⠙ floripacode"], expected: "Verified text" },
+  { names: ["⠋ floripacode", "⠙ floripacode"], expected: undefined },
 ])("reads a changing Wayland title only when unambiguous: $names", async ({ names, expected }) => {
   vi.stubEnv("XDG_SESSION_TYPE", "wayland");
   const tree = vi.fn(async () => ({ value: "Verified text", children: [] }));
@@ -2642,12 +2642,12 @@ it.each([
     assert.strictEqual(
       await readAccessibleWindowText(
         {
-          title: "⠋ t3code",
+          title: "⠋ floripacode",
           bounds: { x: 479, y: 342, width: 700, height: 520 },
           owner: { processId: 123 },
         },
         "linux",
-        "⠋ t3code",
+        "⠋ floripacode",
       ),
       expected,
     );

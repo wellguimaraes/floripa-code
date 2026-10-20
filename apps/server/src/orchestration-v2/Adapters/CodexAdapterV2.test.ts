@@ -485,7 +485,7 @@ describe("CodexAdapterV2 runtime policy", () => {
         kind: "untrusted",
         value: "Filtered to overdue",
       });
-      assert.isDefined(withT3.additionalContext?.["t3_code_runtime"]);
+      assert.isDefined(withT3.additionalContext?.["floripa_code_runtime"]);
     }),
   );
 
@@ -508,11 +508,11 @@ describe("CodexAdapterV2 runtime policy", () => {
 
       assert.equal(params.collaborationMode?.mode, "default");
       assert.include(
-        params.additionalContext?.t3_code_orchestration?.value ?? "",
+        params.additionalContext?.floripa_code_orchestration?.value ?? "",
         "Use `delegate_task`",
       );
       assert.include(
-        params.additionalContext?.t3_code_orchestration?.value ?? "",
+        params.additionalContext?.floripa_code_orchestration?.value ?? "",
         "structured object, never as JSON text",
       );
     }),
@@ -561,7 +561,7 @@ describe("CodexAdapterV2 runtime policy", () => {
         params.collaborationMode?.settings.developer_instructions ?? "",
         "request_user_input",
       );
-      assert.include(params.additionalContext?.t3_code_tools?.value ?? "", "preview_status");
+      assert.include(params.additionalContext?.floripa_code_tools?.value ?? "", "preview_status");
     }),
   );
 
@@ -665,7 +665,7 @@ describe("CodexAdapterV2 process spawning", () => {
         config: {
           "tools.update_plan.enabled": true,
           mcp_servers: {
-            "t3-code": {
+            "floripa-code": {
               url: "http://127.0.0.1:43123/mcp",
               http_headers: {
                 Authorization: "Bearer secret-codex-token",
@@ -768,7 +768,7 @@ describe("CodexAdapterV2 process spawning", () => {
           .pipe(Effect.scoped, Effect.exit);
 
       yield* open({});
-      yield* open({ T3CODE_CODEX_LAUNCH_ARGS: " --enable env-feature " });
+      yield* open({ FLORIPACODE_CODEX_LAUNCH_ARGS: " --enable env-feature " });
 
       assert.deepEqual(spawnedArgs, [
         ["app-server", "--strict-config", "-c", "model_reasoning_summary=detailed"],
@@ -797,7 +797,7 @@ describe("CodexAdapterV2 process spawning", () => {
         Effect.provide(
           Layer.mergeAll(
             CodexAdapterV2.layerAppServerClientFactory,
-            ServerConfig.layerTest(process.cwd(), { prefix: "t3-codex-binary-home-" }),
+            ServerConfig.layerTest(process.cwd(), { prefix: "floripa-codex-binary-home-" }),
           ),
         ),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
@@ -968,7 +968,7 @@ describe("CodexAdapterV2 dynamic tool projection", () => {
       const projection = yield* CodexAdapterV2.projectCodexDynamicToolItem({
         type: "mcpToolCall",
         id: "call-create-threads",
-        server: "t3-code",
+        server: "floripa-code",
         tool: "create_threads",
         status: "completed",
         arguments: {
@@ -983,7 +983,7 @@ describe("CodexAdapterV2 dynamic tool projection", () => {
       });
 
       assert.deepEqual(projection, {
-        toolName: "t3-code.create_threads",
+        toolName: "floripa-code.create_threads",
         input: {
           threads: [{ title: "Fixture child", prompt: "fixture child prompt" }],
         },
@@ -2748,7 +2748,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           hasT3Mcp: true,
         });
         assert.include(
-          params.additionalContext?.t3_code_orchestration?.value ?? "",
+          params.additionalContext?.floripa_code_orchestration?.value ?? "",
           "delegate_task",
         );
         const entries = codexReplayPreamble({ nativeThreadId, nativeTurnId, prompt: "work" });
@@ -6856,7 +6856,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
             item: {
               type: "mcpToolCall",
               id: COMPLETED_WAIT_ITEM,
-              server: "t3-code",
+              server: "floripa-code",
               tool: "t3_thread_wait",
               status: "inProgress",
               arguments: { threadId: "thread:completed-wait", timeoutMs: 30000 },
@@ -6876,7 +6876,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
             item: {
               type: "mcpToolCall",
               id: COMPLETED_WAIT_ITEM,
-              server: "t3-code",
+              server: "floripa-code",
               tool: "t3_thread_wait",
               status: "completed",
               arguments: { threadId: "thread:completed-wait", timeoutMs: 30000 },
@@ -6897,7 +6897,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
             item: {
               type: "mcpToolCall",
               id: ORPHAN_WAIT_ITEM,
-              server: "t3-code",
+              server: "floripa-code",
               tool: "t3_thread_wait",
               status: "inProgress",
               arguments: {

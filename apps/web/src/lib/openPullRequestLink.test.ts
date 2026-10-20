@@ -228,9 +228,9 @@ describe("shouldOpenPullRequestExternally", () => {
 
 describe("parseChangeRequestUrl", () => {
   it("reads a GitHub pull request", () => {
-    expect(parseChangeRequestUrl("https://github.com/T3Tools/T3Code/pull/123")).toEqual({
+    expect(parseChangeRequestUrl("https://github.com/T3Tools/FloripaCode/pull/123")).toEqual({
       host: "github.com",
-      repository: "t3tools/t3code",
+      repository: "t3tools/floripacode",
       number: 123,
     });
   });
@@ -245,10 +245,10 @@ describe("parseChangeRequestUrl", () => {
 
   it("reads a GitLab merge request, nested groups and all", () => {
     expect(
-      parseChangeRequestUrl("https://gitlab.com/t3tools/platform/t3code/-/merge_requests/42"),
+      parseChangeRequestUrl("https://gitlab.com/t3tools/platform/floripacode/-/merge_requests/42"),
     ).toEqual({
       host: "gitlab.com",
-      repository: "t3tools/platform/t3code",
+      repository: "t3tools/platform/floripacode",
       number: 42,
     });
   });
@@ -273,25 +273,29 @@ describe("parseChangeRequestUrl", () => {
 
   it("reads both Azure DevOps URL forms, keeping `_git` in the repository path", () => {
     expect(
-      parseChangeRequestUrl("https://dev.azure.com/acme/platform/_git/t3code/pullrequest/17"),
+      parseChangeRequestUrl("https://dev.azure.com/acme/platform/_git/floripacode/pullrequest/17"),
     ).toEqual({
       host: "dev.azure.com",
-      repository: "acme/platform/_git/t3code",
+      repository: "acme/platform/_git/floripacode",
       number: 17,
     });
     expect(
-      parseChangeRequestUrl("https://acme.visualstudio.com/platform/_git/t3code/pullrequest/17"),
+      parseChangeRequestUrl(
+        "https://acme.visualstudio.com/platform/_git/floripacode/pullrequest/17",
+      ),
     ).toEqual({
       host: "acme.visualstudio.com",
-      repository: "platform/_git/t3code",
+      repository: "platform/_git/floripacode",
       number: 17,
     });
   });
 
   it("survives trailing segments, a trailing slash and a query string", () => {
-    expect(parseChangeRequestUrl("https://github.com/t3tools/t3code/pull/123/files?w=1")).toEqual({
+    expect(
+      parseChangeRequestUrl("https://github.com/t3tools/floripacode/pull/123/files?w=1"),
+    ).toEqual({
       host: "github.com",
-      repository: "t3tools/t3code",
+      repository: "t3tools/floripacode",
       number: 123,
     });
     expect(
@@ -300,27 +304,27 @@ describe("parseChangeRequestUrl", () => {
     expect(
       parseChangeRequestUrl("https://bitbucket.org/team/repo/pull-requests/5/commits"),
     ).toEqual({ host: "bitbucket.org", repository: "team/repo", number: 5 });
-    expect(parseChangeRequestUrl("https://github.com/t3tools/t3code/pull/123/")).toEqual({
+    expect(parseChangeRequestUrl("https://github.com/t3tools/floripacode/pull/123/")).toEqual({
       host: "github.com",
-      repository: "t3tools/t3code",
+      repository: "t3tools/floripacode",
       number: 123,
     });
   });
 
   it("claims nothing it cannot be sure of, so the link goes to the browser", () => {
     for (const link of [
-      "https://github.com/t3tools/t3code/issues/123",
-      "https://github.com/t3tools/t3code/commit/0a1b2c3",
-      "https://github.com/t3tools/t3code",
-      "https://github.com/t3tools/t3code/pull/abc",
-      "https://gitlab.com/t3tools/t3code/-/snippets/12",
-      "https://gitlab.com/t3tools/t3code/-/issues/12",
+      "https://github.com/t3tools/floripacode/issues/123",
+      "https://github.com/t3tools/floripacode/commit/0a1b2c3",
+      "https://github.com/t3tools/floripacode",
+      "https://github.com/t3tools/floripacode/pull/abc",
+      "https://gitlab.com/t3tools/floripacode/-/snippets/12",
+      "https://gitlab.com/t3tools/floripacode/-/issues/12",
       // A path shape that means nothing off its own host.
       "https://blog.example.test/2026/updates/pull/3",
       // A lookalike is deliberately not fought here: `github.com.evil.test` reads as a GitHub
       // Enterprise install and there is no way to tell it from one. It is `findProjectForChange
       // Request` that refuses it, because no project in the workspace is checked out from it.
-      "javascript:alert(1)//github.com/t3tools/t3code/pull/1",
+      "javascript:alert(1)//github.com/t3tools/floripacode/pull/1",
       "not a url",
     ]) {
       expect(parseChangeRequestUrl(link), link).toBeNull();
@@ -462,20 +466,20 @@ describe("findProjectForChangeRequest", () => {
 
   it("matches a nested GitLab group by the whole path below the host", () => {
     // The server identifies a repository by `displayName`, which keeps every group segment; the
-    // two-segment owner/name form would look for `t3tools/t3code` and find nothing.
+    // two-segment owner/name form would look for `t3tools/floripacode` and find nothing.
     const projects = [
       project({
-        canonicalKey: "gitlab.com/t3tools/platform/t3code",
+        canonicalKey: "gitlab.com/t3tools/platform/floripacode",
         provider: "gitlab",
-        displayName: "t3tools/platform/t3code",
+        displayName: "t3tools/platform/floripacode",
         owner: "t3tools",
-        name: "t3code",
+        name: "floripacode",
       }),
     ];
     expect(
       findProjectForChangeRequest(projects, {
         host: "gitlab.com",
-        repository: "t3tools/platform/t3code",
+        repository: "t3tools/platform/floripacode",
         number: 42,
       }),
     ).toBe(projects[0]);
@@ -487,7 +491,7 @@ describe("findProjectForChangeRequest", () => {
         canonicalKey: "github.com/pingdotgg/t3code",
         provider: "github",
         owner: "pingdotgg",
-        name: "t3code",
+        name: "floripacode",
       }),
     ];
     expect(
@@ -506,20 +510,22 @@ describe("findProjectForChangeRequest", () => {
     //
     // Derived from the SSH remote the way the server derives it rather than written out, so the
     // day that normalization stops reaching the web spelling this fails here too.
-    const canonicalKey = normalizeGitRemoteUrl("git@ssh.dev.azure.com:v3/T3Tools/Platform/T3Code");
+    const canonicalKey = normalizeGitRemoteUrl(
+      "git@ssh.dev.azure.com:v3/T3Tools/Platform/FloripaCode",
+    );
     const projects = [
       project({
         canonicalKey,
         provider: "azure-devops",
         displayName: canonicalKey.split("/").slice(1).join("/"),
         owner: "t3tools",
-        name: "t3code",
+        name: "floripacode",
       }),
     ];
     expect(
       findProjectForChangeRequest(projects, {
         host: "dev.azure.com",
-        repository: "t3tools/platform/_git/t3code",
+        repository: "t3tools/platform/_git/floripacode",
         number: 1,
       }),
     ).toBe(projects[0]);
@@ -531,7 +537,7 @@ describe("findProjectForChangeRequest", () => {
         canonicalKey: "github.com/pingdotgg/t3code",
         provider: "github",
         owner: "pingdotgg",
-        name: "t3code",
+        name: "floripacode",
       }),
     ];
     expect(

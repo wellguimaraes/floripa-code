@@ -17,7 +17,7 @@ export const useWorldContrastStore = create<WorldContrastState>()(
       setContrast: (contrast) => set({ contrast: Math.min(1, Math.max(0, contrast)) }),
     }),
     {
-      name: "t3code:world-contrast:v1",
+      name: "floripacode:world-contrast:v1",
       storage: createJSONStorage(() =>
         resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
       ),

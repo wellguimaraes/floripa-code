@@ -1,4 +1,4 @@
-export type T3McpToolLogo = "t3-code";
+export type T3McpToolLogo = "floripa-code";
 
 export interface T3McpToolPresentation {
   readonly displayName: string;
@@ -66,20 +66,20 @@ export type T3McpToolSummaryAction =
 export interface T3McpToolDefinition {
   readonly displayName: string;
   readonly labels: readonly [action: string, running: string, completed: string, detail: string];
-  readonly icon: "t3-code" | "browser" | "device" | "pull-request";
+  readonly icon: "floripa-code" | "browser" | "device" | "pull-request";
   readonly summaryAction: T3McpToolSummaryAction;
 }
 
 function tool(
   labels: T3McpToolDefinition["labels"],
   summaryAction: T3McpToolSummaryAction,
-  icon: T3McpToolDefinition["icon"] = "t3-code",
+  icon: T3McpToolDefinition["icon"] = "floripa-code",
   displayName = `${labels[0]} ${labels[3]}`,
 ): T3McpToolDefinition {
   return { displayName, labels, icon, summaryAction };
 }
 
-const T3_MCP_SERVER_ALIASES = new Set(["t3-code", "t3_code", "t3code"]);
+const T3_MCP_SERVER_ALIASES = new Set(["floripa-code", "floripa_code", "floripacode"]);
 
 // Cards, activity rows, summaries, and provider identity recovery share this inventory.
 const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
@@ -329,7 +329,7 @@ function normalizeT3McpToolLabel(value: string): string {
 
 /**
  * ACP agents disagree on how the injected T3 server prefixes its tools:
- * `mcp__t3-code__x` (Claude/Cursor), `t3-code.x` (Codex), plus single
+ * `mcp__floripa-code__x` (Claude/Cursor), `floripa-code.x` (Codex), plus single
  * underscore, colon, slash, dash, and space separators seen from registry
  * agents. The prefix match is deliberately loose because the display-name
  * inventory is the real gate; unknown tools stay on the generic renderer.
@@ -346,20 +346,19 @@ function resolveT3McpToolName(value: string): string | null {
       : null;
   }
 
-  const namespaceMatch = /^(?<server>t3-code|t3_code|t3code)(?:[.:/]|\s*·\s*)(?<tool>.+)$/i.exec(
-    label,
-  );
+  const namespaceMatch =
+    /^(?<server>floripa-code|floripa_code|floripacode)(?:[.:/]|\s*·\s*)(?<tool>.+)$/i.exec(label);
   if (namespaceMatch?.groups) {
     return namespaceMatch.groups.tool ?? null;
   }
 
-  const prefixed = /^(?:mcp[-_]{1,2})?t3[-_ ]?code(?:__|[-_.:/ ])(?<tool>.+)$/i.exec(label);
+  const prefixed = /^(?:mcp[-_]{1,2})?floripa[-_ ]?code(?:__|[-_.:/ ])(?<tool>.+)$/i.exec(label);
   const candidate = prefixed?.groups?.tool ?? label;
   if (Object.hasOwn(T3_MCP_TOOLS, candidate)) return candidate;
-  // OpenCode 2 registers one server per thread, `t3-code-<thread>`, and joins
+  // OpenCode 2 registers one server per thread, `floripa-code-<thread>`, and joins
   // it to the tool with `_`. Thread ids can hold `_` too, so take the longest
   // known tool name that ends the label.
-  if (!/^t3-code-/i.test(label)) return null;
+  if (!/^floripa-code-/i.test(label)) return null;
   let longest: string | null = null;
   for (const tool of Object.keys(T3_MCP_TOOLS)) {
     if (label.endsWith(`_${tool}`) && tool.length > (longest?.length ?? 0)) longest = tool;
@@ -384,7 +383,7 @@ export function resolveT3McpToolPresentation(
   toolName: string | null | undefined,
 ): T3McpToolPresentation | null {
   const definition = resolveT3McpToolDefinition(toolName);
-  return definition === null ? null : { displayName: definition.displayName, logo: "t3-code" };
+  return definition === null ? null : { displayName: definition.displayName, logo: "floripa-code" };
 }
 
 export function resolveT3McpToolSummaryAction(

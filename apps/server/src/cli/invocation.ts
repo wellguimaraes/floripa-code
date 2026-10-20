@@ -60,7 +60,7 @@ export const resolveServerInstallation = Effect.gen(function* () {
   const platform = yield* HostProcess.Platform;
   const entry = yield* fs.realPath(executable ? executablePath : (args[1] ?? ""));
   const match =
-    /^(.*)\/lib\/node_modules\/t3\/(?:dist\/bin\.mjs|bin\/t3\.js|node_modules\/@t3code\/t3-[^/]+\/t3)$/.exec(
+    /^(.*)\/lib\/node_modules\/t3\/(?:dist\/bin\.mjs|bin\/t3\.js|node_modules\/@floripacode\/t3-[^/]+\/t3)$/.exec(
       entry,
     );
   if (!match) {
@@ -150,12 +150,12 @@ const shellWord = (value: string) =>
 /**
  * The launcher a person can type to run this install when `t3` is not on
  * PATH: the desktop app's `t3` shim, which the app and the shim itself name in
- * `T3CODE_CLI_PATH`, or a standalone binary's own path. Script installs (a
+ * `FLORIPACODE_CLI_PATH`, or a standalone binary's own path. Script installs (a
  * repo checkout) have no single launcher and keep plain `t3`.
  */
 const resolveInstallLauncher = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
-  const shim = (yield* HostProcess.Environment).T3CODE_CLI_PATH?.trim();
+  const shim = (yield* HostProcess.Environment).FLORIPACODE_CLI_PATH?.trim();
   if (shim && (yield* fs.exists(shim).pipe(Effect.orElseSucceed(() => false)))) {
     return Option.some(shim);
   }

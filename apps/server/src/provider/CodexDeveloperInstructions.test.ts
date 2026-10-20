@@ -76,7 +76,7 @@ describe("T3 browser developer instructions", () => {
   it("prefers the product-native preview tools in both collaboration modes", () => {
     {
       const instructions = toolInstructions(runtime, true);
-      NodeAssert.match(instructions, /t3-code/);
+      NodeAssert.match(instructions, /floripa-code/);
       NodeAssert.match(instructions, /preview_status/);
       NodeAssert.match(instructions, /preview_open/);
       NodeAssert.match(instructions, /Do not switch to global browser skills/);
@@ -105,11 +105,11 @@ describe("T3 browser developer instructions", () => {
 });
 
 function runtimeInstructions(runtime: Parameters<typeof buildCodexAdditionalContext>[0]) {
-  return buildCodexAdditionalContext(runtime).t3_code_runtime!.value;
+  return buildCodexAdditionalContext(runtime).floripa_code_runtime!.value;
 }
 function toolInstructions(
   runtime: Parameters<typeof buildCodexAdditionalContext>[0],
   available: boolean,
 ) {
-  return buildCodexAdditionalContext(runtime, available).t3_code_tools?.value ?? "";
+  return buildCodexAdditionalContext(runtime, available).floripa_code_tools?.value ?? "";
 }

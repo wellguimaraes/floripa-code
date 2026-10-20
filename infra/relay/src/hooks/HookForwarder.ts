@@ -118,7 +118,7 @@ export class HookRateLimiter extends Context.Service<
     /** One endpoint's overall budget, keyed by its endpoint key. */
     readonly allowEndpoint: (endpointKey: string) => Effect.Effect<boolean>;
   }
->()("t3code-relay/hooks/HookForwarder/HookRateLimiter") {}
+>()("floripacode-relay/hooks/HookForwarder/HookRateLimiter") {}
 
 export class HookForwarder extends Context.Service<
   HookForwarder,
@@ -127,7 +127,7 @@ export class HookForwarder extends Context.Service<
       request: HttpServerRequest.HttpServerRequest,
     ) => Effect.Effect<HttpServerResponse.HttpServerResponse>;
   }
->()("t3code-relay/hooks/HookForwarder") {}
+>()("floripacode-relay/hooks/HookForwarder") {}
 
 class HookBodyTooLarge extends Schema.TaggedError<HookBodyTooLarge>()("HookBodyTooLarge", {}) {}
 

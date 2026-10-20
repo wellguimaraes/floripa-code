@@ -1,10 +1,10 @@
 import type { ProviderInteractionMode } from "@t3tools/contracts";
 
-export const T3_CODE_ORCHESTRATION_INSTRUCTIONS = `
+export const FLORIPA_CODE_ORCHESTRATION_INSTRUCTIONS = `
 
 ## Floripa Code orchestration
 
-The \`t3-code\` MCP server provides app-owned orchestration. Treat these concepts distinctly:
+The \`floripa-code\` MCP server provides app-owned orchestration. Treat these concepts distinctly:
 
 - A delegated task/subagent is child work owned by the current thread. Use \`orchestrator_capabilities\` to discover the current provider/model IDs from the same live catalog as the composer, including configured custom models. Do not treat a native tool's model list as the full list of available subagent models. Prefer native subagent tools for same-provider work only when they support the chosen model. Use \`delegate_task\` with that provider instance and model when native tools cannot, including for same-provider work. Also use \`delegate_task\` for cross-provider or explicitly T3-owned child tasks. Retain each returned \`taskId\`, and use \`task_status\` or \`task_cancel\` to manage it. The returned \`childThreadId\` is backing storage for the subagent, not the target for starting another delegated review round.
 - \`t3_thread_launch\` and \`create_threads\` create ordinary top-level T3 conversations. Use them only when the user explicitly asks for separate/new/top-level threads or conversations. Never use them merely because the user said "subagent" or requested parallel delegated work.
@@ -27,7 +27,7 @@ For stacked work, set \`baseRef\` to the intended parent branch and \`startFromO
 
 \`t3_thread_launch\` has no idempotency key. Retain its returned threadId and inspect it with \`t3_thread_read\` / \`t3_thread_wait\`; preparation can still be running after acceptance. If a launch fails or its response is lost, inspect \`t3_thread_list\` before retrying, since a thread may already exist.
 
-Tool names may include a harness-normalized MCP prefix, such as \`mcp__t3_code__delegate_task\`; the semantics are the same. Some harnesses attach optional MCP servers lazily: if an initial tool-catalog scan does not show T3 tools, do not conclude that cross-provider delegation is unavailable. Make one bounded direct attempt using the known T3 tool name on the next tool step. In Codex code mode, for example, call \`tools.mcp__t3_code__orchestrator_capabilities({})\` before reporting that the capability is absent. Keep polling/wait loops bounded, do not duplicate active work, and use stable \`clientRequestId\` values when retrying tools that accept them.
+Tool names may include a harness-normalized MCP prefix, such as \`mcp__floripa_code__delegate_task\`; the semantics are the same. Some harnesses attach optional MCP servers lazily: if an initial tool-catalog scan does not show T3 tools, do not conclude that cross-provider delegation is unavailable. Make one bounded direct attempt using the known T3 tool name on the next tool step. In Codex code mode, for example, call \`tools.mcp__floripa_code__orchestrator_capabilities({})\` before reporting that the capability is absent. Keep polling/wait loops bounded, do not duplicate active work, and use stable \`clientRequestId\` values when retrying tools that accept them.
 
 ACP fallback: some ACP agents accept the injected MCP server but fail to expose its tools. When the T3 tools are absent and \`T3_ACP_MCP_NODE\` is present, call the same tools through the terminal: \`ELECTRON_RUN_AS_NODE=1 "$T3_ACP_MCP_NODE" \${T3_ACP_MCP_ENTRYPOINT:+"$T3_ACP_MCP_ENTRYPOINT"} acp-mcp-call orchestrator_capabilities '{}'\` (\`T3_ACP_MCP_ENTRYPOINT\` is unset when T3 runs as a standalone executable). Delegate with \`acp-mcp-call delegate_task '{"task":"...","target":{"providerInstanceId":"...","model":"..."},"mode":"async","clientRequestId":"..."}'\`. This is the supported T3 transport fallback, not an ordinary shell-based substitute for delegation.
 
@@ -36,11 +36,11 @@ ACP fallback: some ACP agents accept the injected MCP server but fail to expose 
 When a chart, table, diagram, image collage, or mockup would say more than prose, build a self-contained HTML page, check it with \`html_preview\`, then publish it with \`html_render\` before your final reply. The reader sees the page above that reply, so don't announce or restate it; add only what it doesn't say.
 `;
 
-export const T3_CODE_BROWSER_TOOL_INSTRUCTIONS = `
+export const FLORIPA_CODE_BROWSER_TOOL_INSTRUCTIONS = `
 
 ## Floripa Code collaborative browser
 
-You are running inside Floripa Code. The \`t3-code\` MCP server is the product-native collaborative browser shared with the user. When it exposes \`preview_*\` tools, prefer those tools for browser navigation, inspection, interaction, screenshots, and recordings.
+You are running inside Floripa Code. The \`floripa-code\` MCP server is the product-native collaborative browser shared with the user. When it exposes \`preview_*\` tools, prefer those tools for browser navigation, inspection, interaction, screenshots, and recordings.
 
 For browser work, first call \`preview_status\`. If no automation-capable preview is attached, call \`preview_open\` before concluding that the browser is unavailable. Then use \`preview_navigate\`, \`preview_snapshot\`, and the focused interaction tools. Prefer snapshot-provided locators over coordinates.
 
@@ -52,11 +52,11 @@ Do not switch to global browser skills, Chrome, Node REPL browser automation, st
 - preview calls on an open tab have failed twice on the same step (timeouts, \`chrome-error://\` pages, a different client answering). Quote the raw error and switch without asking the user which browser to use.
 `;
 
-const T3_CODE_ACP_DEFAULT_MODE_INSTRUCTIONS = `## Floripa Code interaction mode: Default
+const FLORIPA_CODE_ACP_DEFAULT_MODE_INSTRUCTIONS = `## Floripa Code interaction mode: Default
 
 Prefer making reasonable assumptions and carrying out the user's request. Ask a concise question only when a missing user decision would materially change the result. Treat this mode as active until Floripa Code supplies a different interaction-mode instruction.`;
 
-const T3_CODE_ACP_PLAN_MODE_INSTRUCTIONS = `## Floripa Code interaction mode: Plan
+const FLORIPA_CODE_ACP_PLAN_MODE_INSTRUCTIONS = `## Floripa Code interaction mode: Plan
 
 Investigate with read-only actions and do not edit files or otherwise execute the implementation. Resolve discoverable facts before asking questions. When the requirements are decision complete, return a concrete implementation plan and do not start implementing it. Treat this mode as active until Floripa Code supplies a different interaction-mode instruction.`;
 
@@ -84,13 +84,16 @@ export function t3AcpPromptWithInstructions(input: {
   }
   const instructions = [
     input.state.interactionMode === "plan"
-      ? T3_CODE_ACP_PLAN_MODE_INSTRUCTIONS
-      : T3_CODE_ACP_DEFAULT_MODE_INSTRUCTIONS,
+      ? FLORIPA_CODE_ACP_PLAN_MODE_INSTRUCTIONS
+      : FLORIPA_CODE_ACP_DEFAULT_MODE_INSTRUCTIONS,
     ...(input.state.hasT3Mcp
-      ? [T3_CODE_BROWSER_TOOL_INSTRUCTIONS.trim(), T3_CODE_ORCHESTRATION_INSTRUCTIONS.trim()]
+      ? [
+          FLORIPA_CODE_BROWSER_TOOL_INSTRUCTIONS.trim(),
+          FLORIPA_CODE_ORCHESTRATION_INSTRUCTIONS.trim(),
+        ]
       : []),
   ];
-  return `<t3_code_instructions>\n${instructions.join("\n\n")}\n</t3_code_instructions>\n\n<user_request>\n${input.prompt}\n</user_request>`;
+  return `<floripa_code_instructions>\n${instructions.join("\n\n")}\n</floripa_code_instructions>\n\n<user_request>\n${input.prompt}\n</user_request>`;
 }
 
 /**
@@ -99,7 +102,7 @@ export function t3AcpPromptWithInstructions(input: {
  * mistaken for text authored by the user.
  */
 function prependT3OrchestrationInstructions(prompt: string): string {
-  return `<t3_code_orchestration_instructions>${T3_CODE_ORCHESTRATION_INSTRUCTIONS.trim()}</t3_code_orchestration_instructions>\n\n<user_request>\n${prompt}\n</user_request>`;
+  return `<floripa_code_orchestration_instructions>${FLORIPA_CODE_ORCHESTRATION_INSTRUCTIONS.trim()}</floripa_code_orchestration_instructions>\n\n<user_request>\n${prompt}\n</user_request>`;
 }
 
 export function t3OrchestrationPromptForFirstRun(input: {
@@ -113,5 +116,5 @@ export function t3OrchestrationPromptForFirstRun(input: {
 }
 
 export function t3OrchestrationSystemPrompt(hasT3Mcp: boolean): string | undefined {
-  return hasT3Mcp ? T3_CODE_ORCHESTRATION_INSTRUCTIONS : undefined;
+  return hasT3Mcp ? FLORIPA_CODE_ORCHESTRATION_INSTRUCTIONS : undefined;
 }

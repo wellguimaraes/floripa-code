@@ -242,7 +242,7 @@ export function makeMcpAppHost(options: McpAppHostOptions): McpAppHost {
         respond(id, {
           protocolVersion:
             requested === MCP_APP_PROTOCOL_VERSION ? requested : MCP_APP_PROTOCOL_VERSION,
-          hostInfo: { name: "t3-code", version: options.hostVersion },
+          hostInfo: { name: "floripa-code", version: options.hostVersion },
           hostCapabilities: {
             openLinks: {},
             serverTools: {},

@@ -221,7 +221,7 @@ const makeTestRunner = (
     currentModels: {},
     compatibility: [CODEX_DRIVER, OPENCODE_DRIVER].map((driver) => ({
       driver,
-      t3CodeRange: ">=0.0.42",
+      floripaCodeRange: ">=0.0.42",
       ranges: [],
     })),
   },
@@ -1001,7 +1001,7 @@ it.effect("refuses incompatible latest versions and unapproved or unpinnable tar
     compatibility: [
       {
         driver: "codex",
-        t3CodeRange: ">=0.0.42",
+        floripaCodeRange: ">=0.0.42",
         recommendedVersion: "2.0.0",
         ranges: [
           { range: "=2.0.0", status: "supported" },

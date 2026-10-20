@@ -77,12 +77,12 @@ describe("buildCommandPaletteProjectMetadata", () => {
         {
           environmentId: localEnvironmentId,
           title: "Floripa Code",
-          workspaceRoot: "/Users/theo/Projects/t3code",
+          workspaceRoot: "/Users/theo/Projects/floripacode",
         },
         {
           environmentId: remoteEnvironmentId,
-          title: "t3code",
-          workspaceRoot: "/srv/t3code",
+          title: "floripacode",
+          workspaceRoot: "/srv/floripacode",
         },
       ],
       locationByEnvironmentId: locations,
@@ -90,10 +90,10 @@ describe("buildCommandPaletteProjectMetadata", () => {
 
     expect(metadata.searchTerms).toEqual([
       "Floripa Code",
-      "/Users/theo/Projects/t3code",
+      "/Users/theo/Projects/floripacode",
       "Local",
-      "t3code",
-      "/srv/t3code",
+      "floripacode",
+      "/srv/floripacode",
       "Build box",
     ]);
     expect(metadata.environmentLabels).toEqual(["Local", "Build box"]);
@@ -105,7 +105,7 @@ describe("buildCommandPaletteProjectMetadata", () => {
       projectSearchItems: [
         {
           kind: "action",
-          value: "project:t3code",
+          value: "project:floripacode",
           title: "Floripa Code",
           searchTerms: metadata.searchTerms,
           icon: null,
@@ -123,12 +123,12 @@ describe("buildCommandPaletteProjectMetadata", () => {
         {
           environmentId: remoteEnvironmentId,
           title: "Floripa Code",
-          workspaceRoot: "/srv/t3code",
+          workspaceRoot: "/srv/floripacode",
         },
         {
           environmentId: remoteEnvironmentId,
           title: "Floripa Code worktree",
-          workspaceRoot: "/srv/t3code-feature",
+          workspaceRoot: "/srv/floripacode-feature",
         },
       ],
       locationByEnvironmentId: locations,
@@ -144,12 +144,12 @@ describe("buildCommandPaletteProjectMetadata", () => {
         {
           environmentId: remoteEnvironmentId,
           title: "Floripa Code",
-          workspaceRoot: "/srv/t3code",
+          workspaceRoot: "/srv/floripacode",
         },
         {
           environmentId: secondRemoteEnvironmentId,
           title: "Floripa Code mirror",
-          workspaceRoot: "/srv/mirror/t3code",
+          workspaceRoot: "/srv/mirror/floripacode",
         },
       ],
       locationByEnvironmentId: new Map([
@@ -167,7 +167,7 @@ describe("buildCommandPaletteProjectMetadata", () => {
         {
           environmentId: remoteEnvironmentId,
           title: "Floripa Code",
-          workspaceRoot: "/srv/t3code",
+          workspaceRoot: "/srv/floripacode",
         },
       ],
       locationByEnvironmentId: new Map(),

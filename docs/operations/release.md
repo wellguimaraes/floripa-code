@@ -14,7 +14,7 @@ This document covers the unified release workflow for stable and nightly desktop
   - push tag matching `v*.*.*` for a stable release of an explicit commit
   - scheduled nightly check every 30 minutes
   - manual `workflow_dispatch` with `channel=nightly`
-  - manual `workflow_dispatch` with `channel=preview`, the maintainers' test train. It exercises the whole release flow (build, sign, notarize, smoke, publish) for a commit that end users must never receive, which is how an unmerged branch or a risky change gets a real release run before it lands. It builds the triggering commit with nightly's versioning under the `preview` prerelease identifier (`0.0.41-preview.<date>.<run>`) and publishes a GitHub prerelease plus the npm packages under the `preview` dist-tag. Preview is not on the schedule, no default npm dist-tag points at it, its desktop builds carry no update feed, and no updater manifest (`latest*.yml`, `nightly*.yml`, blockmaps) is attached, so a stable or nightly install cannot be offered one. The only ways onto it are downloading the release by hand, `npx t3@preview`, `T3CODE_CHANNEL=preview` for the install scripts, or `t3 update --channel preview` from a terminal; each prints a warning, and the CLI asks for confirmation when the running build is not itself a preview. The release itself is named as a maintainer test build and its body is a warning rather than generated notes: a changelog of unmerged branch history is not a changelog, and nightly and stable notes are unaffected because each series resolves its previous tag within its own channel. The hosted web app, AUR, and Discord announcements are skipped. Keep it; it costs nothing when idle.
+  - manual `workflow_dispatch` with `channel=preview`, the maintainers' test train. It exercises the whole release flow (build, sign, notarize, smoke, publish) for a commit that end users must never receive, which is how an unmerged branch or a risky change gets a real release run before it lands. It builds the triggering commit with nightly's versioning under the `preview` prerelease identifier (`0.0.41-preview.<date>.<run>`) and publishes a GitHub prerelease plus the npm packages under the `preview` dist-tag. Preview is not on the schedule, no default npm dist-tag points at it, its desktop builds carry no update feed, and no updater manifest (`latest*.yml`, `nightly*.yml`, blockmaps) is attached, so a stable or nightly install cannot be offered one. The only ways onto it are downloading the release by hand, `npx t3@preview`, `FLORIPACODE_CHANNEL=preview` for the install scripts, or `t3 update --channel preview` from a terminal; each prints a warning, and the CLI asks for confirmation when the running build is not itself a preview. The release itself is named as a maintainer test build and its body is a warning rather than generated notes: a changelog of unmerged branch history is not a changelog, and nightly and stable notes are unaffected because each series resolves its previous tag within its own channel. The hosted web app, AUR, and Discord announcements are skipped. Keep it; it costs nothing when idle.
 - A manual stable release builds the commit of the latest published nightly, not `main` HEAD.
   Nightly is the release candidate: verify the nightly, then promote it. Merges to `main` keep
   landing while you verify and never leak into the stable build.
@@ -42,11 +42,11 @@ This document covers the unified release workflow for stable and nightly desktop
   - The executable is built with a Node that supports `--build-sea` (`VP_NODE_VERSION=26.8.2`, kept in step with `SEA_NODE_VERSION` in `apps/server/vite.config.ts`), while the repo stays on `engines.node`.
   - macOS archives are signed with the Developer ID certificate and notarized when the Apple secrets are present (ad hoc otherwise, which still runs from `curl`/`tar` installs). Windows executables use the same Azure Trusted Signing setup as the installer. Every native addon in the macOS archive is signed too, since the hardened runtime refuses unsigned libraries.
   - Each archive is extracted and executed on its build runner (`scripts/smoke-cli-archive.ts`) before it is uploaded.
-- Publishes the CLI to npm with OIDC trusted publishing from the same workflow file, as the same bytes the GitHub Release carries: `scripts/build-npm-platform-packages.ts` unpacks the five CLI archives into `@t3code/t3-<platform>-<arch>` packages (each with `os`/`cpu` set so npm installs only the matching one) and generates the `t3` launcher, whose `bin/t3.js` lists them as `optionalDependencies` and execs the installed executable. `npx t3` therefore needs Node only to run the launcher, never to run the server. `node apps/server/scripts/cli.ts publish` publishes the platform packages first and the launcher last, after a `--dry-run` pass over all of them so an auth or scope error fails before anything is live.
+- Publishes the CLI to npm with OIDC trusted publishing from the same workflow file, as the same bytes the GitHub Release carries: `scripts/build-npm-platform-packages.ts` unpacks the five CLI archives into `@floripacode/t3-<platform>-<arch>` packages (each with `os`/`cpu` set so npm installs only the matching one) and generates the `t3` launcher, whose `bin/t3.js` lists them as `optionalDependencies` and execs the installed executable. `npx t3` therefore needs Node only to run the launcher, never to run the server. `node apps/server/scripts/cli.ts publish` publishes the platform packages first and the launcher last, after a `--dry-run` pass over all of them so an auth or scope error fails before anything is live.
   - stable releases publish npm dist-tag `latest`
   - nightly releases publish npm dist-tag `nightly`
   - preview releases publish npm dist-tag `preview`, which nothing resolves unless asked for by name
-  - one-time setup: the `@t3code` npm scope (org) must exist, and `t3` and each `@t3code/t3-<platform>-<arch>` package needs a trusted publisher registered for this workflow file (see below).
+  - one-time setup: the `@floripacode` npm scope (org) must exist, and `t3` and each `@floripacode/t3-<platform>-<arch>` package needs a trusted publisher registered for this workflow file (see below).
 - Builds the hosted web app on Vercel while the desktop jobs run, and makes it live only after a release is published:
   - stable releases are aliased to the `latest` hosted app channel
   - nightly releases are aliased to the `nightly` hosted app channel
@@ -158,7 +158,7 @@ Personal stages reference the production-owned zones.
 Developers deploy personal stages locally rather than through pull-request automation:
 
 ```sh
-vp run --filter t3code-relay deploy -- --stage "$USER" --env-file .env.local
+vp run --filter floripacode-relay deploy -- --stage "$USER" --env-file .env.local
 ```
 
 ### Managed tunnel cleanup rollout
@@ -206,7 +206,7 @@ Ship the web and mobile builds that show the offline reason before enabling lega
 user whose host is affected sees what to do. The relay adds the `tunnel_released_at` allocation
 column in its first deploy with this change; the legacy switch stays `off` until you set it.
 
-1. Run `vp run --filter t3code-relay tunnels:census` with a read-only Cloudflare token. It counts
+1. Run `vp run --filter floripacode-relay tunnels:census` with a read-only Cloudflare token. It counts
    tunnels in every relay stage. The reaper only sees its own stage's tunnels, so clean up the rest
    by hand.
 2. Set the legacy mode to `dry-run`, deploy, and read `wouldDeleteLegacy`, `legacyOver30Days`,
@@ -286,7 +286,7 @@ jobs run, and promotes it with `vercel promote` after the release is published.
 Stable releases do not deploy the marketing site because they can promote an
 older nightly commit.
 
-The job looks up the `t3code-marketing` project using the existing `VERCEL_TOKEN`
+The job looks up the `floripacode-marketing` project using the existing `VERCEL_TOKEN`
 and `VERCEL_ORG_ID` secrets. It also respects the optional `VERCEL_TEAM_SLUG`
 variable. The Vercel project's root directory must be `apps/marketing`.
 Git deployments remain disabled in `apps/marketing/vercel.ts`.
@@ -309,9 +309,9 @@ Required GitHub Actions secrets:
 Optional GitHub Actions variables:
 
 - `VERCEL_TEAM_SLUG`: overrides the Vercel CLI scope when the team slug is preferred over the `VERCEL_ORG_ID` secret.
-- `T3CODE_WEB_ROUTER_URL`: defaults to `https://app.t3.codes`.
-- `T3CODE_WEB_LATEST_DOMAIN`: defaults to `latest.app.t3.codes`.
-- `T3CODE_WEB_NIGHTLY_DOMAIN`: defaults to `nightly.app.t3.codes`.
+- `FLORIPACODE_WEB_ROUTER_URL`: defaults to `https://app.t3.codes`.
+- `FLORIPACODE_WEB_LATEST_DOMAIN`: defaults to `latest.app.t3.codes`.
+- `FLORIPACODE_WEB_NIGHTLY_DOMAIN`: defaults to `nightly.app.t3.codes`.
 
 Required Vercel domains:
 
@@ -320,9 +320,9 @@ Required Vercel domains:
 - `nightly.app.t3.codes`: channel alias updated by nightly releases.
 
 The router domain uses `apps/web/vercel.ts` routes. Users opt into a channel by
-visiting `/__t3code/channel?channel=latest` or
-`/__t3code/channel?channel=nightly`; the router stores the
-`t3code_web_channel` cookie and rewrites future requests on `app.t3.codes` to
+visiting `/__floripacode/channel?channel=latest` or
+`/__floripacode/channel?channel=nightly`; the router stores the
+`floripacode_web_channel` cookie and rewrites future requests on `app.t3.codes` to
 the matching channel alias.
 
 The release deploy job rewrites release package versions before upload so the
@@ -331,7 +331,7 @@ same deployment to both the `latest` channel and the router domain so the router
 rules stay current. Nightly deploys only alias the `nightly` channel. The job
 also passes `VITE_HOSTED_APP_CHANNEL=latest|nightly`, which renders the hosted
 update track selector in the About panel. Changing the selector navigates
-through `/__t3code/channel` on the router domain so the user's channel cookie is
+through `/__floripacode/channel` on the router domain so the user's channel cookie is
 updated before redirecting to the hosted app root.
 
 One-time Vercel dashboard setup:
@@ -361,7 +361,7 @@ One-time Vercel dashboard setup:
   - `make_latest` is always `false`
 - Uses the next stable patch version as the nightly base. For example, `0.0.17` produces nightlies on `0.0.18-nightly.*`.
 - Publishes Electron auto-update metadata to the dedicated `nightly` updater channel, so desktop users can opt into that track independently from stable.
-- Publishes the CLI npm packages (`t3` and `@t3code/t3-<platform>-<arch>`) to the `nightly` npm dist-tag using the same nightly version.
+- Publishes the CLI npm packages (`t3` and `@floripacode/t3-<platform>-<arch>`) to the `nightly` npm dist-tag using the same nightly version.
 - Does not commit version bumps back to `main`.
 
 ## Server self-update release invariant
@@ -403,7 +403,7 @@ available.
   - The desktop UI shows a rocket update button when an update is available; click once to download, click again after download to restart/install.
 - Provider: GitHub Releases (`provider: github`) configured at build time.
 - Repository slug source:
-  - `T3CODE_DESKTOP_UPDATE_REPOSITORY` (format `owner/repo`), if set.
+  - `FLORIPACODE_DESKTOP_UPDATE_REPOSITORY` (format `owner/repo`), if set.
   - otherwise `GITHUB_REPOSITORY` from GitHub Actions.
 - Required release assets for updater:
   - platform installers (`.exe`, `.dmg`, `.AppImage`, `.deb`, plus macOS `.zip` for Squirrel.Mac update payloads)
@@ -463,18 +463,18 @@ blockmaps, with a 60 MB maximum for a representative sidecar-to-sidecar update.
 
 The workflow runs `node scripts/build-npm-platform-packages.ts` on the downloaded CLI archives, then
 `node apps/server/scripts/cli.ts publish --packages-dir npm-packages`, which runs `npm publish` on
-each `@t3code/t3-<platform>-<arch>.tgz` and finally on `t3.tgz`, the launcher. The script publishes
+each `@floripacode/t3-<platform>-<arch>.tgz` and finally on `t3.tgz`, the launcher. The script publishes
 tarballs it built itself rather than directories: `npm publish <dir>` strips `node_modules/` from the
 tarball no matter what `files` says, and the executable loads its native addons from there. Seven
-packages are published per release: `t3`, `@t3code/t3-darwin-arm64`, `@t3code/t3-darwin-x64`,
-`@t3code/t3-linux-arm64`, `@t3code/t3-linux-x64`, `@t3code/t3-win32-arm64`,
-`@t3code/t3-win32-x64`.
+packages are published per release: `t3`, `@floripacode/t3-darwin-arm64`, `@floripacode/t3-darwin-x64`,
+`@floripacode/t3-linux-arm64`, `@floripacode/t3-linux-x64`, `@floripacode/t3-win32-arm64`,
+`@floripacode/t3-win32-x64`.
 
 Checklist:
 
-1. Confirm the npm org owns package `t3` and the `@t3code` scope exists on npm (create the org if
+1. Confirm the npm org owns package `t3` and the `@floripacode` scope exists on npm (create the org if
    it does not).
-2. For `t3` and each `@t3code/t3-<platform>-<arch>` package, configure a Trusted Publisher in the
+2. For `t3` and each `@floripacode/t3-<platform>-<arch>` package, configure a Trusted Publisher in the
    npm package settings (a package that has never been published needs a first publish or a
    placeholder before the setting exists; the `--dry-run` step in `publish_cli` reports which
    names are still rejected):
@@ -530,7 +530,7 @@ Checklist:
 
 1. Apple Developer account access:
    - Team has rights to create Developer ID certificates.
-2. Create an explicit App ID for `com.t3tools.t3code` and enable Associated Domains.
+2. Create an explicit App ID for `com.floripacode` and enable Associated Domains.
 3. Create a `Developer ID Application` certificate and a compatible provisioning profile for that
    App ID with Associated Domains enabled.
 4. Export the certificate + private key as `.p12` from Keychain.
@@ -556,7 +556,7 @@ Notes:
 - In-app browser passkeys depend on the same profile. The packager adds each entitlement only when
   the profile grants it, because macOS will not launch an app that claims more than its profile
   allows. The build log reports which ones it enabled.
-  - `keychain-access-groups` (`<TEAM_ID>.com.t3tools.t3code.webauthn`) enables Touch ID passkeys.
+  - `keychain-access-groups` (`<TEAM_ID>.com.floripacode.webauthn`) enables Touch ID passkeys.
     Profiles that grant the team's keychain groups (`<TEAM_ID>.*`) cover it.
   - `com.apple.developer.web-browser.public-key-credential` lets the system passkey sheet (iCloud
     Keychain, password managers, phones, security keys) serve any site. Apple grants it as a
@@ -610,7 +610,7 @@ Checklist:
 
 - macOS build unsigned when expected signed:
   - Check all Apple secrets plus `APPLE_TEAM_ID` are populated and non-empty.
-  - Confirm the provisioning profile belongs to `APPLE_TEAM_ID.com.t3tools.t3code` and includes
+  - Confirm the provisioning profile belongs to `APPLE_TEAM_ID.com.floripacode` and includes
     Associated Domains.
 - Windows build unsigned when expected signed:
   - Check all Azure ATS and auth secrets are populated and non-empty.

@@ -35,7 +35,7 @@ export const useWorldWeatherStore = create<WorldWeatherState>()(
       setLive: (live) => set({ live }),
     }),
     {
-      name: "t3code:world-weather:v1",
+      name: "floripacode:world-weather:v1",
       storage: createJSONStorage(() =>
         resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
       ),

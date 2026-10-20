@@ -8,7 +8,7 @@ import { Alert } from "react-native";
 import { useEnvironments } from "../state/environments";
 import { environmentSession } from "../state/session";
 
-const storageKey = "t3code.permission-update.v1";
+const storageKey = "floripacode.permission-update.v1";
 const dismissedThisLaunch = new Set<string>();
 const shownThisLaunch = new Set<string>();
 

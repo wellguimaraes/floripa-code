@@ -88,7 +88,7 @@ const disabledCodexSettings: CodexSettings = Schema.decodeSync(CodexSettings)({
   enabled: false,
 });
 
-process.env.T3CODE_CURSOR_ENABLED = "1";
+process.env.FLORIPACODE_CURSOR_ENABLED = "1";
 
 // ── Test helpers ────────────────────────────────────────────────────
 
@@ -1276,7 +1276,7 @@ it.layer(
         }).pipe(
           Effect.provide(
             ServerConfig.layerTest(process.cwd(), {
-              prefix: "t3-codex-retired-model-cache-",
+              prefix: "floripa-codex-retired-model-cache-",
             }).pipe(Layer.provideMerge(NodeServices.layer)),
           ),
         ),
@@ -2708,7 +2708,7 @@ it.layer(
     // assertions below fail.
     it.effect("propagates real Codex probe failures to the aggregator at boot", () =>
       Effect.gen(function* () {
-        const missingBinary = `t3code_codex_missing_`;
+        const missingBinary = `floripacode_codex_missing_`;
         const serverSettings = yield* makeMutableServerSettingsService(
           decodeServerSettings(
             deepMerge(encodedDefaultServerSettings, {
@@ -2817,8 +2817,8 @@ it.layer(
     // A binary path change must rebuild Codex and publish its new probe result.
     it.effect("re-probes when settings change the codex binaryPath", () =>
       Effect.gen(function* () {
-        const firstMissing = `t3code_codex_first_`;
-        const secondMissing = `t3code_codex_second_`;
+        const firstMissing = `floripacode_codex_first_`;
+        const secondMissing = `floripacode_codex_second_`;
         const spawnedCommands: Array<string> = [];
         const secondProbeStarted = yield* Deferred.make<void>();
         const releaseSecondProbe = yield* Deferred.make<void>();
@@ -3411,7 +3411,7 @@ it.layer(
     );
 
     it.effect("runs Claude status probes with the configured CLAUDE_CONFIG_DIR", () => {
-      const claudeConfigDir = "/tmp/t3code-claude-home";
+      const claudeConfigDir = "/tmp/floripacode-claude-home";
       const recorded = recordingMockSpawnerLayer((args) => {
         const joined = args.join(" ");
         if (joined === "--version") return { stdout: "1.0.0\n", stderr: "", code: 0 };

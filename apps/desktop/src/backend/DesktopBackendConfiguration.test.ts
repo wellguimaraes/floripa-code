@@ -83,14 +83,14 @@ function layerEnvironment(
       Layer.mergeAll(
         NodeServices.layer,
         DesktopConfig.layerTest({
-          T3CODE_HOME: baseDir,
-          T3CODE_PORT: "9999",
-          T3CODE_MODE: "desktop",
-          T3CODE_DESKTOP_LAN_HOST: "192.168.1.50",
+          FLORIPACODE_HOME: baseDir,
+          FLORIPACODE_PORT: "9999",
+          FLORIPACODE_MODE: "desktop",
+          FLORIPACODE_DESKTOP_LAN_HOST: "192.168.1.50",
           VITE_DEV_SERVER_URL: options?.devServerUrl,
-          T3CODE_OTLP_TRACES_URL: options?.otlpTracesUrl,
-          T3CODE_OTLP_METRICS_URL: options?.otlpMetricsUrl,
-          T3CODE_OTLP_LOGS_URL: options?.otlpLogsUrl,
+          FLORIPACODE_OTLP_TRACES_URL: options?.otlpTracesUrl,
+          FLORIPACODE_OTLP_METRICS_URL: options?.otlpMetricsUrl,
+          FLORIPACODE_OTLP_LOGS_URL: options?.otlpLogsUrl,
         }),
       ),
     ),
@@ -246,9 +246,9 @@ describe("DesktopBackendConfiguration", () => {
         assert.equal(first.cwd, environment.backendCwd);
         assert.equal(first.captureOutput, true);
         assert.equal(first.env.ELECTRON_RUN_AS_NODE, "1");
-        assert.isUndefined(first.env.T3CODE_PORT);
-        assert.isUndefined(first.env.T3CODE_MODE);
-        assert.isUndefined(first.env.T3CODE_DESKTOP_LAN_HOST);
+        assert.isUndefined(first.env.FLORIPACODE_PORT);
+        assert.isUndefined(first.env.FLORIPACODE_MODE);
+        assert.isUndefined(first.env.FLORIPACODE_DESKTOP_LAN_HOST);
 
         assert.equal(first.bootstrap.mode, "desktop");
         assert.equal(first.bootstrap.noBrowser, true);
@@ -994,11 +994,11 @@ describe("DesktopBackendConfiguration", () => {
 
       const previousWslEnv = process.env.WSLENV;
       const previousDisabled = process.env.OTEL_SDK_DISABLED;
-      const previousTelemetry = process.env.T3CODE_TELEMETRY_ENABLED;
+      const previousTelemetry = process.env.FLORIPACODE_TELEMETRY_ENABLED;
       try {
         delete process.env.WSLENV;
         process.env.OTEL_SDK_DISABLED = "true";
-        process.env.T3CODE_TELEMETRY_ENABLED = "false";
+        process.env.FLORIPACODE_TELEMETRY_ENABLED = "false";
 
         yield* Effect.gen(function* () {
           const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
@@ -1006,8 +1006,8 @@ describe("DesktopBackendConfiguration", () => {
 
           assert.equal(config.env.OTEL_SDK_DISABLED, "true");
           assert.include((config.env.WSLENV ?? "").split(":"), "OTEL_SDK_DISABLED");
-          assert.equal(config.env.T3CODE_TELEMETRY_ENABLED, "false");
-          assert.include((config.env.WSLENV ?? "").split(":"), "T3CODE_TELEMETRY_ENABLED");
+          assert.equal(config.env.FLORIPACODE_TELEMETRY_ENABLED, "false");
+          assert.include((config.env.WSLENV ?? "").split(":"), "FLORIPACODE_TELEMETRY_ENABLED");
         }).pipe(
           Effect.provide(
             DesktopBackendConfiguration.layer.pipe(
@@ -1028,7 +1028,7 @@ describe("DesktopBackendConfiguration", () => {
       } finally {
         restoreEnv("WSLENV", previousWslEnv);
         restoreEnv("OTEL_SDK_DISABLED", previousDisabled);
-        restoreEnv("T3CODE_TELEMETRY_ENABLED", previousTelemetry);
+        restoreEnv("FLORIPACODE_TELEMETRY_ENABLED", previousTelemetry);
       }
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
@@ -1045,12 +1045,12 @@ describe("DesktopBackendConfiguration", () => {
         const standard = {
           OTEL_EXPORTER_OTLP_ENDPOINT: "https://collector.example.com:4318/base?api_key=secret",
           OTEL_EXPORTER_OTLP_LOGS_HEADERS: "authorization=Bearer%20token",
-          T3CODE_OTLP_TRACES_URL: "http://t3.example.com:4318/v1/traces",
+          FLORIPACODE_OTLP_TRACES_URL: "http://t3.example.com:4318/v1/traces",
         };
         const previousWslEnv = process.env.WSLENV;
         // A developer's own OTLP variables would be forwarded too.
         const ambientOtel = Object.entries(process.env).filter(
-          ([name]) => name.startsWith("OTEL_") || name.startsWith("T3CODE_OTLP_"),
+          ([name]) => name.startsWith("OTEL_") || name.startsWith("FLORIPACODE_OTLP_"),
         );
         try {
           for (const [name] of ambientOtel) delete process.env[name];
@@ -1073,8 +1073,11 @@ describe("DesktopBackendConfiguration", () => {
             const wslEnv = (config.env.WSLENV ?? "").split(":");
             assert.include(wslEnv, "OTEL_EXPORTER_OTLP_ENDPOINT");
             assert.include(wslEnv, "OTEL_EXPORTER_OTLP_LOGS_HEADERS");
-            assert.equal(config.env.T3CODE_OTLP_TRACES_URL, "http://t3.example.com:4318/v1/traces");
-            assert.include(wslEnv, "T3CODE_OTLP_TRACES_URL");
+            assert.equal(
+              config.env.FLORIPACODE_OTLP_TRACES_URL,
+              "http://t3.example.com:4318/v1/traces",
+            );
+            assert.include(wslEnv, "FLORIPACODE_OTLP_TRACES_URL");
           }).pipe(
             Effect.provide(
               DesktopBackendConfiguration.layer.pipe(
@@ -1110,8 +1113,8 @@ describe("DesktopBackendConfiguration", () => {
       const previousWslEnv = process.env.WSLENV;
       const previousOpenAiKey = process.env.OPENAI_API_KEY;
       const previousAnthropicKey = process.env.ANTHROPIC_API_KEY;
-      const previousOtlpHeaders = process.env.T3CODE_OTLP_HEADERS;
-      const previousOtlpProtocol = process.env.T3CODE_OTLP_PROTOCOL;
+      const previousOtlpHeaders = process.env.FLORIPACODE_OTLP_HEADERS;
+      const previousOtlpProtocol = process.env.FLORIPACODE_OTLP_PROTOCOL;
       // A developer's own OTEL_* variables would be forwarded too.
       const ambientOtel = Object.entries(process.env).filter(([name]) => name.startsWith("OTEL_"));
       try {
@@ -1119,8 +1122,8 @@ describe("DesktopBackendConfiguration", () => {
         process.env.WSLENV = "GOPATH/p:OPENAI_API_KEY/u:EMPTY::AZURE_DEVOPS_EXT_PAT/u";
         process.env.OPENAI_API_KEY = "openai-key";
         process.env.ANTHROPIC_API_KEY = "anthropic-key";
-        process.env.T3CODE_OTLP_HEADERS = 'authorization="Bearer%20my-token"';
-        process.env.T3CODE_OTLP_PROTOCOL = "http/protobuf";
+        process.env.FLORIPACODE_OTLP_HEADERS = 'authorization="Bearer%20my-token"';
+        process.env.FLORIPACODE_OTLP_PROTOCOL = "http/protobuf";
 
         yield* Effect.gen(function* () {
           const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
@@ -1140,14 +1143,14 @@ describe("DesktopBackendConfiguration", () => {
           assert.equal(config.httpBaseUrl.href, "http://172.27.0.99:5050/");
           assert.equal(config.env.OPENAI_API_KEY, "openai-key");
           assert.equal(config.env.ANTHROPIC_API_KEY, "anthropic-key");
-          assert.equal(config.env.T3CODE_OTLP_PROTOCOL, "http/protobuf");
+          assert.equal(config.env.FLORIPACODE_OTLP_PROTOCOL, "http/protobuf");
           // The existing WSLENV is preserved byte-for-byte (note the empty
           // "::" segment survives — WSL ignores it, so we don't normalize
           // it away) and ANTHROPIC_API_KEY is appended. OPENAI_API_KEY is
           // already declared, so it isn't forwarded twice.
           assert.equal(
             config.env.WSLENV,
-            "GOPATH/p:OPENAI_API_KEY/u:EMPTY::AZURE_DEVOPS_EXT_PAT/u:ANTHROPIC_API_KEY:T3CODE_OTLP_HEADERS:T3CODE_OTLP_PROTOCOL",
+            "GOPATH/p:OPENAI_API_KEY/u:EMPTY::AZURE_DEVOPS_EXT_PAT/u:ANTHROPIC_API_KEY:FLORIPACODE_OTLP_HEADERS:FLORIPACODE_OTLP_PROTOCOL",
           );
         }).pipe(
           Effect.provide(
@@ -1170,8 +1173,8 @@ describe("DesktopBackendConfiguration", () => {
         restoreEnv("WSLENV", previousWslEnv);
         restoreEnv("OPENAI_API_KEY", previousOpenAiKey);
         restoreEnv("ANTHROPIC_API_KEY", previousAnthropicKey);
-        restoreEnv("T3CODE_OTLP_HEADERS", previousOtlpHeaders);
-        restoreEnv("T3CODE_OTLP_PROTOCOL", previousOtlpProtocol);
+        restoreEnv("FLORIPACODE_OTLP_HEADERS", previousOtlpHeaders);
+        restoreEnv("FLORIPACODE_OTLP_PROTOCOL", previousOtlpProtocol);
         for (const [name, value] of ambientOtel) restoreEnv(name, value);
       }
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
@@ -1583,7 +1586,7 @@ describe("DesktopBackendConfiguration", () => {
     // a live async effect — otherwise runSync throws in the handler. Build the
     // real WSL layer (not the sync test stub) and resolve the label with a
     // top-level runSync, exactly as the handler does.
-    // oxlint-disable-next-line t3code/no-manual-effect-runtime-in-tests -- This test intentionally replicates the sync IPC handler's runSync path to catch a regression to async-only resolution; it.effect would mask it.
+    // oxlint-disable-next-line floripacode/no-manual-effect-runtime-in-tests -- This test intentionally replicates the sync IPC handler's runSync path to catch a regression to async-only resolution; it.effect would mask it.
     const runtime = ManagedRuntime.make(
       DesktopBackendConfiguration.layer.pipe(
         Layer.provideMerge(layerServerExposure),
@@ -1608,7 +1611,7 @@ describe("DesktopBackendConfiguration", () => {
       const configuration = await runtime.runPromise(
         DesktopBackendConfiguration.DesktopBackendConfiguration,
       );
-      // oxlint-disable-next-line t3code/no-manual-effect-runtime-in-tests -- Same reason: this is the synchronous resolution the IPC handler performs.
+      // oxlint-disable-next-line floripacode/no-manual-effect-runtime-in-tests -- Same reason: this is the synchronous resolution the IPC handler performs.
       const label = Effect.runSync(configuration.resolvePrimaryLabel);
       assert.equal(typeof label, "string");
     } finally {

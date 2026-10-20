@@ -17,7 +17,7 @@ export const useWorldArrangementStore = create<WorldArrangementState>()(
       setArrangement: (arrangement) => set({ arrangement }),
     }),
     {
-      name: "t3code:world-arrangement:v1",
+      name: "floripacode:world-arrangement:v1",
       storage: createJSONStorage(() =>
         resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
       ),

@@ -13,10 +13,10 @@ import {
 } from "../lib/connection";
 import * as MobileSecureStorage from "./mobile-secure-storage";
 
-const CONNECTIONS_KEY = "t3code.connections";
-const AGENT_AWARENESS_DEVICE_ID_KEY = "t3code.agent-awareness.device-id";
-const AGENT_AWARENESS_REGISTRATION_KEY = "t3code.agent-awareness.registration";
-const RECENT_THREAD_SHORTCUTS_KEY = "t3code.recent-thread-shortcuts";
+const CONNECTIONS_KEY = "floripacode.connections";
+const AGENT_AWARENESS_DEVICE_ID_KEY = "floripacode.agent-awareness.device-id";
+const AGENT_AWARENESS_REGISTRATION_KEY = "floripacode.agent-awareness.registration";
+const RECENT_THREAD_SHORTCUTS_KEY = "floripacode.recent-thread-shortcuts";
 
 export class MobileStorageDecodeError extends Schema.TaggedError<MobileStorageDecodeError>()(
   "MobileStorageDecodeError",

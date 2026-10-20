@@ -260,8 +260,8 @@ jobs:
 
       - name: Test
         env:
-          T3CODE_TRANSFER_BUDGET_REPORT_PATH: ${{ runner.temp }}/t3code-transfer-budget.md
-          T3CODE_TRANSFER_BUDGET_RESULT_PATH: ${{ runner.temp }}/thread-transfer-result.json
+          FLORIPACODE_TRANSFER_BUDGET_REPORT_PATH: ${{ runner.temp }}/floripacode-transfer-budget.md
+          FLORIPACODE_TRANSFER_BUDGET_RESULT_PATH: ${{ runner.temp }}/thread-transfer-result.json
         run: vp run --filter t3 test --shard ${{ matrix.shard }}/${{ strategy.job-total }}
 
       # integration/transferBudgetV2.integration.test.ts writes the report; exactly one shard
@@ -281,8 +281,8 @@ jobs:
       - name: Publish transfer budget report
         if: always() && steps.transfer_budget.outputs.present == 'true'
         run: |
-          if test -f "${{ runner.temp }}/t3code-transfer-budget.md"; then
-            tee -a "$GITHUB_STEP_SUMMARY" < "${{ runner.temp }}/t3code-transfer-budget.md"
+          if test -f "${{ runner.temp }}/floripacode-transfer-budget.md"; then
+            tee -a "$GITHUB_STEP_SUMMARY" < "${{ runner.temp }}/floripacode-transfer-budget.md"
           else
             echo "Transfer budget report was not produced." >> "$GITHUB_STEP_SUMMARY"
           fi

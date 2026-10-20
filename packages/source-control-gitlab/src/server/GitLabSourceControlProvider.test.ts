@@ -28,7 +28,7 @@ it.effect("maps GitLab MR summaries into provider-neutral change requests", () =
           state: "closed",
           closedAt: "2026-08-23T10:00:00Z",
           isCrossRepository: true,
-          headRepositoryNameWithOwner: "fork/t3code",
+          headRepositoryNameWithOwner: "fork/floripacode",
           headRepositoryOwnerLogin: "fork",
         }),
     });
@@ -50,7 +50,7 @@ it.effect("maps GitLab MR summaries into provider-neutral change requests", () =
       mergedAt: null,
       updatedAt: Option.none(),
       isCrossRepository: true,
-      headRepositoryNameWithOwner: "fork/t3code",
+      headRepositoryNameWithOwner: "fork/floripacode",
       headRepositoryOwnerLogin: "fork",
     });
   }),

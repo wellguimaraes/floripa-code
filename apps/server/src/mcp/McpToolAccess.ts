@@ -68,7 +68,7 @@ let handlersLayer: <Tools extends Record<string, Tool.Any>, EX, RX>(
  * without a decision here does not compile. Both are nominal classes, so a
  * handler or layer cannot pass for one by copying its fields. Effect's own
  * registration functions accept any handler, so the
- * `t3code/no-raw-mcp-registration` lint rule keeps Effect's `McpServer` inside
+ * `floripacode/no-raw-mcp-registration` lint rule keeps Effect's `McpServer` inside
  * McpHttpServer.
  *
  * Parameters choose the target; the caller sets the limits: a thread caller

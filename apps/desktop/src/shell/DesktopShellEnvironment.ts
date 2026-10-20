@@ -86,7 +86,7 @@ const LOGIN_SHELL_ENV_NAMES = [
   "XDG_SESSION_DESKTOP",
   "XDG_SESSION_TYPE",
   "WAYLAND_DISPLAY",
-  "T3CODE_TELEMETRY_ENABLED",
+  "FLORIPACODE_TELEMETRY_ENABLED",
   "OPENROUTER_API_KEY",
 ] as const;
 const WINDOWS_PROFILE_ENV_NAMES = ["PATH", "FNM_DIR", "FNM_MULTISHELL_PATH"] as const;
@@ -180,8 +180,8 @@ const knownWindowsCliDirs = (env: NodeJS.ProcessEnv): ReadonlyArray<string> => [
   ),
 ];
 
-const startMarker = (name: string) => `__T3CODE_ENV_${name}_START__`;
-const endMarker = (name: string) => `__T3CODE_ENV_${name}_END__`;
+const startMarker = (name: string) => `__FLORIPACODE_ENV_${name}_START__`;
+const endMarker = (name: string) => `__FLORIPACODE_ENV_${name}_END__`;
 
 const executableName = (command: string): string => command.split(/[\\/]/u).at(-1) ?? command;
 
@@ -451,7 +451,7 @@ const installPosixEnvironment = Effect.fn("desktop.shellEnvironment.installPosix
       "XDG_RUNTIME_DIR",
       "WAYLAND_DISPLAY",
       // The telemetry opt-out is documented as a shell variable; GUI launches never see it.
-      "T3CODE_TELEMETRY_ENABLED",
+      "FLORIPACODE_TELEMETRY_ENABLED",
       // Voice input and thread retitling fall back to it when Settings has no key.
       "OPENROUTER_API_KEY",
     ] as const) {

@@ -24,7 +24,7 @@ export const useWorldTimeStore = create<WorldTimeState>()(
       setAuto: (auto) => set(auto ? { auto } : { auto, hour: localHour() }),
     }),
     {
-      name: "t3code:world-time:v1",
+      name: "floripacode:world-time:v1",
       storage: createJSONStorage(() =>
         resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
       ),

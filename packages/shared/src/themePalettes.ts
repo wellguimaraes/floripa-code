@@ -1,7 +1,7 @@
 export const BUILT_IN_THEME_IDS = ["t3-chat", "grove", "ocean", "ember", "iris"] as const;
 
 /** The standard Floripa Code palette, kept separate from the optional built-in theme library. */
-export const MOBILE_DEFAULT_THEME_ID = "t3-code";
+export const MOBILE_DEFAULT_THEME_ID = "floripa-code";
 
 /**
  * Every palette the mobile app can render. Declared here so host-side tooling
@@ -134,7 +134,7 @@ export type ThemeDefinition = Readonly<{
  * Search uses amber across built-ins to separate matches from accent-tinted
  * inline code. The current match uses a stronger gold with dark text.
  */
-export const T3_CODE_LIGHT_THEME_COLORS: ThemeColors = {
+export const FLORIPA_CODE_LIGHT_THEME_COLORS: ThemeColors = {
   searchMatchBackground: "#ffde8b",
   searchMatchForeground: "#21180a",
   searchMatchActiveBackground: "#eea52b",
@@ -198,7 +198,7 @@ export const T3_CODE_LIGHT_THEME_COLORS: ThemeColors = {
   terminalScrollbarHover: "#bdbdbd",
 };
 
-export const T3_CODE_DARK_THEME_COLORS: ThemeColors = {
+export const FLORIPA_CODE_DARK_THEME_COLORS: ThemeColors = {
   searchMatchBackground: "#8c6c1f",
   searchMatchForeground: "#f5f5f5",
   searchMatchActiveBackground: "#eea52b",

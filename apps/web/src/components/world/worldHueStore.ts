@@ -23,7 +23,7 @@ export const useWorldHueStore = create<WorldHueState>()(
         }),
     }),
     {
-      name: "t3code:world-hues:v1",
+      name: "floripacode:world-hues:v1",
       storage: createJSONStorage(() =>
         resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
       ),
