@@ -39,6 +39,47 @@ Stream responses carry `Cache-Control: no-transform`; the compression
 middleware would otherwise buffer an MJPEG body that never ends. In browser dev,
 the Vite proxy must forward WebSocket upgrades for `/api`, not only `/ws`.
 
+## Stream bytes do not cross the server's event loop
+
+The server's event loop also runs orchestration, provider output, and
+synchronous SQLite, and every stall there showed up as touch and video
+latency. So the proxy only authenticates video streams and device sockets. It
+then hands the client's TCP handle over IPC to a `t3 device-relay` child
+([DeviceSocketRelay](../../apps/server/src/device/DeviceSocketRelay.ts)), which
+pipes raw bytes to the hub. WebSocket handshakes complete end to end between
+the browser and the hub. Before sending the handle, the server clears
+`socket.server`. Otherwise Node treats the socket as handed to a cluster worker,
+and `server.close()` would wait for every open device stream. Relayed responses
+also bypass the router's CORS middleware, which the desktop renderer and remote
+web origins need for `fetch`, so the child replaces the hub's
+`access-control-*` headers with the server's
+([`browserApiCorsResponseHeaders`](../../apps/server/src/httpCors.ts)). A
+connection without a plain TCP handle stays on the in-process proxy.
+
+## Local iOS clients embed public serve-sim
+
+The serve-sim fork vendored in the hub streams with visible lag even in a plain
+browser, while public [serve-sim](https://www.npmjs.com/package/serve-sim)
+does not. So when the client runs on the host machine (desktop on its own
+backend, or a browser on a loopback environment URL), `device.open` with
+`preview` starts a pinned public serve-sim for that simulator on a random
+loopback port and the panel iframes its page. Remote clients keep the hub
+stream: the iframe's own requests cannot carry a `wsTicket`, and the page
+loads straight from loopback, so only a client on the host can reach it.
+
+A simulator takes one capture at a time; two capture engines on one simulator
+starve each other. Every serve-sim version shares per-simulator stream state in
+`$TMPDIR/serve-sim/server-<udid>.json`, so before starting, T3 stops the
+listed capture only when its process runs from T3's tools directory, never one
+the user started. A session opened without `preview` joins a running preview
+instead of attaching the hub's capture, and the preview stops when the last
+session showing it closes.
+
+The page's `/exec` route runs shell commands. serve-sim gates it with an
+Origin check and a token in the page, but has no Host allowlist, so a
+DNS-rebinding page that finds the port could read the token. The random port
+and a lifetime bound to open sessions are the accepted mitigation.
+
 ## Device settings never go through the hub
 
 serve-sim's preview drives its Tools panel by sending shell commands over that

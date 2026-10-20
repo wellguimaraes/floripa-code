@@ -35,6 +35,11 @@ iOS, and power off. Close the tab to stop watching; the device keeps running
 unless you power it off. Closed tabs stay closed after a reload. To watch the
 device again, choose **+** beside the device tabs.
 
+On the machine that runs the environment server, an iOS Simulator opens in a
+faster viewer with its own Home, rotate, and screenshot controls. 3D view and
+floating the device over the chat are available only in the streamed view that
+other machines use.
+
 Choose **3D view** to inspect supported devices while the live screen stays
 interactive. On iPhone Duo, use the fold and stance controls to change its
 physical pose, or pinch over the device to adjust the hinge. Turning the model
@@ -53,6 +58,11 @@ exposes Liquid Glass, color filters, VoiceOver, and sending a test push
 notification; Android adds orientation and toggling the network. The drawer
 only shows what the platform can do, and every control reflects the value read
 back from the device after a change.
+
+If taps or typing stop reaching an iOS Simulator while video still plays,
+choose **Repair** next to **Input**. This usually happens after Xcode attaches
+to the simulator. Repair restarts the simulator's home screen and closes running
+apps, so reopen your app afterwards.
 
 ## Agents and devices
 
