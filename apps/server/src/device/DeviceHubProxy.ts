@@ -10,9 +10,15 @@
  *
  * Only the routes the Device panel needs are forwarded. Anything under the
  * hub's dashboard, exec, or WebRTC surface is rejected here.
+ *
+ * Long-lived streams and sockets are authenticated here and then carried by
+ * DeviceSocketRelay, off this process's event loop. The in-process proxy
+ * below serves everything else and any connection the relay cannot take.
  */
 import { AuthOrchestrationReadScope, AuthOrchestrationOperateScope } from "@t3tools/contracts";
+import { resolveSelfInvocation } from "@t3tools/shared/nodeRuntime";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import {
   HttpClient,
@@ -22,10 +28,13 @@ import {
   HttpServerResponse,
 } from "effect/http";
 import * as Socket from "effect/socket/Socket";
+import * as NodeHttpServerRequest from "@effect/platform-node/NodeHttpServerRequest";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 
 import { authenticateMediaRequest } from "../auth/http.ts";
+import { browserApiCorsOptions, browserApiCorsResponseHeaders } from "../httpCors.ts";
 import * as DeviceService from "./DeviceService.ts";
+import * as DeviceSocketRelay from "./DeviceSocketRelay.ts";
 
 const ALLOWED_PATHS: ReadonlyArray<RegExp> = [
   /^\/api\/devices$/,
@@ -45,6 +54,9 @@ const MUTABLE_PATHS: ReadonlyArray<RegExp> = [
   /^\/vendor\/serve-emu\/api\/(screenshot|stream-mode|stream-settings)$/,
   /^\/vendor\/serve-emu\/api\/fold$/,
 ];
+
+/** GET responses that stay open for as long as the panel shows the device. */
+const RELAYED_STREAM_PATH = /\/stream\.(avcc|mjpeg)$/;
 
 const ALLOWED_WS_PATHS: ReadonlyArray<RegExp> = [
   /^\/api\/devices\/ws$/,
@@ -147,51 +159,78 @@ const proxyHttp = Effect.fn("DeviceHubProxy.proxyHttp")(function* (
   });
 });
 
-const handler = Effect.gen(function* () {
-  const request = yield* HttpServerRequest.HttpServerRequest;
-  const url = HttpServerRequest.toURL(request);
-  if (Option.isNone(url)) {
-    return HttpServerResponse.text("Bad Request", { status: 400 });
-  }
-  const hubPath = url.value.pathname.slice(DeviceService.DEVICE_HUB_ROUTE_PREFIX.length) || "/";
-  const upgrade = isWebSocketUpgrade(request);
-  const allowed = (upgrade ? ALLOWED_WS_PATHS : ALLOWED_PATHS).some((pattern) =>
-    pattern.test(hubPath),
-  );
-  if (!allowed) {
-    return HttpServerResponse.text("Not Found", { status: 404 });
-  }
-  const readOnly = request.method === "GET" || request.method === "HEAD";
-  if (!upgrade && !readOnly && !MUTABLE_PATHS.some((pattern) => pattern.test(hubPath))) {
-    return HttpServerResponse.text("Method Not Allowed", { status: 405 });
-  }
-  const controlsDevice =
-    (upgrade && hubPath !== "/api/devices/ws") ||
-    (!readOnly && /\/api\/(stream-(mode|settings)|fold)$/.test(hubPath));
-  yield* authenticateMediaRequest(
-    controlsDevice ? AuthOrchestrationOperateScope : AuthOrchestrationReadScope,
-  );
-  const devices = yield* DeviceService.DeviceService;
-  const ready = yield* devices.currentReadiness(url.value.searchParams.get("hostId") ?? undefined);
-  if (!ready) {
-    return HttpServerResponse.text("Device hub is not running", { status: 503 });
-  }
-  // The hub runs in standalone mode at its origin root; the panel builds every
-  // stream and socket URL itself, so nothing depends on the hub knowing the
-  // T3 prefix.
-  // The ticket authenticates here and must not travel on to the hub.
-  const upstreamSearch = new URLSearchParams(url.value.search);
-  upstreamSearch.delete("wsTicket");
-  upstreamSearch.delete("hostId");
-  const search = upstreamSearch.size > 0 ? `?${upstreamSearch.toString()}` : "";
-  const upstreamPath = `${hubPath}${search}`;
-  if (upgrade) {
-    return yield* proxyWebSocket(
-      request,
-      `${ready.hub.origin.replace(/^http/, "ws")}${upstreamPath}`,
+const makeHandler = (
+  relay: DeviceSocketRelay.DeviceSocketRelay,
+  cors: Parameters<typeof browserApiCorsResponseHeaders>[0],
+) =>
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const url = HttpServerRequest.toURL(request);
+    if (Option.isNone(url)) {
+      return HttpServerResponse.text("Bad Request", { status: 400 });
+    }
+    const hubPath = url.value.pathname.slice(DeviceService.DEVICE_HUB_ROUTE_PREFIX.length) || "/";
+    const upgrade = isWebSocketUpgrade(request);
+    const allowed = (upgrade ? ALLOWED_WS_PATHS : ALLOWED_PATHS).some((pattern) =>
+      pattern.test(hubPath),
     );
-  }
-  return yield* proxyHttp(request, `${ready.hub.origin}${upstreamPath}`, ready.hub.origin);
-});
+    if (!allowed) {
+      return HttpServerResponse.text("Not Found", { status: 404 });
+    }
+    const readOnly = request.method === "GET" || request.method === "HEAD";
+    if (!upgrade && !readOnly && !MUTABLE_PATHS.some((pattern) => pattern.test(hubPath))) {
+      return HttpServerResponse.text("Method Not Allowed", { status: 405 });
+    }
+    const controlsDevice =
+      (upgrade && hubPath !== "/api/devices/ws") ||
+      (!readOnly && /\/api\/(stream-(mode|settings)|fold)$/.test(hubPath));
+    yield* authenticateMediaRequest(
+      controlsDevice ? AuthOrchestrationOperateScope : AuthOrchestrationReadScope,
+    );
+    const devices = yield* DeviceService.DeviceService;
+    const ready = yield* devices.currentReadiness(
+      url.value.searchParams.get("hostId") ?? undefined,
+    );
+    if (!ready) {
+      return HttpServerResponse.text("Device hub is not running", { status: 503 });
+    }
+    // The hub runs in standalone mode at its origin root; the panel builds every
+    // stream and socket URL itself, so nothing depends on the hub knowing the
+    // T3 prefix.
+    // The ticket authenticates here and must not travel on to the hub.
+    const upstreamSearch = new URLSearchParams(url.value.search);
+    upstreamSearch.delete("wsTicket");
+    upstreamSearch.delete("hostId");
+    const search = upstreamSearch.size > 0 ? `?${upstreamSearch.toString()}` : "";
+    const upstreamPath = `${hubPath}${search}`;
+    if (upgrade || (request.method === "GET" && RELAYED_STREAM_PATH.test(hubPath))) {
+      const relayed = yield* relay.handoff(NodeHttpServerRequest.toIncomingMessage(request), {
+        hubOrigin: ready.hub.origin,
+        path: upstreamPath,
+        upgrade,
+        ...(upgrade
+          ? {}
+          : { responseHeaders: browserApiCorsResponseHeaders(cors, request.headers.origin) }),
+      });
+      if (relayed) return HttpServerResponse.empty();
+    }
+    if (upgrade) {
+      return yield* proxyWebSocket(
+        request,
+        `${ready.hub.origin.replace(/^http/, "ws")}${upstreamPath}`,
+      );
+    }
+    return yield* proxyHttp(request, `${ready.hub.origin}${upstreamPath}`, ready.hub.origin);
+  });
 
-export const layer = HttpRouter.add("*", `${DeviceService.DEVICE_HUB_ROUTE_PREFIX}/*`, handler);
+export const layer = Layer.unwrap(
+  Effect.gen(function* () {
+    const relay = yield* DeviceSocketRelay.make(yield* resolveSelfInvocation());
+    const cors = yield* browserApiCorsOptions;
+    return HttpRouter.add(
+      "*",
+      `${DeviceService.DEVICE_HUB_ROUTE_PREFIX}/*`,
+      makeHandler(relay, cors),
+    );
+  }),
+);

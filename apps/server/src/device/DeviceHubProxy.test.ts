@@ -8,8 +8,10 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 import { HttpClient, HttpClientResponse, HttpRouter } from "effect/http";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
+import * as ServerConfig from "../config.ts";
 import * as DeviceService from "./DeviceService.ts";
 import * as DeviceHubProxy from "./DeviceHubProxy.ts";
 
@@ -57,6 +59,13 @@ const fixture = (
         } as DeviceService.DeviceService["Service"]),
       ),
       Layer.provideMerge(Layer.succeed(HttpClient.HttpClient, client)),
+      Layer.provideMerge(Path.layer),
+      Layer.provideMerge(
+        Layer.succeed(ServerConfig.ServerConfig, {
+          devUrl: undefined,
+          devAllowedOrigins: [],
+        } as unknown as ServerConfig.ServerConfig["Service"]),
+      ),
     ),
     { disableLogger: true },
   );

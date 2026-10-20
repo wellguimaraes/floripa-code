@@ -47,11 +47,10 @@ import {
 } from "./auth/http.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { WEBHOOK_ROUTE_PREFIX } from "./scheduledTasks/ScheduledTaskService.ts";
-import { browserApiCorsAllowedHeaders, browserApiCorsAllowedMethods } from "./httpCors.ts";
+import { browserApiCorsOptions } from "./httpCors.ts";
 
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
-const DESKTOP_RENDERER_ORIGINS = ["floripacode://app", "floripacode-dev://app"];
 const SVG_CONTENT_SECURITY_POLICY = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
 // HTML previews are agent output, not the app. The sandbox gives the document an
 // opaque origin: scripts run, but same-origin cookies, storage, and API calls are
@@ -236,30 +235,7 @@ export const layerHttpCompression = HttpRouter.middleware(HttpMiddleware.compres
   global: true,
 });
 
-export const layerBrowserApiCors = Layer.unwrap(
-  Effect.gen(function* () {
-    const config = yield* ServerConfig.ServerConfig;
-    const devOrigin = config.devUrl?.origin;
-    // Dev uses credentialed requests from Vite or the Electron custom origin, so both must be
-    // explicit. Packaged desktop omits credentials and uses Effect's default wildcard origin.
-    //
-    // FLORIPACODE_DEV_ALLOWED_ORIGINS covers dev servers reached from a second
-    // origin — a tailnet name, a LAN IP, a phone. Browser dev normally proxies
-    // through Vite and is same-origin (no preflight at all), so this is a
-    // safety net for the desktop renderer and any direct-to-backend caller.
-    return HttpRouter.cors({
-      ...(devOrigin
-        ? {
-            allowedOrigins: [devOrigin, ...DESKTOP_RENDERER_ORIGINS, ...config.devAllowedOrigins],
-            credentials: true,
-          }
-        : {}),
-      allowedMethods: browserApiCorsAllowedMethods,
-      allowedHeaders: browserApiCorsAllowedHeaders,
-      maxAge: 600,
-    });
-  }),
-);
+export const layerBrowserApiCors = Layer.unwrap(Effect.map(browserApiCorsOptions, HttpRouter.cors));
 
 export function isLoopbackHostname(hostname: string): boolean {
   const normalizedHostname = hostname
