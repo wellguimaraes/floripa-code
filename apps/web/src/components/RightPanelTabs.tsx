@@ -1408,6 +1408,8 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   ? "pr-17"
                   : "pr-28"
                 : "pr-3",
+              // Under the world frame's header the tabs are a row of their own, not a title bar.
+              props.floating && "border-border border-b",
               ownsDesktopTitleBar && "drag-region",
               ownsDesktopTitleBar && "wco:pr-(--workspace-native-controls-inset)",
               reservesTitleBarControls && props.maximized && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,

@@ -1538,8 +1538,8 @@ function CharacterTag(props: {
         // Red for a reply in the last 5 minutes, yellow within the hour, gray after.
         <span
           className={cn(
-            "size-1.5 shrink-0 rounded-full",
-            chatting && "size-2",
+            "size-2 shrink-0 rounded-full",
+            chatting && "size-3",
             elapsedMs <= 5 * 60_000 && "bg-red-500",
             elapsedMs > 5 * 60_000 && elapsedMs <= 60 * 60_000 && "bg-yellow-400",
             elapsedMs > 60 * 60_000 && "bg-gray-400",

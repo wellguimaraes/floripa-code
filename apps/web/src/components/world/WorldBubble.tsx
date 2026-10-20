@@ -1,5 +1,6 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { fileBasename } from "@t3tools/shared/path";
 import { ArchiveIcon, MessagesSquareIcon, RefreshCwIcon, SquareIcon, XIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -102,6 +103,13 @@ export function WorldBubble(props: {
     reportFailure: false,
   });
   const regeneratingTitle = thread?.titleRegeneration != null;
+  // Worktree folders are often generated (e.g. `t3-8f432bc3`), so a worktree goes by its branch.
+  const worktreeLabel =
+    thread === null
+      ? null
+      : thread.worktreePath === null
+        ? "Main worktree"
+        : (thread.branch ?? fileBasename(thread.worktreePath));
   const [pickingHue, setPickingHue] = useState(false);
   const [text, setText] = useState(() => unsentDrafts.get(facts.key) ?? "");
   // Whatever is left unsent when the bubble goes away waits for next time.
@@ -305,14 +313,14 @@ export function WorldBubble(props: {
                 />
               </PopoverPopup>
             </Popover>
-            <span
-              className={cn(
-                "min-w-0 flex-1 truncate text-sm font-medium",
-                regeneratingTitle && "opacity-55",
-              )}
-            >
-              {facts.title || "Untitled thread"}
-            </span>
+            <div className="min-w-0 flex-1">
+              <p className={cn("truncate text-sm font-medium", regeneratingTitle && "opacity-55")}>
+                {facts.title || "Untitled thread"}
+              </p>
+              {worktreeLabel !== null ? (
+                <p className="truncate text-muted-foreground text-xs">{worktreeLabel}</p>
+              ) : null}
+            </div>
             {readEnvironmentSupportsTitleRegeneration(facts.ref.environmentId) ? (
               <Button
                 variant="ghost"
@@ -384,7 +392,8 @@ export function WorldBubble(props: {
           </div>
           {/* The last exchange as a messaging-app thread: yours on the right, the agent's on the left. */}
           {lastSent !== null || preview !== null || typing ? (
-            <div className="my-1 flex flex-col gap-2 text-xs">
+            // Ruled off below, edge to edge, like the header.
+            <div className="-mx-2.5 my-1 flex flex-col gap-2 border-b border-border px-2.5 pb-2.5 text-xs">
               {lastSent !== null ? (
                 <div
                   className="ml-auto max-w-[85%] rounded-lg px-3 py-2 break-words"

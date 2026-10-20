@@ -42,7 +42,7 @@ function WindowMeter({
   return (
     <span className="flex items-center gap-1.5 whitespace-nowrap">
       <span className="text-muted-foreground">{label}</span>
-      <span className="h-2.5 w-12 overflow-hidden rounded-full bg-foreground/25">
+      <span className="h-2.5 w-12 overflow-hidden rounded-full bg-foreground/15">
         <span
           className="block h-full rounded-full"
           style={{ width: `${percent}%`, backgroundColor: color }}

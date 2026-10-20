@@ -477,8 +477,8 @@ export function BubbleComposer(props: {
       />
       {/* Above the rest of the bubble, whose picker icons stack at z-30, so the list covers them. */}
       <div ref={field} className="relative z-40">
-        {/* Framed like a text field; the placeholder lines up inside the padding. */}
-        <div className="rounded-lg border border-input bg-background px-2.5 py-1.5 shadow-xs/5 focus-within:border-ring focus-within:ring-3 focus-within:ring-inset focus-within:ring-ring/24 dark:bg-input/32">
+        {/* Unframed: the bubble is the field, and its text lines up with the hints below. */}
+        <div className="py-1">
           <ComposerPromptEditor
             editorRef={editor}
             value={text}
