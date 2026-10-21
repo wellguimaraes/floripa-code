@@ -15,6 +15,7 @@ import {
   MIN_CODE_FONT_SIZE,
   MIN_INTERFACE_FONT_SIZE,
   MIN_PROMPT_FONT_SIZE,
+  MIN_TERMINAL_FONT_SIZE,
 } from "@t3tools/contracts";
 
 export const DEFAULT_SANS_FONT_STACK =
@@ -41,13 +42,14 @@ export function resolveTerminalFontPreference(input: {
   return input.code;
 }
 
+/** In simple mode the terminal runs a pixel under the monospace size, 12px by default. */
 export function resolveTerminalFontSizePreference(input: {
   readonly advanced: boolean;
   readonly code: number;
   readonly terminal: number;
 }): number {
   if (input.advanced) return input.terminal;
-  return input.code;
+  return Math.max(MIN_TERMINAL_FONT_SIZE, input.code - 1);
 }
 
 function quoteFontFamilyName(name: string): string {
