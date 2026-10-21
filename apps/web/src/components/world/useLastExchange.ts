@@ -13,6 +13,8 @@ function sameExchange(a: LastExchange, b: LastExchange): boolean {
     a.sent?.id === b.sent?.id &&
     a.sent?.text === b.sent?.text &&
     a.sent?.attachmentCount === b.sent?.attachmentCount &&
+    a.sent?.queued?.runId === b.sent?.queued?.runId &&
+    a.sent?.queued?.steerTargetRunId === b.sent?.queued?.steerTargetRunId &&
     a.reply?.id === b.reply?.id &&
     a.reply?.text === b.reply?.text
   );
@@ -24,7 +26,7 @@ const lastExchangeAtomFamily = Atom.family((key: string) => {
   // Only a different message re-renders: streaming replies leave it alone.
   return Atom.make((get): LastExchange => {
     const thread = get(environmentThreadDetails.threadAtom(ref));
-    const next = thread === null ? NO_EXCHANGE : lastExchange(thread.projection.messages);
+    const next = thread === null ? NO_EXCHANGE : lastExchange(thread.projection);
     if (sameExchange(next, previous)) return previous;
     previous = next;
     return next;

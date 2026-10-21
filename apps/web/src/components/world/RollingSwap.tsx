@@ -73,11 +73,11 @@ export function RollingSwap(props: { readonly swapKey: string; readonly children
 /** Three dots that blink in turn: the agent is writing. */
 export function TypingDots() {
   return (
-    <span className="flex h-4 items-center gap-1" role="status" aria-label="Agent is working">
+    <span className="flex h-4 items-center gap-0.75" role="status" aria-label="Agent is working">
       {[0, 1, 2].map((dot) => (
         <span
           key={dot}
-          className="size-1.5 rounded-full bg-current opacity-35 motion-safe:animate-world-typing-dot"
+          className="size-1 rounded-full bg-current opacity-35 motion-safe:animate-world-typing-dot"
           style={{ animationDelay: `${dot * 200}ms` }}
         />
       ))}

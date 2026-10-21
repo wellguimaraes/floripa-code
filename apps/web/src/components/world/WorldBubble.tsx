@@ -16,6 +16,7 @@ import {
   useThreadShell,
 } from "../../state/entities";
 import { threadEnvironment } from "../../state/threads";
+import { useAtomCommand } from "../../state/use-atom-command";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { Button } from "../ui/button";
 import { Kbd } from "../ui/kbd";
@@ -29,7 +30,7 @@ import { type FamilyShades as Shades, palette } from "./scene/palette";
 import { useBubbleAttachments } from "./useBubbleAttachments";
 import { ARCHIVE_SHORTCUT, useArchiveShortcut } from "./useArchiveShortcut";
 import { BubbleMarkdown } from "./BubbleMarkdown";
-import { replyPreview } from "./lastExchange";
+import { type QueuedSend, replyPreview } from "./lastExchange";
 import { RollingSwap, TypingDots } from "./RollingSwap";
 import { useLastExchange } from "./useLastExchange";
 
@@ -395,23 +396,28 @@ export function WorldBubble(props: {
             // Ruled off below, edge to edge, like the header.
             <div className="-mx-2.5 my-1 flex flex-col gap-2 border-b border-border px-2.5 pb-2.5 text-xs">
               {lastSent !== null ? (
-                <div
-                  className="ml-auto max-w-[85%] rounded-lg px-3 py-2 break-words"
-                  // Light in every app theme, so the text stays dark on them.
-                  style={{ backgroundColor: palette.bubbleSent, color: palette.bubbleText }}
-                  aria-label="Your last message"
-                >
-                  {/* Clamp on an inner span: overflow clips at the padding edge, so clamping the padded
-                      element lets the third line peek through the bottom padding. */}
-                  <RollingSwap swapKey={lastSent.id}>
-                    <span className="line-clamp-2">
-                      {lastSent.text === ATTACHMENT_ONLY_BOOTSTRAP_PROMPT ? (
-                        `${lastSent.attachmentCount} ${lastSent.attachmentCount === 1 ? "attachment" : "attachments"}`
-                      ) : (
-                        <BubbleMarkdown text={lastSent.text} />
-                      )}
-                    </span>
-                  </RollingSwap>
+                <div className="ml-auto flex max-w-[85%] flex-col items-end gap-0.5">
+                  <div
+                    className="rounded-lg px-3 py-2 break-words"
+                    // Light in every app theme, so the text stays dark on them.
+                    style={{ backgroundColor: palette.bubbleSent, color: palette.bubbleText }}
+                    aria-label="Your last message"
+                  >
+                    {/* Clamp on an inner span: overflow clips at the padding edge, so clamping the padded
+                        element lets the third line peek through the bottom padding. */}
+                    <RollingSwap swapKey={lastSent.id}>
+                      <span className="line-clamp-2">
+                        {lastSent.text === ATTACHMENT_ONLY_BOOTSTRAP_PROMPT ? (
+                          `${lastSent.attachmentCount} ${lastSent.attachmentCount === 1 ? "attachment" : "attachments"}`
+                        ) : (
+                          <BubbleMarkdown text={lastSent.text} />
+                        )}
+                      </span>
+                    </RollingSwap>
+                  </div>
+                  {lastSent.queued !== null ? (
+                    <QueuedSendActions threadRef={facts.ref} queued={lastSent.queued} />
+                  ) : null}
                 </div>
               ) : null}
               {/* The agent's answer: its opening and closing lines, the middle folded away.
@@ -465,5 +471,60 @@ function FamilyShades({ shades }: { readonly shades: Shades | undefined }) {
         <span key={shade} className="flex-1" style={{ backgroundColor: shade }} />
       ))}
     </span>
+  );
+}
+
+/** Under a message that waits for the agent's current run: steer it in now, or take it back. */
+function QueuedSendActions({
+  threadRef,
+  queued,
+}: {
+  readonly threadRef: CharacterFacts["ref"];
+  readonly queued: QueuedSend;
+}) {
+  const promote = useAtomCommand(threadEnvironment.promoteQueuedRun);
+  const cancel = useAtomCommand(threadEnvironment.cancelQueuedRun);
+  const [busy, setBusy] = useState(false);
+  const act = async (command: () => Promise<unknown>) => {
+    setBusy(true);
+    try {
+      await command();
+    } finally {
+      setBusy(false);
+    }
+  };
+  const { environmentId, threadId } = threadRef;
+  const steerTargetRunId = queued.steerTargetRunId;
+  return (
+    <div className="flex items-center gap-0.5 text-muted-foreground">
+      <span className="px-1">Queued</span>
+      {steerTargetRunId !== null ? (
+        <Button
+          variant="ghost"
+          size="xs"
+          disabled={busy}
+          onClick={() =>
+            void act(() =>
+              promote({
+                environmentId,
+                input: { threadId, queuedRunId: queued.runId, targetRunId: steerTargetRunId },
+              }),
+            )
+          }
+        >
+          Steer
+        </Button>
+      ) : null}
+      <Button
+        variant="ghost"
+        size="xs"
+        disabled={busy}
+        onClick={() =>
+          void act(() => cancel({ environmentId, input: { threadId, runId: queued.runId } }))
+        }
+      >
+        Cancel
+      </Button>
+    </div>
   );
 }
