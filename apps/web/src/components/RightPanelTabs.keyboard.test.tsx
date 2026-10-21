@@ -162,6 +162,40 @@ describe("right panel new-tab shortcut", () => {
     expect(document.querySelector('[role="menu"]:not([data-closed])')).toBeNull();
   });
 
+  it("adds a terminal tab from a focused terminal with Cmd+T on a Mac", async () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    const addTerminal = vi.fn();
+    await renderPanel({
+      activeType: "terminal",
+      terminalAvailable: true,
+      onAddTerminal: addTerminal,
+      onActivateType: noop,
+      surfaces: [
+        {
+          id: "terminal:term-1",
+          kind: "terminal",
+          resourceId: "term-1",
+          terminalIds: ["term-1"],
+          activeTerminalId: "term-1",
+        },
+      ],
+      activeSurfaceId: "terminal:term-1",
+      getShortcutContext: () => ({
+        terminalFocus: true,
+        terminalOpen: true,
+        previewFocus: false,
+        previewOpen: false,
+        isWeb: true,
+        isDesktop: false,
+      }),
+    });
+    const terminal = document.createElement("textarea");
+    container.append(terminal);
+    await act(() => terminal.focus());
+    expect((await press("t", { metaKey: true })).defaultPrevented).toBe(true);
+    expect(addTerminal).toHaveBeenCalledOnce();
+  });
+
   it("leaves the shortcut alone while the mounted panel is closed", async () => {
     await renderPanel({ open: false });
     expect((await press("t", { metaKey: true })).defaultPrevented).toBe(false);

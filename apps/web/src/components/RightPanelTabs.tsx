@@ -1107,6 +1107,15 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     [onMoveSurface, props.surfaces, visibleSurfaces],
   );
 
+  /** A new tab joins the type on screen; with no type yet, the launcher picks one. */
+  const addNewSurface = useEffectEvent(() => {
+    if (canAddToActiveType) {
+      addToActiveType();
+      return;
+    }
+    addSurfaceTriggerRef.current?.focus();
+    setAddSurfaceMenuOpen(true);
+  });
   const onNewSurfaceKeyDown = useEffectEvent((event: KeyboardEvent) => {
     if (event.defaultPrevented || event.isComposing) return;
     if (
@@ -1119,18 +1128,19 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     event.preventDefault();
     event.stopPropagation();
     if (event.repeat) return;
-    // A new tab joins the type on screen; with no type yet, the launcher picks one.
-    if (canAddToActiveType) {
-      addToActiveType();
-      return;
-    }
-    addSurfaceTriggerRef.current?.focus();
-    setAddSurfaceMenuOpen(true);
+    addNewSurface();
   });
   useEffect(() => {
     if (props.open === false) return;
     document.addEventListener("keydown", onNewSurfaceKeyDown, true);
-    return () => document.removeEventListener("keydown", onNewSurfaceKeyDown, true);
+    // A focused desktop browser page sends the shortcut back as a menu action.
+    const unsubscribe = window.desktopBridge?.onMenuAction((action) => {
+      if (action === "rightPanel.new") addNewSurface();
+    });
+    return () => {
+      document.removeEventListener("keydown", onNewSurfaceKeyDown, true);
+      unsubscribe?.();
+    };
   }, [props.open]);
 
   const updateTabScrollState = useCallback(() => {

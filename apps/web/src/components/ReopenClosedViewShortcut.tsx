@@ -48,6 +48,7 @@ const PREVIEW_FORWARDED_LAYOUT_COMMANDS = [
   "sidebar.toggle",
   "rightPanel.toggle",
   "rightPanel.toggleMaximized",
+  "rightPanel.new",
   "rightPanel.showBrowser",
   "rightPanel.showTerminal",
   "rightPanel.showPullRequests",
@@ -191,6 +192,8 @@ export function ReopenClosedViewShortcut() {
       context: {
         previewFocus: true,
         previewOpen: true,
+        // A focused browser page sits in the open panel.
+        rightPanelOpen: true,
         terminalFocus: false,
         terminalOpen,
         editableFocus: false,

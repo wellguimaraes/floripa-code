@@ -136,6 +136,8 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+\\", command: "rightPanel.toggleMaximized", when: "!terminalFocus" },
   { key: "mod+shift+b", command: "threadPanel.toggle", when: "!terminalFocus" },
   { key: "mod+t", command: "rightPanel.new", when: "rightPanelOpen && !terminalFocus" },
+  // Cmd+T is free in a Mac terminal; Ctrl+T elsewhere belongs to the shell.
+  { key: "cmd+t", command: "rightPanel.new", when: "rightPanelOpen && terminalFocus" },
   { key: "mod+d", command: "terminal.split", when: "terminalFocus" },
   { key: "mod+shift+d", command: "terminal.splitVertical", when: "terminalFocus" },
   { key: "mod+n", command: "terminal.new", when: "terminalFocus" },
