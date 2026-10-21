@@ -2348,6 +2348,21 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
       }),
     );
 
+    it.effect("counts untracked entries apart from changed lines", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        yield* writeTextFile(cwd, "README.md", "changed\n");
+        yield* writeTextFile(cwd, "notes.txt", "new\n");
+        yield* writeTextFile(cwd, "draft.txt", "new\n");
+
+        const status = yield* (yield* GitVcsDriver.GitVcsDriver).statusDetails(cwd);
+
+        assert.equal(status.workingTree.untracked, 2);
+        assert.equal(status.workingTree.insertions, 1);
+      }),
+    );
+
     it.effect("reports changes to a file named HEAD", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTmpDir();

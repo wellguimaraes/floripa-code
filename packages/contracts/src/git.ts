@@ -255,6 +255,11 @@ const VcsStatusLocalShape = {
     ),
     insertions: NonNegativeInt,
     deletions: NonNegativeInt,
+    /**
+     * Untracked entries, which add no lines to the totals: a new folder counts once, as
+     * `git status` lists it. Absent on older servers.
+     */
+    untracked: Schema.optional(NonNegativeInt),
   }),
   /**
    * Totals for the diff panel's Changes view: merge-base with the base branch to the
