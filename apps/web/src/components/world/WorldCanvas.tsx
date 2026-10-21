@@ -439,6 +439,7 @@ export default function WorldCanvas(props: {
   };
   const openChat = (character: WorldCharacter) => {
     setBubbleKey(null);
+    useWorldModeStore.getState().focusChatOf(character.facts.key);
     switchChat(character.facts);
   };
   // The ring moves to the clicked character (and its bubble closes) at once;

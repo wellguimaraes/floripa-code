@@ -20,6 +20,10 @@ interface WorldModeState {
   /** The latest ask to frame an agent's island; each ask is new, so repeats fly again. */
   readonly islandFocusRequest: { readonly threadKey: string } | null;
   readonly focusIslandOf: (threadKey: string) => void;
+  /** An agent whose chat the world just opened; its composer takes focus once it shows. */
+  readonly chatFocusRequest: { readonly threadKey: string } | null;
+  readonly focusChatOf: (threadKey: string) => void;
+  readonly clearChatFocusRequest: () => void;
   readonly setSidebarWasOpen: (open: boolean | null) => void;
   readonly setShown: (shown: boolean) => void;
 }
@@ -36,6 +40,9 @@ export const useWorldModeStore = create<WorldModeState>()(
       setArchiveChatAgent: (archiveChatAgent) => set({ archiveChatAgent }),
       islandFocusRequest: null,
       focusIslandOf: (threadKey) => set({ islandFocusRequest: { threadKey } }),
+      chatFocusRequest: null,
+      focusChatOf: (threadKey) => set({ chatFocusRequest: { threadKey } }),
+      clearChatFocusRequest: () => set({ chatFocusRequest: null }),
       setSidebarWasOpen: (sidebarWasOpen) => set({ sidebarWasOpen }),
       setShown: (shown) => set({ shown }),
     }),

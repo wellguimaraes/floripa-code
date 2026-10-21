@@ -6368,6 +6368,20 @@ export default function ChatView(props: ChatViewProps) {
     };
   }, [activeThread?.id, focusComposer, terminalPanelOpen]);
 
+  // Opened from the world, the chat takes focus even beside a terminal; the request waits
+  // until this chat shows, since a hidden one runs no effects.
+  const chatFocusRequest = useWorldModeStore((state) => state.chatFocusRequest);
+  useEffect(() => {
+    if (chatFocusRequest === null || chatFocusRequest.threadKey !== activeThreadKey) return;
+    const frame = window.requestAnimationFrame(() => {
+      focusComposer();
+      useWorldModeStore.getState().clearChatFocusRequest();
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [activeThreadKey, chatFocusRequest, focusComposer]);
+
   // Tabbing back into the app lands focus wherever it last was, often the right panel or the
   // body. Put it in the composer unless something that takes typing already holds it. A shown
   // terminal owns keyboard input, so it opts out here. Mobile is left alone so returning to the
