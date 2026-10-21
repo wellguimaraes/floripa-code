@@ -1909,22 +1909,17 @@ export function PullRequestDetailPanel({
                                 : pendingAutoMergeLabel
                           }
                         >
-                          <PullRequestGlyph.merged aria-hidden className="size-3.5" />
-                          <span className="inline-grid @max-[30rem]/pr-header:hidden">
-                            <span aria-hidden className="invisible col-start-1 row-start-1">
-                              {pendingAutoMergeLabel}
-                            </span>
-                            <span aria-hidden className="invisible col-start-1 row-start-1">
-                              Confirm auto-merge?
-                            </span>
-                            <span className="col-start-1 row-start-1">
-                              {pendingAction === "enable-auto-merge"
-                                ? "Enabling..."
-                                : inlineConfirm.isArmed("enable-auto-merge")
-                                  ? "Confirm auto-merge?"
-                                  : pendingAutoMergeLabel}
-                            </span>
-                          </span>
+                          <SteadyButtonLabel
+                            icon={<PullRequestGlyph.merged aria-hidden className="size-3.5" />}
+                            reserve={[pendingAutoMergeLabel, "Confirm auto-merge?"]}
+                            collapsible
+                          >
+                            {pendingAction === "enable-auto-merge"
+                              ? "Enabling..."
+                              : inlineConfirm.isArmed("enable-auto-merge")
+                                ? "Confirm auto-merge?"
+                                : pendingAutoMergeLabel}
+                          </SteadyButtonLabel>
                         </Button>
                       </span>
                     }
@@ -1978,22 +1973,17 @@ export function PullRequestDetailPanel({
                                 : selectedMergeMethodLabel
                           }
                         >
-                          <PullRequestGlyph.merged aria-hidden className="size-3.5" />
-                          <span className="inline-grid @max-[30rem]/pr-header:hidden">
-                            <span aria-hidden className="invisible col-start-1 row-start-1">
-                              {selectedMergeMethodLabel}
-                            </span>
-                            <span aria-hidden className="invisible col-start-1 row-start-1">
-                              Confirm merge?
-                            </span>
-                            <span className="col-start-1 row-start-1">
-                              {pendingAction === "merge"
-                                ? "Merging..."
-                                : inlineConfirm.isArmed("merge")
-                                  ? "Confirm merge?"
-                                  : selectedMergeMethodLabel}
-                            </span>
-                          </span>
+                          <SteadyButtonLabel
+                            icon={<PullRequestGlyph.merged aria-hidden className="size-3.5" />}
+                            reserve={[selectedMergeMethodLabel, "Confirm merge?"]}
+                            collapsible
+                          >
+                            {pendingAction === "merge"
+                              ? "Merging..."
+                              : inlineConfirm.isArmed("merge")
+                                ? "Confirm merge?"
+                                : selectedMergeMethodLabel}
+                          </SteadyButtonLabel>
                         </Button>
                       </span>
                     }
@@ -2609,22 +2599,16 @@ export function PullRequestDetailPanel({
                                 : "Approve workflows to run"
                           }
                         >
-                          <PlayIcon aria-hidden className="size-3.5" />
-                          <span className="inline-grid">
-                            <span aria-hidden className="invisible col-start-1 row-start-1">
-                              Approve workflows to run
-                            </span>
-                            <span aria-hidden className="invisible col-start-1 row-start-1">
-                              Confirm approve?
-                            </span>
-                            <span className="col-start-1 row-start-1">
-                              {pendingAction === "approve-workflows"
-                                ? "Approving..."
-                                : inlineConfirm.isArmed("approve-workflows")
-                                  ? "Confirm approve?"
-                                  : "Approve workflows to run"}
-                            </span>
-                          </span>
+                          <SteadyButtonLabel
+                            icon={<PlayIcon aria-hidden className="size-3.5" />}
+                            reserve={["Approve workflows to run", "Confirm approve?"]}
+                          >
+                            {pendingAction === "approve-workflows"
+                              ? "Approving..."
+                              : inlineConfirm.isArmed("approve-workflows")
+                                ? "Confirm approve?"
+                                : "Approve workflows to run"}
+                          </SteadyButtonLabel>
                         </Button>
                       </span>
                     }
@@ -2862,5 +2846,34 @@ export function PullRequestDetailPanel({
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * A button's icon and label, as wide as its longest wording so confirming does not move it.
+ * The shown wording sits centered with its icon, so a short one leaves even padding.
+ */
+function SteadyButtonLabel(props: {
+  readonly icon: ReactNode;
+  readonly reserve: ReadonlyArray<string>;
+  readonly children: string;
+  /** Hides the wording, leaving the icon, when the PR header is narrow. */
+  readonly collapsible?: boolean;
+}) {
+  const cell = (text: string, reserved: boolean) => (
+    <span
+      key={reserved ? `reserve:${text}` : "shown"}
+      aria-hidden={reserved || undefined}
+      className={cn("col-start-1 row-start-1 flex items-center gap-1", reserved && "invisible")}
+    >
+      {props.icon}
+      <span className={cn(props.collapsible && "@max-[30rem]/pr-header:hidden")}>{text}</span>
+    </span>
+  );
+  return (
+    <span className="inline-grid justify-items-center">
+      {props.reserve.map((text) => cell(text, true))}
+      {cell(props.children, false)}
+    </span>
   );
 }
