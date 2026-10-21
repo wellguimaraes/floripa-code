@@ -966,6 +966,7 @@ interface PersistentThreadTerminalPanelProps {
   onCloseTerminal: (terminalId: string) => void;
   newShortcutLabel?: string | undefined;
   closeShortcutLabel?: string | undefined;
+  topBorder: boolean;
 }
 
 const PersistentThreadTerminalPanel = memo(function PersistentThreadTerminalPanel({
@@ -981,6 +982,7 @@ const PersistentThreadTerminalPanel = memo(function PersistentThreadTerminalPane
   onCloseTerminal,
   newShortcutLabel,
   closeShortcutLabel,
+  topBorder,
 }: PersistentThreadTerminalPanelProps) {
   const scope = useThreadWorktreeScope(threadRef);
   const scopeKey = scope?.scopeKey ?? null;
@@ -1099,6 +1101,7 @@ const PersistentThreadTerminalPanel = memo(function PersistentThreadTerminalPane
       terminalLabelsById={terminalLabelsById}
       terminalLaunchLocationsById={terminalLaunchLocationsById}
       keybindings={keybindings}
+      topBorder={topBorder}
     />
   );
 });
@@ -10541,6 +10544,7 @@ export default function ChatView(props: ChatViewProps) {
         onCloseTerminal={closePanelTerminal}
         newShortcutLabel={newTerminalShortcutLabel ?? undefined}
         closeShortcutLabel={closeTerminalShortcutLabel ?? undefined}
+        topBorder={!worldChatShown || shouldUsePlanSidebarSheet}
       />
     ) : renderedRightPanelSurface?.kind === "diff" ? (
       <Suspense fallback={null}>

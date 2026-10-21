@@ -1075,6 +1075,8 @@ interface ThreadTerminalDrawerProps {
   terminalLabelsById?: ReadonlyMap<string, string>;
   /** Prefer per-session launch locations when the server already knows a terminal. */
   terminalLaunchLocationsById?: ReadonlyMap<string, TerminalLaunchLocation>;
+  /** Off when the panel's tab bar already draws its own bottom border (the world's frame). */
+  topBorder?: boolean;
 }
 
 /**
@@ -1103,6 +1105,7 @@ export default function ThreadTerminalDrawer({
   keybindings,
   terminalLabelsById,
   terminalLaunchLocationsById,
+  topBorder = true,
 }: ThreadTerminalDrawerProps) {
   const canOperateTerminal = useEnvironmentScope(threadRef.environmentId, AuthTerminalOperateScope);
   const [advancedTypography] = useLocalStorage(
@@ -1281,7 +1284,10 @@ export default function ThreadTerminalDrawer({
       <aside
         data-thread-terminal-drawer
         data-terminal-owner="right-panel"
-        className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden border-border/60 border-t bg-background"
+        className={cn(
+          "relative flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-background",
+          topBorder && "border-border/60 border-t",
+        )}
       >
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-4 py-6 text-center text-sm text-muted-foreground">
           <p>No terminal sessions for this thread yet.</p>
@@ -1304,7 +1310,10 @@ export default function ThreadTerminalDrawer({
     <aside
       data-thread-terminal-drawer
       data-terminal-owner="right-panel"
-      className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden border-border/60 border-t bg-background"
+      className={cn(
+        "relative flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-background",
+        topBorder && "border-border/60 border-t",
+      )}
     >
       <div className="min-h-0 w-full flex-1">
         <div
