@@ -40,6 +40,7 @@ import { SidebarBrandWidthProbe, SidebarChromeHeader } from "./sidebar/SidebarCh
 import { MainAppLocationTracker } from "./sidebar/mainAppLocation";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
 import { useWorldModeStore } from "./world/worldModeStore";
+import { useWorldRoute } from "./world/worldRoute";
 import { useProjects } from "../state/entities";
 import {
   clampThreadSidebarWidth,
@@ -236,7 +237,18 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const panelAnimationsSuppressed = usePanelNavigationSuppression(pathname);
   const routePanelAnimationsActive = panelAnimationsActive && !panelAnimationsSuppressed;
   const isOnSettings = pathname === "/settings" || pathname.startsWith("/settings/");
-  const worldShown = useWorldModeStore((state) => state.shown);
+  // The world loads lazily, so the route says it is coming before it has mounted and
+  // folded the sidebar away. Until then the threads must not show.
+  const { worldMode } = useWorldRoute();
+  const worldShown = useWorldModeStore((state) => state.shown) || worldMode;
+  // Opening the app onto the world starts with the sidebar folded, as the world would fold it.
+  // It still remembers being open, so it comes back when the world closes.
+  const [sidebarStartsOpen] = useState(() => {
+    if (!worldMode) return true;
+    const store = useWorldModeStore.getState();
+    if (store.sidebarWasOpen === null) store.setSidebarWasOpen(true);
+    return false;
+  });
   const isMacosDesktop = isElectron && isMacPlatform(navigator.platform);
   const [sidebarWidth, setSidebarWidth] = useState(readInitialThreadSidebarWidth);
   // Subscribed rather than read once: the clamp must track live window size,
@@ -310,7 +322,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
       <SidebarProvider
         className="h-dvh! min-h-0!"
         data-panel-animations={routePanelAnimationsActive ? "true" : "false"}
-        defaultOpen
+        defaultOpen={sidebarStartsOpen}
         style={sidebarProviderStyle}
       >
         <SidebarBrandWidthProbe onWidthChange={setBrandWidth} />

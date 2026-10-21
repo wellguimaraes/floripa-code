@@ -32,6 +32,7 @@ import { WeatherToggle } from "./WeatherToggle";
 import { WorldNavigation } from "./WorldNavigation";
 import { WorldUsageBar } from "./WorldUsageBar";
 import { islandWorlds } from "./definitions/island";
+import { palette } from "./scene/palette";
 import { useWorldModeStore } from "./worldModeStore";
 import { WorldSurfacesWidthContext } from "./worldSurfacesWidth";
 
@@ -209,7 +210,8 @@ export function WorldLayout({
 
   return (
     <SidebarInset className="h-svh min-h-0 overflow-hidden md:h-dvh">
-      <div className="absolute inset-0">
+      {/* The sea's blue until the scene fades in over it. */}
+      <div className="absolute inset-0" style={{ backgroundColor: palette.loadingSea }}>
         <Suspense fallback={null}>
           <WorldCanvas
             definitions={islandWorlds}

@@ -4,6 +4,7 @@ import { lazy, Suspense, useState } from "react";
 import { useIsMobile } from "../../hooks/useMediaQuery";
 import type { ThreadRouteTarget } from "../../threadRoutes";
 import { threadRouteTargetKey, useWorldRoute } from "./worldRoute";
+import { palette } from "./scene/palette";
 
 const WorldLayout = lazy(() =>
   import("./WorldLayout").then((module) => ({ default: module.WorldLayout })),
@@ -32,7 +33,9 @@ export function WorldHost() {
   const shown = worldMode ? { target } : held;
   if (shown === null) return null;
   return (
-    <Suspense fallback={null}>
+    <Suspense
+      fallback={<div className="fixed inset-0" style={{ backgroundColor: palette.loadingSea }} />}
+    >
       <WorldLayout target={shown.target} covered={!worldMode} />
     </Suspense>
   );

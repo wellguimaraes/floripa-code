@@ -1049,10 +1049,16 @@ export default function WorldCanvas(props: {
     }
   }, []);
 
+  const [drawn, setDrawn] = useState(false);
+
   return (
     // Isolated so its overlays (tags, buttons, bubbles) stack under the chat panel.
     <div ref={containerRef} className="relative isolate size-full">
       <Canvas
+        // Fades in once drawn, over the layout's sea blue, so the first look is never a flash
+        // of whatever sky the hour has.
+        className={cn("transition-opacity duration-500", !drawn && "opacity-0")}
+        onCreated={() => requestAnimationFrame(() => setDrawn(true))}
         frameloop="demand"
         dpr={[1, 1.5]}
         // CustomToneMapping is ACES plus the contrast slider; see scene/contrast.

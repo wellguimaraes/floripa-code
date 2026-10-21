@@ -11,6 +11,8 @@ export const palette = {
   groundLight: "#7aae81",
   // Sea, lagoon, shallows, sand, and grass follow the Atoll logo's rings.
   water: "#0c5b87",
+  // The sea as it looks lit at noon: the window shows it while the scene loads.
+  loadingSea: "#04558f",
   // Clear water over sand: pale cyan by the shore, brighter blue further out.
   shallows: "#7ee9f0",
   lagoon: "#1b7bb1",
