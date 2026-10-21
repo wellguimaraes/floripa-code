@@ -7155,6 +7155,8 @@ export default function ChatView(props: ChatViewProps) {
         </span>
       ),
       title: presentation.title,
+      // A long task name truncates so Stop stays on its line.
+      actionsLayout: "inline",
       // A single named item is already in the title.
       description:
         presentation.items.length === 1 && presentation.items[0]?.childThreadId === undefined

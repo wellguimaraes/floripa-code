@@ -19,6 +19,8 @@ export interface ComposerBannerStackItem {
   readonly description?: ReactNode;
   readonly children?: ReactNode;
   readonly actions?: ReactNode;
+  /** Inline keeps the actions beside the title and truncates it; the default moves them below. */
+  readonly actionsLayout?: "inline" | "wrap-actions";
   readonly dismissLabel?: string;
   readonly onDismiss?: () => void;
 }
@@ -350,7 +352,7 @@ function ComposerBannerStackAlert({
       variant={item.variant}
       density="comfortable"
     >
-      <ComposerBanner.Row layout="wrap-actions">
+      <ComposerBanner.Row layout={item.actionsLayout ?? "wrap-actions"}>
         <ComposerBanner.Icon className="h-(--composer-banner-icon-column) self-start">
           {item.icon}
         </ComposerBanner.Icon>
