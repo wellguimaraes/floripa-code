@@ -106,7 +106,10 @@ import {
   presentPendingBackgroundWork,
   presentProviderGoal,
 } from "@t3tools/client-runtime/state/thread-execution";
-import { threadSupportsProviderHandoff } from "@t3tools/client-runtime/state/thread-workflows";
+import {
+  deriveThreadQueueWorkflowState,
+  threadSupportsProviderHandoff,
+} from "@t3tools/client-runtime/state/thread-workflows";
 import {
   codexFeedbackMessage,
   parseCodexFeedbackCommand,
@@ -4130,6 +4133,17 @@ export default function ChatView(props: ChatViewProps) {
   // The hint names the stop shortcut only while a press would stop something.
   const stopShortcutLabel = canInterruptRunningThread
     ? shortcutLabelForCommand(keybindings, "thread.stop", { context: { terminalFocus: false } })
+    : null;
+  // Likewise the steer shortcut, while a queued message could steer the running turn.
+  const canSteerQueuedMessage = useMemo(() => {
+    if (!canOperateThread || serverProjection === null) return false;
+    const queue = deriveThreadQueueWorkflowState(serverProjection);
+    return queue.canPromoteToSteer && queue.queuedRuns.length > 0;
+  }, [canOperateThread, serverProjection]);
+  const steerShortcutLabel = canSteerQueuedMessage
+    ? shortcutLabelForCommand(keybindings, "thread.steerQueuedMessage", {
+        context: { terminalFocus: false },
+      })
     : null;
   const onInterrupt = useCallback(async () => {
     if (
@@ -11206,9 +11220,20 @@ export default function ChatView(props: ChatViewProps) {
                         </div>
                       </div>
                     ) : null}
-                    {stopShortcutLabel ? (
+                    {stopShortcutLabel || steerShortcutLabel ? (
                       <p className="pointer-events-none absolute end-4 bottom-full flex items-center gap-1 pb-1.5 text-muted-foreground text-xs max-sm:hidden">
-                        Press <Kbd variant="outline">{stopShortcutLabel}</Kbd> to stop
+                        Press
+                        {steerShortcutLabel ? (
+                          <>
+                            <Kbd variant="outline">{steerShortcutLabel}</Kbd> to steer
+                            {stopShortcutLabel ? "," : null}
+                          </>
+                        ) : null}
+                        {stopShortcutLabel ? (
+                          <>
+                            <Kbd variant="outline">{stopShortcutLabel}</Kbd> to stop
+                          </>
+                        ) : null}
                       </p>
                     ) : null}
                     <div
