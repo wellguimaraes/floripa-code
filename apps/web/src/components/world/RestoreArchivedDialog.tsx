@@ -13,14 +13,15 @@ import { useMemo, useState } from "react";
 
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
-import { cn } from "../../lib/utils";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
+import type { ProjectFaviconProject } from "../ProjectFavicon";
 import { Button } from "../ui/button";
 import { Dialog, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "../ui/dialog";
 import { Spinner } from "../ui/spinner";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { signTextColor } from "./scene/Sign";
+import { WorldProjectPill } from "./WorldProjectPill";
 
 /**
  * Lists an island's archived agents, most recently active first, each with a
@@ -59,17 +60,16 @@ function TimeLabel(props: {
 
 export function RestoreArchivedDialog(props: {
   readonly title: string;
-  /** The island sign's colour; the header's project chip wears it, as in the chat header. */
+  /** The project whose icon leads the header's pill. */
+  readonly project: ProjectFaviconProject | null;
+  /** The island sign's colour; the header's project pill wears it. */
   readonly color: string;
   /** The projects that share the island. */
   readonly projectRefs: ReadonlyArray<ScopedProjectRef>;
   readonly onClose: () => void;
 }) {
-  const { title, color, projectRefs, onClose } = props;
-  const chipStyle = useMemo(
-    () => ({ backgroundColor: color, color: signTextColor(color) }),
-    [color],
-  );
+  const { title, project, color, projectRefs, onClose } = props;
+  const plate = useMemo(() => ({ background: color, text: signTextColor(color) }), [color]);
   const environmentIds = useMemo(
     () => [...new Set(projectRefs.map((ref) => ref.environmentId))] as EnvironmentId[],
     [projectRefs],
@@ -121,15 +121,7 @@ export function RestoreArchivedDialog(props: {
     >
       <DialogPopup className="max-h-[min(500px,calc(100dvh-2rem))] max-w-md [--glass-opacity:100%]">
         <DialogHeader>
-          <span
-            className={cn(
-              "max-w-full self-start truncate rounded-md px-1.5",
-              "text-xs leading-5 font-semibold",
-            )}
-            style={chipStyle}
-          >
-            {title}
-          </span>
+          <WorldProjectPill size="sm" project={project} name={title} plate={plate} />
           <DialogTitle>Restore archived agents</DialogTitle>
         </DialogHeader>
         <DialogPanel>

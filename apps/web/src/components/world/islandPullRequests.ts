@@ -34,23 +34,20 @@ export function countIslandPullRequests(
 }
 
 /**
- * How many worktrees each island has: branches checked out somewhere other than its projects'
- * own folders. Checkouts of one repository list the same worktrees, so each path counts once.
+ * How many worktrees each island has, the main one in its projects' own folder included.
+ * Checkouts of one repository list the same worktrees, so each path counts once.
  */
 export function countIslandWorktrees(
   checkouts: ReadonlyArray<{
     readonly island: string;
-    /** The project's folder and its repository's root, which aren't worktrees of their own. */
-    readonly roots: ReadonlyArray<string>;
     readonly worktreePaths: ReadonlyArray<string | null>;
   }>,
 ): ReadonlyMap<string, number> {
-  const own = new Set(checkouts.flatMap((checkout) => checkout.roots));
   const paths = new Map<string, Set<string>>();
   for (const checkout of checkouts) {
     const found = paths.get(checkout.island) ?? new Set<string>();
     for (const path of checkout.worktreePaths) {
-      if (path !== null && !own.has(path)) found.add(path);
+      if (path !== null) found.add(path);
     }
     paths.set(checkout.island, found);
   }

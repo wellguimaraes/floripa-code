@@ -53,18 +53,16 @@ describe("countIslandPullRequests", () => {
 });
 
 describe("countIslandWorktrees", () => {
-  it("counts worktrees once across checkouts, leaving out the projects' own folders", () => {
+  it("counts worktrees once across checkouts, the main one included", () => {
     const counts = countIslandWorktrees([
-      {
-        island: "app",
-        roots: ["/repo/app", "/repo"],
-        worktreePaths: ["/repo", "/repo/.worktrees/feature", null],
-      },
+      { island: "app", worktreePaths: ["/repo", "/repo/.worktrees/feature", null] },
       // A second project in the same repository lists the same worktrees.
-      { island: "app", roots: ["/repo/web"], worktreePaths: ["/repo", "/repo/.worktrees/feature"] },
-      { island: "site", roots: ["/site"], worktreePaths: ["/site"] },
+      { island: "app", worktreePaths: ["/repo", "/repo/.worktrees/feature"] },
+      { island: "site", worktreePaths: ["/site"] },
+      { island: "empty", worktreePaths: [null] },
     ]);
-    expect(counts.get("app")).toBe(1);
-    expect(counts.get("site")).toBe(0);
+    expect(counts.get("app")).toBe(2);
+    expect(counts.get("site")).toBe(1);
+    expect(counts.get("empty")).toBe(0);
   });
 });

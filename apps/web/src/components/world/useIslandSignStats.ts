@@ -45,7 +45,7 @@ export const branchRefsAtom = (target: BranchTarget) =>
 
 /**
  * Local branch names per island, across its checkouts and their worktrees, and its worktree
- * count. The default branch is left out of the names: a fork's PR from its own `main` would
+ * count, the main one included. The default branch is left out of the names: a fork's PR from its own `main` would
  * otherwise count as ours.
  */
 const localBranchesAtom = Atom.family((key: string) =>
@@ -61,7 +61,6 @@ const localBranchesAtom = Atom.family((key: string) =>
       branches.set(target.island, names);
       return {
         island: target.island,
-        roots: target.roots,
         worktreePaths: refs.map((ref) => (ref.isRemote === true ? null : ref.worktreePath)),
       };
     });

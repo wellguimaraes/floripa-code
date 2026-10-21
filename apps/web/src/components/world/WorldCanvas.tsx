@@ -23,6 +23,7 @@ import { useThreadActions } from "../../hooks/useThreadActions";
 import { threadEnvironment } from "../../state/threads";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { readLocalApi } from "../../localApi";
+import { observeResize } from "../../lib/observeResize";
 import { cn } from "../../lib/utils";
 import { formatElapsedDurationLabel } from "../../timestampFormat";
 import { buildProjectGroups, selectProjectGroupingSettings } from "../../logicalProject";
@@ -78,7 +79,7 @@ import { useWorldVisibilityStore } from "./worldVisibilityStore";
 import { AddProjectButton } from "./AddProjectButton";
 import { IslandArrangementMenu } from "./IslandArrangementMenu";
 import { ProjectVisibilityMenu } from "./ProjectVisibilityMenu";
-import { IslandBranchesDialog } from "./IslandBranchesDialog";
+import { IslandBranchesPopover } from "./IslandBranchesPopover";
 import { canChangeIslandIcon, IslandIconPicker, useSetIslandIcon } from "./IslandIconPicker";
 import { RestoreArchivedDialog } from "./RestoreArchivedDialog";
 import { layoutTags, type ScreenPoint } from "./scene/tagLayout";
@@ -98,6 +99,8 @@ export default function WorldCanvas(props: {
   readonly onExpand: (ref: ScopedThreadRef) => Promise<void>;
   /** Closes the full chat; settles once it has gone. */
   readonly onCollapse: () => Promise<void>;
+  /** Shows only the surfaces of a thread's worktree, its chat collapsed. */
+  readonly onOpenSurfaces: (ref: ScopedThreadRef) => Promise<void>;
   /** The open chat is hidden behind its worktree's surfaces; clicks then leave it hidden. */
   readonly chatCollapsed: boolean;
   /** The chat panel, if open; framing the islands keeps clear of it. */
@@ -107,8 +110,17 @@ export default function WorldCanvas(props: {
   /** The top bar spot where the project visibility menu goes. */
   readonly toolbar: HTMLElement | null;
 }) {
-  const { definitions, selectedKey, onExpand, onCollapse, chatCollapsed, panel, bars, toolbar } =
-    props;
+  const {
+    definitions,
+    selectedKey,
+    onExpand,
+    onCollapse,
+    onOpenSurfaces,
+    chatCollapsed,
+    panel,
+    bars,
+    toolbar,
+  } = props;
   if (import.meta.env.DEV) definitions.forEach(assertValidDefinition);
   // Rules, pacing and the archipelago's settings are the same at every size.
   const definition = definitions[0]!;
@@ -425,7 +437,7 @@ export default function WorldCanvas(props: {
   );
   const togglePicked = (character: WorldCharacter) => {
     // The character already singled out (its bubble or open chat) starts the selection.
-    const anchor = bubble?.facts.key ?? chatKey;
+    const anchor = bubble?.facts.key ?? ringKey;
     const anchorShown = islands.some((island) =>
       island.characters.some((c) => c.facts.key === anchor),
     );
@@ -469,6 +481,10 @@ export default function WorldCanvas(props: {
   };
   useEffect(() => dropPendingChat, [dropPendingChat]);
   const chatKey = switchingTo ?? selectedKey;
+  // A chat collapsed to its worktree's surfaces singles out no agent: nobody wears the ring
+  // and the map does not fly to its thread.
+  const shownChatKey = chatCollapsed ? null : selectedKey;
+  const ringKey = switchingTo ?? shownChatKey;
   const roots = useRef(new Map<string, Object3D>());
   const registerRoot = useCallback((key: string, root: Object3D | null) => {
     if (root === null) roots.current.delete(key);
@@ -625,6 +641,7 @@ export default function WorldCanvas(props: {
   const [listOn, setListOn] = useState<{
     readonly key: string;
     readonly list: "branches" | "worktrees";
+    readonly point: { readonly x: number; readonly y: number };
   } | null>(null);
   const [iconPicking, setIconPicking] = useState<{
     readonly key: string;
@@ -783,12 +800,6 @@ export default function WorldCanvas(props: {
       setBubbleKey(character.facts.key);
     }
   };
-  const moveBubble = useCallback((points: ReadonlyArray<ScreenPoint>) => {
-    const point = points[0];
-    if (point !== undefined && bubbleRef.current !== null) {
-      bubbleRef.current.style.transform = `translate(${point.x}px, ${point.y}px)`;
-    }
-  }, []);
   const pressedAt = useRef<{ x: number; y: number } | null>(null);
   // A click on the sea or an island's ground closes the bubble; the end of a pan does not.
   const clickGround = (event: MouseEvent) => {
@@ -940,21 +951,26 @@ export default function WorldCanvas(props: {
       if (pill !== undefined) pill.style.transform = `translate(${point.x}px, ${point.y}px)`;
     }
   }, []);
+  const openSurfacesOf = (ref: ScopedThreadRef) => {
+    setBubbleKey(null);
+    closeManager();
+    void onOpenSurfaces(ref);
+  };
   const newAgentRef = useRef<HTMLDivElement>(null);
-  const moveNewAgent = useCallback((points: ReadonlyArray<ScreenPoint>) => {
-    const point = points[0];
-    if (point !== undefined && newAgentRef.current !== null) {
-      newAgentRef.current.style.transform = `translate(${point.x}px, ${point.y}px)`;
-    }
-  }, []);
   const managerRef = useRef<HTMLDivElement>(null);
-  const moveManager = useCallback((points: ReadonlyArray<ScreenPoint>) => {
-    const point = points[0];
-    if (point !== undefined && managerRef.current !== null) {
-      managerRef.current.style.transform = `translate(${point.x}px, ${point.y}px)`;
-    }
-  }, []);
   const containerRef = useRef<HTMLDivElement>(null);
+  const visibleArea = useCallback((): VisibleArea | null => {
+    const container = containerRef.current;
+    if (container === null) return null;
+    return {
+      width: container.clientWidth,
+      height: container.clientHeight,
+      covered: coveredOf(container.getBoundingClientRect(), panel(), bars()),
+    };
+  }, [panel, bars]);
+  const moveBubble = useBubblePlacement(bubbleRef, visibleArea, bubble !== null);
+  const moveNewAgent = useBubblePlacement(newAgentRef, visibleArea, newAgent !== null);
+  const moveManager = useBubblePlacement(managerRef, visibleArea, manager?.open === true);
   // The map zooms on wheel; overlays pass it on so that keeps working under the pointer.
   const forwardWheel = (event: React.WheelEvent) =>
     containerRef.current
@@ -1057,7 +1073,7 @@ export default function WorldCanvas(props: {
             islands={islandSpots}
             panel={panel}
             bars={bars}
-            focusKey={selectedKey}
+            focusKey={shownChatKey}
             roots={roots}
             signs={signs}
             zoomTo={zoomTo}
@@ -1139,7 +1155,13 @@ export default function WorldCanvas(props: {
                       branches={signStats.get(island.key)?.branches ?? 0}
                       pullRequests={signStats.get(island.key)?.pullRequests ?? 0}
                       worktrees={signStats.get(island.key)?.worktrees ?? 0}
-                      onListClick={(list) => setListOn({ key: island.key, list })}
+                      onListClick={(list, point) => {
+                        // The sign is on the canvas, so it is not a press outside the bubbles.
+                        setBubbleKey(null);
+                        dropUntypedNewAgent();
+                        closeManager();
+                        setListOn({ key: island.key, list, point });
+                      }}
                       onIconClick={(point) => void showIconMenu(island.key, point)}
                       ref={(sign) => {
                         if (sign === null) signs.current.delete(island.key);
@@ -1193,7 +1215,7 @@ export default function WorldCanvas(props: {
                         surface={surfaceAt(island.definition)}
                         movement={definition.movement}
                         selected={
-                          character.facts.key === (bubble?.facts.key ?? chatKey) ||
+                          character.facts.key === (bubble?.facts.key ?? ringKey) ||
                           picked.has(character.facts.key)
                         }
                         onSelect={selectCharacter}
@@ -1310,7 +1332,6 @@ export default function WorldCanvas(props: {
                 palette.families.length,
               )}
               island={islands.find((island) => island.key === newAgent.islandKey) ?? null}
-              plate={signPlate(newAgent.islandKey)}
               onStarted={(thread) => {
                 const { islandKey, slotIndex } = newAgent;
                 chooseHue(thread.ref.threadId, thread.hue);
@@ -1413,6 +1434,7 @@ export default function WorldCanvas(props: {
       {restoringOn !== null ? (
         <RestoreArchivedDialog
           title={projectTitles.get(restoringOn) ?? "this island"}
+          project={projectRecords.get(restoringOn) ?? null}
           color={palette.plates[hashString(restoringOn) % palette.plates.length]!}
           projectRefs={projectMembers.get(restoringOn) ?? []}
           onClose={() => setRestoringOn(null)}
@@ -1428,11 +1450,21 @@ export default function WorldCanvas(props: {
         />
       ) : null}
       {listOn !== null ? (
-        <IslandBranchesDialog
+        <IslandBranchesPopover
           list={listOn.list}
+          point={listOn.point}
           title={projectTitles.get(listOn.key) ?? "this island"}
+          project={projectRecords.get(listOn.key) ?? null}
           color={palette.plates[hashString(listOn.key) % palette.plates.length]!}
           targets={signStats.get(listOn.key)?.targets ?? []}
+          surfacesThreadOf={(worktree) =>
+            latestThreadIn(
+              islands.find((island) => island.key === listOn.key),
+              worktree.inProjectFolder ? null : worktree.path,
+              worktree.path,
+            )
+          }
+          onOpenSurfaces={openSurfacesOf}
           onClose={() => setListOn(null)}
         />
       ) : null}
@@ -1543,29 +1575,29 @@ function CharacterTag(props: {
       type="button"
       {...handlers}
       className={cn(
-        "-translate-x-1/2 -translate-y-full pointer-events-auto flex cursor-pointer items-center gap-1 rounded leading-tight shadow-sm",
-        !chatting && "max-w-36 px-1.5 py-0.5 text-3xs",
-        chatting && "max-w-56 gap-1.5 rounded-md px-2.5 py-1 text-sm font-medium shadow-md",
+        "-translate-x-1/2 -translate-y-full pointer-events-auto flex cursor-pointer items-stretch overflow-hidden rounded border border-popover leading-tight shadow-sm",
+        !chatting && "max-w-36 text-3xs",
+        chatting && "max-w-56 rounded-md text-sm font-medium shadow-md",
         focused || chatting
           ? "bg-popover text-popover-foreground"
           : "bg-popover/80 text-popover-foreground/90",
       )}
     >
-      <span className="truncate">{facts.title || "Untitled thread"}</span>
+      <span className={cn("truncate", chatting ? "px-2.5 py-1" : "px-1.5 py-0.5")}>
+        {facts.title || "Untitled thread"}
+      </span>
       {elapsed !== "" ? (
-        // Red for a reply in the last 5 minutes, yellow within the hour, gray after.
+        // Red for a reply in the last 5 minutes, amber within the hour, green within 12 hours, gray after.
         <span
           className={cn(
-            "size-2 shrink-0 rounded-full",
-            chatting && "size-3",
-            elapsedMs <= 5 * 60_000 && "bg-red-500",
-            elapsedMs > 5 * 60_000 && elapsedMs <= 60 * 60_000 && "bg-yellow-400",
-            elapsedMs > 60 * 60_000 && "bg-gray-400",
+            "flex shrink-0 items-center font-semibold tabular-nums text-white",
+            chatting ? "px-1.5" : "px-1",
+            elapsedMs <= 5 * 60_000 && "bg-error",
+            elapsedMs > 5 * 60_000 && elapsedMs <= 60 * 60_000 && "bg-warning",
+            elapsedMs > 60 * 60_000 && elapsedMs <= 12 * 60 * 60_000 && "bg-success",
+            elapsedMs > 12 * 60 * 60_000 && "bg-muted-foreground",
           )}
-        />
-      ) : null}
-      {elapsed !== "" ? (
-        <span className="shrink-0 tabular-nums opacity-60">
+        >
           {elapsed === "just now" ? "now" : elapsed}
         </span>
       ) : null}
@@ -1793,6 +1825,82 @@ interface Bounds {
 const CAMERA_OFFSET = new Vector3(18, 20, 18);
 const PANEL_CLOSE_SPACE = 48;
 
+/** How much of the canvas the chat panel hides on the right, and the bars at the top and bottom. */
+function coveredOf(
+  canvas: DOMRect,
+  panel: HTMLElement | null,
+  bars: { readonly top: HTMLElement | null; readonly bottom: HTMLElement | null },
+): Covered {
+  const panelRect = panel?.getBoundingClientRect();
+  const topRect = bars.top?.getBoundingClientRect();
+  const bottomRect = bars.bottom?.getBoundingClientRect();
+  return {
+    top: topRect ? Math.max(0, topRect.bottom - canvas.top) : 0,
+    // The panel's close button sits just outside it, on the left.
+    right: panelRect ? canvas.right - (panelRect.left - PANEL_CLOSE_SPACE) : 0,
+    // An empty bar takes no room.
+    bottom: bottomRect && bottomRect.height > 0 ? Math.max(0, canvas.bottom - bottomRect.top) : 0,
+  };
+}
+
+/** The canvas's size, and how much of it the panel and the bars hide. */
+interface VisibleArea {
+  readonly width: number;
+  readonly height: number;
+  readonly covered: Covered;
+}
+
+/** Room kept between a bubble and the edges of the visible canvas. */
+const BUBBLE_EDGE_PX = 8;
+/** How far above its point a bubble floats; the bubble's own wrapper adds the same 0.75rem. */
+const BUBBLE_GAP_PX = 12;
+
+/**
+ * Places a bubble over its tracked point, shifted as little as it takes to stay in the part of
+ * the canvas the panel and the bars leave visible. Returns the tracker's `onMove`. The bubble's
+ * wrapper (`anchor`'s first child) centres it above the point; a change in its size draws no
+ * frame, so that places it again too.
+ */
+function useBubblePlacement(
+  anchor: React.RefObject<HTMLDivElement | null>,
+  visibleArea: () => VisibleArea | null,
+  open: boolean,
+): (points: ReadonlyArray<ScreenPoint>) => void {
+  const last = useRef<ScreenPoint | null>(null);
+  const place = () => {
+    const element = anchor.current;
+    const bubble = element?.firstElementChild as HTMLElement | null | undefined;
+    const point = last.current;
+    const area = visibleArea();
+    if (element == null || bubble == null || point === null || area === null) return;
+    const { offsetWidth: width, offsetHeight: height } = bubble;
+    const { covered } = area;
+    const clamp = (value: number, low: number, high: number) =>
+      Math.min(Math.max(value, low), Math.max(low, high));
+    const left = clamp(
+      point.x - width / 2,
+      BUBBLE_EDGE_PX,
+      area.width - covered.right - width - BUBBLE_EDGE_PX,
+    );
+    const top = clamp(
+      point.y - height - BUBBLE_GAP_PX,
+      covered.top + BUBBLE_EDGE_PX,
+      area.height - covered.bottom - height - BUBBLE_EDGE_PX,
+    );
+    element.style.transform = `translate(${left + width / 2}px, ${top + height + BUBBLE_GAP_PX}px)`;
+  };
+  const placeOnResize = useEffectEvent(place);
+  useEffect(() => {
+    const bubble = anchor.current?.firstElementChild;
+    if (!open || bubble == null) return;
+    return observeResize(bubble, () => placeOnResize());
+  }, [anchor, open]);
+  return (points: ReadonlyArray<ScreenPoint>) => {
+    last.current = points[0] ?? null;
+    place();
+  };
+}
+
 /**
  * Pan and zoom only, like a strategy map. Redraws on change instead of every
  * frame. Frames the whole archipelago once, when the first islands appear;
@@ -1839,21 +1947,10 @@ function WorldControls({
   const size = useThree((state) => state.size);
   const controlsRef = useRef<MapControls | null>(null);
   const fitted = useRef(false);
-  /** How much of the canvas the chat panel hides on the right, and the bars at the top and bottom. */
-  const covered = useCallback((): Covered => {
-    const canvas = element.getBoundingClientRect();
-    const panelRect = panel()?.getBoundingClientRect();
-    const { top, bottom } = bars();
-    const topRect = top?.getBoundingClientRect();
-    const bottomRect = bottom?.getBoundingClientRect();
-    return {
-      top: topRect ? Math.max(0, topRect.bottom - canvas.top) : 0,
-      // The panel's close button sits just outside it, on the left.
-      right: panelRect ? canvas.right - (panelRect.left - PANEL_CLOSE_SPACE) : 0,
-      // An empty bar takes no room.
-      bottom: bottomRect && bottomRect.height > 0 ? Math.max(0, canvas.bottom - bottomRect.top) : 0,
-    };
-  }, [element, panel, bars]);
+  const covered = useCallback(
+    (): Covered => coveredOf(element.getBoundingClientRect(), panel(), bars()),
+    [element, panel, bars],
+  );
   /** The corners of these islands' signs, which stand above and past their ground. */
   const signsOf = useCallback(
     (keys: ReadonlyArray<string>) =>
@@ -2608,4 +2705,22 @@ function assertValidDefinition(definition: WorldDefinition) {
   validatedDefinitions.add(definition);
   const errors = validateWorldDefinition(definition);
   if (errors.length > 0) throw new Error(`Invalid world definition:\n${errors.join("\n")}`);
+}
+
+/**
+ * The most recently active agent working in a worktree, its subagents aside. The project
+ * folder's agents have no worktree path, so `null` finds them (`folder` catches any that do).
+ */
+function latestThreadIn(
+  island: WorldIsland | undefined,
+  worktreePath: string | null,
+  folder: string,
+): ScopedThreadRef | null {
+  let best: { readonly ref: ScopedThreadRef; readonly rank: string } | null = null;
+  for (const { facts } of island?.characters ?? []) {
+    if (facts.worktreePath !== worktreePath && facts.worktreePath !== folder) continue;
+    const rank = `${facts.kid ? 0 : 1}${facts.lastReplyAt}`;
+    if (best === null || rank > best.rank) best = { ref: facts.ref, rank };
+  }
+  return best?.ref ?? null;
 }

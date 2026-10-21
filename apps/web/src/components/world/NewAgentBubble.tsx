@@ -63,8 +63,6 @@ export function NewAgentBubble(props: {
   readonly suggestedHue: number;
   /** The island as the world draws it, for its worktree hats and agents; null while it has none. */
   readonly island: WorldIsland | null;
-  /** The island sign's colours, for the chip naming it. */
-  readonly plate: { readonly background: string; readonly text: string };
   readonly onClose: () => void;
   readonly onTextChange: (text: string) => void;
   /** The thread exists and its first turn is starting. */
@@ -74,8 +72,7 @@ export function NewAgentBubble(props: {
     readonly hue: number;
   }) => void;
 }) {
-  const { islandName, project, suggestedHue, island, plate, onClose, onTextChange, onStarted } =
-    props;
+  const { islandName, project, suggestedHue, island, onClose, onTextChange, onStarted } = props;
   const [hue, setHue] = useState(suggestedHue);
   const startAgent = useStartWorldAgent();
   const [text, setText] = useState("");
@@ -163,7 +160,8 @@ export function NewAgentBubble(props: {
         ]
       : []),
   ];
-  const workspaceRoot = useProject(project)?.workspaceRoot ?? null;
+  const projectRecord = useProject(project);
+  const workspaceRoot = projectRecord?.workspaceRoot ?? null;
   const pickModel = (instanceId: ProviderInstanceId, model: string) => {
     // Bring back the traits last used with this model, as the chat does.
     const { stickyOptionsByModelByProvider, stickyModelSelectionByProvider } =
@@ -265,16 +263,9 @@ export function NewAgentBubble(props: {
       }
       header={
         // Ruled off below, edge to edge, like the other bubbles' headers.
-        <div className="-mx-2.5 flex items-stretch gap-3 mb-1 border-b border-border px-2.5 pb-3">
+        <div className="-mx-2.5 flex items-stretch gap-1.5 border-b border-border px-2.5 pb-3">
           <NewAgentCharacter hue={hue} onHueChange={setHue} />
           <div className="flex min-w-0 flex-1 flex-col items-start">
-            {/* The island's sign, as the chat header shows its project. */}
-            <span
-              className="mb-0.5 max-w-full truncate rounded-full px-2 text-xs leading-5 font-semibold"
-              style={{ backgroundColor: plate.background, color: plate.text }}
-            >
-              {islandName}
-            </span>
             <span className="max-w-full truncate text-base font-medium">Start New Agent</span>
             {workspaces.isRepo ? (
               <Select

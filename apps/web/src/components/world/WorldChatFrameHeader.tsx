@@ -4,11 +4,12 @@ import { MessagesSquareIcon } from "lucide-react";
 import type { ReactNode, Ref } from "react";
 
 import { WorktreeSwitcher } from "../chat/WorktreeSwitcher";
-import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
+import type { ProjectFaviconProject } from "../ProjectFavicon";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { useWorldLook } from "./worldLookStore";
 import { useWorldModeStore } from "./worldModeStore";
+import { WorldProjectPill } from "./WorldProjectPill";
 
 /**
  * The world chat frame's top row, above both the chat and the worktree's surfaces: the chat
@@ -59,26 +60,15 @@ export function WorldChatFrameHeader(props: {
                   type="button"
                   aria-label={`Show ${props.projectName} on the map`}
                   onClick={() => focusIslandOf(threadKey)}
-                  className="pointer-events-auto flex max-w-full cursor-pointer items-center gap-1.5 rounded-full text-sm leading-5 font-semibold focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  className="pointer-events-auto flex max-w-full cursor-pointer rounded-full focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                 />
               }
             >
-              {props.project ? (
-                // A white tile keeps any icon legible on any background.
-                <span className="flex shrink-0 rounded-sm bg-white">
-                  <ProjectFavicon project={props.project} className="size-6" />
-                </span>
-              ) : null}
-              <span
-                className="truncate rounded-full px-2.5 py-0.5"
-                style={
-                  worldLook
-                    ? { backgroundColor: worldLook.plate.background, color: worldLook.plate.text }
-                    : undefined
-                }
-              >
-                {props.projectName}
-              </span>
+              <WorldProjectPill
+                project={props.project}
+                name={props.projectName}
+                plate={worldLook?.plate ?? null}
+              />
             </TooltipTrigger>
             <TooltipPopup side="bottom">Show {props.projectName} on the map</TooltipPopup>
           </Tooltip>

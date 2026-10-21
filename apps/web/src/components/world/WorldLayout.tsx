@@ -118,6 +118,13 @@ export function WorldLayout({
     return navigate({ to: "/$environmentId/$threadId", params: buildThreadRouteParams(ref) });
   };
   const closeChat = () => navigate({ to: "/" });
+  // A worktree's hat on the water opens its surfaces alone; the chat can come back from the frame.
+  const openSurfaces = (ref: ScopedThreadRef) => {
+    const panel = useRightPanelStore.getState();
+    panel.show(ref);
+    panel.setMaximized(ref, true);
+    return navigate({ to: "/$environmentId/$threadId", params: buildThreadRouteParams(ref) });
+  };
   const closePanel = () => {
     void closeChat();
   };
@@ -209,6 +216,7 @@ export function WorldLayout({
             selectedKey={selectedKey}
             onExpand={openThread}
             onCollapse={closeChat}
+            onOpenSurfaces={openSurfaces}
             chatCollapsed={chatTarget !== null && !chatShown}
             panel={readPanel}
             bars={readBars}

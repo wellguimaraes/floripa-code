@@ -85,8 +85,11 @@ export function Sign(props: {
   readonly branches: number;
   readonly pullRequests: number;
   readonly worktrees: number;
-  /** Clicking the branch or worktree count, e.g. to list them. */
-  readonly onListClick: (list: "branches" | "worktrees") => void;
+  /** Clicking the branch or worktree count, at this point on screen, e.g. to list them. */
+  readonly onListClick: (
+    list: "branches" | "worktrees",
+    point: { readonly x: number; readonly y: number },
+  ) => void;
   /** Clicking the project's icon, at this point on screen, e.g. to change it. */
   readonly onIconClick: (point: { readonly x: number; readonly y: number }) => void;
   /** The sign's root, for `signCorners`. */
@@ -171,11 +174,9 @@ export function Sign(props: {
             const clicked = target(event);
             if (clicked === null) return;
             event.stopPropagation();
-            if (clicked === "icon") {
-              onIconClick({ x: event.nativeEvent.clientX, y: event.nativeEvent.clientY });
-            } else {
-              onListClick(clicked);
-            }
+            const point = { x: event.nativeEvent.clientX, y: event.nativeEvent.clientY };
+            if (clicked === "icon") onIconClick(point);
+            else onListClick(clicked, point);
           }}
           onPointerMove={(event) => {
             document.body.style.cursor = target(event) === null ? "" : "pointer";
