@@ -312,7 +312,6 @@ function FontAppearanceSync() {
   const fontFamilyCode = useClientSettings((settings) => settings.fontFamilyCode);
   const fontFamilyComposer = useClientSettings((settings) => settings.fontFamilyComposer);
   const fontSizeInterface = useClientSettings((settings) => settings.fontSizeInterface);
-  const fontSizePrompt = useClientSettings((settings) => settings.fontSizePrompt);
   const fontSizeCode = useClientSettings((settings) => settings.fontSizeCode);
   const fontSmoothing = useClientSettings((settings) => settings.fontSmoothing);
 
@@ -322,7 +321,6 @@ function FontAppearanceSync() {
       code: fontFamilyCode,
       composer: fontFamilyComposer,
       sizeInterface: fontSizeInterface,
-      sizePrompt: fontSizePrompt,
       sizeCode: fontSizeCode,
       smoothing: fontSmoothing,
     });
@@ -332,7 +330,6 @@ function FontAppearanceSync() {
     fontFamilySans,
     fontSizeCode,
     fontSizeInterface,
-    fontSizePrompt,
     fontSmoothing,
   ]);
 

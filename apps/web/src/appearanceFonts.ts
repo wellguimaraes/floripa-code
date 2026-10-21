@@ -8,13 +8,10 @@
 import {
   DEFAULT_CODE_FONT_SIZE,
   DEFAULT_INTERFACE_FONT_SIZE,
-  DEFAULT_PROMPT_FONT_SIZE,
   MAX_CODE_FONT_SIZE,
   MAX_INTERFACE_FONT_SIZE,
-  MAX_PROMPT_FONT_SIZE,
   MIN_CODE_FONT_SIZE,
   MIN_INTERFACE_FONT_SIZE,
-  MIN_PROMPT_FONT_SIZE,
   MIN_TERMINAL_FONT_SIZE,
 } from "@t3tools/contracts";
 
@@ -84,7 +81,6 @@ export interface AppearanceFontPreferences {
   readonly code: string;
   readonly composer: string;
   readonly sizeInterface: number;
-  readonly sizePrompt: number;
   readonly sizeCode: number;
   /** Grayscale `antialiased` rendering; false keeps the heavier platform default. */
   readonly smoothing: boolean;
@@ -95,8 +91,8 @@ export interface AppearanceFontPreferences {
  * override so the stylesheet defaults (and theme changes) stay in charge.
  *
  * Sizes are always written: the interface size drives the root font size (and
- * with it every rem-based dimension), while the prompt and code sizes stay in
- * absolute pixels so they do not scale twice.
+ * with it every rem-based dimension, including the prompt's `text-sm`), while
+ * the code size stays in absolute pixels so it does not scale twice.
  */
 export function applyAppearanceFontVariables(
   root: HTMLElement,
@@ -118,7 +114,6 @@ export function applyAppearanceFontVariables(
   }
 
   root.style.fontSize = `${clampInterfaceFontSize(preferences.sizeInterface)}px`;
-  root.style.setProperty("--font-size-prompt", `${clampPromptFontSize(preferences.sizePrompt)}px`);
   const code = clampCodeFontSize(preferences.sizeCode);
   root.style.setProperty("--font-size-code", `${code}px`);
   // The @pierre/diffs surfaces read their own hook for code text.
@@ -147,10 +142,6 @@ export function clampInterfaceFontSize(value: number): number {
     MAX_INTERFACE_FONT_SIZE,
     DEFAULT_INTERFACE_FONT_SIZE,
   );
-}
-
-export function clampPromptFontSize(value: number): number {
-  return clampFontSize(value, MIN_PROMPT_FONT_SIZE, MAX_PROMPT_FONT_SIZE, DEFAULT_PROMPT_FONT_SIZE);
 }
 
 export function clampCodeFontSize(value: number): number {

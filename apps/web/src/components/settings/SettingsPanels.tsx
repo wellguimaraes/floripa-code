@@ -33,7 +33,6 @@ import {
   MAX_GLASS_OPACITY,
   MAX_INTERFACE_FONT_SIZE,
   MAX_PANEL_ANIMATION_DURATION_MS,
-  MAX_PROMPT_FONT_SIZE,
   MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
   MAX_TERMINAL_FONT_SIZE,
   MIN_CODE_FONT_SIZE,
@@ -41,7 +40,6 @@ import {
   MIN_GLASS_OPACITY,
   MIN_INTERFACE_FONT_SIZE,
   MIN_PANEL_ANIMATION_DURATION_MS,
-  MIN_PROMPT_FONT_SIZE,
   MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
   type ResponseStreamingMode,
   MIN_TERMINAL_FONT_SIZE,
@@ -711,7 +709,6 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.fontFamilyTerminal,
       settings.fontSizeCode,
       settings.fontSizeInterface,
-      settings.fontSizePrompt,
       settings.fontSizeTerminal,
       settings.glassOpacity,
       settings.panelAnimationDurationMs,
@@ -851,7 +848,6 @@ export function useSettingsRestore(onRestored?: () => void) {
       fontFamilyCode: DEFAULT_UNIFIED_SETTINGS.fontFamilyCode,
       fontFamilyTerminal: DEFAULT_UNIFIED_SETTINGS.fontFamilyTerminal,
       fontSizeInterface: DEFAULT_UNIFIED_SETTINGS.fontSizeInterface,
-      fontSizePrompt: DEFAULT_UNIFIED_SETTINGS.fontSizePrompt,
       fontSizeCode: DEFAULT_UNIFIED_SETTINGS.fontSizeCode,
       fontSizeTerminal: DEFAULT_UNIFIED_SETTINGS.fontSizeTerminal,
       browserDefaultViewport: DEFAULT_UNIFIED_SETTINGS.browserDefaultViewport,
@@ -1589,25 +1585,14 @@ function PromptFontRow() {
   return (
     <FontFamilySettingsRow
       {...searchableSetting("prompt-font")}
-      description="Only the box you write prompts in. Mono works well here."
+      description="Only the box you write prompts in. Mono works well here. Its size follows the interface font."
       defaultFamily={defaults.interfaceFamily}
       defaultValue={DEFAULT_UNIFIED_SETTINGS.fontFamilyComposer}
       value={settings.fontFamilyComposer}
       onValueChange={(fontFamilyComposer) => updateSettings({ fontFamilyComposer })}
       onReset={() =>
-        updateSettings({
-          fontFamilyComposer: DEFAULT_UNIFIED_SETTINGS.fontFamilyComposer,
-          fontSizePrompt: DEFAULT_UNIFIED_SETTINGS.fontSizePrompt,
-        })
+        updateSettings({ fontFamilyComposer: DEFAULT_UNIFIED_SETTINGS.fontFamilyComposer })
       }
-      size={{
-        label: "Prompt font size",
-        min: MIN_PROMPT_FONT_SIZE,
-        max: MAX_PROMPT_FONT_SIZE,
-        value: settings.fontSizePrompt,
-        defaultValue: DEFAULT_UNIFIED_SETTINGS.fontSizePrompt,
-        onChange: (fontSizePrompt) => updateSettings({ fontSizePrompt }),
-      }}
       preview={<PromptFontPreview />}
     />
   );
@@ -1877,7 +1862,8 @@ function FontFamilySettingsRow({
   onValueChange: (value: string) => void;
   onReset: () => void;
   requireMonospace?: boolean;
-  size: {
+  /** Omitted for families whose size derives from another setting. */
+  size?: {
     label: string;
     min: number;
     max: number;
@@ -1941,7 +1927,7 @@ function FontFamilySettingsRow({
     onReset();
   };
   const resetAction =
-    value !== defaultValue || size.value !== size.defaultValue ? (
+    value !== defaultValue || (size !== undefined && size.value !== size.defaultValue) ? (
       <SettingResetButton label={title.toLowerCase()} onClick={resetToDefault} />
     ) : null;
   const fontEnumeration = useFontEnumeration();
@@ -2012,29 +1998,31 @@ function FontFamilySettingsRow({
   const control = (
     <div className="flex w-full items-center gap-2 sm:w-auto">
       <div className="min-w-0 flex-1 sm:w-44 sm:flex-none">{familyControl}</div>
-      <Select
-        value={String(size.value)}
-        onValueChange={(next) => {
-          if (typeof next !== "string") return;
-          const parsed = Number(next);
-          if (Number.isInteger(parsed) && parsed >= size.min && parsed <= size.max) {
-            size.onChange(parsed);
-          }
-        }}
-      >
-        <SelectTrigger size="sm" className="w-22 shrink-0" aria-label={size.label}>
-          <SelectValue>{size.value} px</SelectValue>
-        </SelectTrigger>
-        <SelectPopup align="end" alignItemWithTrigger={false}>
-          {Array.from({ length: size.max - size.min + 1 }, (_, index) => size.min + index).map(
-            (px) => (
-              <SelectItem hideIndicator key={px} value={String(px)}>
-                {px} px
-              </SelectItem>
-            ),
-          )}
-        </SelectPopup>
-      </Select>
+      {size !== undefined ? (
+        <Select
+          value={String(size.value)}
+          onValueChange={(next) => {
+            if (typeof next !== "string") return;
+            const parsed = Number(next);
+            if (Number.isInteger(parsed) && parsed >= size.min && parsed <= size.max) {
+              size.onChange(parsed);
+            }
+          }}
+        >
+          <SelectTrigger size="sm" className="w-22 shrink-0" aria-label={size.label}>
+            <SelectValue>{size.value} px</SelectValue>
+          </SelectTrigger>
+          <SelectPopup align="end" alignItemWithTrigger={false}>
+            {Array.from({ length: size.max - size.min + 1 }, (_, index) => size.min + index).map(
+              (px) => (
+                <SelectItem hideIndicator key={px} value={String(px)}>
+                  {px} px
+                </SelectItem>
+              ),
+            )}
+          </SelectPopup>
+        </Select>
+      ) : null}
     </div>
   );
   return (
