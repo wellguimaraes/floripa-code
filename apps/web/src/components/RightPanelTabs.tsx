@@ -1057,9 +1057,11 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   );
   const activeTypeAvailable = activeType !== null && surfaceTypeAvailable(activeType, props);
   // Diff is one view per worktree that opens with its type, and Files shows its tree until a
-  // file opens, so neither shows tabs then.
+  // file opens, so neither shows tabs then. A single pull request has no other to switch to.
   const showsTabs =
-    activeType !== "diff" && !(activeType === "files" && visibleSurfaces.length === 0);
+    activeType !== "diff" &&
+    !(activeType === "files" && visibleSurfaces.length === 0) &&
+    !(activeType === "pull-request" && visibleSurfaces.length <= 1);
   // With no tabs the row has nothing to show, unless it is also the window's title bar or holds
   // the sheet's layout controls.
   const showsTabBar = showsTabs || reservesTitleBarControls || props.layoutControls != null;
