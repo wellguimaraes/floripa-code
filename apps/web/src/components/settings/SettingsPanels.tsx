@@ -46,6 +46,7 @@ import {
   type ResponseStreamingMode,
   MIN_TERMINAL_FONT_SIZE,
   type QuitConfirmationMode,
+  type ComposerChipAttachmentRemoval,
   SidebarProjectSortOrder,
 } from "@t3tools/contracts/settings";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
@@ -215,6 +216,12 @@ const QUIT_CONFIRMATION_MODE_LABELS: Record<QuitConfirmationMode, string> = {
   direct: "Direct",
   hold: "Hold",
   "double-click": "Double press",
+};
+
+const COMPOSER_CHIP_ATTACHMENT_REMOVAL_LABELS: Record<ComposerChipAttachmentRemoval, string> = {
+  ask: "Ask",
+  remove: "Remove it",
+  keep: "Keep it",
 };
 
 const BACKGROUND_ACTIVITY_PROFILE_LABELS: Record<BackgroundActivityProfile, string> = {
@@ -655,6 +662,10 @@ export function useSettingsRestore(onRestored?: () => void) {
         ? ["Delete confirmation"]
         : []),
       ...(settings.confirmQuit !== DEFAULT_UNIFIED_SETTINGS.confirmQuit ? ["Quit shortcut"] : []),
+      ...(settings.composerChipAttachmentRemoval !==
+      DEFAULT_UNIFIED_SETTINGS.composerChipAttachmentRemoval
+        ? ["Deleted attachment chips"]
+        : []),
       ...(isTextGenerationModelDirty ? ["Text generation model"] : []),
       ...getChangedBrowserSettingLabels(settings),
       ...(settings.enableAgentBrowserAccess !== DEFAULT_UNIFIED_SETTINGS.enableAgentBrowserAccess
@@ -680,6 +691,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.confirmThreadArchive,
       settings.confirmThreadDelete,
       settings.confirmThreadUnpin,
+      settings.composerChipAttachmentRemoval,
       settings.composerCollapseOnScroll,
       settings.composerRichTextEnabled,
       settings.sendShortcut,
@@ -832,6 +844,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       confirmThreadDelete: DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete,
       confirmThreadUnpin: DEFAULT_UNIFIED_SETTINGS.confirmThreadUnpin,
       confirmQuit: DEFAULT_UNIFIED_SETTINGS.confirmQuit,
+      composerChipAttachmentRemoval: DEFAULT_UNIFIED_SETTINGS.composerChipAttachmentRemoval,
       textGenerationModelSelection: DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
       fontFamilySans: DEFAULT_UNIFIED_SETTINGS.fontFamilySans,
       fontFamilyComposer: DEFAULT_UNIFIED_SETTINGS.fontFamilyComposer,
@@ -3182,6 +3195,52 @@ export function GeneralSettingsPanel() {
               }
               aria-label="Confirm thread deletion"
             />
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("chip-attachment-removal")}
+          description="What happens to an image or file when you delete its chip from the prompt."
+          resetAction={
+            settings.composerChipAttachmentRemoval !==
+            DEFAULT_UNIFIED_SETTINGS.composerChipAttachmentRemoval ? (
+              <SettingResetButton
+                label="deleted attachment chips"
+                onClick={() =>
+                  updateSettings({
+                    composerChipAttachmentRemoval:
+                      DEFAULT_UNIFIED_SETTINGS.composerChipAttachmentRemoval,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.composerChipAttachmentRemoval}
+              onValueChange={(value) => {
+                if (value === "ask" || value === "remove" || value === "keep") {
+                  updateSettings({ composerChipAttachmentRemoval: value });
+                }
+              }}
+            >
+              <SelectTrigger
+                size="sm"
+                className="w-full sm:w-40"
+                aria-label="Deleted attachment chips"
+              >
+                <SelectValue>
+                  {COMPOSER_CHIP_ATTACHMENT_REMOVAL_LABELS[settings.composerChipAttachmentRemoval]}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {Object.entries(COMPOSER_CHIP_ATTACHMENT_REMOVAL_LABELS).map(([value, label]) => (
+                  <SelectItem hideIndicator key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
           }
         />
 

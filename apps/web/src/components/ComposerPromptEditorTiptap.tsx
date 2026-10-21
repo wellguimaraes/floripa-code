@@ -130,6 +130,8 @@ export interface ComposerPromptEditorHandle {
    * text.
    */
   isCaretOnVisualEdge: (edge: "start" | "end") => boolean;
+  /** Where the caret is on screen, for a popover that points at it. */
+  readCaretRect: () => DOMRect | null;
 }
 
 export interface ComposerPromptEditorProps {
@@ -1740,6 +1742,15 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
         return edge === "start"
           ? caretRect.top - edgeRect.top < threshold
           : edgeRect.bottom - caretRect.bottom < threshold;
+      },
+      readCaretRect: () => {
+        if (!editor) return null;
+        try {
+          const coords = editor.view.coordsAtPos(editor.state.selection.head);
+          return new DOMRect(coords.left, coords.top, 0, coords.bottom - coords.top);
+        } catch {
+          return null;
+        }
       },
     }),
     [editor, focusAt, literalText, readSnapshot],

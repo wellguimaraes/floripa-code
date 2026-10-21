@@ -511,6 +511,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["ask before thread chat history"],
   },
   {
+    id: "chip-attachment-removal",
+    title: "Deleted attachment chips",
+    to: "/settings/general",
+    searchTerms: ["ask before remove image file attachment chip prompt composer remember"],
+  },
+  {
     id: "quit-confirmation",
     title: "Quit shortcut",
     to: "/settings/general",

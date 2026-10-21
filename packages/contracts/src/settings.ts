@@ -53,6 +53,14 @@ export const TimestampFormat = Schema.Literals(["locale", "12-hour", "24-hour"])
 export type TimestampFormat = typeof TimestampFormat.Type;
 const DEFAULT_TIMESTAMP_FORMAT: TimestampFormat = "locale";
 
+/**
+ * What deleting an attachment's chip from the prompt does to the staged attachment:
+ * ask each time, or the answer remembered from that question.
+ */
+export const ComposerChipAttachmentRemoval = Schema.Literals(["ask", "remove", "keep"]);
+export type ComposerChipAttachmentRemoval = typeof ComposerChipAttachmentRemoval.Type;
+const DEFAULT_COMPOSER_CHIP_ATTACHMENT_REMOVAL: ComposerChipAttachmentRemoval = "ask";
+
 export const DiffLayout = Schema.Literals(["stacked", "split"]);
 export type DiffLayout = typeof DiffLayout.Type;
 const DEFAULT_DIFF_LAYOUT: DiffLayout = "stacked";
@@ -373,6 +381,9 @@ export const ClientSettingsSchema = Schema.Struct({
   confirmThreadArchive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   confirmThreadDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   confirmThreadUnpin: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  composerChipAttachmentRemoval: ComposerChipAttachmentRemoval.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_COMPOSER_CHIP_ATTACHMENT_REMOVAL)),
+  ),
   dismissedProviderUpdateNotificationKeys: Schema.Array(TrimmedNonEmptyString).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
@@ -1668,6 +1679,7 @@ export const ClientSettingsPatch = Schema.Struct({
   confirmThreadArchive: Schema.optionalKey(Schema.Boolean),
   confirmThreadDelete: Schema.optionalKey(Schema.Boolean),
   confirmThreadUnpin: Schema.optionalKey(Schema.Boolean),
+  composerChipAttachmentRemoval: Schema.optionalKey(ComposerChipAttachmentRemoval),
   diffFilesCollapsed: Schema.optionalKey(Schema.Boolean),
   diffIgnoreWhitespace: Schema.optionalKey(Schema.Boolean),
   diffLayout: Schema.optionalKey(DiffLayout),

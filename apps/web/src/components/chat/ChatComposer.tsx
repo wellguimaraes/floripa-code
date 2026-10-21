@@ -146,6 +146,10 @@ import {
   reconcileAttachmentContextReferences,
   type RetainedAttachmentContextPayloads,
 } from "./composerContextUndo";
+import {
+  ChipAttachmentRemovalPopover,
+  useChipAttachmentRemoval,
+} from "./ChipAttachmentRemovalPopover";
 import type { ThreadSyncPhase } from "../../threadSync";
 import { ComposerBanner } from "./ComposerBanner";
 import { ComposerSurface } from "./ComposerSurface";
@@ -3706,6 +3710,25 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     files: new Map(),
     previewAnnotations: new Map(),
   });
+  // A deleted file chip already takes its file with it (undo brings both back); an image
+  // stays in the tray, so deleting its chip asks whether the image should go too.
+  const chipImages = useMemo(
+    () =>
+      composerImages.map((image) => ({
+        id: image.id,
+        contextId: imageContextReference(image).contextId,
+        name: image.name,
+      })),
+    [composerImages],
+  );
+  const chipImageRemoval = useChipAttachmentRemoval({
+    attachments: chipImages,
+    onRemove: (ids) => {
+      for (const id of ids) removeComposerImageFromDraft(id);
+    },
+    onSettled: () => composerEditorRef.current?.focus(),
+  });
+  const chipImagesChanged = chipImageRemoval.chipsChanged;
 
   const onPromptChange = useCallback(
     (
@@ -3732,6 +3755,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         return;
       }
       onTypingGuardDraftChange();
+      const previouslyReferenced = new Set(collectInlineContextIds(promptRef.current));
       promptRef.current = nextPrompt;
       setPrompt(nextPrompt);
       // Any edit ends browsing, even one later undone by hand: typing a
@@ -3830,6 +3854,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       if (attachmentChanges.filesToRestore.length > 0) {
         addComposerDraftFiles(attachmentDraftTarget, attachmentChanges.filesToRestore);
       }
+      chipImagesChanged(
+        previouslyReferenced,
+        referenced,
+        () => composerEditorRef.current?.readCaretRect() ?? null,
+      );
       setComposerCursor(nextCursor);
       setComposerTrigger(
         cursorAdjacentToMention ? null : detectComposerTrigger(nextPrompt, expandedCursor),
@@ -3861,6 +3890,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       addComposerDraftImages,
       addComposerDraftFiles,
       attachmentDraftTarget,
+      chipImagesChanged,
     ],
   );
 
@@ -4488,6 +4518,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     const { trigger } = resolveActiveComposerTrigger();
     const menuIsActive =
       !isLiteralPendingAnswer && (composerMenuOpenRef.current || trigger !== null);
+    if (key === "Escape" && chipImageRemoval.open && !event.isComposing) {
+      chipImageRemoval.dismiss();
+      return true;
+    }
     if (key === "Escape") {
       if (!menuIsActive || event.isComposing || event.keyCode === 229) return false;
       dismissComposerTrigger(trigger);
@@ -7456,6 +7490,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     </DialogPopup>
                   </Dialog>
                 ) : null}
+                <ChipAttachmentRemovalPopover removal={chipImageRemoval} />
                 <ComposerContextActionsContext value={composerContextActions}>
                   <ComposerPromptEditor
                     ariaLabel="Message"

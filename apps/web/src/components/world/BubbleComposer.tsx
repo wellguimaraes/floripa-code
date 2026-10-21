@@ -15,6 +15,7 @@ import { type ComposerSlashCommand, collapseExpandedComposerCursor } from "../..
 import { useTheme } from "../../hooks/useTheme";
 import { cn, isMacPlatform } from "../../lib/utils";
 import {
+  collectInlineContextIds,
   inlineContextReferenceReplacement,
   removeInlineContextReference,
 } from "../../lib/composerContextReferences";
@@ -22,6 +23,10 @@ import { fileContextReference, imageContextReference } from "../../lib/composerC
 import { ComposerPromptEditor, type ComposerPromptEditorHandle } from "../ComposerPromptEditor";
 import { Button } from "../ui/button";
 import { shouldHandleComposerAttachmentPaste } from "../chat/composerAttachmentFiles";
+import {
+  ChipAttachmentRemovalPopover,
+  useChipAttachmentRemoval,
+} from "../chat/ChipAttachmentRemovalPopover";
 import {
   type ComposerCommandItem,
   ComposerCommandMenu,
@@ -337,6 +342,22 @@ export function BubbleComposer(props: {
     if (next !== current) replaceText(next);
   };
 
+  // Unlike the chat composer, a deleted chip leaves its file on the shelf, so both kinds ask.
+  const chipRemoval = useChipAttachmentRemoval({
+    attachments: attachments.attachments.map((attachment) => ({
+      id: attachment.id,
+      contextId: (attachment.type === "image"
+        ? imageContextReference(attachment)
+        : fileContextReference(attachment)
+      ).contextId,
+      name: attachment.name,
+    })),
+    onRemove: (ids) => {
+      for (const id of ids) attachments.remove(id);
+    },
+    onSettled: () => editor.current?.focus(),
+  });
+
   const actions = (
     <>
       <input
@@ -470,6 +491,7 @@ export function BubbleComposer(props: {
       }}
     >
       {props.header}
+      <ChipAttachmentRemovalPopover removal={chipRemoval} />
       <BubbleAttachmentList
         attachments={attachments.attachments}
         disabled={busy}
@@ -477,8 +499,9 @@ export function BubbleComposer(props: {
       />
       {/* Above the rest of the bubble, whose picker icons stack at z-30, so the list covers them. */}
       <div ref={field} className="relative z-40">
-        {/* Unframed: the bubble is the field, and its text lines up with the hints below. */}
-        <div className="py-1">
+        {/* Unframed: the bubble is the field, and its text lines up with the hints below, both
+            inset a little from the bubble's edge. */}
+        <div className="py-1 pl-1.5">
           <ComposerPromptEditor
             editorRef={editor}
             value={text}
@@ -496,15 +519,25 @@ export function BubbleComposer(props: {
                 : composerSuggestionOptionId(suggestionListId, suggestions.activeItem.id)
             }
             className="max-h-40 min-h-12 overflow-y-auto"
-            onChange={(nextValue, nextCursor, expandedCursor, besideChip) => {
+            onChange={(nextValue, nextCursor, expandedCursor, besideChip, contextIds) => {
+              const previouslyReferenced = new Set(collectInlineContextIds(latestText.current));
               latestText.current = nextValue;
               onTextChange(nextValue);
               setCursor(nextCursor);
               suggestions.textChanged(nextValue, expandedCursor, besideChip);
               if (error !== null) onError(null);
+              chipRemoval.chipsChanged(
+                previouslyReferenced,
+                new Set(contextIds),
+                () => editor.current?.readCaretRect() ?? null,
+              );
             }}
             onCommandKeyDown={(key, event) => {
               if (event.isComposing) return false;
+              if (key === "Escape" && chipRemoval.open) {
+                chipRemoval.dismiss();
+                return true;
+              }
               if (suggestions.open) {
                 if (key === "Escape") {
                   suggestions.dismiss();
@@ -570,11 +603,11 @@ export function BubbleComposer(props: {
       {props.children}
       {props.toolbar !== undefined ? (
         status !== null ? (
-          <span className="truncate text-xs text-muted-foreground">{status}</span>
+          <span className="truncate pl-1.5 text-xs text-muted-foreground">{status}</span>
         ) : null
       ) : (
         <div className="flex items-center gap-2">
-          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+          <span className="min-w-0 flex-1 truncate pl-1.5 text-xs text-muted-foreground">
             {status ?? props.hint}
           </span>
           {actions}
