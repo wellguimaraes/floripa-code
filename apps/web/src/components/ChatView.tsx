@@ -311,6 +311,7 @@ import {
   MessageCircleIcon,
   PaperclipIcon,
   ChevronDownIcon,
+  ChevronRightIcon,
   DownloadIcon,
   GitBranchIcon,
   SquareSplitHorizontal,
@@ -7131,14 +7132,13 @@ export default function ChatView(props: ChatViewProps) {
       priority: "activity",
       // A dev server can run for hours after the agent is done, so only work
       // that will wake the agent pulses.
+      // The wrapper holds the dim opacity because the pulse animates opacity.
       icon: (
-        <span
-          className={cn(
-            "size-1.5 rounded-full bg-foreground",
-            presentation.waiting && "animate-status-pulse",
-          )}
-          aria-hidden="true"
-        />
+        <span className="flex opacity-40" aria-hidden="true">
+          <ChevronRightIcon
+            className={cn("size-3", presentation.waiting && "animate-status-pulse")}
+          />
+        </span>
       ),
       title: presentation.title,
       // A single named item is already in the title.
