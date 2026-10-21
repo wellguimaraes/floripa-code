@@ -2,7 +2,7 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { fileBasename } from "@t3tools/shared/path";
 import { ArchiveIcon, MessagesSquareIcon, RefreshCwIcon, SquareIcon, XIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { useThreadActions } from "../../hooks/useThreadActions";
@@ -113,6 +113,14 @@ export function WorldBubble(props: {
           .join(" · ");
   // While the agent works its bubble shows typing dots; the finished reply rolls in after.
   const typing = facts.status === "working";
+  // The exchange opens scrolled to its end, where the latest words are; the thread can load
+  // after the bubble opens, so it scrolls again once the exchange shows.
+  const exchange = useRef<HTMLDivElement>(null);
+  const hasExchange = lastSent !== null || lastReply !== null || typing;
+  useLayoutEffect(() => {
+    const element = exchange.current;
+    if (hasExchange && element !== null) element.scrollTop = element.scrollHeight;
+  }, [hasExchange]);
   const startTurn = useOrchestrationCommand(threadEnvironment.startTurn, {
     reportFailure: false,
   });
@@ -412,13 +420,17 @@ export function WorldBubble(props: {
           </div>
           {/* The last exchange as a messaging-app thread: yours on the right, the agent's on the left.
               Capped in height: a long reply scrolls under your message, which stays pinned on top. */}
-          {lastSent !== null || lastReply !== null || typing ? (
+          {hasExchange ? (
             // Ruled off below, edge to edge, like the header.
-            <div className="-mx-2.5 mt-1 flex max-h-80 flex-col gap-2 overflow-y-auto border-b border-border px-2.5 pb-2.5 text-xs">
+            <div
+              ref={exchange}
+              className="-mx-2.5 mt-1 flex max-h-80 flex-col gap-2 overflow-y-auto border-b border-border px-2.5 pb-2.5 text-sm"
+            >
               {lastSent !== null ? (
-                <div className="sticky top-0 z-10 flex flex-col items-end gap-0.5 bg-popover">
+                // Only the bubble covers the reply scrolling under it, ringed in the bubble's own colour.
+                <div className="pointer-events-none sticky top-0 z-10 flex flex-col items-end gap-0.5 *:pointer-events-auto">
                   <div
-                    className="max-w-[85%] rounded-lg px-3 py-2 break-words"
+                    className="max-w-[85%] rounded-lg px-3 py-2 break-words outline-2 outline-popover"
                     // Light in every app theme, so the text stays dark on them.
                     style={{ backgroundColor: palette.bubbleSent, color: palette.bubbleText }}
                     aria-label="Your last message"
