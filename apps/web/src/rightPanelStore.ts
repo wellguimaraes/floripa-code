@@ -106,8 +106,8 @@ export const RIGHT_PANEL_SURFACE_TYPES = [
 ] as const;
 export type RightPanelSurfaceType = (typeof RIGHT_PANEL_SURFACE_TYPES)[number];
 
-/** Off: the rail and add menus offer no Device surface. Flip to bring it back. */
-export const DEVICE_SURFACE_ENABLED = false;
+/** When off, the rail, add menus and show-device keybinding offer no Device surface. */
+export const DEVICE_SURFACE_ENABLED = true;
 
 /** The types the rail shows. */
 export const RIGHT_PANEL_SHOWN_SURFACE_TYPES = RIGHT_PANEL_SURFACE_TYPES.filter(
