@@ -16,7 +16,10 @@ function sameExchange(a: LastExchange, b: LastExchange): boolean {
     a.sent?.queued?.runId === b.sent?.queued?.runId &&
     a.sent?.queued?.steerTargetRunId === b.sent?.queued?.steerTargetRunId &&
     a.reply?.id === b.reply?.id &&
-    a.reply?.text === b.reply?.text
+    a.reply?.text === b.reply?.text &&
+    a.reply?.at === b.reply?.at &&
+    a.reply?.model?.instanceId === b.reply?.model?.instanceId &&
+    a.reply?.model?.model === b.reply?.model?.model
   );
 }
 

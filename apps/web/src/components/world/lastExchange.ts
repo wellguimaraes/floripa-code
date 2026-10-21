@@ -1,5 +1,6 @@
 import { deriveThreadQueueWorkflowState } from "@t3tools/client-runtime/state/thread-workflows";
-import type { OrchestrationV2ThreadProjection, RunId } from "@t3tools/contracts";
+import type { ModelSelection, OrchestrationV2ThreadProjection, RunId } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 
 /** A sent message still waiting behind the agent's current run. */
 export interface QueuedSend {
@@ -18,6 +19,10 @@ export interface SentMessage {
 export interface AgentReply {
   readonly id: string;
   readonly text: string;
+  /** When the reply finished, as an ISO timestamp. */
+  readonly at: string;
+  /** The model of the run that wrote it; null for a reply outside a run. */
+  readonly model: ModelSelection | null;
 }
 
 export interface LastExchange {
@@ -68,53 +73,15 @@ export function lastExchange(projection: OrchestrationV2ThreadProjection): LastE
                         : null,
                   },
           },
-    reply: replyMessage === undefined ? null : { id: replyMessage.id, text: replyMessage.text },
-  };
-}
-
-const PREVIEW_EDGE_LINES = 2;
-
-/**
- * A reply cut down to its first and last two non-blank lines, each kept as inline
- * markdown with its block markers dropped. `skipped` counts the lines left out between them.
- */
-export interface PreviewLine {
-  /** The line's position among the kept lines; stable for a given reply. */
-  readonly key: number;
-  readonly text: string;
-}
-
-export function replyPreview(text: string): {
-  readonly head: ReadonlyArray<PreviewLine>;
-  readonly tail: ReadonlyArray<PreviewLine>;
-  readonly skipped: number;
-} {
-  const lines = text
-    .split("\n")
-    .map((line) =>
-      line
-        .replace(/^\s*(#{1,6}\s+|>\s*|[-*+]\s+(\[[ xX]\]\s+)?)/, "")
-        .trim()
-        // Escaped so a numbered line keeps its number instead of parsing as a list.
-        .replace(/^(\d+)([.)])\s/, "$1\\$2 "),
-    )
-    // Code fences have no text of their own; a lone one would render empty.
-    .filter((line) => line !== "" && !/^(-{3,}|`{3,}.*|~{3,}.*|\|?[\s:|-]+\|[\s:|-]*)$/.test(line))
-    // Table rows read as their cells.
-    .map((line) =>
-      line.startsWith("|")
-        ? line
-            .split("|")
-            .map((cell) => cell.trim())
-            .filter((cell) => cell !== "")
-            .join(" · ")
-        : line,
-    )
-    .map((line, key): PreviewLine => ({ key, text: line }));
-  if (lines.length <= PREVIEW_EDGE_LINES * 2 + 1) return { head: lines, tail: [], skipped: 0 };
-  return {
-    head: lines.slice(0, PREVIEW_EDGE_LINES),
-    tail: lines.slice(-PREVIEW_EDGE_LINES),
-    skipped: lines.length - PREVIEW_EDGE_LINES * 2,
+    reply:
+      replyMessage === undefined
+        ? null
+        : {
+            id: replyMessage.id,
+            text: replyMessage.text,
+            at: DateTime.formatIso(replyMessage.updatedAt),
+            model:
+              projection.runs.find((run) => run.id === replyMessage.runId)?.modelSelection ?? null,
+          },
   };
 }

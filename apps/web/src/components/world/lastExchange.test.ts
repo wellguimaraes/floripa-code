@@ -1,47 +1,10 @@
+import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { OrchestrationV2ThreadProjection } from "@t3tools/contracts";
 
 import { makeThreadProjectionFixture } from "../../test-fixtures";
-import { lastExchange, replyPreview } from "./lastExchange";
-
-const texts = (preview: ReturnType<typeof replyPreview>) => ({
-  head: preview.head.map((line) => line.text),
-  tail: preview.tail.map((line) => line.text),
-  skipped: preview.skipped,
-});
-
-describe("replyPreview", () => {
-  it("keeps short replies whole", () => {
-    expect(texts(replyPreview("one\n\ntwo\nthree"))).toEqual({
-      head: ["one", "two", "three"],
-      tail: [],
-      skipped: 0,
-    });
-  });
-
-  it("keeps the first and last two lines of a long reply", () => {
-    expect(texts(replyPreview("a\nb\nc\nd\ne\nf\ng"))).toEqual({
-      head: ["a", "b"],
-      tail: ["f", "g"],
-      skipped: 3,
-    });
-  });
-
-  it("drops block markers, table rules, cell pipes and fences but keeps inline markdown", () => {
-    expect(
-      texts(
-        replyPreview(
-          "## Done\n| a | b |\n|---|---|\n- **Fixed** `x`\n```ts\ncode\n```\n---\n> quoted\nnote\n1. kept",
-        ),
-      ),
-    ).toEqual({
-      head: ["Done", "a · b"],
-      tail: ["note", "1\\. kept"],
-      skipped: 3,
-    });
-  });
-});
+import { lastExchange } from "./lastExchange";
 
 describe("lastExchange", () => {
   const sent = (id: string) => ({ id, role: "user", createdBy: "user", text: id, attachments: [] });
@@ -82,5 +45,35 @@ describe("lastExchange", () => {
       ),
     );
     expect(exchange.sent).toMatchObject({ id: "first", queued: null });
+  });
+
+  it("tells which model wrote the reply and when it finished", () => {
+    const model = { instanceId: "claude", model: "claude-opus-5-5" };
+    const exchange = lastExchange(
+      projection(
+        [
+          {
+            id: "run-1",
+            status: "completed",
+            userMessageId: "first",
+            startedAt: "t",
+            ordinal: 1,
+            modelSelection: model,
+          },
+        ],
+        [
+          sent("first"),
+          {
+            id: "answer",
+            role: "assistant",
+            runId: "run-1",
+            text: "done",
+            streaming: false,
+            updatedAt: DateTime.makeUnsafe("2026-10-21T17:00:00.000Z"),
+          },
+        ],
+      ),
+    );
+    expect(exchange.reply).toMatchObject({ id: "answer", at: "2026-10-21T17:00:00.000Z", model });
   });
 });

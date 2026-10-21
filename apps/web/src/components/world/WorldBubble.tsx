@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { formatShortcutLabel } from "../../keybindings";
+import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { stripInlineContextReferences } from "../../lib/composerContextReferences";
 import { cn, newMessageId } from "../../lib/utils";
 import {
@@ -23,6 +24,7 @@ import { Kbd } from "../ui/kbd";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "../chat/composerPromptHistory";
+import { getTriggerDisplayModelName } from "../chat/providerIconUtils";
 import { BubbleComposer } from "./BubbleComposer";
 import type { CharacterFacts } from "./engine/facts";
 import { HuePicker } from "./HuePicker";
@@ -30,7 +32,7 @@ import { type FamilyShades as Shades, palette } from "./scene/palette";
 import { useBubbleAttachments } from "./useBubbleAttachments";
 import { ARCHIVE_SHORTCUT, useArchiveShortcut } from "./useArchiveShortcut";
 import { BubbleMarkdown } from "./BubbleMarkdown";
-import { type QueuedSend, replyPreview } from "./lastExchange";
+import type { QueuedSend } from "./lastExchange";
 import { RollingSwap, TypingDots } from "./RollingSwap";
 import { useLastExchange } from "./useLastExchange";
 
@@ -85,13 +87,30 @@ export function WorldBubble(props: {
     thread === null ? null : { environmentId: thread.environmentId, projectId: thread.projectId },
   );
   // Suggestions come from where the thread works and the provider it talks to.
+  const providers = useServerConfigs().get(facts.ref.environmentId)?.providers;
   const provider =
-    useServerConfigs()
-      .get(facts.ref.environmentId)
-      ?.providers.find((candidate) => candidate.instanceId === thread?.modelSelection.instanceId) ??
+    providers?.find((candidate) => candidate.instanceId === thread?.modelSelection.instanceId) ??
     null;
   const { sent: lastSent, reply: lastReply } = useLastExchange(facts.ref);
-  const preview = lastReply === null ? null : replyPreview(lastReply.text);
+  // Who answered and when, under the reply: the run's model, which may not be the thread's now.
+  const replyModel = lastReply?.model ?? null;
+  const replyModelOption =
+    replyModel === null
+      ? undefined
+      : providers
+          ?.find((candidate) => candidate.instanceId === replyModel.instanceId)
+          ?.models.find((model) => model.slug === replyModel.model);
+  const replyMeta =
+    lastReply === null
+      ? null
+      : [
+          replyModelOption !== undefined
+            ? getTriggerDisplayModelName(replyModelOption)
+            : replyModel?.model,
+          formatRelativeTimeLabel(lastReply.at),
+        ]
+          .filter((part) => part !== undefined && part !== "")
+          .join(" · ");
   // While the agent works its bubble shows typing dots; the finished reply rolls in after.
   const typing = facts.status === "working";
   const startTurn = useOrchestrationCommand(threadEnvironment.startTurn, {
@@ -391,14 +410,15 @@ export function WorldBubble(props: {
               <XIcon />
             </Button>
           </div>
-          {/* The last exchange as a messaging-app thread: yours on the right, the agent's on the left. */}
-          {lastSent !== null || preview !== null || typing ? (
+          {/* The last exchange as a messaging-app thread: yours on the right, the agent's on the left.
+              Capped in height: a long reply scrolls under your message, which stays pinned on top. */}
+          {lastSent !== null || lastReply !== null || typing ? (
             // Ruled off below, edge to edge, like the header.
-            <div className="-mx-2.5 my-1 flex flex-col gap-2 border-b border-border px-2.5 pb-2.5 text-xs">
+            <div className="-mx-2.5 mt-1 flex max-h-80 flex-col gap-2 overflow-y-auto border-b border-border px-2.5 pb-2.5 text-xs">
               {lastSent !== null ? (
-                <div className="ml-auto flex max-w-[85%] flex-col items-end gap-0.5">
+                <div className="sticky top-0 z-10 flex flex-col items-end gap-0.5 bg-popover">
                   <div
-                    className="rounded-lg px-3 py-2 break-words"
+                    className="max-w-[85%] rounded-lg px-3 py-2 break-words"
                     // Light in every app theme, so the text stays dark on them.
                     style={{ backgroundColor: palette.bubbleSent, color: palette.bubbleText }}
                     aria-label="Your last message"
@@ -420,39 +440,27 @@ export function WorldBubble(props: {
                   ) : null}
                 </div>
               ) : null}
-              {/* The agent's answer: its opening and closing lines, the middle folded away.
-                  Clicking it opens the full chat to read the rest. */}
-              {typing || preview !== null ? (
-                <button
-                  type="button"
-                  className="mr-auto flex max-w-[85%] min-w-0 cursor-pointer flex-col rounded-lg px-3 py-2 text-left hover:brightness-95"
+              {/* The agent's whole answer. */}
+              {typing || lastReply !== null ? (
+                <div
+                  className="mr-auto flex max-w-[85%] min-w-0 flex-col rounded-lg px-3 py-2"
                   style={{ backgroundColor: palette.bubbleReply, color: palette.bubbleText }}
-                  onClick={expand}
                 >
                   <RollingSwap swapKey={typing ? "typing" : (lastReply?.id ?? "typing")}>
-                    {typing || preview === null ? (
+                    {typing || lastReply === null ? (
                       <TypingDots />
                     ) : (
                       <>
-                        {preview.head.map((line) => (
-                          <span key={line.key} className="truncate">
-                            <BubbleMarkdown text={line.text} />
-                          </span>
-                        ))}
-                        {preview.skipped > 0 ? (
-                          <span className="opacity-60">
-                            … {preview.skipped} more {preview.skipped === 1 ? "line" : "lines"}
+                        <BubbleMarkdown text={lastReply.text} block />
+                        {replyMeta ? (
+                          <span className="mt-1 max-w-full self-end truncate text-xs opacity-60">
+                            {replyMeta}
                           </span>
                         ) : null}
-                        {preview.tail.map((line) => (
-                          <span key={line.key} className="truncate">
-                            <BubbleMarkdown text={line.text} />
-                          </span>
-                        ))}
                       </>
                     )}
                   </RollingSwap>
-                </button>
+                </div>
               ) : null}
             </div>
           ) : null}
