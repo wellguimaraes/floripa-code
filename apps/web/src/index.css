@@ -211,6 +211,9 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --text-4xs--line-height: 1;
   --text-5xs: 0.4375rem;
   --text-5xs--line-height: 1;
+  /* Between text-xs and text-sm (13px): messages in the world's character bubble. */
+  --text-bubble: 0.8125rem;
+  --text-bubble--line-height: calc(1.125 / 0.8125);
   /* Motion. drawer is the decelerating curve for surfaces that slide or pop in
      (composer context, pills). */
   --inset-shadow-control-highlight: 0 1px rgb(255 255 255 / 16%);

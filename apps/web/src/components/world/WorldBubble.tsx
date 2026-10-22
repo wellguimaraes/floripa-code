@@ -117,6 +117,8 @@ export function WorldBubble(props: {
   // after the bubble opens, so it scrolls again once the exchange shows.
   const exchange = useRef<HTMLDivElement>(null);
   const hasExchange = lastSent !== null || lastReply !== null || typing;
+  // Scrolled away from the top: the reply is passing under your pinned message.
+  const [exchangeScrolled, setExchangeScrolled] = useState(false);
   useLayoutEffect(() => {
     const element = exchange.current;
     if (hasExchange && element !== null) element.scrollTop = element.scrollHeight;
@@ -424,13 +426,17 @@ export function WorldBubble(props: {
             // Ruled off below, edge to edge, like the header.
             <div
               ref={exchange}
-              className="-mx-2.5 mt-1 flex max-h-80 flex-col gap-2 overflow-y-auto border-b border-border px-2.5 pb-2.5 text-sm"
+              onScroll={(event) => setExchangeScrolled(event.currentTarget.scrollTop > 0)}
+              className="-mx-2.5 mt-1 flex max-h-80 flex-col gap-2 overflow-y-auto border-b border-border px-2.5 pb-2.5 text-bubble"
             >
               {lastSent !== null ? (
-                // Only the bubble covers the reply scrolling under it, ringed in the bubble's own colour.
-                <div className="pointer-events-none sticky top-0 z-10 flex flex-col items-end gap-0.5 *:pointer-events-auto">
+                // Covers the reply scrolling under it, which fades out beneath it.
+                <div className="sticky top-0 z-10 flex flex-col items-end gap-0.5 bg-popover">
+                  {exchangeScrolled ? (
+                    <div className="pointer-events-none absolute inset-x-0 top-full h-10 bg-linear-to-b from-popover to-transparent" />
+                  ) : null}
                   <div
-                    className="max-w-[85%] rounded-lg px-3 py-2 break-words outline-2 outline-popover"
+                    className="max-w-[85%] rounded-lg px-3 py-2 break-words"
                     // Light in every app theme, so the text stays dark on them.
                     style={{ backgroundColor: palette.bubbleSent, color: palette.bubbleText }}
                     aria-label="Your last message"
