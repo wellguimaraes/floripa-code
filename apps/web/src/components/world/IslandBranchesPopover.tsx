@@ -4,11 +4,13 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { type EnvironmentId, GitCommandError, type ScopedThreadRef } from "@t3tools/contracts";
-import { isTemporaryWorktreeBranch } from "@t3tools/shared/git";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";
 import {
+  ArrowDownIcon,
+  ArrowUpIcon,
+  FileDiffIcon,
   FolderGit2Icon,
   GitBranchIcon,
   GitCommitHorizontalIcon,
@@ -20,17 +22,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useEnvironmentQuery } from "../../state/query";
 import { vcsEnvironment } from "../../state/vcs";
+import { cn } from "../../lib/utils";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
-import type { ProjectFaviconProject } from "../ProjectFavicon";
+import { PrStatusTooltipContent, prStatusIndicator } from "../ThreadStatusIndicators";
 import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTitle } from "../ui/popover";
 import { Separator } from "../ui/separator";
 import { Spinner } from "../ui/spinner";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { signTextColor } from "./scene/Sign";
 import { type BranchTarget, branchRefsAtom } from "./useIslandSignStats";
-import { WorldProjectPill } from "./WorldProjectPill";
 
 const isGitCommandError = Schema.is(GitCommandError);
 
@@ -109,11 +110,6 @@ export function IslandBranchesPopover(props: {
   readonly list: IslandList;
   /** Where on screen the sign was clicked; the popover opens there. */
   readonly point: { readonly x: number; readonly y: number };
-  readonly title: string;
-  /** The project whose icon leads the header's pill. */
-  readonly project: ProjectFaviconProject | null;
-  /** The island sign's colour; the header's project pill wears it. */
-  readonly color: string;
   readonly targets: ReadonlyArray<BranchTarget>;
   /** The thread whose surfaces a worktree's button opens: its latest agent's; null with none. */
   readonly surfacesThreadOf: (worktree: {
@@ -124,9 +120,8 @@ export function IslandBranchesPopover(props: {
   readonly onOpenSurfaces: (ref: ScopedThreadRef) => void;
   readonly onClose: () => void;
 }) {
-  const { list, point, title, project, color, targets, onClose } = props;
+  const { list, point, targets, onClose } = props;
   const { surfacesThreadOf, onOpenSurfaces } = props;
-  const plate = useMemo(() => ({ background: color, text: signTextColor(color) }), [color]);
   const anchor = useMemo(
     () => ({ getBoundingClientRect: () => new DOMRect(point.x, point.y, 0, 0) }),
     [point.x, point.y],
@@ -152,15 +147,13 @@ export function IslandBranchesPopover(props: {
         align="start"
         sideOffset={8}
         width="lg"
-        padding="compact"
       >
-        <div className="flex flex-col gap-1.5 pt-1 pb-2">
-          <WorldProjectPill size="sm" project={project} name={title} plate={plate} />
+        <div className="pb-4">
           <PopoverTitle>{list === "branches" ? "Local Branches" : "Worktrees"}</PopoverTitle>
         </div>
-        <Separator className="-mx-3 mb-1 data-[orientation=horizontal]:w-auto" />
+        <Separator className="-mx-4 data-[orientation=horizontal]:w-auto" />
         {rows.length === 0 ? (
-          <p className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+          <p className="flex items-center gap-2 pt-3 text-sm text-muted-foreground">
             {loading ? <Spinner size="sm" tone="muted" /> : null}
             {list === "branches"
               ? loading
@@ -171,7 +164,7 @@ export function IslandBranchesPopover(props: {
                 : "No worktrees."}
           </p>
         ) : (
-          <ul className="-mx-2 flex flex-col">
+          <ul className="-mx-2 -mb-2 flex flex-col pt-2">
             {rows.map((row) => (
               <BranchItem
                 key={row.key}
@@ -221,18 +214,22 @@ function BranchItem({
         }),
   );
   const dirty = status.data?.hasWorkingTreeChanges === true;
+  const pr = status.data?.pr ?? null;
+  const prStatus = prStatusIndicator(pr, status.data?.sourceControlProvider);
+  // Without an upstream the server counts ahead of the default branch instead, which isn't
+  // the remote, so a branch that was never pushed shows neither arrow.
+  const ahead = status.data?.hasUpstream === true ? status.data.aheadCount : 0;
+  const behind = status.data?.hasUpstream === true ? status.data.behindCount : 0;
   const workingTree = status.data?.workingTree;
-  const untracked = workingTree?.untracked ?? 0;
   const command = list === "branches" ? vcsEnvironment.deleteRef : vcsEnvironment.removeWorktree;
   const allowed = useAtomValue(command.permissionAtom(row.environmentId));
   const deleteRef = useAtomCommand(vcsEnvironment.deleteRef, { reportFailure: false });
   const removeWorktree = useAtomCommand(vcsEnvironment.removeWorktree, { reportFailure: false });
   // In the worktree list, the row is the worktree and its button removes just that.
   const worktree = list === "worktrees" ? row.worktreePath : null;
-  // A worktree folder named for its first, temporary branch (`t3-8f432bc3`) says nothing, so
-  // that worktree goes by its branch, which is renamed for the work, and the folder moves to
-  // the details.
-  const generatedFolder = worktree !== null && isTemporaryWorktreeBranch(lastSegment(worktree));
+  // Every row goes by its branch, its folder in the details, save the main worktree, which
+  // goes by that name and shows its branch instead.
+  const mainWorktree = worktree !== null && row.inProjectFolder;
   const [step, setStep] = useState<DeleteStep>("idle");
 
   // A confirming click only counts for a moment; after that the button goes back to Delete.
@@ -284,22 +281,16 @@ function BranchItem({
       : null;
 
   return (
-    <li className="flex items-center gap-3 rounded-md px-2 py-1.5 hover:bg-accent">
-      <div className="min-w-0 flex-1">
-        <p className="truncate font-semibold text-sm">
-          {worktree === null || generatedFolder
-            ? row.name
-            : row.inProjectFolder
-              ? "Main worktree"
-              : lastSegment(worktree)}
-        </p>
+    <li className="flex items-center gap-3 rounded-md px-2 py-2 hover:bg-accent">
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <p className="truncate font-medium text-sm">{mainWorktree ? "Main Worktree" : row.name}</p>
         <p className="flex min-w-0 items-center gap-3 text-xs text-muted-foreground">
-          {worktree !== null && !generatedFolder ? (
+          {mainWorktree ? (
             <Tooltip>
               <TooltipTrigger
                 render={
                   <span className="flex min-w-0 items-center gap-1">
-                    <GitBranchIcon className="size-3 shrink-0" />
+                    <GitBranchIcon className="size-3.5 shrink-0" />
                     <span className="truncate">{row.name}</span>
                   </span>
                 }
@@ -307,19 +298,12 @@ function BranchItem({
               <TooltipPopup>{worktree}</TooltipPopup>
             </Tooltip>
           ) : null}
-          {row.lastCommitAt !== null ? (
-            <span className="flex shrink-0 items-center gap-1" aria-label="Last commit">
-              <GitCommitHorizontalIcon className="size-3" />
-              {formatRelativeTimeLabel(row.lastCommitAt)}
-            </span>
-          ) : null}
-          {row.worktreePath !== null &&
-          (worktree === null || row.inProjectFolder || generatedFolder) ? (
+          {row.worktreePath !== null && !mainWorktree ? (
             <Tooltip>
               <TooltipTrigger
                 render={
                   <span className="flex min-w-0 items-center gap-1">
-                    <FolderGit2Icon className="size-3 shrink-0" />
+                    <FolderGit2Icon className="size-3.5 shrink-0" />
                     <span className="truncate">
                       {row.inProjectFolder && worktree === null
                         ? "Project folder"
@@ -331,23 +315,71 @@ function BranchItem({
               <TooltipPopup>{row.worktreePath}</TooltipPopup>
             </Tooltip>
           ) : null}
+          {row.lastCommitAt !== null ? (
+            <span className="flex shrink-0 items-center gap-1" aria-label="Last commit">
+              <GitCommitHorizontalIcon className="size-3.5" />
+              {formatRelativeTimeLabel(row.lastCommitAt)}
+            </span>
+          ) : null}
+          {ahead > 0 || behind > 0 ? (
+            <span
+              className="flex shrink-0 items-center gap-1.5 tabular-nums"
+              aria-label={`${ahead} ahead, ${behind} behind the remote`}
+            >
+              {ahead > 0 ? (
+                <span className="flex items-center gap-0.5">
+                  <ArrowUpIcon className="size-3.5" />
+                  {ahead}
+                </span>
+              ) : null}
+              {behind > 0 ? (
+                <span className="flex items-center gap-0.5">
+                  <ArrowDownIcon className="size-3.5" />
+                  {behind}
+                </span>
+              ) : null}
+            </span>
+          ) : null}
+          {pr !== null && prStatus !== null ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <a
+                    href={pr.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={cn(
+                      "flex shrink-0 items-center gap-1 tabular-nums hover:underline",
+                      prStatus.colorClass,
+                    )}
+                  >
+                    <prStatus.Icon className="size-3.5" />#{pr.number}
+                  </a>
+                }
+              />
+              <TooltipPopup>
+                <PrStatusTooltipContent status={prStatus} />
+              </TooltipPopup>
+            </Tooltip>
+          ) : null}
         </p>
-        {dirty ? (
-          <p className="flex min-w-0 items-center gap-1 text-xs text-warning-foreground">
-            <span className="size-1.5 shrink-0 rounded-full bg-warning" />
-            <span className="truncate">Uncommitted changes</span>
-            {workingTree && workingTree.insertions + workingTree.deletions > 0 ? (
-              <span className="shrink-0 font-mono">
-                <span className="text-diff-addition-foreground">+{workingTree.insertions}</span>{" "}
+        {dirty && workingTree ? (
+          <p className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+            <FileDiffIcon className="size-3.5 shrink-0 text-warning-foreground" />
+            <span className="truncate">
+              {workingTree.files.length} {workingTree.files.length === 1 ? "file" : "files"}
+            </span>
+            {workingTree.insertions + workingTree.deletions > 0 ? (
+              <span className="ml-1 flex shrink-0 gap-1.5 font-medium tabular-nums">
+                <span className="text-diff-addition-foreground">+{workingTree.insertions}</span>
                 <span className="text-diff-deletion-foreground">−{workingTree.deletions}</span>
               </span>
             ) : null}
-            {untracked > 0 ? <span className="shrink-0">· {untracked} untracked</span> : null}
           </p>
         ) : status.data !== undefined ? (
           // Said outright, so a clean worktree doesn't read as one whose status hasn't loaded.
-          <p className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-            <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
+          <p className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground/64">
+            <FileDiffIcon className="size-3.5 shrink-0" />
             <span className="truncate">No uncommitted changes</span>
           </p>
         ) : null}
@@ -376,6 +408,7 @@ function DeleteButton(props: {
   readonly onClick: () => void;
 }) {
   const { verb, step, blockedReason, onClick } = props;
+  // At rest the button is just its icon; it spells out what a click does once it's armed.
   const label =
     step === "deleting"
       ? verb === "Delete"
@@ -385,25 +418,27 @@ function DeleteButton(props: {
         ? "Confirm"
         : step === "unmerged"
           ? "Not merged — delete anyway"
-          : verb;
+          : null;
   const button = (
     <Button
       type="button"
       variant={step === "confirm" || step === "unmerged" ? "destructive" : "outline"}
-      size="xs"
+      size={label === null ? "icon-xs" : "xs"}
       className="shrink-0"
+      aria-label={label ?? verb}
       disabled={blockedReason !== null || step === "deleting"}
       onClick={onClick}
     >
-      <Trash2Icon className="size-3.5" />
+      <Trash2Icon />
       {label}
     </Button>
   );
-  if (blockedReason === null) return button;
+  const hint = blockedReason ?? (label === null ? verb : null);
+  if (hint === null) return button;
   return (
     <Tooltip>
       <TooltipTrigger render={<span className="shrink-0">{button}</span>} />
-      <TooltipPopup>{blockedReason}</TooltipPopup>
+      <TooltipPopup>{hint}</TooltipPopup>
     </Tooltip>
   );
 }

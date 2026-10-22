@@ -1459,9 +1459,6 @@ export default function WorldCanvas(props: {
         <IslandBranchesPopover
           list={listOn.list}
           point={listOn.point}
-          title={projectTitles.get(listOn.key) ?? "this island"}
-          project={projectRecords.get(listOn.key) ?? null}
-          color={palette.plates[hashString(listOn.key) % palette.plates.length]!}
           targets={signStats.get(listOn.key)?.targets ?? []}
           surfacesThreadOf={(worktree) =>
             latestThreadIn(
