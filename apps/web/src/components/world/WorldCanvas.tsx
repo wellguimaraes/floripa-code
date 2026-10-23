@@ -1,6 +1,7 @@
 import { Canvas, events, type ThreeEvent, useFrame, useThree } from "@react-three/fiber";
 import { PlusIcon } from "lucide-react";
 import { scopedProjectKey, scopedThreadKey } from "@t3tools/client-runtime/environment";
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -79,7 +80,8 @@ import { useWorldVisibilityStore } from "./worldVisibilityStore";
 import { AddProjectButton } from "./AddProjectButton";
 import { IslandArrangementMenu } from "./IslandArrangementMenu";
 import { ProjectVisibilityMenu } from "./ProjectVisibilityMenu";
-import { IslandBranchesPopover } from "./IslandBranchesPopover";
+import { IslandBranchesPopover, type WorktreeSurfacesTarget } from "./IslandBranchesPopover";
+import { useCreateIdleWorldThread } from "./useStartWorldAgent";
 import { canChangeIslandIcon, IslandIconPicker, useSetIslandIcon } from "./IslandIconPicker";
 import { RestoreArchivedDialog } from "./RestoreArchivedDialog";
 import { layoutTags, type ScreenPoint } from "./scene/tagLayout";
@@ -149,18 +151,19 @@ export default function WorldCanvas(props: {
     for (const group of groups) {
       for (const ref of group.memberProjectRefs) islandOf.set(scopedProjectKey(ref), group.key);
     }
-    const createdAt = (group: (typeof groups)[number]) =>
-      group.members.map((member) => member.project.createdAt).toSorted()[0] ?? "";
+    // Signs are read at a glance: "owner/repo" groups show just the repo.
+    const title = (group: (typeof groups)[number]) =>
+      group.label.slice(group.label.lastIndexOf("/") + 1);
+    // Islands line up by the name on their sign.
     const sorted = groups.toSorted(
-      (a, b) => createdAt(a).localeCompare(createdAt(b)) || a.key.localeCompare(b.key),
+      (a, b) =>
+        title(a).localeCompare(title(b), undefined, { sensitivity: "base", numeric: true }) ||
+        a.key.localeCompare(b.key),
     );
     return {
       islandOf,
       projectOrder: sorted.map((group) => group.key),
-      // Signs are read at a glance: "owner/repo" groups show just the repo.
-      projectTitles: new Map(
-        sorted.map((group) => [group.key, group.label.slice(group.label.lastIndexOf("/") + 1)]),
-      ),
+      projectTitles: new Map(sorted.map((group) => [group.key, title(group)])),
       // New agents on an island start in its group's main project.
       projectRefs: new Map(
         sorted.map((group) => [
@@ -956,6 +959,45 @@ export default function WorldCanvas(props: {
     closeManager();
     void onOpenSurfaces(ref);
   };
+  const createIdleThread = useCreateIdleWorldThread();
+  // Surfaces belong to a thread: a worktree's latest one, else a new idle thread made there.
+  const openWorktreeSurfaces = async (islandKey: string, worktree: WorktreeSurfacesTarget) => {
+    const worktreePath = worktree.inProjectFolder ? null : worktree.path;
+    const existing =
+      latestThreadIn(
+        islands.find((island) => island.key === islandKey),
+        worktreePath,
+        worktree.path,
+      ) ??
+      // Only recent threads walk the world, so a quiet worktree, the main one most often,
+      // falls back to any of its island's threads that worked there.
+      latestShellIn(threads, islandOf, islandKey, worktreePath, worktree.path);
+    if (existing !== null) return openSurfacesOf(existing);
+    const project = projects.find(
+      (candidate) =>
+        candidate.environmentId === worktree.environmentId &&
+        candidate.workspaceRoot === worktree.cwd,
+    );
+    try {
+      if (project === undefined) throw new Error("The worktree's project is gone.");
+      const ref = {
+        environmentId: project.environmentId,
+        threadId: await createIdleThread(
+          { environmentId: project.environmentId, projectId: project.id },
+          { branch: worktree.branch, worktreePath },
+          worktree.branch,
+        ),
+      };
+      // The thread route closes on a thread the client hasn't heard of yet.
+      if (await waitForThreadShell(ref)) openSurfacesOf(ref);
+    } catch (error) {
+      toastManager.add({
+        type: "error",
+        title: "Could not open surfaces",
+        description: error instanceof Error ? error.message : undefined,
+      });
+    }
+  };
   const newAgentRef = useRef<HTMLDivElement>(null);
   const managerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1460,14 +1502,10 @@ export default function WorldCanvas(props: {
           list={listOn.list}
           point={listOn.point}
           targets={signStats.get(listOn.key)?.targets ?? []}
-          surfacesThreadOf={(worktree) =>
-            latestThreadIn(
-              islands.find((island) => island.key === listOn.key),
-              worktree.inProjectFolder ? null : worktree.path,
-              worktree.path,
-            )
+          onOpenSurfaces={(worktree) => void openWorktreeSurfaces(listOn.key, worktree)}
+          hatOf={(path) =>
+            islands.find((island) => island.key === listOn.key)?.hats.get(path) ?? null
           }
-          onOpenSurfaces={openSurfacesOf}
           onClose={() => setListOn(null)}
         />
       ) : null}
@@ -2708,6 +2746,28 @@ function assertValidDefinition(definition: WorldDefinition) {
   validatedDefinitions.add(definition);
   const errors = validateWorldDefinition(definition);
   if (errors.length > 0) throw new Error(`Invalid world definition:\n${errors.join("\n")}`);
+}
+
+/** The most recently updated unarchived thread of an island in a worktree, its subagents aside. */
+function latestShellIn(
+  threads: ReadonlyArray<EnvironmentThreadShell>,
+  islandOf: ReadonlyMap<string, string>,
+  island: string,
+  worktreePath: string | null,
+  folder: string,
+): ScopedThreadRef | null {
+  let best: EnvironmentThreadShell | null = null;
+  for (const thread of threads) {
+    if (thread.archivedAt != null || thread.lineage.relationshipToParent === "subagent") continue;
+    if (thread.worktreePath !== worktreePath && thread.worktreePath !== folder) continue;
+    const projectKey = scopedProjectKey({
+      environmentId: thread.environmentId,
+      projectId: thread.projectId,
+    });
+    if ((islandOf.get(projectKey) ?? projectKey) !== island) continue;
+    if (best === null || thread.updatedAt > best.updatedAt) best = thread;
+  }
+  return best === null ? null : { environmentId: best.environmentId, threadId: best.id };
 }
 
 /**

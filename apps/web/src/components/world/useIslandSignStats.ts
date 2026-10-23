@@ -45,26 +45,31 @@ export const branchRefsAtom = (target: BranchTarget) =>
 
 /**
  * Local branch names per island, across its checkouts and their worktrees, and its worktree
- * count, the main one included. The default branch is left out of the names: a fork's PR from its own `main` would
- * otherwise count as ours.
+ * count, the main one included. The default branch counts but is left out of the names PRs are
+ * matched by: a fork's PR from its own `main` would otherwise count as ours.
  */
 const localBranchesAtom = Atom.family((key: string) =>
   Atom.make((get) => {
     const targets = JSON.parse(key) as ReadonlyArray<BranchTarget>;
     const branches = new Map<string, Set<string>>();
+    const branchCounts = new Map<string, Set<string>>();
     const checkouts = targets.map((target) => {
       const refs = Option.getOrNull(AsyncResult.value(get(branchRefsAtom(target))))?.refs ?? [];
       const names = branches.get(target.island) ?? new Set<string>();
+      const counted = branchCounts.get(target.island) ?? new Set<string>();
       for (const ref of refs) {
-        if (ref.isRemote !== true && !ref.isDefault) names.add(ref.name);
+        if (ref.isRemote === true) continue;
+        counted.add(ref.name);
+        if (!ref.isDefault) names.add(ref.name);
       }
       branches.set(target.island, names);
+      branchCounts.set(target.island, counted);
       return {
         island: target.island,
         worktreePaths: refs.map((ref) => (ref.isRemote === true ? null : ref.worktreePath)),
       };
     });
-    return { branches, worktrees: countIslandWorktrees(checkouts) };
+    return { branches, branchCounts, worktrees: countIslandWorktrees(checkouts) };
   }),
 );
 
@@ -111,7 +116,7 @@ export function useIslandSignStats(
   }, [islands, projects]);
 
   const pullRequests = usePullRequestList(listTargets);
-  const { branches, worktrees } = useAtomValue(localBranchesAtom(branchKey));
+  const { branches, branchCounts, worktrees } = useAtomValue(localBranchesAtom(branchKey));
   const refreshAll = useEffectEvent(() => {
     if (document.hidden) return;
     for (const target of JSON.parse(branchKey) as ReadonlyArray<BranchTarget>) {
@@ -134,12 +139,12 @@ export function useIslandSignStats(
       [...islands.keys()].map((island) => [
         island,
         {
-          branches: branches.get(island)?.size ?? 0,
+          branches: branchCounts.get(island)?.size ?? 0,
           pullRequests: pullRequestCounts.get(island) ?? 0,
           worktrees: worktrees.get(island) ?? 0,
           targets: targets.filter((target) => target.island === island),
         },
       ]),
     );
-  }, [islands, pullRequests.data, branches, worktrees, branchKey]);
+  }, [islands, pullRequests.data, branches, branchCounts, worktrees, branchKey]);
 }

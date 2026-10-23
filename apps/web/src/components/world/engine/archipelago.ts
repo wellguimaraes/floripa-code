@@ -54,7 +54,7 @@ export function resolveArchipelago(input: {
    * its characters (see `fittingSize`). Every island is `definition` when left out.
    */
   readonly sizes?: ReadonlyArray<WorldDefinition>;
-  /** Every known project key in a stable order, e.g. by creation time. */
+  /** Every known project key in a stable order, e.g. by name. */
   readonly projectOrder: ReadonlyArray<string>;
   /** How many family colours the renderer has. */
   readonly hueCount: number;

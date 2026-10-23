@@ -321,3 +321,40 @@ export function useStartWorldAgent() {
     [startTurn],
   );
 }
+
+/**
+ * Creates an idle thread in a project's existing workspace, with the setup a fresh draft would
+ * pick, so a worktree no agent works in yet has a thread to open its surfaces with.
+ */
+export function useCreateIdleWorldThread() {
+  const createThread = useOrchestrationCommand(threadEnvironment.create, { reportFailure: false });
+  return useCallback(
+    async (
+      projectRef: ScopedProjectRef,
+      workspace: { readonly branch: string | null; readonly worktreePath: string | null },
+      title: string,
+    ): Promise<ThreadId> => {
+      const { environmentId } = projectRef;
+      const project = findProject(projectRef);
+      const serverConfig = appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId);
+      const settings = mergeEnvironmentSettings(
+        serverConfig?.settings ?? DEFAULT_SERVER_SETTINGS,
+        getClientSettings(),
+      );
+      const setup = resolveWorldAgentSetup(
+        serverConfig?.providers ?? [],
+        settings,
+        await readProjectSettings(environmentId, project),
+      );
+      if (setup === null) throw new Error("No agent provider is available.");
+      const threadId = newThreadId();
+      const result = await createThread({
+        environmentId,
+        input: { threadId, projectId: project.id, title, ...setup, ...workspace },
+      });
+      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+      return threadId;
+    },
+    [createThread],
+  );
+}

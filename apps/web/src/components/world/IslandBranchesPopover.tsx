@@ -3,7 +3,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { type EnvironmentId, GitCommandError, type ScopedThreadRef } from "@t3tools/contracts";
+import { type EnvironmentId, GitCommandError } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";
@@ -17,7 +17,7 @@ import {
   PanelRightIcon,
   Trash2Icon,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useEnvironmentQuery } from "../../state/query";
@@ -33,6 +33,10 @@ import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { type BranchTarget, branchRefsAtom } from "./useIslandSignStats";
 
+const HatPortrait = lazy(() =>
+  import("./scene/CharacterPortrait").then((module) => ({ default: module.HatPortrait })),
+);
+
 const isGitCommandError = Schema.is(GitCommandError);
 
 /** How long a Delete button waits for its confirming second click. */
@@ -47,14 +51,26 @@ interface BranchRow {
   readonly worktreePath: string | null;
   /** Checked out in a project's own folder, which can't be removed from here. */
   readonly inProjectFolder: boolean;
+  /** The repository's default branch, which can't be deleted from here. */
+  readonly isDefault: boolean;
   readonly lastCommitAt: string | null;
 }
 
 type IslandList = "branches" | "worktrees";
 
+/** A worktree whose surfaces open on their own, from its latest thread or a new idle one. */
+export interface WorktreeSurfacesTarget {
+  readonly environmentId: EnvironmentId;
+  /** The project checkout the worktree was listed from. */
+  readonly cwd: string;
+  readonly path: string;
+  readonly branch: string;
+  readonly inProjectFolder: boolean;
+}
+
 /**
- * An island's local branches, the default ones aside, most recently committed first, and its
- * worktrees whatever branch they're on, the main one in its projects' own folders first.
+ * An island's local branches, the default one first and the rest most recently committed first,
+ * and its worktrees whatever branch they're on, the main one in its projects' own folders first.
  * Checkouts of one repository list the same branches, so each appears once.
  */
 const islandBranchesAtom = Atom.family((key: string) =>
@@ -76,10 +92,11 @@ const islandBranchesAtom = Atom.family((key: string) =>
           name: ref.name,
           worktreePath: ref.worktreePath,
           inProjectFolder: ref.worktreePath !== null && projectFolders.has(ref.worktreePath),
+          isDefault: ref.isDefault,
           lastCommitAt: ref.lastCommitAt ?? null,
         };
         const branchKey = `${target.environmentId}\u0000${repository}\u0000${ref.name}`;
-        if (!ref.isDefault && !branches.has(branchKey)) {
+        if (!branches.has(branchKey)) {
           branches.set(branchKey, { key: branchKey, ...row });
         }
         if (ref.worktreePath === null) continue;
@@ -90,7 +107,9 @@ const islandBranchesAtom = Atom.family((key: string) =>
     const byLastCommit = (a: BranchRow, b: BranchRow) =>
       (b.lastCommitAt ?? "").localeCompare(a.lastCommitAt ?? "") || a.name.localeCompare(b.name);
     return {
-      branches: [...branches.values()].toSorted(byLastCommit),
+      branches: [...branches.values()].toSorted(
+        (a, b) => Number(b.isDefault) - Number(a.isDefault) || byLastCommit(a, b),
+      ),
       worktrees: [...worktrees.values()].toSorted(
         (a, b) => Number(b.inProjectFolder) - Number(a.inProjectFolder) || byLastCommit(a, b),
       ),
@@ -111,17 +130,14 @@ export function IslandBranchesPopover(props: {
   /** Where on screen the sign was clicked; the popover opens there. */
   readonly point: { readonly x: number; readonly y: number };
   readonly targets: ReadonlyArray<BranchTarget>;
-  /** The thread whose surfaces a worktree's button opens: its latest agent's; null with none. */
-  readonly surfacesThreadOf: (worktree: {
-    readonly path: string;
-    readonly inProjectFolder: boolean;
-  }) => ScopedThreadRef | null;
   /** Shows just that worktree's surfaces, its chat collapsed. */
-  readonly onOpenSurfaces: (ref: ScopedThreadRef) => void;
+  readonly onOpenSurfaces: (worktree: WorktreeSurfacesTarget) => void;
+  /** The hat a worktree's agents wear in the world; null when none work there. */
+  readonly hatOf: (worktreePath: string) => number | null;
   readonly onClose: () => void;
 }) {
   const { list, point, targets, onClose } = props;
-  const { surfacesThreadOf, onOpenSurfaces } = props;
+  const { onOpenSurfaces, hatOf } = props;
   const anchor = useMemo(
     () => ({ getBoundingClientRect: () => new DOMRect(point.x, point.y, 0, 0) }),
     [point.x, point.y],
@@ -158,7 +174,7 @@ export function IslandBranchesPopover(props: {
             {list === "branches"
               ? loading
                 ? "Loading branches…"
-                : "No branches besides the default one."
+                : "No branches."
               : loading
                 ? "Loading worktrees…"
                 : "No worktrees."}
@@ -170,16 +186,24 @@ export function IslandBranchesPopover(props: {
                 key={row.key}
                 list={list}
                 row={row}
-                surfacesThread={
+                surfaces={
                   list === "worktrees" && row.worktreePath !== null
-                    ? surfacesThreadOf({
+                    ? {
+                        environmentId: row.environmentId,
+                        cwd: row.cwd,
                         path: row.worktreePath,
+                        branch: row.name,
                         inProjectFolder: row.inProjectFolder,
-                      })
-                    : undefined
+                      }
+                    : null
                 }
-                onOpenSurfaces={(ref) => {
-                  onOpenSurfaces(ref);
+                hat={
+                  list === "worktrees" && row.worktreePath !== null && !row.inProjectFolder
+                    ? hatOf(row.worktreePath)
+                    : null
+                }
+                onOpenSurfaces={(worktree) => {
+                  onOpenSurfaces(worktree);
                   onClose();
                 }}
               />
@@ -196,14 +220,17 @@ type DeleteStep = "idle" | "confirm" | "unmerged" | "deleting";
 function BranchItem({
   list,
   row,
-  surfacesThread,
+  surfaces,
+  hat,
   onOpenSurfaces,
 }: {
   readonly list: IslandList;
   readonly row: BranchRow;
-  /** Worktree rows only: the thread to open its surfaces with, null when no agent works there. */
-  readonly surfacesThread: ScopedThreadRef | null | undefined;
-  readonly onOpenSurfaces: (ref: ScopedThreadRef) => void;
+  /** Worktree rows only: the hat its agents wear in the world, null when none work there. */
+  readonly hat: number | null;
+  /** Worktree rows only: the worktree whose surfaces its button opens. */
+  readonly surfaces: WorktreeSurfacesTarget | null;
+  readonly onOpenSurfaces: (worktree: WorktreeSurfacesTarget) => void;
 }) {
   const status = useEnvironmentQuery(
     row.worktreePath === null
@@ -272,18 +299,28 @@ function BranchItem({
     });
   };
 
-  const blockedReason = row.inProjectFolder
-    ? worktree !== null
-      ? "The main worktree can't be removed"
-      : "Checked out in the project folder"
-    : !allowed
-      ? "You don't have permission to change this repository"
-      : null;
+  const blockedReason =
+    worktree === null && row.isDefault
+      ? "The default branch can't be deleted"
+      : row.inProjectFolder
+        ? worktree !== null
+          ? "The main worktree can't be removed"
+          : "Checked out in the project folder"
+        : !allowed
+          ? "You don't have permission to change this repository"
+          : null;
 
   return (
     <li className="flex items-center gap-3 rounded-md px-2 py-2 hover:bg-accent">
       <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <p className="truncate font-medium text-sm">{mainWorktree ? "Main Worktree" : row.name}</p>
+        <p className="flex min-w-0 items-center gap-1.5 font-medium text-sm">
+          {hat !== null ? (
+            <Suspense fallback={null}>
+              <HatPortrait hat={hat} className="-my-0.5 size-5" />
+            </Suspense>
+          ) : null}
+          <span className="truncate">{mainWorktree ? "Main Worktree" : row.name}</span>
+        </p>
         <p className="flex min-w-0 items-center gap-3 text-xs text-muted-foreground">
           {mainWorktree ? (
             <Tooltip>
@@ -384,9 +421,7 @@ function BranchItem({
           </p>
         ) : null}
       </div>
-      {surfacesThread !== undefined ? (
-        <SurfacesButton thread={surfacesThread} onOpen={onOpenSurfaces} />
-      ) : null}
+      {surfaces !== null ? <SurfacesButton onOpen={() => onOpenSurfaces(surfaces)} /> : null}
       <DeleteButton
         verb={worktree !== null ? "Remove" : "Delete"}
         step={step}
@@ -443,12 +478,8 @@ function DeleteButton(props: {
   );
 }
 
-/** Opens a worktree's surfaces on their own; they belong to a thread, so it needs an agent there. */
-function SurfacesButton(props: {
-  readonly thread: ScopedThreadRef | null;
-  readonly onOpen: (ref: ScopedThreadRef) => void;
-}) {
-  const { thread, onOpen } = props;
+/** Opens a worktree's surfaces on their own. */
+function SurfacesButton(props: { readonly onOpen: () => void }) {
   return (
     <Tooltip>
       <TooltipTrigger
@@ -459,19 +490,14 @@ function SurfacesButton(props: {
               variant="outline"
               size="icon-xs"
               aria-label="Open surfaces"
-              disabled={thread === null}
-              onClick={() => {
-                if (thread !== null) onOpen(thread);
-              }}
+              onClick={props.onOpen}
             >
               <PanelRightIcon />
             </Button>
           </span>
         }
       />
-      <TooltipPopup>
-        {thread === null ? "No agent works in this worktree yet" : "Open surfaces"}
-      </TooltipPopup>
+      <TooltipPopup>Open surfaces</TooltipPopup>
     </Tooltip>
   );
 }
