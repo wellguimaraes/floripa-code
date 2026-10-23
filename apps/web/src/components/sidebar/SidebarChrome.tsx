@@ -1,5 +1,5 @@
 import { ArrowLeftIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { memo, useCallback } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 
@@ -146,17 +146,19 @@ function SidebarUtilityItem({
   icon,
   label,
   onClick,
+  render,
 }: {
   icon: ReactNode;
   label: string;
   onClick: () => void;
+  render?: ReactElement;
 }) {
   return (
     <SidebarMenuItem className="shrink-0">
       <Tooltip>
         <TooltipTrigger
           render={
-            <SidebarMenuButton aria-label={label} onClick={onClick} size="icon">
+            <SidebarMenuButton aria-label={label} onClick={onClick} render={render} size="icon">
               {icon}
             </SidebarMenuButton>
           }
@@ -187,11 +189,6 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
       search: readPullRequestListPreferences(),
     });
   }, [closeMobileSidebar, navigate]);
-  const handleSettingsClick = useCallback(() => {
-    closeMobileSidebar();
-    void navigate({ to: "/settings" });
-  }, [closeMobileSidebar, navigate]);
-
   const handleUsageClick = useCallback(() => {
     if (isMobile) {
       setOpenMobile(false);
@@ -218,7 +215,9 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
           <SidebarUtilityItem
             icon={<SettingsIcon />}
             label="Settings"
-            onClick={handleSettingsClick}
+            onClick={closeMobileSidebar}
+            // A link so the router preloads the settings chunks on hover.
+            render={<Link to="/settings/general" />}
           />
           {pullRequestsSupported ? (
             <SidebarUtilityItem

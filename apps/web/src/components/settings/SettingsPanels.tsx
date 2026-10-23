@@ -6,7 +6,7 @@ import { PRIVACY_POLICY_URL } from "../../legalLinks";
 import { ArchiveIcon, ArchiveX, CheckIcon, ChevronRightIcon, SettingsIcon } from "lucide-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import type { CSSProperties, ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type BackgroundActivityProfile,
   type DesktopUpdateChannel,
@@ -52,7 +52,6 @@ import * as Equal from "effect/Equal";
 import * as Schema from "effect/Schema";
 import { APP_VERSION, HOSTED_APP_CHANNEL, HOSTED_APP_CHANNEL_LABEL } from "../../branding";
 import { IS_NIGHTLY_BUILD, NightlyMobileBetaRow } from "../NightlyMobileBeta";
-import { ImportHistoryDialog } from "../onboarding/WelcomeWizard";
 import { CliCommandSettingsRow } from "./CliCommandSettingsRow";
 import {
   canCheckForUpdate,
@@ -256,6 +255,13 @@ const BACKGROUND_ACTIVITY_BOOLEAN_OVERRIDES: ReadonlyArray<{
   { key: "pauseWhenClientLowPower", label: "Pause on client low power" },
   { key: "pauseWhenOnBattery", label: "Pause on battery" },
 ];
+
+// The onboarding wizard module is heavy and only needed once the dialog opens.
+const ImportHistoryDialog = lazy(() =>
+  import("../onboarding/WelcomeWizard").then((module) => ({
+    default: module.ImportHistoryDialog,
+  })),
+);
 
 function resetBackgroundActivitySettings() {
   return {
@@ -3065,10 +3071,12 @@ export function GeneralSettingsPanel() {
           }
         />
         {importHistoryOpen ? (
-          <ImportHistoryDialog
-            environmentIds={connectedEnvironments.map((target) => target.environmentId)}
-            onClose={() => setImportHistoryOpen(false)}
-          />
+          <Suspense fallback={null}>
+            <ImportHistoryDialog
+              environmentIds={connectedEnvironments.map((target) => target.environmentId)}
+              onClose={() => setImportHistoryOpen(false)}
+            />
+          </Suspense>
         ) : null}
       </SettingsSection>
 

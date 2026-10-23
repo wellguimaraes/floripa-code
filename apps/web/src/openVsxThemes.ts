@@ -1,5 +1,5 @@
 import { sha256 } from "@noble/hashes/sha2";
-import JSZip from "jszip";
+import type JSZip from "jszip";
 import { parse, type ParseError } from "jsonc-parser";
 
 import type { ThemeDefinition } from "./themePalette";
@@ -673,7 +673,9 @@ export async function importOpenVsxThemeExtension(
   let zip: JSZip;
   try {
     const inspectedPackageBytes = inspectZipDirectory(packageBytes);
-    zip = await JSZip.loadAsync(inspectedPackageBytes);
+    // Loaded on install so the settings bundle does not carry the zip reader.
+    const { default: JSZipLoader } = await import("jszip");
+    zip = await JSZipLoader.loadAsync(inspectedPackageBytes);
     signal?.throwIfAborted();
     inspectZip(zip);
   } catch (cause) {

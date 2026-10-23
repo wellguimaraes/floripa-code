@@ -1,4 +1,4 @@
-import { useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { SearchIcon, SettingsIcon } from "lucide-react";
 
 import { openCommandPalette } from "../../commandPaletteBus";
@@ -10,7 +10,6 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
  * palette, which reaches every thread, project and page, and Settings.
  */
 export function WorldNavigation() {
-  const navigate = useNavigate();
   return (
     <div className="surface-glass flex h-8 items-center gap-0.5 rounded-full border border-border/60 px-1 text-foreground shadow-sm">
       <Tooltip>
@@ -35,7 +34,8 @@ export function WorldNavigation() {
               variant="ghost"
               size="icon-xs"
               aria-label="Settings"
-              onClick={() => void navigate({ to: "/settings" })}
+              // A link so the router preloads the settings chunks on hover.
+              render={<Link to="/settings/general" />}
             />
           }
         >
