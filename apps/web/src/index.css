@@ -2279,6 +2279,16 @@ code {
   padding: 0.05em 0.25em;
 }
 
+/* Chips type at the prompt's own size here (sent messages keep them a step
+   smaller), nudged up to sit on the text's baseline. */
+.composer-tiptap [data-composer-chip] {
+  margin-top: -2px;
+}
+
+.composer-tiptap [data-context-chip] {
+  font-size: 1em;
+}
+
 .composer-rich-marker {
   color: var(--muted-foreground);
   opacity: 0.75;

@@ -94,6 +94,8 @@ function ContextChip({ className, kind, state, render, ...props }: ContextChipPr
   const defaultProps = {
     className: cn(contextChipVariants({ kind, state }), className),
     "data-slot": "context-chip",
+    // Survives a trigger that renders the chip and replaces its data-slot.
+    "data-context-chip": "",
     "data-state": state,
   };
   return useRender({

@@ -281,7 +281,7 @@ function ComposerMentionNodeView({ node }: NodeViewProps) {
     </ContextChip>
   );
   return (
-    <NodeViewWrapper as="span" className={CHIP_NODE_SELECTION_CLASS_NAME}>
+    <NodeViewWrapper as="span" className={CHIP_NODE_SELECTION_CLASS_NAME} data-composer-chip>
       <Tooltip>
         <TooltipTrigger render={chip} />
         <TooltipPopup side="top">{path}</TooltipPopup>
@@ -322,7 +322,7 @@ function ComposerSkillNodeView({ node }: NodeViewProps) {
   const skillDescription = (node.attrs.skillDescription as string | null) ?? null;
   const skill = skills.find((candidate) => candidate.name === skillName);
   return (
-    <NodeViewWrapper as="span" className={CHIP_NODE_SELECTION_CLASS_NAME}>
+    <NodeViewWrapper as="span" className={CHIP_NODE_SELECTION_CLASS_NAME} data-composer-chip>
       <ContextChipPopover
         kind="skill"
         icon={<SkillChipIcon />}
@@ -504,7 +504,7 @@ const ComposerContextReferenceExtension = Node.create({
 
 function ComposerContextReferenceNodeView({ node }: NodeViewProps) {
   return (
-    <NodeViewWrapper as="span" className={CHIP_NODE_SELECTION_CLASS_NAME}>
+    <NodeViewWrapper as="span" className={CHIP_NODE_SELECTION_CLASS_NAME} data-composer-chip>
       <ComposerContextReferenceChip
         kind={(node.attrs.kind as string) ?? ""}
         contextId={(node.attrs.contextId as string) ?? ""}
