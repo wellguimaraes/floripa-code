@@ -22,6 +22,7 @@ import { readThreadShell, useProject } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { useTheme } from "../../hooks/useTheme";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { Button } from "../ui/button";
 import { BubbleComposer } from "./BubbleComposer";
@@ -101,6 +102,11 @@ export function ManagerBubble(props: {
     readonly hue: number;
   }) => void;
 }) {
+  const { resolvedTheme } = useTheme();
+  const replyStyle =
+    resolvedTheme === "dark"
+      ? { backgroundColor: palette.bubbleReplyDark, color: palette.bubbleReplyTextDark }
+      : { backgroundColor: palette.bubbleReply, color: palette.bubbleText };
   const {
     islandName,
     project,
@@ -331,10 +337,7 @@ export function ManagerBubble(props: {
         {/* Spaced like the character bubble's thread: yours on the right, his question on the left. */}
         <div className="my-1 flex flex-col gap-2 text-xs">
           {quote}
-          <p
-            className="mr-auto max-w-[85%] rounded-lg px-3 py-2 break-words"
-            style={{ backgroundColor: palette.bubbleReply, color: palette.bubbleText }}
-          >
+          <p className="mr-auto max-w-[85%] rounded-lg px-3 py-2 break-words" style={replyStyle}>
             {pick.agent !== null ? (
               <>
                 Send to <strong>{pick.agent.title}</strong>

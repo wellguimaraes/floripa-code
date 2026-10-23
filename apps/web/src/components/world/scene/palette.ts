@@ -33,6 +33,9 @@ export const palette = {
   bubbleSent: "#d4e8f5",
   bubbleReply: "#e9ebee",
   bubbleText: "#0f172a",
+  /** The agent's bubble in dark mode, where the light grey would glare off the popover. */
+  bubbleReplyDark: "#2a2c30",
+  bubbleReplyTextDark: "#e9ebee",
   balloonRim: "#ffffff",
   balloonString: "#334155",
   eye: "#111827",

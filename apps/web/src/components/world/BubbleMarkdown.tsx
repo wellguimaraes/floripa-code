@@ -7,7 +7,7 @@ const REMARK_PLUGINS = [remarkGfm];
 // fold into their text. Links stay text because agents link local files the browser can't open.
 const INLINE_ELEMENTS = ["p", "strong", "em", "del", "code"];
 const inlineCode: Components["code"] = ({ children }) => (
-  <code className="rounded bg-black/10 px-1 font-mono">{children}</code>
+  <code className="rounded bg-current/10 px-1 font-mono">{children}</code>
 );
 const COMPONENTS: Components = {
   p: ({ children }) => <>{children} </>,
@@ -36,7 +36,7 @@ const heading: Components["h1"] = ({ children }) => <p className="font-semibold"
 const BLOCK_COMPONENTS: Components = {
   code: inlineCode,
   pre: ({ children }) => (
-    <pre className="overflow-x-auto rounded bg-black/10 p-2 font-mono [&_code]:bg-transparent [&_code]:p-0">
+    <pre className="overflow-x-auto rounded bg-current/10 p-2 font-mono [&_code]:bg-transparent [&_code]:p-0">
       {children}
     </pre>
   ),

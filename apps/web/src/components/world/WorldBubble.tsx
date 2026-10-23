@@ -18,6 +18,7 @@ import {
 } from "../../state/entities";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { useTheme } from "../../hooks/useTheme";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { Button } from "../ui/button";
 import { Kbd } from "../ui/kbd";
@@ -119,6 +120,11 @@ export function WorldBubble(props: {
   const hasExchange = lastSent !== null || lastReply !== null || typing;
   // Scrolled away from the top: the reply is passing under your pinned message.
   const [exchangeScrolled, setExchangeScrolled] = useState(false);
+  const { resolvedTheme } = useTheme();
+  const replyStyle =
+    resolvedTheme === "dark"
+      ? { backgroundColor: palette.bubbleReplyDark, color: palette.bubbleReplyTextDark }
+      : { backgroundColor: palette.bubbleReply, color: palette.bubbleText };
   useLayoutEffect(() => {
     const element = exchange.current;
     if (hasExchange && element !== null) element.scrollTop = element.scrollHeight;
@@ -464,7 +470,7 @@ export function WorldBubble(props: {
               {typing || lastReply !== null ? (
                 <div
                   className="mr-auto flex max-w-[85%] min-w-0 flex-col rounded-lg px-3 py-2"
-                  style={{ backgroundColor: palette.bubbleReply, color: palette.bubbleText }}
+                  style={replyStyle}
                 >
                   <RollingSwap swapKey={typing ? "typing" : (lastReply?.id ?? "typing")}>
                     {typing || lastReply === null ? (
