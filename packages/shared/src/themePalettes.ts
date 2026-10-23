@@ -264,7 +264,7 @@ export const FLORIPA_CODE_DARK_THEME_COLORS: ThemeColors = {
 
 export const T3_CHAT_THEME: ThemeDefinition = {
   id: "t3-chat",
-  label: "T3 Chat",
+  label: "Catarina",
   appearance: "light",
   colors: {
     canvas: "oklch(0.982446 0.010114 325.653)",
@@ -399,7 +399,7 @@ export const T3_CHAT_THEME: ThemeDefinition = {
 
 export const GROVE_THEME: ThemeDefinition = {
   id: "grove",
-  label: "Grove",
+  label: "Campeche",
   appearance: "light",
   colors: {
     canvas: "oklch(0.972369 0.005497 157.15)",
@@ -534,7 +534,7 @@ export const GROVE_THEME: ThemeDefinition = {
 
 export const OCEAN_THEME: ThemeDefinition = {
   id: "ocean",
-  label: "Ocean",
+  label: "Joaquina",
   appearance: "light",
   colors: {
     canvas: "oklch(0.974199 0.002856 241.597)",
@@ -669,7 +669,7 @@ export const OCEAN_THEME: ThemeDefinition = {
 
 export const EMBER_THEME: ThemeDefinition = {
   id: "ember",
-  label: "Ember",
+  label: "Peri",
   appearance: "light",
   colors: {
     canvas: "oklch(0.976527 0.002685 60.725)",
@@ -804,7 +804,7 @@ export const EMBER_THEME: ThemeDefinition = {
 
 export const IRIS_THEME: ThemeDefinition = {
   id: "iris",
-  label: "Iris",
+  label: "Jurere",
   appearance: "light",
   colors: {
     canvas: "oklch(0.976531 0.003855 303.226)",
