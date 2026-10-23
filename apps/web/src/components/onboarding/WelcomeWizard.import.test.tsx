@@ -69,6 +69,7 @@ vi.mock("../../state/environments", () => {
   const primary = environment("primary");
   return {
     usePrimaryEnvironment: () => primary,
+    usePrimaryEnvironmentId: () => primary.environmentId,
     useEnvironments: () => ({ environments: [environment(state.selectedEnvironment)] }),
   };
 });
@@ -126,6 +127,7 @@ vi.mock("../../state/use-atom-command", () => ({
 }));
 vi.mock("../../state/terminal", () => ({ terminalEnvironment: {} }));
 vi.mock("../ThreadTerminalDrawer", () => ({ TerminalViewport: "div" }));
+vi.mock("./ThreadRetitleChoice", () => ({ ThreadRetitleChoice: () => null }));
 vi.mock("../cloud/CloudEnvironmentConnectList", () => ({ CloudEnvironmentConnectRows: "div" }));
 vi.mock("../settings/ChatGptWelcomeCoordinator", () => ({ ChatGptWelcomeCoordinator: () => null }));
 vi.mock("../settings/CodexSetupSection", () => ({
@@ -227,7 +229,10 @@ async function mountImport(remote = false) {
       </RegistryContext.Provider>,
     );
   });
+  // A client served by its own server starts on the agents step.
+  if (remote) await click("Continue");
   await click("Continue");
+  // The thread titles step.
   await click("Continue");
   expect(text(renderer!.root)).toContain("Import your projects");
 }

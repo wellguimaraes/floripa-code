@@ -46,7 +46,7 @@ const adapter = {
 function makeHarness(
   options: {
     readonly generateTitle?: TextGeneration.TextGeneration["Service"]["generateThreadTitle"];
-    readonly shouldRetitle?: ThreadTitleDrift.ThreadTitleDrift["Service"]["shouldRetitle"];
+    readonly checkDrift?: ThreadTitleDrift.ThreadTitleDrift["Service"]["check"];
   } = {},
 ) {
   const layerDatabase = SqlitePersistence.layerMemory;
@@ -61,7 +61,10 @@ function makeHarness(
   const generateThreadTitle = vi.fn(
     options.generateTitle ?? (() => Effect.succeed({ title: "Generated title" })),
   );
-  const shouldRetitle = vi.fn(options.shouldRetitle ?? (() => Effect.succeed(false)));
+  const checkDrift = vi.fn(
+    options.checkDrift ??
+      (() => Effect.succeed<ThreadTitleDrift.ThreadTitleDriftVerdict>({ type: "keep" })),
+  );
   const layerProjectedProjects = Layer.mock(ProjectStore.ProjectStoreV2)({
     get: (requestedProjectId) =>
       Effect.succeed(
@@ -89,7 +92,7 @@ function makeHarness(
         layerThreadManagement,
         layerProjectedProjects,
         Layer.mock(TextGeneration.TextGeneration)({ generateThreadTitle }),
-        Layer.mock(ThreadTitleDrift.ThreadTitleDrift)({ shouldRetitle }),
+        Layer.mock(ThreadTitleDrift.ThreadTitleDrift)({ check: checkDrift }),
         ServerSettings.layerTest({}),
       ),
     ),
@@ -102,7 +105,7 @@ function makeHarness(
       layerDatabase,
     ),
     generateThreadTitle,
-    shouldRetitle,
+    checkDrift,
   };
 }
 
@@ -513,7 +516,7 @@ describe("ThreadTitleRegenerationService", () => {
   it.effect("titles the new task when a follow-up moves the thread on", () =>
     Effect.gen(function* () {
       const harness = makeHarness({
-        shouldRetitle: () => Effect.succeed(true),
+        checkDrift: () => Effect.succeed({ type: "regenerate" }),
         generateTitle: () => Effect.succeed({ title: "Settings Dark Mode" }),
       });
       yield* Effect.gen(function* () {
@@ -544,7 +547,8 @@ describe("ThreadTitleRegenerationService", () => {
           },
         });
 
-        assert.deepEqual(harness.shouldRetitle.mock.calls[0]?.[0], {
+        assert.deepEqual(harness.checkDrift.mock.calls[0]?.[0], {
+          cwd: "/repo",
           title: "Seed title",
           earlierMessages: ["Investigate the flaky login test"],
           latestMessage: "Now add dark mode to the settings page",
@@ -574,9 +578,58 @@ describe("ThreadTitleRegenerationService", () => {
     }),
   );
 
+  it.effect("applies a title the drift check wrote without pinning it", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({
+        checkDrift: () => Effect.succeed({ type: "retitle", title: "Settings Dark Mode" }),
+      });
+      yield* Effect.gen(function* () {
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        const outbox = yield* EffectOutbox.EffectOutboxV2;
+        const titleRegeneration = yield* ThreadTitleRegeneration.ThreadTitleRegenerationService;
+        const threadId = yield* createThread({
+          command: "command:title:drift-written:create",
+          thread: "thread:title:drift-written",
+        });
+        yield* dispatchUserMessage({
+          command: "command:title:drift-written:1",
+          threadId,
+          text: "Investigate the flaky login test",
+        });
+        yield* dispatchUserMessage({
+          command: "command:title:drift-written:2",
+          threadId,
+          text: "Now add dark mode to the settings page",
+        });
+
+        yield* titleRegeneration.execute({
+          threadId,
+          requestId: CommandId.make("command:title:drift-written:2"),
+          kind: {
+            type: "drift-check",
+            messageId: MessageId.make("command:title:drift-written:2:message"),
+          },
+        });
+
+        const { thread } = yield* threads.getThreadProjection(threadId);
+        assert.equal(thread.title, "Settings Dark Mode");
+        // A later move can retitle it again.
+        assert.isNotTrue(thread.titleManual);
+        assert.isNotOk(thread.titleRegeneration);
+        assert.deepEqual(
+          yield* outbox.listByCommandId(
+            CommandId.make("command:title:drift-written:2:title-drift"),
+          ),
+          [],
+        );
+        assert.equal(harness.generateThreadTitle.mock.calls.length, 0);
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
   it.effect("skips the drift check for short replies", () =>
     Effect.gen(function* () {
-      const harness = makeHarness({ shouldRetitle: () => Effect.succeed(true) });
+      const harness = makeHarness({ checkDrift: () => Effect.succeed({ type: "regenerate" }) });
       yield* Effect.gen(function* () {
         const threads = yield* ThreadManagement.ThreadManagementService;
         const titleRegeneration = yield* ThreadTitleRegeneration.ThreadTitleRegenerationService;
@@ -604,7 +657,7 @@ describe("ThreadTitleRegenerationService", () => {
           },
         });
 
-        assert.equal(harness.shouldRetitle.mock.calls.length, 0);
+        assert.equal(harness.checkDrift.mock.calls.length, 0);
         assert.isNotOk((yield* threads.getThreadProjection(threadId)).thread.titleRegeneration);
       }).pipe(Effect.provide(harness.layer));
     }),

@@ -43,6 +43,7 @@ vi.mock("../../state/environments", () => {
   return {
     useEnvironments: () => ({ environments: [environment] }),
     usePrimaryEnvironment: () => environment,
+    usePrimaryEnvironmentId: () => environment.environmentId,
   };
 });
 vi.mock("../../state/server", () => ({
@@ -81,6 +82,7 @@ vi.mock("../../state/terminal", () => ({ terminalEnvironment: {} }));
 vi.mock("../clerk/useT3ConnectAuthPrompt", () => ({ useT3ConnectAuthPrompt: vi.fn() }));
 vi.mock("../../cloud/publicConfig", () => ({ hasCloudPublicConfig: () => false }));
 vi.mock("../ThreadTerminalDrawer", () => ({ TerminalViewport: () => null }));
+vi.mock("./ThreadRetitleChoice", () => ({ ThreadRetitleChoice: () => null }));
 vi.mock("../settings/ChatGptWelcomeCoordinator", () => ({ ChatGptWelcomeCoordinator: () => null }));
 vi.mock("../settings/CodexSetupSection", () => ({
   CodexSetupSection: () => null,
@@ -145,6 +147,7 @@ it("enters the workspace after a partial import and warns after navigation finis
   const onDone = vi.fn(() => navigation);
   await act(async () => root.render(<WelcomeWizard localAvailable onDone={onDone} />));
   await click("Continue");
+  // The thread titles step.
   await click("Continue");
   await click("Import 1 project");
   expect(onDone).toHaveBeenCalledWith({
@@ -180,6 +183,7 @@ it.each([
     const onDone = vi.fn();
     await act(async () => root.render(<WelcomeWizard localAvailable onDone={onDone} />));
     await click("Continue");
+    // The thread titles step.
     await click("Continue");
     await click("Import 1 project");
     expect(onDone).toHaveBeenCalledOnce();
@@ -203,6 +207,7 @@ it("keeps setup open when saving completion fails and preserves the import warni
   const onDone = vi.fn();
   await act(async () => root.render(<WelcomeWizard localAvailable onDone={onDone} />));
   await click("Continue");
+  // The thread titles step.
   await click("Continue");
   await click("Import 1 project");
   expect(onDone).not.toHaveBeenCalled();

@@ -107,12 +107,17 @@ To generate a fresh title from the conversation, open a thread's menu and choose
 **Regenerate title**. The action is unavailable while title generation is in progress
 or when the connected environment needs a server update.
 
-To have titles follow the work, save an OpenRouter API key in **Settings → Providers → OpenRouter**
-(or set `OPENROUTER_API_KEY` where the server runs) and turn on **Retitle threads when the
-task changes**. When a follow-up message starts a
-different task, the thread gets a new title. Your messages are sent to OpenRouter's Jev
-model to make that call. A thread you renamed keeps its name until you choose
-**Regenerate title**.
+To have titles follow the work, choose who decides in **Settings → Providers → Thread titles**,
+or answer the question during first-run setup. When a follow-up message starts a different
+task, the thread gets a new title. Your messages are sent to the provider you chose:
+
+- **OpenRouter** is the fastest. It uses OpenRouter's Jev model with the key saved in
+  **Settings → Providers → OpenRouter**, or `OPENROUTER_API_KEY` where the server runs.
+- **Claude**, **OpenAI**, or **Cursor subscription** uses that provider's fast model (Claude
+  Haiku 5.5, GPT-6 Luna, or Cursor Auto) through the account you signed in with. It counts
+  toward that subscription's usage.
+
+A thread you renamed keeps its name until you choose **Regenerate title**.
 
 Agents connected through Floripa Code can use the same server-owned metadata workflow to
 rename a thread, regenerate its title, or link and unlink a pull request. These changes

@@ -191,7 +191,7 @@ function makeHarness(options: HarnessOptions = {}) {
       generateBranchName,
     }),
     Layer.mock(ThreadTitleDrift.ThreadTitleDrift)({
-      shouldRetitle: () => Effect.succeed(false),
+      check: () => Effect.succeed({ type: "keep" }),
     }),
     Layer.mock(FastBranchNamer.FastBranchNamer)({
       generateBranchName: options.fastBranchName ?? (() => Effect.succeedNone),

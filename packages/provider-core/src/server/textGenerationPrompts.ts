@@ -344,3 +344,62 @@ export function buildThreadTitlePrompt(input: ThreadTitlePromptInput) {
 
   return { prompt, outputSchema };
 }
+
+// ---------------------------------------------------------------------------
+// Thread title drift
+// ---------------------------------------------------------------------------
+
+export interface ThreadTitleDriftPromptInput {
+  title: string;
+  earlierMessages: ReadonlyArray<string>;
+  latestMessage: string;
+}
+
+const DRIFT_EARLIER_MESSAGE_LIMIT = 8;
+const DRIFT_EARLIER_MESSAGE_CHARS = 1_000;
+const DRIFT_LATEST_MESSAGE_CHARS = 2_000;
+
+const THREAD_TITLE_DRIFT_PROMPT = `A Floripa Code thread is titled after the task the user asked for. Decide whether the latest user message starts a different task than the title names.
+Return JSON with keys movedOn and title.
+
+movedOn is true only when the latest message asks for work on a different subject, feature, bug, or goal than the title describes.
+movedOn is false when it continues, refines, corrects, or follows up on the titled task, or is a short reply such as approval or a nudge to continue. When unsure, choose false: retitling a thread that did not move is worse than keeping a stale title.
+
+When movedOn is true, title the new task so the user can recognize the thread weeks later:
+- 3-8 words, fewer than 40 characters.
+- A compact noun phrase or clear action phrase for the subject and outcome.
+- Models, subagents, tools, output formats, branches, PRs, and monitoring instructions do not belong in the title unless they are themselves the topic.
+- Do not copy and truncate the message. Avoid quotes, labels, filler, and trailing punctuation.
+When movedOn is false, return an empty title.`;
+
+/** The first message names the original task; the newest show where the thread went. */
+export function limitThreadTitleDriftMessages(input: ThreadTitleDriftPromptInput) {
+  const earlier =
+    input.earlierMessages.length > DRIFT_EARLIER_MESSAGE_LIMIT + 1
+      ? [input.earlierMessages[0]!, ...input.earlierMessages.slice(-DRIFT_EARLIER_MESSAGE_LIMIT)]
+      : input.earlierMessages;
+  return {
+    earlierMessages: earlier.map((text) => limitTitleMessage(text, DRIFT_EARLIER_MESSAGE_CHARS)),
+    latestMessage: limitTitleMessage(input.latestMessage, DRIFT_LATEST_MESSAGE_CHARS),
+  };
+}
+
+export function buildThreadTitleDriftPrompt(input: ThreadTitleDriftPromptInput) {
+  const messages = limitThreadTitleDriftMessages(input);
+  const earlierSection = messages.earlierMessages.map((text) => `- ${text}`).join("\n");
+  const prompt = `${THREAD_TITLE_DRIFT_PROMPT}
+
+Thread title: ${JSON.stringify(input.title)}
+
+Earlier user messages, oldest first:
+${earlierSection || "(none)"}
+
+Latest user message:
+${messages.latestMessage}`;
+  const outputSchema = Schema.Struct({
+    movedOn: Schema.Boolean,
+    title: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  });
+
+  return { prompt, outputSchema };
+}

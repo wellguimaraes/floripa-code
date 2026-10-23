@@ -2947,7 +2947,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                   };
           return {
             ...thread,
-            ...(command.title === undefined ? {} : { title: command.title }),
+            ...(command.title !== undefined
+              ? { title: command.title }
+              : // A title the user typed since the generation started wins.
+                command.generatedTitle !== undefined && thread.titleManual !== true
+                ? { title: command.generatedTitle }
+                : {}),
             ...(command.limitRecovery === undefined ? {} : { limitRecovery }),
             ...(command.limitRecovery !== undefined &&
             limitRecovery?.snooze === true &&
@@ -2998,7 +3003,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             // or an explicit false (generation failed/abandoned) clears it.
             ...(command.regenerateTitle === true
               ? { titleRegeneration: { requestId: command.commandId, startedAt: now } }
-              : command.regenerateTitle === false || command.title !== undefined
+              : command.regenerateTitle === false ||
+                  command.title !== undefined ||
+                  command.generatedTitle !== undefined
                 ? { titleRegeneration: null }
                 : {}),
             // A typed title sticks; asking for a generated one hands it back.

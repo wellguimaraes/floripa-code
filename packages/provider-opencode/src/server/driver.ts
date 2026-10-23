@@ -170,6 +170,11 @@ function selectOpenCodeRuntimeTextGeneration(
         v1: v1.generateThreadTitle(input),
         v2: v2.generateThreadTitle(input),
       }),
+    detectThreadTitleDrift: (input) =>
+      byOpenCodeRuntime(probe.get, {
+        v1: v1.detectThreadTitleDrift(input),
+        v2: v2.detectThreadTitleDrift(input),
+      }),
   };
 }
 

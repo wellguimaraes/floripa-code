@@ -2750,6 +2750,8 @@ export const OrchestrationV2Command = Schema.Union([
     commandId: CommandId,
     threadId: ThreadId,
     title: Schema.optional(TrimmedNonEmptyString),
+    /** A server-generated title: replaces the title without pinning it like a typed one. */
+    generatedTitle: Schema.optional(TrimmedNonEmptyString),
     /** Kick off (true) or abandon (false) an async title regeneration. */
     regenerateTitle: Schema.optional(Schema.Boolean),
     /** With regenerateTitle, title the new task this message started instead of the whole thread. */

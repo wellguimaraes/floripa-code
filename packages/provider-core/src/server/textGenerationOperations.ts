@@ -18,6 +18,7 @@ import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
+  buildThreadTitleDriftPrompt,
   buildThreadTitlePrompt,
 } from "./textGenerationPrompts.ts";
 import {
@@ -148,10 +149,25 @@ export function fromRunner(name: string, run: Runner): ProviderTextGeneration {
     };
   });
 
+  const detectThreadTitleDrift: ProviderTextGeneration["detectThreadTitleDrift"] = Effect.fn(
+    `${name}.detectThreadTitleDrift`,
+  )(function* (input) {
+    const generated = yield* run({
+      operation: "detectThreadTitleDrift",
+      cwd: input.cwd,
+      modelSelection: input.modelSelection,
+      ...buildThreadTitleDriftPrompt(input),
+    });
+    const title = generated.movedOn ? sanitizeThreadTitle(generated.title) : "";
+    // A move with no usable title keeps the current one.
+    return { title: title === "" || title === "New thread" ? null : title };
+  });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    detectThreadTitleDrift,
   } satisfies ProviderTextGeneration;
 }

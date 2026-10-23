@@ -74,6 +74,21 @@ export interface ThreadTitleGenerationResult {
   needsRefinement?: boolean | undefined;
 }
 
+export interface ThreadTitleDriftInput {
+  cwd: string;
+  title: string;
+  /** The user's earlier messages, oldest first. */
+  earlierMessages: ReadonlyArray<string>;
+  latestMessage: string;
+  /** What model and provider to use for generation. */
+  modelSelection: ModelSelection;
+}
+
+export interface ThreadTitleDriftResult {
+  /** The title for the new task, or null when the latest message continues the titled one. */
+  title: string | null;
+}
+
 /** Commit, change request, branch, and title generation backed by one provider instance. */
 export interface ProviderTextGeneration {
   /**
@@ -101,4 +116,9 @@ export interface ProviderTextGeneration {
   readonly generateThreadTitle: (
     input: ThreadTitleGenerationInput,
   ) => Effect.Effect<ThreadTitleGenerationResult, TextGenerationError>;
+
+  /** Decide whether the latest message starts a new task and, if so, title it in one request. */
+  readonly detectThreadTitleDrift: (
+    input: ThreadTitleDriftInput,
+  ) => Effect.Effect<ThreadTitleDriftResult, TextGenerationError>;
 }

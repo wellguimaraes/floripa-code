@@ -907,6 +907,15 @@ export type SourceControlWritingStyleSettings = typeof SourceControlWritingStyle
 export const BranchNamingMode = Schema.Literals(["static", "semantic", "custom"]);
 export type BranchNamingMode = typeof BranchNamingMode.Type;
 
+/** Who decides whether a follow-up message moved a thread to a new task. */
+export const ThreadRetitleProvider = Schema.Literals([
+  "openrouter",
+  "claudeAgent",
+  "codex",
+  "cursor",
+]);
+export type ThreadRetitleProvider = typeof ThreadRetitleProvider.Type;
+
 export interface BranchNamingOptions {
   mode: BranchNamingMode;
   prefix: string;
@@ -1284,11 +1293,15 @@ export const ServerSettings = Schema.Struct({
   branchNamePrefix: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed("t3"))),
   branchNameInstructions: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   removeAgentCreditsOnMerge: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  /**
-   * When a follow-up message moves the thread to a new task, retitle it. OpenRouter's
-   * Jev model makes the call with the voice key, so this does nothing without one.
-   */
+  /** When a follow-up message moves the thread to a new task, retitle it. */
   autoRetitleThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /**
+   * OpenRouter (or null) asks Jev with the voice key; a subscription provider asks
+   * its fast model, which also writes the new title in the same request.
+   */
+  threadRetitleProvider: ForwardCompatibleNullable(ThreadRetitleProvider).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
   sourceControlWritingStyle: SourceControlWritingStyleSettings.pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
@@ -1544,6 +1557,7 @@ export const ServerSettingsPatch = Schema.Struct({
   branchNameInstructions: Schema.optionalKey(TrimmedString),
   removeAgentCreditsOnMerge: Schema.optionalKey(Schema.Boolean),
   autoRetitleThreads: Schema.optionalKey(Schema.Boolean),
+  threadRetitleProvider: Schema.optionalKey(Schema.NullOr(ThreadRetitleProvider)),
   sourceControlWritingStyle: Schema.optionalKey(
     Schema.Struct({
       mode: Schema.optionalKey(SourceControlWritingStyleMode),

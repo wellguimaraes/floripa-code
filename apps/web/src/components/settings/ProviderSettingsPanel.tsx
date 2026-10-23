@@ -91,6 +91,7 @@ import { AddProviderInstanceDialog } from "./AddProviderInstanceDialog";
 import { ExpandableText } from "./ExpandableText";
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
 import { UsageProviderSettings } from "./UsageProviderSettings";
+import { ThreadRetitleSettings } from "./ThreadRetitleSettings";
 import { VoiceInputSettings } from "./VoiceInputSettings";
 import { ProviderSetupSection, readAntigravityAuthMethod } from "./ProviderSetupSection";
 import { ProviderAuthenticationSection } from "./ProviderAuthenticationSection";
@@ -1234,6 +1235,8 @@ export function EnvironmentProviderSettings({
       />
 
       <VoiceInputSettings key={environmentId} environmentId={environmentId} readOnly={readOnly} />
+
+      <ThreadRetitleSettings environmentId={environmentId} readOnly={readOnly} />
 
       <SettingsSection title="Advanced">
         <SettingsRow

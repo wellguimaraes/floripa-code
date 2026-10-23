@@ -57,7 +57,11 @@ import {
 import { newProjectId, randomUUID } from "../../lib/utils";
 import { agentSessionImport } from "../../state/agentSessions";
 import { readProjects, useProjects } from "../../state/entities";
-import { useEnvironments, usePrimaryEnvironment } from "../../state/environments";
+import {
+  useEnvironments,
+  usePrimaryEnvironment,
+  usePrimaryEnvironmentId,
+} from "../../state/environments";
 import {
   isOnboardingRelayEnvironment,
   resolveOnboardingSetup,
@@ -80,6 +84,7 @@ import { AddManagedCodexAccountDialog, CodexSetupSection } from "../settings/Cod
 import { readCodexSetupMode } from "../settings/CodexSetupSection.logic";
 import { buildProviderInstanceUpdatePatch } from "../settings/SettingsPanels.logic";
 import { TerminalViewport } from "../ThreadTerminalDrawer";
+import { ThreadRetitleChoice } from "./ThreadRetitleChoice";
 import { CloudEnvironmentConnectRows } from "../cloud/CloudEnvironmentConnectList";
 import { presentSavedCloudEnvironmentConnection } from "../cloud/cloudEnvironmentConnectionPresentation";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
@@ -103,16 +108,19 @@ import { formatRelativeTime } from "../../timestampFormat";
  * First-run welcome wizard. Rendered over the workspace at `/welcome` on a
  * fresh install (no completed-onboarding flag, empty workspace). Flow per the
  * onboarding overhaul spec: connection choice → sign-in/pair (remote paths) →
- * managed Codex setup or an inline CLI terminal → project import → main screen.
- * Every step past the connection gate is skippable; the whole wizard is
- * re-runnable by clearing the flag.
+ * managed Codex setup or an inline CLI terminal → thread retitling → project
+ * import → main screen.
+ * A client served by its own server skips the connection choice and sets up
+ * that server. Every step past the connection gate is skippable; the whole
+ * wizard is re-runnable by clearing the flag.
  */
 
-type WizardStep = "connection" | "agents" | "import";
+type WizardStep = "connection" | "agents" | "titles" | "import";
 const NO_ENVIRONMENTS: readonly EnvironmentId[] = [];
 
 const AGENT_ONBOARDING_THREAD_ID = ThreadId.make("onboarding-agent-setup");
-const ONBOARDING_STAGES = ["Connect", "Agents", "Projects"] as const;
+const ONBOARDING_STAGES = ["Connect", "Agents", "Titles", "Projects"] as const;
+const STAGE_STEPS: ReadonlyArray<WizardStep> = ["connection", "agents", "titles", "import"];
 const SCAN_LIMIT_MESSAGE = "Scan limit reached. Some projects or conversations may be missing.";
 
 export function WelcomeWizard({
@@ -126,13 +134,21 @@ export function WelcomeWizard({
   readonly onDone: (projectRef?: ScopedProjectRef) => void | Promise<void>;
 }) {
   const completeOnboarding = useCompleteOnboarding();
-  const [step, setStep] = useState<WizardStep>(resumeEnvironmentId ? "agents" : "connection");
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  // With a server serving the app there is nothing to connect: setup starts on it.
+  const showConnection = !localAvailable && !resumeEnvironmentId;
+  const [step, setStep] = useState<WizardStep>(showConnection ? "connection" : "agents");
   const { environments } = useEnvironments();
   const [selection, setSelection] = useState<ReadonlySet<EnvironmentId> | null>(null);
   const autoSelectedComputers = useRef(new Set<EnvironmentId>());
-  const [setupIds, setSetupIds] = useState<readonly EnvironmentId[]>(
-    resumeEnvironmentId ? [resumeEnvironmentId] : [],
-  );
+  const [chosenSetupIds, setSetupIds] = useState<readonly EnvironmentId[] | null>(null);
+  const setupIds =
+    chosenSetupIds ??
+    (resumeEnvironmentId
+      ? [resumeEnvironmentId]
+      : primaryEnvironmentId !== null
+        ? [primaryEnvironmentId]
+        : NO_ENVIRONMENTS);
   const [isImporting, setIsImporting] = useState(false);
   const finishingPromiseRef = useRef<Promise<boolean> | null>(null);
   const completionErrorToastIdRef = useRef<ReturnType<typeof toastManager.add> | null>(null);
@@ -168,7 +184,8 @@ export function WelcomeWizard({
     setSetupIds(ids);
     setStep("agents");
   };
-  const stageIndex = step === "agents" ? 1 : step === "import" ? 2 : 0;
+  const stageIndex = STAGE_STEPS.indexOf(step);
+  const stageOffset = showConnection ? 0 : 1;
   const finish = useCallback(
     (projectRef?: ScopedProjectRef, importWarning?: string, importedThreadCount = 0) => {
       if (finishingPromiseRef.current !== null) return finishingPromiseRef.current;
@@ -243,12 +260,13 @@ export function WelcomeWizard({
           }
         >
           <WizardSteps
-            steps={ONBOARDING_STAGES}
-            currentStep={stageIndex}
-            isStepDisabled={(index) => isImporting || index >= stageIndex}
+            steps={ONBOARDING_STAGES.slice(stageOffset)}
+            currentStep={stageIndex - stageOffset}
+            isStepDisabled={(index) => isImporting || index + stageOffset >= stageIndex}
             onStepChange={(index) => {
-              if (isImporting || index > stageIndex) return;
-              setStep(index === 0 ? "connection" : "agents");
+              const target = index + stageOffset;
+              if (isImporting || target > stageIndex) return;
+              setStep(STAGE_STEPS[target]!);
             }}
           />
         </WizardHeader>
@@ -276,7 +294,9 @@ export function WelcomeWizard({
               }}
             />
           ) : step === "agents" ? (
-            <AgentsStep environmentIds={setupIds} onContinue={() => setStep("import")} />
+            <AgentsStep environmentIds={setupIds} onContinue={() => setStep("titles")} />
+          ) : step === "titles" ? (
+            <TitlesStep environmentIds={setupIds} onContinue={() => setStep("import")} />
           ) : (
             <ImportStep
               scans={scans}
@@ -1187,7 +1207,48 @@ function AgentInstallTerminal({
   );
 }
 
-// ── Step 4: import ───────────────────────────────────────────
+// ── Step 4: thread titles ────────────────────────────────────
+
+function TitlesStep({
+  environmentIds,
+  onContinue,
+}: {
+  readonly environmentIds: readonly EnvironmentId[];
+  readonly onContinue: () => void;
+}) {
+  const { environments } = useEnvironments();
+  return (
+    <StepShell
+      title="Keep thread titles current"
+      description="Floripa Code can give a thread a new title when a follow-up message starts a different task. Choose who decides. Your messages are sent to it."
+    >
+      <ScrollArea scrollFade className="mt-5 h-auto max-h-[min(32rem,55dvh)]">
+        <div className="space-y-5 pr-3">
+          {environmentIds.map((environmentId) => (
+            <ThreadRetitleChoice
+              key={environmentId}
+              environmentId={environmentId}
+              machineLabel={
+                environmentIds.length > 1
+                  ? (environments.find((environment) => environment.environmentId === environmentId)
+                      ?.label ?? "Computer")
+                  : undefined
+              }
+            />
+          ))}
+        </div>
+      </ScrollArea>
+      <div className="mt-6 flex justify-end">
+        <Button autoFocus onClick={onContinue}>
+          Continue
+          <ArrowRightIcon className="size-3.5" />
+        </Button>
+      </div>
+    </StepShell>
+  );
+}
+
+// ── Step 5: import ───────────────────────────────────────────
 
 const IMPORT_PERMISSION_MESSAGE = "This connection cannot import projects or thread history.";
 

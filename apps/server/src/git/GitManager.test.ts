@@ -342,6 +342,7 @@ function createTextGeneration(
       Effect.succeed({
         title: "Update workflow",
       }),
+    detectThreadTitleDrift: () => Effect.succeed({ title: null }),
     ...overrides,
   };
 
@@ -390,6 +391,7 @@ function createTextGeneration(
             }),
         ),
       ),
+    detectThreadTitleDrift: (input) => implementation.detectThreadTitleDrift(input),
   };
 }
 

@@ -17,6 +17,8 @@ export type {
   CommitMessageGenerationResult,
   PrContentGenerationInput,
   PrContentGenerationResult,
+  ThreadTitleDriftInput,
+  ThreadTitleDriftResult,
   ThreadTitleGenerationInput,
   ThreadTitleGenerationResult,
 } from "@t3tools/provider-core/server/textGeneration";
@@ -32,7 +34,8 @@ type TextGenerationOp =
   | "generateCommitMessage"
   | "generatePrContent"
   | "generateBranchName"
-  | "generateThreadTitle";
+  | "generateThreadTitle"
+  | "detectThreadTitleDrift";
 
 const resolveInstance = (
   registry: ProviderInstanceRegistry.ProviderInstanceRegistry["Service"],
@@ -84,6 +87,10 @@ export const make = Effect.gen(function* () {
             return yield* textGeneration.generateThreadTitle({ ...input, linkedContext });
           }),
         ),
+      ),
+    detectThreadTitleDrift: (input) =>
+      resolveInstance(registry, "detectThreadTitleDrift", input.modelSelection.instanceId).pipe(
+        Effect.flatMap((textGeneration) => textGeneration.detectThreadTitleDrift(input)),
       ),
   });
 });

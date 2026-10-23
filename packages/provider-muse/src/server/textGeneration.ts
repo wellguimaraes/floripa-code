@@ -21,6 +21,7 @@ import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
+  buildThreadTitleDriftPrompt,
   buildThreadTitlePrompt,
 } from "@t3tools/provider-core/server/textGenerationPrompts";
 import {
@@ -341,10 +342,22 @@ export const makeMuseTextGeneration = Effect.fn("makeMuseTextGeneration")(functi
     });
     return { title: sanitizeThreadTitle(generated.title) };
   });
+  const detectThreadTitleDrift: ProviderTextGeneration["detectThreadTitleDrift"] = Effect.fn(
+    "MuseTextGeneration.detectThreadTitleDrift",
+  )(function* (input) {
+    const generated = yield* runMuseJson({
+      operation: "detectThreadTitleDrift",
+      ...buildThreadTitleDriftPrompt(input),
+      modelSelection: input.modelSelection,
+    });
+    const title = generated.movedOn ? sanitizeThreadTitle(generated.title) : "";
+    return { title: title === "" || title === "New thread" ? null : title };
+  });
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    detectThreadTitleDrift,
   } satisfies ProviderTextGeneration;
 });

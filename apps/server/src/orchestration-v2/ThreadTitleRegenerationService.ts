@@ -83,20 +83,32 @@ const make = Effect.gen(function* () {
     const latest = messages[latestIndex];
     // Approvals and nudges such as "ok" or "continue" never start a new task.
     if (latest === undefined || latest.text.trim().length < 12) return;
-    const retitle = yield* titleDrift.shouldRetitle({
+    const project = yield* projects.get(thread.projectId);
+    if (Option.isNone(project)) return;
+    const verdict = yield* titleDrift.check({
+      cwd: thread.worktreePath ?? project.value.workspaceRoot,
       title: thread.title,
       earlierMessages: messages.slice(0, latestIndex).map((message) => message.text),
       latestMessage: latest.text,
     });
-    if (!retitle) return;
-    // The whole-thread regeneration keeps the original subject, which drift just ruled out.
-    yield* threads.dispatch({
-      type: "thread.metadata.update",
-      commandId: CommandId.make(`${input.requestId}:title-drift`),
-      threadId: input.threadId,
-      regenerateTitle: true,
-      regenerateTitleFrom: latest.id,
-    });
+    if (verdict.type === "keep") return;
+    yield* threads.dispatch(
+      verdict.type === "retitle"
+        ? {
+            type: "thread.metadata.update",
+            commandId: CommandId.make(`${input.requestId}:title-drift`),
+            threadId: input.threadId,
+            generatedTitle: verdict.title,
+          }
+        : {
+            // The whole-thread regeneration keeps the original subject, which drift just ruled out.
+            type: "thread.metadata.update",
+            commandId: CommandId.make(`${input.requestId}:title-drift`),
+            threadId: input.threadId,
+            regenerateTitle: true,
+            regenerateTitleFrom: latest.id,
+          },
+    );
   });
 
   const execute: ThreadTitleRegenerationService["Service"]["execute"] = Effect.fn(

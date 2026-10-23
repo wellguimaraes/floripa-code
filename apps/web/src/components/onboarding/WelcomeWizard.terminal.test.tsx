@@ -63,6 +63,7 @@ vi.mock("../../rpc/atomRegistry", () => ({
 vi.mock("../../state/environments", () => ({
   useEnvironments: () => ({ environments: [remoteEnvironment] }),
   usePrimaryEnvironment: () => primaryEnvironment,
+  usePrimaryEnvironmentId: () => primaryEnvironment.environmentId,
 }));
 vi.mock("../../state/server", () => ({
   serverEnvironment: {
@@ -130,6 +131,7 @@ vi.mock("../cloud/CloudEnvironmentConnectList", () => ({
 vi.mock("../ThreadTerminalDrawer", () => ({
   TerminalViewport: () => <div data-terminal-viewport />,
 }));
+vi.mock("./ThreadRetitleChoice", () => ({ ThreadRetitleChoice: () => null }));
 vi.mock("../ui/button", () => ({ Button: "button" }));
 vi.mock("../ui/input", () => ({ Input: "input" }));
 vi.mock("../ui/checkbox", () => ({ Checkbox: "input" }));
@@ -236,7 +238,7 @@ async function enterRemoteAgents() {
   await act(async () => {
     renderer = create(
       <RegistryContext.Provider value={state.registry!}>
-        <WelcomeWizard localAvailable onDone={state.done} />
+        <WelcomeWizard localAvailable={false} onDone={state.done} />
       </RegistryContext.Provider>,
     );
   });
@@ -312,6 +314,8 @@ describe("welcome agent terminal setup", () => {
     expect(state.open).not.toHaveBeenCalled();
     expect(state.write).not.toHaveBeenCalled();
     expect(state.close).not.toHaveBeenCalled();
+    await click("Continue");
+    // The thread titles step.
     await click("Continue");
     await click("Do not import projects");
     expect(state.complete).toHaveBeenCalledOnce();
@@ -430,6 +434,8 @@ describe("welcome agent terminal setup", () => {
     await click("Close");
     expect(hasViewport()).toBe(false);
     expect(state.close).not.toHaveBeenCalled();
+    await click("Continue");
+    // The thread titles step.
     await click("Continue");
     expect(text(renderer!.root)).toContain("Import your projects");
   });

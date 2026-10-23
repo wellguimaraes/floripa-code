@@ -682,7 +682,9 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Retitle threads when the task changes",
     to: "/settings/providers",
     providerSettingsOnly: true,
-    searchTerms: ["automatic thread title rename regenerate topic drift jev openrouter"],
+    searchTerms: [
+      "automatic thread title rename regenerate topic drift jev openrouter claude haiku openai luna cursor",
+    ],
   },
   {
     id: "agent-browser-access",
