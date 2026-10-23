@@ -4,19 +4,25 @@ import type { IconNode } from "lucide-react";
 import { dynamicIconImports } from "lucide-react/dynamic";
 import { useEffect, useMemo, useState } from "react";
 
+import { projectIconColorValue } from "../../projectIconColors";
 import { deriveProjectIdentity } from "../../projectIdentity";
 import { projectFaviconUrlAtom } from "../../state/assets";
 import type { ProjectFaviconProject } from "../ProjectFavicon";
 
-/** What an island's sign paints for its project's icon: a picture, or a glyph in the sign's ink. */
+/**
+ * What an island's sign paints for its project's icon: a picture, a monogram in its colour
+ * (drawn like `ProjectMonogram`), or an emoji, which brings its own colours.
+ */
 export type SignIcon =
   | { readonly kind: "image"; readonly image: HTMLImageElement }
-  | { readonly kind: "text"; readonly text: string };
+  | { readonly kind: "monogram"; readonly text: string; readonly color: string }
+  | { readonly kind: "emoji"; readonly text: string };
 
 /**
  * The project's icon as the sidebar shows it, ready to paint onto a sign board.
- * Lucide icons are stroked in `ink` so they read on the icon's tile; until a
- * picture loads, or if it fails, the sign shows the project's monogram.
+ * Lucide icons and monograms take the colour picked for them; the automatic monogram takes the
+ * project's identity colour, as in the sidebar. Until a picture loads, or if it fails, the sign
+ * shows that monogram. `ink` stands in for a colour the stylesheet can't give yet.
  */
 export function useSignIcon(project: ProjectFaviconProject, ink: string): SignIcon {
   const override = project.projectIcon;
@@ -27,7 +33,13 @@ export function useSignIcon(project: ProjectFaviconProject, ink: string): SignIc
       faviconPath: project.faviconPath,
     }),
   );
-  const lucide = useLucideSvgUrl(override?.kind === "lucide" ? override.name : null, ink);
+  const pickedColor =
+    override?.kind === "lucide" || override?.kind === "monogram" ? override.color : null;
+  const glyphInk = useMemo(
+    () => (pickedColor === null ? ink : (projectIconColorValue(pickedColor) ?? ink)),
+    [ink, pickedColor],
+  );
+  const lucide = useLucideSvgUrl(override?.kind === "lucide" ? override.name : null, glyphInk);
   const source =
     override?.kind === "lucide"
       ? lucide
@@ -35,13 +47,23 @@ export function useSignIcon(project: ProjectFaviconProject, ink: string): SignIc
         ? favicon
         : null;
   const image = useLoadedImage(source);
-  const text =
-    override?.kind === "emoji"
-      ? override.emoji
-      : override?.kind === "monogram"
-        ? override.text
-        : deriveProjectIdentity(project.title).monogram;
-  return useMemo(() => (image ? { kind: "image", image } : { kind: "text", text }), [image, text]);
+  const emoji = override?.kind === "emoji" ? override.emoji : null;
+  const identity = deriveProjectIdentity(project.title);
+  const text = override?.kind === "monogram" ? override.text : identity.monogram;
+  const identityColor = useMemo(
+    () => projectIconColorValue(identity.color) ?? ink,
+    [identity.color, ink],
+  );
+  const monogramColor = override?.kind === "monogram" ? glyphInk : identityColor;
+  return useMemo(
+    () =>
+      image
+        ? { kind: "image", image }
+        : emoji !== null
+          ? { kind: "emoji", text: emoji }
+          : { kind: "monogram", text, color: monogramColor },
+    [emoji, image, monogramColor, text],
+  );
 }
 
 function useLucideSvgUrl(name: string | null, ink: string): string | null {

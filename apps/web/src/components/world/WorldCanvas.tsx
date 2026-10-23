@@ -668,6 +668,15 @@ export default function WorldCanvas(props: {
       void setIslandIcon(checkouts, { faviconPath: null, projectIcon: null });
     else if (clicked === "icon" || clicked === "file") setIconPicking({ key, picker: clicked });
   };
+  // A click goes straight to the icon picker; automatic detection and image files stay on the
+  // right-click menu. Without permission the menu shows its choices turned off instead.
+  const openIconPicker = (key: string, point: { x: number; y: number }) => {
+    if (!canChangeIslandIcon(projectCheckouts.get(key) ?? [])) {
+      void showIconMenu(key, point);
+      return;
+    }
+    setIconPicking({ key, picker: "icon" });
+  };
   const showIslandMenu = async (key: string, point: { x: number; y: number }) => {
     const api = readLocalApi();
     if (api === undefined) return;
@@ -1210,7 +1219,8 @@ export default function WorldCanvas(props: {
                         closeManager();
                         setListOn({ key: island.key, list, point });
                       }}
-                      onIconClick={(point) => void showIconMenu(island.key, point)}
+                      onIconClick={(point) => openIconPicker(island.key, point)}
+                      onIconMenu={(point) => void showIconMenu(island.key, point)}
                       ref={(sign) => {
                         if (sign === null) signs.current.delete(island.key);
                         else signs.current.set(island.key, sign);

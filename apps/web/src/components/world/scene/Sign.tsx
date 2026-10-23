@@ -92,6 +92,8 @@ export function Sign(props: {
   ) => void;
   /** Clicking the project's icon, at this point on screen, e.g. to change it. */
   readonly onIconClick: (point: { readonly x: number; readonly y: number }) => void;
+  /** Right-clicking the project's icon, for every way to change it. */
+  readonly onIconMenu: (point: { readonly x: number; readonly y: number }) => void;
   /** The sign's root, for `signCorners`. */
   readonly ref: Ref<Group>;
 }) {
@@ -105,6 +107,7 @@ export function Sign(props: {
     worktrees,
     onListClick,
     onIconClick,
+    onIconMenu,
     ref,
   } = props;
   // The icon sits on a white tile, so lucide glyphs take the dark ink whatever the board's colour.
@@ -177,6 +180,12 @@ export function Sign(props: {
             const point = { x: event.nativeEvent.clientX, y: event.nativeEvent.clientY };
             if (clicked === "icon") onIconClick(point);
             else onListClick(clicked, point);
+          }}
+          onContextMenu={(event) => {
+            if (target(event) !== "icon") return;
+            event.stopPropagation();
+            event.nativeEvent.preventDefault();
+            onIconMenu({ x: event.nativeEvent.clientX, y: event.nativeEvent.clientY });
           }}
           onPointerMove={(event) => {
             document.body.style.cursor = target(event) === null ? "" : "pointer";
@@ -292,16 +301,24 @@ function signBoard(
   const middle = canvas.height / 2;
   const pillFill = ink === palette.signTextLight ? "rgba(0,0,0,0.2)" : "rgba(255,255,255,0.3)";
   const tileTop = middle - pillHeight / 2;
-  // White, so favicons and glyphs read the same on every board colour.
-  context.fillStyle = "#ffffff";
-  context.beginPath();
-  context.roundRect(padding, tileTop, pillHeight, pillHeight, pillHeight / 4);
-  context.fill();
+  // White, so favicons and glyphs read the same on every board colour. An emoji brings its own
+  // colours, so it stands on the board bare.
+  if (icon.kind !== "emoji") {
+    context.fillStyle = "#ffffff";
+    context.beginPath();
+    context.roundRect(padding, tileTop, pillHeight, pillHeight, pillHeight / 4);
+    context.fill();
+  }
   context.textAlign = "center";
   context.textBaseline = "middle";
-  if (icon.kind === "image") {
+  if (icon.kind === "emoji") {
+    // As big as the tile it replaces.
+    const glyphSize = Math.round(pillHeight * 0.86);
+    context.font = font(glyphSize);
+    context.fillText(icon.text, padding + pillHeight / 2, middle + glyphSize * 0.06);
+  } else if (icon.kind === "image") {
     // Contained in the tile, its corners rounded like the sidebar's favicons.
-    const inset = 18;
+    const inset = 8;
     const box = pillHeight - inset * 2;
     const scale = Math.min(box / icon.image.naturalWidth, box / icon.image.naturalHeight);
     const drawWidth = icon.image.naturalWidth * scale;
@@ -319,10 +336,26 @@ function signBoard(
     );
     context.restore();
   } else {
-    context.fillStyle = palette.signTextDark;
-    const glyphSize = Array.from(icon.text).length > 1 ? 64 : 84;
-    context.font = font(glyphSize);
-    context.fillText(icon.text, padding + pillHeight / 2, middle + glyphSize * 0.06);
+    // As `ProjectMonogram` draws it: the colour washed over the tile, bold monospace letters
+    // stretched to a set width, on a baseline two thirds down.
+    context.save();
+    context.globalAlpha = 0.14;
+    context.fillStyle = icon.color;
+    context.beginPath();
+    context.roundRect(padding, tileTop, pillHeight, pillHeight, pillHeight / 4);
+    context.fill();
+    context.restore();
+    const unit = pillHeight / 16;
+    const width = (Array.from(icon.text).length === 1 ? 6 : 12) * unit;
+    context.save();
+    context.fillStyle = icon.color;
+    context.font = `700 ${8.25 * unit}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+    context.textBaseline = "alphabetic";
+    const measured = context.measureText(icon.text).width;
+    context.translate(padding + pillHeight / 2, tileTop + 10.8 * unit);
+    if (measured > 0) context.scale(width / measured, 1);
+    context.fillText(icon.text, 0, 0);
+    context.restore();
   }
   context.fillStyle = ink;
   context.font = font(size);

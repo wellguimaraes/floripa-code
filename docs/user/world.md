@@ -11,10 +11,10 @@ worktrees you no longer need are easy to spot. The counts update about once a
 minute. Click the branch count to list the branches, with the worktree each is
 checked out in, its last commit, and whether that worktree has uncommitted
 changes. Delete removes a branch along with its worktree; it asks for a second
-click, and once more if the branch isn't merged. Click the icon to change it:
-**Detect automatically** drops any icon you chose and looks through the
-project's files again, and **Choose icon…** and **Choose image file…** open the
-same pickers as Settings.
+click, and once more if the branch isn't merged. Click the icon to choose a new
+one, as in Settings. Right-click it for **Detect automatically**, which drops any
+icon you chose and looks through the project's files again, and **Choose image
+file…**.
 If a project's folder was moved or deleted outside the app, a **Folder not found**
 pill shows over its sign. Click it to point the project at the folder's new
 place, or to remove the project along with its threads.

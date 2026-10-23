@@ -123,3 +123,16 @@ const PROJECT_ICON_COLOR_CLASSES = Object.fromEntries(
 export function projectIconColorClassName(color: ProjectIconColor): string {
   return PROJECT_ICON_COLOR_CLASSES[color];
 }
+
+/**
+ * The colour's light-theme shade as a CSS colour, for painting outside CSS classes (a canvas,
+ * an SVG image). Read from Tailwind's own variable, so it matches the sidebar. Null until the
+ * stylesheet is in.
+ */
+export function projectIconColorValue(color: ProjectIconColor): string | null {
+  if (typeof document === "undefined") return null;
+  const value = getComputedStyle(document.documentElement)
+    .getPropertyValue(`--color-${color}-600`)
+    .trim();
+  return value === "" ? null : value;
+}
