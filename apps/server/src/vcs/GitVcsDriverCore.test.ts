@@ -3496,14 +3496,98 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           newRefName: "feature/slow-removal",
         });
 
+        // Unforced, so git deletes the folder itself rather than it moving aside.
         const removal = yield* driver
-          .removeWorktree({ cwd, path: worktreePath, force: true })
+          .removeWorktree({ cwd, path: worktreePath })
           .pipe(Effect.forkChild({ startImmediately: true }));
         yield* Deferred.await(removalStarted);
         yield* TestClock.adjust("31 seconds");
         yield* Fiber.join(removal);
 
         assert.equal(yield* fileSystem.exists(worktreePath), false);
+      }),
+    );
+
+    it.effect("force-removes a worktree with changes without waiting for its folder", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        const pathService = yield* Path.Path;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const worktreesRoot = yield* makeTmpDir("git-worktrees-");
+        const worktreePath = pathService.join(worktreesRoot, "fast");
+        const delegate = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const commands: Array<string> = [];
+        const recordingSpawner = ChildProcessSpawner.make((command) => {
+          if (ChildProcess.isStandardCommand(command)) commands.push(command.args.join(" "));
+          return delegate.spawn(command);
+        });
+        const driver = yield* makeGitVcsDriverCore().pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, recordingSpawner),
+          Effect.provide(layerServerConfig),
+        );
+        yield* driver.createWorktree({
+          cwd,
+          path: worktreePath,
+          refName: initialBranch,
+          newRefName: "feature/fast",
+        });
+        yield* writeTextFile(worktreePath, "notes.txt", "draft\n");
+
+        yield* driver.removeWorktree({ cwd, path: worktreePath, force: true });
+
+        assert.equal(yield* fileSystem.exists(worktreePath), false);
+        assert.isFalse(commands.some((command) => command.includes("worktree remove")));
+        assert.notInclude(yield* git(cwd, ["worktree", "list", "--porcelain"]), "fast");
+        // The branch is free again, and the path can take a new worktree.
+        yield* driver.deleteLocalBranch({ cwd, refName: "feature/fast", force: true });
+        yield* driver.createWorktree({
+          cwd,
+          path: worktreePath,
+          refName: initialBranch,
+          newRefName: "feature/fast-again",
+        });
+      }),
+    );
+
+    it.effect("leaves a locked worktree to git, which refuses it", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        const pathService = yield* Path.Path;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const worktreePath = pathService.join(yield* makeTmpDir("git-worktrees-"), "locked");
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* driver.createWorktree({
+          cwd,
+          path: worktreePath,
+          refName: initialBranch,
+          newRefName: "feature/locked",
+        });
+        yield* git(cwd, ["worktree", "lock", worktreePath]);
+
+        const result = yield* Effect.result(
+          driver.removeWorktree({ cwd, path: worktreePath, force: true }),
+        );
+
+        assert.isTrue(Result.isFailure(result));
+        assert.equal(yield* fileSystem.exists(pathService.join(worktreePath, ".git")), true);
+        assert.include(yield* git(cwd, ["worktree", "list", "--porcelain"]), "locked");
+      }),
+    );
+
+    it.effect("never moves the main worktree aside", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        const pathService = yield* Path.Path;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+
+        const result = yield* Effect.result(driver.removeWorktree({ cwd, path: cwd, force: true }));
+
+        assert.isTrue(Result.isFailure(result));
+        assert.equal(yield* fileSystem.exists(pathService.join(cwd, ".git")), true);
       }),
     );
 

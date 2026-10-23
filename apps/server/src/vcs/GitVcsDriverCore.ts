@@ -52,6 +52,9 @@ const gitProcesses = Semaphore.makeUnsafe(8);
 // machine). Give it generous headroom while still bounding a genuinely hung git.
 const WORKTREE_ADD_TIMEOUT_MS = 300_000;
 const WORKTREE_REMOVE_TIMEOUT_MS = Duration.toMillis(Duration.minutes(5));
+// A force-removed worktree's folder is renamed to this prefix beside it and deleted in the
+// background, so a later removal there finds and finishes ones a restart interrupted.
+const REMOVING_WORKTREE_PREFIX = ".t3-removing-";
 const DEFAULT_MAX_OUTPUT_BYTES = 1_000_000;
 const OUTPUT_TRUNCATED_MARKER = "\n\n[truncated]";
 const PREPARED_COMMIT_PATCH_MAX_OUTPUT_BYTES = 49_000;
@@ -317,6 +320,22 @@ function parseWorktreeBranchPaths(stdout: string): ReadonlyMap<string, string> {
   flush();
 
   return worktreePaths;
+}
+
+/** Every worktree `git worktree list --porcelain -z` reports, the main one first. */
+function parseWorktreeEntries(
+  stdout: string,
+): ReadonlyArray<{ readonly path: string; readonly locked: boolean }> {
+  const entries: Array<{ path: string; locked: boolean }> = [];
+  for (const field of stdout.split("\0")) {
+    if (field.startsWith("worktree ")) {
+      entries.push({ path: field.slice("worktree ".length), locked: false });
+    } else if (field === "locked" || field.startsWith("locked ")) {
+      const current = entries.at(-1);
+      if (current) current.locked = true;
+    }
+  }
+  return entries;
 }
 
 function splitNullSeparatedPaths(input: string, truncated: boolean): string[] {
@@ -3824,9 +3843,97 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       input.branch,
     ]);
 
+  // Folders this server is deleting in the background, so a sweep leaves them to their fiber.
+  const removingWorktreeFolders = new Set<string>();
+
+  const deleteRemovingFolder = (folder: string) =>
+    fileSystem
+      .remove(folder, { recursive: true })
+      .pipe(
+        Effect.ignoreCause({ log: true }),
+        Effect.ensuring(Effect.sync(() => removingWorktreeFolders.delete(folder))),
+      );
+
+  /** Finishes deleting the folders removals in `parent` renamed aside before a restart. */
+  const sweepRemovingFolders = (parent: string) =>
+    fileSystem.readDirectory(parent).pipe(
+      Effect.flatMap((names) =>
+        Effect.forEach(
+          names.filter((name) => name.startsWith(REMOVING_WORKTREE_PREFIX)),
+          (name) => {
+            const folder = path.join(parent, name);
+            if (removingWorktreeFolders.has(folder)) return Effect.void;
+            removingWorktreeFolders.add(folder);
+            return deleteRemovingFolder(folder);
+          },
+          { discard: true },
+        ),
+      ),
+      Effect.ignoreCause({ log: true }),
+    );
+
+  /**
+   * Takes a worktree out of git in the time a rename takes: its folder moves aside, git prunes
+   * the registration, and the folder is deleted in the background. Deleting a dependency-heavy
+   * folder is what makes `git worktree remove` take minutes. Returns false, having changed
+   * nothing, when git has to remove it itself: the path isn't a linked worktree of this
+   * repository, the worktree is locked, or its folder can't be renamed in place.
+   */
+  const detachWorktree = Effect.fn("detachWorktree")(function* (input: {
+    readonly cwd: string;
+    readonly path: string;
+  }) {
+    const listed = yield* executeGit(
+      "GitVcsDriver.removeWorktree.list",
+      input.cwd,
+      ["worktree", "list", "--porcelain", "-z"],
+      { timeoutMs: 30_000, maxOutputBytes: 16 * 1024 * 1024, allowNonZeroExit: true },
+    );
+    if (listed.exitCode !== 0) return false;
+    // Git lists real paths, which a symlinked or relative input wouldn't match.
+    const resolve = (target: string) =>
+      fileSystem.realPath(target).pipe(Effect.orElseSucceed(() => path.resolve(target)));
+    const folder = yield* resolve(input.path);
+    // The main worktree comes first, and git never removes it.
+    const linked = yield* Effect.forEach(
+      parseWorktreeEntries(listed.stdout).slice(1),
+      (entry) => resolve(entry.path).pipe(Effect.map((resolved) => ({ ...entry, resolved }))),
+      { concurrency: 8 },
+    );
+    const entry = linked.find((candidate) => candidate.resolved === folder);
+    if (entry === undefined || entry.locked) return false;
+
+    const id = yield* crypto.randomUUIDv4.pipe(Effect.orElseSucceed(() => null));
+    if (id === null) return false;
+    const parent = path.dirname(folder);
+    const removing = path.join(
+      parent,
+      `${REMOVING_WORKTREE_PREFIX}${path.basename(folder)}-${id.slice(0, 8)}`,
+    );
+    // Fails across filesystems, and on Windows while something holds a file in it open.
+    const succeeded = Effect.as(true);
+    const failed = Effect.orElseSucceed(() => false);
+    if (!(yield* fileSystem.rename(folder, removing).pipe(succeeded, failed))) return false;
+    const pruned = yield* pruneWorktrees({ cwd: input.cwd }).pipe(succeeded, failed);
+    // Put back, git removes it the slow way; if it can't go back, it's gone all the same and
+    // the next prune drops the registration.
+    if (!pruned && (yield* fileSystem.rename(removing, folder).pipe(succeeded, failed))) {
+      return false;
+    }
+    removingWorktreeFolders.add(removing);
+    yield* deleteRemovingFolder(removing).pipe(Effect.forkDetach);
+    yield* sweepRemovingFolders(parent).pipe(Effect.forkDetach);
+    return true;
+  });
+
   const removeWorktree: GitVcsDriver.GitVcsDriver["Service"]["removeWorktree"] = Effect.fn(
     "removeWorktree",
   )(function* (input) {
+    // Forced removal throws uncommitted changes away anyway, so it needn't wait for git to
+    // delete the folder.
+    if (input.force && (yield* detachWorktree(input).pipe(Effect.orElseSucceed(() => false)))) {
+      return;
+    }
     // Git refuses to remove a worktree with untracked files unless forced, but
     // its check honors `status.showUntrackedFiles=no` and would delete them.
     const args = ["-c", "status.showUntrackedFiles=normal", "worktree", "remove"];
