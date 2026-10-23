@@ -909,6 +909,30 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("1 changed file");
   });
 
+  it("pins the prompt scrolled off the top until the next prompt reaches the pin", async () => {
+    const { resolveTimelinePinnedPromptIndex } = await import("./MessagesTimeline.logic");
+    const itemBounds = [
+      { top: 0, height: 60 },
+      { top: 1000, height: 60 },
+    ];
+    const pinned = (scrollTop: number) =>
+      resolveTimelinePinnedPromptIndex({ scrollTop, clearance: 80, itemBounds });
+
+    // The first prompt is still on screen.
+    expect(pinned(0)).toBeNull();
+    expect(pinned(30)).toBeNull();
+    // Reading its reply: the prompt is pinned.
+    expect(pinned(60)).toBe(0);
+    expect(pinned(900)).toBe(0);
+    // The next prompt slides into the pinned area, so the pin steps aside...
+    expect(pinned(950)).toBeNull();
+    // ...and takes over once that prompt is gone too.
+    expect(pinned(1060)).toBe(1);
+    expect(
+      resolveTimelinePinnedPromptIndex({ scrollTop: 500, clearance: 80, itemBounds: [] }),
+    ).toBe(null);
+  });
+
   it("treats the follow re-arm band above the content bottom as the live edge", async () => {
     const {
       resolveTimelineIsAtEnd,

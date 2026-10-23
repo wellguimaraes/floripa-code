@@ -410,6 +410,32 @@ export function resolveTimelineMinimapCurrentIndex(input: {
 }
 
 /**
+ * The prompt to pin above the viewport: the last one scrolled fully off the
+ * top, as long as the next prompt has not reached the area the pin covers.
+ * Null while a prompt is visible near the top or none has scrolled away.
+ */
+export function resolveTimelinePinnedPromptIndex(input: {
+  readonly scrollTop: number;
+  /** Height the pin covers below the viewport top. */
+  readonly clearance: number;
+  readonly itemBounds: ReadonlyArray<{
+    readonly top: number | null;
+    readonly height: number | null;
+  }>;
+}): number | null {
+  let pinned: number | null = null;
+  for (const [index, item] of input.itemBounds.entries()) {
+    if (item.top === null) continue;
+    if (item.top + (item.height ?? 0) <= input.scrollTop) {
+      pinned = index;
+      continue;
+    }
+    return item.top < input.scrollTop + input.clearance ? null : pinned;
+  }
+  return pinned;
+}
+
+/**
  * Side gutter between the viewport edge and the centered content column.
  * `contentWidth` is the rendered column width, which follows the Chat width
  * setting, so callers measure it rather than assume a fixed maximum.

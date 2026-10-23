@@ -205,6 +205,7 @@ import {
   resolveTimelineIsAtEnd,
   resolveTimelineMinimapHasPersistentGutter,
   resolveTimelineMinimapCurrentIndex,
+  resolveTimelinePinnedPromptIndex,
   resolveTimelineMinimapHeightStyle,
   resolveTimelineMinimapHitStripWidth,
   resolveTimelineMinimapIndexFromPointer,
@@ -1096,6 +1097,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   }, [citationAlwaysRender, restoringAlwaysRender, fullscreenAppRowId]);
   const [minimapHitStripWidth, setMinimapHitStripWidth] = useState(0);
   const [minimapCurrentIndex, setMinimapCurrentIndex] = useState<number | null>(null);
+  const [pinnedPromptIndex, setPinnedPromptIndex] = useState<number | null>(null);
   const handleAnchorReady = useCallback(
     (info: { anchorIndex: number | undefined }) => {
       if (anchorMessageId !== null && info.anchorIndex !== undefined) {
@@ -1206,6 +1208,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     }
     reportContentOverflow();
     if (!state || minimapItems.length === 0) {
+      setPinnedPromptIndex(null);
       return;
     }
 
@@ -1241,6 +1244,13 @@ const ConversationTimeline = memo(function ConversationTimeline({
     });
     setMinimapCurrentIndex((current) =>
       current === nextCurrentIndex ? current : nextCurrentIndex,
+    );
+    setPinnedPromptIndex(
+      resolveTimelinePinnedPromptIndex({
+        scrollTop,
+        clearance: TIMELINE_PINNED_PROMPT_CLEARANCE,
+        itemBounds,
+      }),
     );
   }, [
     citationPositioning,
@@ -1526,6 +1536,20 @@ const ConversationTimeline = memo(function ConversationTimeline({
     contentInsetEndAdjustment,
   });
 
+  const scrollToMinimapItem = useCallback(
+    (item: TimelineMinimapItem) => {
+      onManualNavigation();
+      void listRef.current?.scrollToIndex({
+        index: item.rowIndex,
+        animated: true,
+        viewOffset: 24,
+      });
+    },
+    [listRef, onManualNavigation],
+  );
+  const pinnedPrompt =
+    pinnedPromptIndex === null ? null : (minimapItems[pinnedPromptIndex] ?? null);
+
   // Stable renderItem — no closure deps. Row components read shared state
   // from TimelineRowCtx, which propagates through LegendList's memo.
   const renderItem = useCallback(
@@ -1625,20 +1649,16 @@ const ConversationTimeline = memo(function ConversationTimeline({
               ListHeaderComponent={listHeader}
               ListFooterComponent={timelineListFooter}
             />
+            {pinnedPrompt ? (
+              <TimelinePinnedPrompt item={pinnedPrompt} onSelect={scrollToMinimapItem} />
+            ) : null}
             <TimelineMinimap
               items={minimapItems}
               hasPersistentGutter={minimapHasPersistentGutter}
               hitStripWidth={minimapHitStripWidth}
               currentIndex={minimapCurrentIndex}
               stripMap={minimapStripMap}
-              onSelect={(item) => {
-                onManualNavigation();
-                void listRef.current?.scrollToIndex({
-                  index: item.rowIndex,
-                  animated: true,
-                  viewOffset: 24,
-                });
-              }}
+              onSelect={scrollToMinimapItem}
             />
           </TooltipScrollDismissArea>
         </TimelineRowActivityCtx>
@@ -1703,6 +1723,38 @@ function resolveTimelineRowHeight(state: TimelinePositionState, rowIndex: number
 
 function timelineMinimapEventTargetsPreview(target: EventTarget): boolean {
   return target instanceof Element && target.closest("[data-minimap-preview]") !== null;
+}
+
+// Room the pinned prompt takes below the viewport top, so the next prompt
+// never slides under it.
+const TIMELINE_PINNED_PROMPT_CLEARANCE = 72;
+
+/** The prompt behind the reply being read, pinned once its own row scrolls off the top. */
+function TimelinePinnedPrompt({
+  item,
+  onSelect,
+}: {
+  item: TimelineMinimapItem;
+  onSelect: (item: TimelineMinimapItem) => void;
+}) {
+  const text = resolveTimelineMinimapPreview(item)?.userText ?? "User message";
+  return (
+    // Shares the list's lane padding and gutters, so the bubble lines up with the rows.
+    <div className="messages-timeline-scroll scrollbar-gutter-both pointer-events-none absolute inset-x-0 top-0 z-30 overflow-hidden pb-6">
+      <div className="chat-content-lane relative flex justify-end bg-background pt-2 pb-1">
+        {/* Content scrolling under the pin fades out beneath it. */}
+        <div className="absolute inset-x-0 top-full h-6 bg-linear-to-b from-background to-transparent" />
+        <button
+          type="button"
+          aria-label={`Jump to message: ${text}`}
+          onClick={() => onSelect(item)}
+          className="pointer-events-auto max-w-[80%] cursor-pointer rounded-2xl bg-message px-3 py-2 text-left text-message-foreground text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+        >
+          <span className="line-clamp-2 break-words">{text}</span>
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function TimelineMinimap({
