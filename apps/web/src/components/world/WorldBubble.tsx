@@ -432,6 +432,8 @@ export function WorldBubble(props: {
               {lastSent !== null ? (
                 // Covers the reply scrolling under it, which fades out beneath it.
                 <div className="sticky top-0 z-10 flex flex-col items-end gap-0.5 bg-popover">
+                  {/* A fractional scroll offset can leak a row of the reply above the pin; this caps it. */}
+                  <div className="pointer-events-none absolute inset-x-0 bottom-full h-1 bg-popover" />
                   {exchangeScrolled ? (
                     <div className="pointer-events-none absolute inset-x-0 top-full h-10 bg-linear-to-b from-popover to-transparent" />
                   ) : null}
