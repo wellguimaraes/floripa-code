@@ -23,16 +23,23 @@ const providerInstanceId = ProviderInstanceId.make("codex");
 const providerSessionId = "native-codex-thread";
 const threadId = ThreadId.make(`import:${providerInstanceId}:${providerSessionId}`);
 
-it.effect("imports messages once and preserves the provider native resume binding", () => {
+const makeImporterTest = (
+  options: Pick<
+    Extract<AgentSessionScanner.AgentSessionRecentThread, { _tag: "Importable" }>,
+    "worktree" | "active"
+  >,
+) => {
   const writes: Array<ReadonlyArray<OrchestrationV2DomainEvent>> = [];
   const upserts: Array<unknown> = [];
   const recorded: Array<unknown> = [];
+  const dispatched: Array<unknown> = [];
   let imported = false;
   const scanner = AgentSessionScanner.AgentSessionScanner.of({
     scan: Effect.die("unused"),
     recentThreads: () =>
       Stream.succeed({
         _tag: "Importable",
+        ...options,
         source: {
           provider: "codex",
           providerInstanceId,
@@ -76,6 +83,11 @@ it.effect("imports messages once and preserves the provider native resume bindin
                   thread: { id: threadId, projectId, historyOrigin: "v1_import" },
                 } as never)
               : Effect.fail(new Orchestrator.OrchestratorProjectionError({ threadId })),
+          dispatch: (command) =>
+            Effect.sync(() => {
+              dispatched.push(command);
+              return {} as never;
+            }),
         }),
         Layer.mock(EventSink.EventSinkV2)({
           write: (input) =>
@@ -94,6 +106,14 @@ it.effect("imports messages once and preserves the provider native resume bindin
       ),
     ),
   );
+  return { layerTest, writes, upserts, recorded, dispatched };
+};
+
+it.effect("imports messages once and preserves the provider native resume binding", () => {
+  const { layerTest, writes, upserts, recorded } = makeImporterTest({
+    worktree: null,
+    active: false,
+  });
 
   return Effect.gen(function* () {
     const importer = yield* AgentSessionImporter.AgentSessionImporter;
@@ -121,6 +141,9 @@ it.effect("imports messages once and preserves the provider native resume bindin
       id: threadId,
       activeProviderThreadId: providerThread?.payload.id,
       historyOrigin: "v1_import",
+      branch: null,
+      worktreePath: null,
+      settledOverride: "settled",
     });
     expect(providerThread?.payload).toMatchObject({
       appThreadId: threadId,
@@ -143,5 +166,44 @@ it.effect("imports messages once and preserves the provider native resume bindin
       }),
     ]);
     expect(recorded).toHaveLength(2);
+  }).pipe(Effect.provide(layerTest));
+});
+
+it.effect("binds a worktree session to its worktree and keeps an open Orca session active", () => {
+  const { layerTest, writes } = makeImporterTest({
+    worktree: { path: "/orca/workspaces/project/fix-login", branch: "fix-login" },
+    active: true,
+  });
+
+  return Effect.gen(function* () {
+    const importer = yield* AgentSessionImporter.AgentSessionImporter;
+    yield* importer.importRecentAgentThreads({ projectId });
+
+    const created = writes[0]?.find((event) => event.type === "thread.created");
+    expect(created?.payload).toMatchObject({
+      projectId,
+      branch: "fix-login",
+      worktreePath: "/orca/workspaces/project/fix-login",
+      settledOverride: "active",
+      settledAt: null,
+    });
+  }).pipe(Effect.provide(layerTest));
+});
+
+it.effect("queues a generated title only for threads this import created", () => {
+  const { layerTest, dispatched } = makeImporterTest({ worktree: null, active: false });
+
+  return Effect.gen(function* () {
+    const importer = yield* AgentSessionImporter.AgentSessionImporter;
+    yield* importer.importRecentAgentThreads({ projectId, retitle: true });
+    yield* importer.importRecentAgentThreads({ projectId, retitle: true });
+
+    expect(dispatched).toEqual([
+      expect.objectContaining({
+        type: "thread.metadata.update",
+        threadId,
+        regenerateTitle: true,
+      }),
+    ]);
   }).pipe(Effect.provide(layerTest));
 });

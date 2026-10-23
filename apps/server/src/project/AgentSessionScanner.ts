@@ -57,6 +57,7 @@ import {
   createTranscriptJsonSelector,
   TranscriptJsonLimitError,
 } from "./AgentSessionJson.ts";
+import * as OrcaSessions from "./OrcaSessions.ts";
 
 /** Chunk size for full transcript reads. */
 const TRANSCRIPT_PREFIX_BYTES = 32 * 1024;
@@ -168,11 +169,20 @@ export interface AgentSessionThread {
   readonly messages: ReadonlyArray<AgentSessionThreadMessage>;
 }
 
+/** The linked worktree a session ran in, when it was not the project root. */
+export interface AgentSessionWorktree {
+  readonly path: string;
+  readonly branch: string | null;
+}
+
 export type AgentSessionRecentThread =
   | {
       readonly _tag: "Importable";
       readonly thread: AgentSessionThread;
       readonly source: AgentSessionImportSource;
+      readonly worktree: AgentSessionWorktree | null;
+      /** Orca still has the session open, so it imports as active work. */
+      readonly active: boolean;
     }
   | { readonly _tag: "AlreadyImported"; readonly source: AgentSessionImportSource }
   | { readonly _tag: "Duplicate"; readonly source: AgentSessionImportSource }
@@ -209,6 +219,15 @@ interface RawCandidate {
     readonly filePath: string;
     readonly mtimeMs: number | null;
   }>;
+}
+
+/** Where a session folder's history lands: a project directory and, for a linked worktree, that worktree. */
+interface ProjectDirectory {
+  /** Filesystem identity of the project directory. */
+  readonly key: string;
+  readonly path: string;
+  readonly git: AgentSessionProjectGit | null;
+  readonly worktree: (AgentSessionWorktree & { readonly key: string }) | null;
 }
 
 interface TranscriptCandidate {
@@ -632,6 +651,7 @@ export const make = Effect.gen(function* () {
   const foldWorktreeCase = (yield* HostProcess.Platform) === "win32";
   const hostEnvironment = yield* HostProcess.Environment;
   const homeDir = yield* HostProcess.HomeDirectory;
+  const orca = yield* OrcaSessions.OrcaSessions;
   // `/private/tmp` is what macOS reports for sessions started in `/tmp`.
   const excludedProjectRoots = new Set(
     [homeDir, NodeOS.tmpdir(), "/tmp", "/private/tmp"].map((directory) =>
@@ -686,19 +706,48 @@ export const make = Effect.gen(function* () {
   });
 
   /**
+   * Main checkout and branch of a linked worktree's git dir. Git writes
+   * `commondir` for every linked worktree; without it the git dir still sits
+   * at `<common>/worktrees/<name>`. A bare repository has no main checkout.
+   */
+  const readLinkedWorktree = Effect.fn("AgentSessionScanner.readLinkedWorktree")(function* (
+    gitDir: string,
+  ) {
+    const commonDirPointer = (yield* fileSystem
+      .readFileString(path.join(gitDir, "commondir"))
+      .pipe(Effect.orElseSucceed(() => ""))).trim();
+    const commonDir = path.resolve(
+      gitDir,
+      commonDirPointer.length > 0 ? commonDirPointer : path.join("..", ".."),
+    );
+    const head = yield* fileSystem
+      .readFileString(path.join(gitDir, "HEAD"))
+      .pipe(Effect.orElseSucceed(() => ""));
+    return {
+      _tag: "Worktree",
+      mainCheckout: path.basename(commonDir) === ".git" ? path.dirname(commonDir) : null,
+      branch: /^ref:\s*refs\/heads\/(.+)$/m.exec(head)?.[1]?.trim() || null,
+    } as const;
+  });
+
+  /**
    * Git identity of a directory, or the reason it has none. Reads `.git`
    * directly instead of spawning git so a scan over hundreds of candidates
    * stays cheap. A `.git` file is a `gitdir:` pointer. When it points into a
-   * `worktrees/` directory the checkout is a linked worktree, which
-   * onboarding skips because its history belongs to the main checkout.
-   * Submodules use the same pointer shape but live under `modules/`, and
-   * are offered like any other repository.
+   * `worktrees/` directory the checkout is a linked worktree, whose history
+   * belongs to the main checkout's project. Submodules use the same pointer
+   * shape but live under `modules/`, and are offered like any other
+   * repository.
    */
   const readGitIdentity = Effect.fn("AgentSessionScanner.readGitIdentity")(function* (
     directory: string,
   ): Effect.fn.Return<
     | { readonly _tag: "Repository"; readonly git: AgentSessionProjectGit | null }
-    | { readonly _tag: "Worktree" }
+    | {
+        readonly _tag: "Worktree";
+        readonly mainCheckout: string | null;
+        readonly branch: string | null;
+      }
     | { readonly _tag: "NotGit" }
   > {
     const gitPath = path.join(directory, ".git");
@@ -712,7 +761,8 @@ export const make = Effect.gen(function* () {
       const target = /^gitdir:\s*(.+)$/m.exec(pointer)?.[1]?.trim();
       if (target === undefined || target.length === 0) return { _tag: "NotGit" } as const;
       gitDir = path.resolve(directory, target);
-      if (/[\\/]worktrees[\\/][^\\/]+[\\/]?$/.test(gitDir)) return { _tag: "Worktree" } as const;
+      if (/[\\/]worktrees[\\/][^\\/]+[\\/]?$/.test(gitDir))
+        return yield* readLinkedWorktree(gitDir);
     }
     const configText = yield* fileSystem
       .readFileString(path.join(gitDir, "config"))
@@ -726,6 +776,40 @@ export const make = Effect.gen(function* () {
       },
     } as const;
   });
+
+  /**
+   * The project directory a session folder imports into, or `null` when the
+   * folder can't be a project. A linked worktree belongs to its main
+   * checkout, so sessions from worktree tools such as Orca join the
+   * repository's project and keep the worktree they ran in.
+   */
+  const resolveProjectDirectory: (resolved: string) => Effect.Effect<ProjectDirectory | null> =
+    Effect.fn("AgentSessionScanner.resolveProjectDirectory")(function* (resolved: string) {
+      if (isExcludedProjectPath(resolved)) return null;
+      const stats = yield* statOption(resolved);
+      // Directories that no longer exist can't be imported.
+      if (Option.isNone(stats) || stats.value.type !== "Directory") return null;
+      // A symlink can point into the worktrees directory even when its own
+      // spelling doesn't; check again with links resolved.
+      const realPath = yield* fileSystem
+        .realPath(resolved)
+        .pipe(Effect.orElseSucceed(() => resolved));
+      if (isExcludedProjectPath(realPath)) return null;
+      const key = yield* directoryIdentity(resolved, stats.value);
+      const gitIdentity = yield* readGitIdentity(resolved);
+      if (gitIdentity._tag !== "Worktree") {
+        return {
+          key,
+          path: resolved,
+          git: gitIdentity._tag === "Repository" ? gitIdentity.git : null,
+          worktree: null,
+        };
+      }
+      if (gitIdentity.mainCheckout === null) return null;
+      const main = yield* resolveProjectDirectory(gitIdentity.mainCheckout);
+      if (main === null || main.worktree !== null) return null;
+      return { ...main, worktree: { key, path: resolved, branch: gitIdentity.branch } };
+    });
 
   // A large history snapshot can precede session metadata. Read bounded
   // chunks until a complete record names its cwd or the safety budget ends.
@@ -1213,50 +1297,27 @@ export const make = Effect.gen(function* () {
         git: AgentSessionProjectGit | null;
       }
     >();
-    const directoryKeys = new Map<string, string>();
-    const gitIdentities = new Map<string, AgentSessionProjectGit | null>();
+    const directories = new Map<string, ProjectDirectory | null>();
 
     for (const candidate of raw) {
       const expanded = expandHomePath(candidate.cwd.trim(), homeDir);
       if (!path.isAbsolute(expanded)) continue;
       const resolved = path.resolve(expanded);
-      if (isExcludedProjectPath(resolved)) continue;
-      let key = directoryKeys.get(resolved);
-      if (key === undefined) {
-        const stats = yield* statOption(resolved);
-        // Directories that no longer exist can't be imported.
-        if (Option.isNone(stats) || stats.value.type !== "Directory") {
-          directoryKeys.set(resolved, "");
-          continue;
-        }
-        const realPath = yield* fileSystem
-          .realPath(resolved)
-          .pipe(Effect.orElseSucceed(() => resolved));
-        // A symlink can point into the worktrees directory even when its own
-        // spelling doesn't; check again with links resolved.
-        if (isExcludedProjectPath(realPath)) {
-          key = "";
-        } else {
-          const gitIdentity = yield* readGitIdentity(resolved);
-          if (gitIdentity._tag === "Worktree") {
-            key = "";
-          } else {
-            key = yield* directoryIdentity(resolved, stats.value);
-            gitIdentities.set(key, gitIdentity._tag === "Repository" ? gitIdentity.git : null);
-          }
-        }
-        directoryKeys.set(resolved, key);
+      let directory = directories.get(resolved);
+      if (directory === undefined) {
+        directory = yield* resolveProjectDirectory(resolved);
+        directories.set(resolved, directory);
       }
-      if (key === "") continue;
+      if (directory === null) continue;
 
-      const existing = merged.get(key);
+      const existing = merged.get(directory.key);
       if (!existing) {
-        merged.set(key, {
-          path: resolved,
+        merged.set(directory.key, {
+          path: directory.path,
           sources: [candidate.source],
           threadCount: candidate.threadCount,
           lastActiveAtMs: candidate.lastActiveAtMs,
-          git: gitIdentities.get(key) ?? null,
+          git: directory.git,
         });
         continue;
       }
@@ -1341,12 +1402,20 @@ export const make = Effect.gen(function* () {
     const eligibleTranscripts: Array<{
       readonly candidate: RawCandidate;
       readonly transcript: RawCandidate["transcripts"][number] & { readonly mtimeMs: number };
+      readonly worktree: ProjectDirectory["worktree"];
     }> = [];
     for (const candidate of candidates) {
       const expanded = expandHomePath(candidate.cwd.trim(), homeDir);
       if (!path.isAbsolute(expanded)) continue;
       const resolved = path.resolve(expanded);
-      if ((yield* directoryIdentity(resolved)) !== rootIdentity) continue;
+      let worktree: ProjectDirectory["worktree"] = null;
+      if ((yield* directoryIdentity(resolved)) !== rootIdentity) {
+        const directory = yield* resolveProjectDirectory(resolved);
+        if (directory === null || directory.worktree === null || directory.key !== rootIdentity) {
+          continue;
+        }
+        worktree = directory.worktree;
+      }
 
       for (const transcript of candidate.transcripts) {
         if (
@@ -1359,6 +1428,7 @@ export const make = Effect.gen(function* () {
         eligibleTranscripts.push({
           candidate,
           transcript: { ...transcript, mtimeMs: transcript.mtimeMs },
+          worktree,
         });
       }
     }
@@ -1370,6 +1440,7 @@ export const make = Effect.gen(function* () {
       return left.transcript.filePath.localeCompare(right.transcript.filePath);
     });
 
+    const orcaSessions = yield* orca.read;
     const completedByFile = Map.groupBy(
       completedSources,
       (source) => `${source.providerInstanceId}\0${source.filePath}`,
@@ -1379,7 +1450,7 @@ export const make = Effect.gen(function* () {
     let transcriptsRemaining = MAX_IMPORT_TRANSCRIPTS;
     let recordsRemaining = MAX_IMPORT_RECORDS;
     return Stream.fromIteratorSucceed(eligibleTranscripts.values(), 1).pipe(
-      Stream.mapEffect(({ candidate, transcript }) =>
+      Stream.mapEffect(({ candidate, transcript, worktree }) =>
         Effect.gen(function* () {
           const completed = completedByFile.get(
             `${candidate.providerInstanceId}\0${transcript.filePath}`,
@@ -1442,7 +1513,8 @@ export const make = Effect.gen(function* () {
           const expandedCwd = expandHomePath(snapshotCwd.trim(), homeDir);
           if (
             !path.isAbsolute(expandedCwd) ||
-            (yield* directoryIdentity(path.resolve(expandedCwd))) !== rootIdentity
+            (yield* directoryIdentity(path.resolve(expandedCwd))) !==
+              (worktree?.key ?? rootIdentity)
           ) {
             return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
           }
@@ -1471,10 +1543,20 @@ export const make = Effect.gen(function* () {
             return Option.some<AgentSessionRecentThread>({ _tag: "Duplicate", source });
           }
           importedSessions.add(sessionKey);
+          const orcaSession = OrcaSessions.findOrcaSession(orcaSessions, {
+            source: parsedThread.source,
+            providerSessionId: parsedThread.providerSessionId,
+            filePath: transcript.filePath,
+          });
           return Option.some<AgentSessionRecentThread>({
             _tag: "Importable",
-            thread: parsedThread,
+            thread:
+              orcaSession?.title == null
+                ? parsedThread
+                : { ...parsedThread, title: orcaSession.title },
             source,
+            worktree: worktree === null ? null : { path: worktree.path, branch: worktree.branch },
+            active: orcaSession !== undefined,
           });
         }).pipe(importReadLock.withPermits(1)),
       ),
@@ -1491,4 +1573,6 @@ export const make = Effect.gen(function* () {
   return AgentSessionScanner.of({ scan, recentThreads });
 });
 
-export const layer = Layer.effect(AgentSessionScanner, make);
+export const layer = Layer.effect(AgentSessionScanner, make).pipe(
+  Layer.provide(OrcaSessions.layer),
+);

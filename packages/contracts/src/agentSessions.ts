@@ -71,6 +71,12 @@ export type AgentSessionScanResult = typeof AgentSessionScanResult.Type;
 export const AgentSessionImportInput = Schema.Struct({
   projectId: ProjectId,
   expectedWorkspaceRoot: Schema.optional(TrimmedNonEmptyString),
+  /**
+   * Generate a new title for each newly imported thread from its
+   * conversation. Servers without the `agentSessionImportRetitle` capability
+   * ignore it.
+   */
+  retitle: Schema.optional(Schema.Boolean),
 });
 export type AgentSessionImportInput = typeof AgentSessionImportInput.Type;
 

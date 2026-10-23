@@ -493,6 +493,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["base directory folder browser path home"],
   },
   {
+    id: "import-history",
+    title: "Import history",
+    to: "/settings/general",
+    searchTerms: ["claude code codex orca sessions conversations projects onboarding"],
+  },
+  {
     id: "unpin-confirmation",
     title: "Unpin confirmation",
     to: "/settings/general",

@@ -26,6 +26,7 @@ const state = vi.hoisted(() => ({
   providers: null as Atom.Atom<ReadonlyArray<never>> | null,
   config: null as Atom.Atom<null> | null,
   candidates: [] as AgentSessionProjectCandidate[],
+  serverConfigs: new Map<EnvironmentId, unknown>(),
   createProject: vi.fn(),
   importThreads: vi.fn(),
   refreshProviders: vi.fn(),
@@ -85,6 +86,7 @@ vi.mock("../../state/entities", async () => {
   return {
     useProjects: () => useAtomValue(state.projects!),
     readProjects: () => state.registry!.get(state.projects!),
+    useServerConfigs: () => state.serverConfigs,
   };
 });
 vi.mock("../../state/projects", () => ({ projectEnvironment: { create: "createProject" } }));
@@ -253,6 +255,7 @@ beforeEach(() => {
   state.providers = Atom.make<ReadonlyArray<never>>([]).pipe(Atom.keepAlive);
   state.config = Atom.make(null).pipe(Atom.keepAlive);
   state.candidates = [candidate("/projects/first"), candidate("/projects/second")];
+  state.serverConfigs = new Map();
   state.createProject
     .mockReset()
     .mockImplementation(async (input: CreateProjectInput) => recordProject(input));
@@ -407,4 +410,20 @@ it("completes accepted imports when permission is revoked after the final server
   expect(state.importThreads).toHaveBeenCalledOnce();
   expect(state.completeOnboarding).toHaveBeenCalledOnce();
   expect(state.onDone).toHaveBeenCalledOnce();
+});
+
+it("asks the server to retitle imported threads when chosen", async () => {
+  state.serverConfigs = new Map([
+    [primaryId, { environment: { capabilities: { agentSessionImportRetitle: true } } }],
+  ]);
+  await mountImport();
+  expect(text(renderer!.root)).toContain("Generate new titles");
+  await act(async () => {
+    renderer!.root.findAllByType("input").at(-1)!.props.onCheckedChange(true);
+  });
+  await click("Import 2 projects");
+  expect(state.importThreads).toHaveBeenCalledTimes(2);
+  expect(state.importThreads).toHaveBeenCalledWith(
+    expect.objectContaining({ input: expect.objectContaining({ retitle: true }) }),
+  );
 });

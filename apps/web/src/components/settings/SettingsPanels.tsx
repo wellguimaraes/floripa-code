@@ -54,6 +54,7 @@ import * as Equal from "effect/Equal";
 import * as Schema from "effect/Schema";
 import { APP_VERSION, HOSTED_APP_CHANNEL, HOSTED_APP_CHANNEL_LABEL } from "../../branding";
 import { IS_NIGHTLY_BUILD, NightlyMobileBetaRow } from "../NightlyMobileBeta";
+import { ImportHistoryDialog } from "../onboarding/WelcomeWizard";
 import { CliCommandSettingsRow } from "./CliCommandSettingsRow";
 import {
   canCheckForUpdate,
@@ -2193,6 +2194,7 @@ export function GeneralSettingsPanel() {
   const isEnvironmentScope = scope.environmentIds.length === 1 && environmentId !== null;
   const hasServerTargets = connectedEnvironments.length > 0;
   const [backgroundActivityDialogOpen, setBackgroundActivityDialogOpen] = useState(false);
+  const [importHistoryOpen, setImportHistoryOpen] = useState(false);
   const mixedResponseStreamingMode = useScopedSettingsMixed(["responseStreamingMode"]);
   const lastEnabledProjectGroupingMode = useRef<SidebarProjectGroupingMode>(
     readLastEnabledProjectGroupingMode(),
@@ -3105,6 +3107,26 @@ export function GeneralSettingsPanel() {
             />
           }
         />
+        <SettingsRow
+          {...searchableSetting("import-history")}
+          description="Import projects and conversations from Claude Code, Codex, and Orca."
+          control={
+            <Button
+              size="xs"
+              variant="outline"
+              disabled={!hasServerTargets}
+              onClick={() => setImportHistoryOpen(true)}
+            >
+              Import…
+            </Button>
+          }
+        />
+        {importHistoryOpen ? (
+          <ImportHistoryDialog
+            environmentIds={connectedEnvironments.map((target) => target.environmentId)}
+            onClose={() => setImportHistoryOpen(false)}
+          />
+        ) : null}
       </SettingsSection>
 
       <SettingsSection id="confirmations" title="Confirmations">

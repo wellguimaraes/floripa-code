@@ -22,6 +22,7 @@ import * as ServerConfig from "../config.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as AgentSessionScanner from "./AgentSessionScanner.ts";
+import * as OrcaSessions from "./OrcaSessions.ts";
 
 const makeProjectShell = (workspaceRoot: string): OrchestrationProjectShell => ({
   id: ProjectId.make("project-1"),
@@ -52,12 +53,22 @@ interface ScannerTestInput {
   /** Base dir for the test ServerConfig; worktreesDir derives from it. */
   readonly configBaseDir?: string;
   readonly providerInstances?: ContractServerSettings["providerInstances"];
+  /** Orca install to read; defaults to none so tests never see the host's. */
+  readonly orcaSessions?: Layer.Layer<OrcaSessions.OrcaSessions>;
 }
 
+const layerNoOrcaSessions = Layer.succeed(
+  OrcaSessions.OrcaSessions,
+  OrcaSessions.OrcaSessions.of({
+    read: Effect.succeed({ bySessionId: new Map(), byTranscriptPath: new Map() }),
+  }),
+);
+
 const layerScannerTest = (input: ScannerTestInput) =>
-  AgentSessionScanner.layer.pipe(
+  Layer.effect(AgentSessionScanner.AgentSessionScanner, AgentSessionScanner.make).pipe(
     Layer.provide(
       Layer.mergeAll(
+        input.orcaSessions ?? layerNoOrcaSessions,
         ServerSettings.layerTest({
           // Default slots point at the fixture homes; explicit test instances
           // replace a slot with the same id.
@@ -893,7 +904,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
       }),
     );
 
-    it.effect("skips linked git worktrees and reports the origin of real checkouts", () =>
+    it.effect("counts linked worktree sessions toward their main checkout", () =>
       Effect.gen(function* () {
         const path = yield* Path.Path;
         const fileSystem = yield* FileSystem.FileSystem;
@@ -939,17 +950,23 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         const result = yield* runScan({ claudeHomePath, codexHomePath });
 
         expect(
-          result.candidates.map((candidate) => ({ path: candidate.path, git: candidate.git })),
+          result.candidates.map((candidate) => ({
+            path: candidate.path,
+            git: candidate.git,
+            threadCount: candidate.threadCount,
+          })),
         ).toEqual([
           {
             path: submodule,
             git: { remoteKey: "github.com/pingdotgg/vendor", repository: "pingdotgg/vendor" },
+            threadCount: 1,
           },
-          { path: noRemote, git: { remoteKey: null, repository: null } },
-          { path: plain, git: null },
+          { path: noRemote, git: { remoteKey: null, repository: null }, threadCount: 1 },
+          { path: plain, git: null, threadCount: 1 },
           {
             path: repo,
             git: { remoteKey: "github.com/pingdotgg/t3code", repository: "pingdotgg/t3code" },
+            threadCount: 2,
           },
         ]);
       }),
@@ -1486,6 +1503,113 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         expect(threads.map((thread) => thread.messages.map((message) => message.text))).toEqual([
           ["Review this code", "Looks good"],
           ["Fix the project", "Done"],
+        ]);
+      }),
+    );
+
+    it.effect("imports linked worktree sessions into the main checkout's project", () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const nowMs = Date.parse("2026-08-24T12:00:00.000Z");
+        yield* TestClock.setTime(nowMs);
+        const claudeHomePath = yield* makeTempDir("floripacode-claude-home-");
+        const codexHomePath = yield* makeTempDir("floripacode-codex-home-");
+        const repo = yield* makeTempDir("floripacode-workspace-repo-");
+        const worktree = yield* makeTempDir("floripacode-orca-worktree-");
+        const otherRepo = yield* makeTempDir("floripacode-workspace-other-repo-");
+        const otherWorktree = yield* makeTempDir("floripacode-orca-other-worktree-");
+
+        const linkWorktree = Effect.fn("linkWorktree")(function* (
+          mainCheckout: string,
+          checkout: string,
+          branch: string,
+        ) {
+          const gitDir = path.join(mainCheckout, ".git", "worktrees", path.basename(checkout));
+          yield* fileSystem.makeDirectory(gitDir, { recursive: true });
+          yield* fileSystem.writeFileString(path.join(gitDir, "commondir"), "../..\n");
+          yield* fileSystem.writeFileString(
+            path.join(gitDir, "HEAD"),
+            `ref: refs/heads/${branch}\n`,
+          );
+          yield* fileSystem.writeFileString(path.join(checkout, ".git"), `gitdir: ${gitDir}\n`);
+        });
+        yield* linkWorktree(repo, worktree, "feature/login");
+        yield* linkWorktree(otherRepo, otherWorktree, "other");
+
+        const claudeTranscript = (cwd: string, sessionId: string) =>
+          `${JSON.stringify({
+            type: "user",
+            cwd,
+            sessionId,
+            timestamp: "2026-08-23T12:00:00.000Z",
+            message: { role: "user", content: "Fix the login redirect" },
+          })}\n`;
+        const worktreeSessionId = "11111111-1111-4111-8111-111111111111";
+        yield* writeTranscript({
+          filePath: path.join(
+            claudeHomePath,
+            "projects",
+            "-worktree",
+            `${worktreeSessionId}.jsonl`,
+          ),
+          contents: claudeTranscript(worktree, worktreeSessionId),
+          mtimeMs: nowMs - 60 * 60 * 1000,
+        });
+        yield* writeTranscript({
+          filePath: path.join(claudeHomePath, "projects", "-repo", "root.jsonl"),
+          contents: claudeTranscript(repo, "22222222-2222-4222-8222-222222222222"),
+          mtimeMs: nowMs - 2 * 60 * 60 * 1000,
+        });
+        yield* writeTranscript({
+          filePath: path.join(claudeHomePath, "projects", "-other", "other.jsonl"),
+          contents: claudeTranscript(otherWorktree, "33333333-3333-4333-8333-333333333333"),
+          mtimeMs: nowMs - 60 * 60 * 1000,
+        });
+
+        const outcomes = yield* runRecentThreadOutcomes({
+          claudeHomePath,
+          codexHomePath,
+          workspaceRoot: repo,
+          orcaSessions: Layer.succeed(
+            OrcaSessions.OrcaSessions,
+            OrcaSessions.OrcaSessions.of({
+              read: Effect.succeed({
+                bySessionId: new Map([
+                  [`claudeAgent\0${worktreeSessionId}`, { title: "Login fix" }],
+                ]),
+                byTranscriptPath: new Map(),
+              }),
+            }),
+          ),
+        });
+
+        expect(
+          outcomes.flatMap((outcome) =>
+            outcome._tag === "Importable"
+              ? [
+                  {
+                    id: outcome.thread.providerSessionId,
+                    title: outcome.thread.title,
+                    worktree: outcome.worktree,
+                    active: outcome.active,
+                  },
+                ]
+              : [],
+          ),
+        ).toEqual([
+          {
+            id: worktreeSessionId,
+            title: "Login fix",
+            worktree: { path: worktree, branch: "feature/login" },
+            active: true,
+          },
+          {
+            id: "22222222-2222-4222-8222-222222222222",
+            title: "Fix the login redirect",
+            worktree: null,
+            active: false,
+          },
         ]);
       }),
     );

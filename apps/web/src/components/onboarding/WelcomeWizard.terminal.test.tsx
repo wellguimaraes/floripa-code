@@ -86,7 +86,11 @@ vi.mock("../../state/agentSessions", () => ({
   agentSessionScan: vi.fn(),
 }));
 vi.mock("../../state/projects", () => ({ projectEnvironment: { create: "createProject" } }));
-vi.mock("../../state/entities", () => ({ readProjects: () => [], useProjects: () => [] }));
+vi.mock("../../state/entities", () => ({
+  readProjects: () => [],
+  useProjects: () => [],
+  useServerConfigs: () => new Map(),
+}));
 vi.mock("../../onboarding/useProjectScans", () => ({ useProjectScans: () => [] }));
 vi.mock("../ui/dialog", () => ({
   Dialog: "div",

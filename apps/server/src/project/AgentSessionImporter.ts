@@ -8,6 +8,7 @@ import {
   AgentSessionImportSource,
   AgentSessionScanError,
   AgentSessionSource,
+  CommandId,
   EventId,
   MessageId,
   ProjectId,
@@ -283,8 +284,10 @@ const make = Effect.gen(function* () {
             modelSelection: { instanceId: thread.providerInstanceId, model },
             runtimeMode: DEFAULT_RUNTIME_MODE,
             interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-            branch: null,
-            worktreePath: null,
+            // Resume in the worktree the session ran in; the agent keys its
+            // history by that directory.
+            branch: outcome.worktree?.branch ?? null,
+            worktreePath: outcome.worktree?.path ?? null,
             linkedPullRequest: null,
             branchPullRequest: null,
             activeProviderThreadId: providerThreadId,
@@ -298,9 +301,9 @@ const make = Effect.gen(function* () {
             createdAt,
             updatedAt,
             archivedAt: null,
-            settledOverride: "settled",
-            settledAt: updatedAt,
-            unsettledAt: null,
+            ...(outcome.active
+              ? { settledOverride: "active", settledAt: null, unsettledAt: updatedAt }
+              : { settledOverride: "settled", settledAt: updatedAt, unsettledAt: null }),
             snoozedUntil: null,
             snoozedAt: null,
             pinnedAt: null,
@@ -374,6 +377,25 @@ const make = Effect.gen(function* () {
             ],
           });
           yield* runtimes.recordImportedTranscript({ threadId, source });
+          if (input.retitle === true) {
+            // The title worker runs after this commits and keeps the imported
+            // title if generation fails.
+            yield* orchestrator
+              .dispatch({
+                type: "thread.metadata.update",
+                commandId: CommandId.make(`${IMPORT_EVENT_PREFIX}:retitle:${threadId}`),
+                threadId,
+                regenerateTitle: true,
+              })
+              .pipe(
+                Effect.catch((cause) =>
+                  Effect.logWarning("Could not queue a title for an imported thread", {
+                    threadId,
+                    cause,
+                  }),
+                ),
+              );
+          }
           return true;
         }).pipe(
           Effect.catch((cause) =>

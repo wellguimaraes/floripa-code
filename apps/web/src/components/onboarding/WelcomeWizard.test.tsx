@@ -32,6 +32,7 @@ vi.mock("../../onboarding/firstRun", () => ({ useCompleteOnboarding: () => mocks
 vi.mock("../../state/entities", () => ({
   useProjects: () => mocks.projects,
   readProjects: () => mocks.projects,
+  useServerConfigs: () => new Map(),
 }));
 vi.mock("../../state/environments", () => {
   const environment = {

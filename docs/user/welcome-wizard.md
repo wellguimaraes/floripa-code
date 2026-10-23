@@ -54,15 +54,28 @@ one group. Directories that are not git repositories sit under "Other folders".
 
 The default selection includes git repositories active within the last 30 days
 with at least three conversations. Use the checkboxes, or "Select all" and
-"Select none", to change the selection. Linked git worktrees, Codex scratch
-directories under `Documents/Codex`, and anything under `Downloads` are not
-offered.
+"Select none", to change the selection. Codex scratch directories under
+`Documents/Codex` and anything under `Downloads` are not offered.
 
 A large or malformed history can reach the scan limit. Floripa Code keeps the
 projects it found and warns when projects or conversations may be missing.
 
 Imported projects include Codex and Claude conversations active within the last
 30 days. You can continue those conversations in Floripa Code.
+
+Conversations that ran in a linked git worktree, such as one created by Orca,
+belong to the repository's project. They stay bound to their worktree and
+branch, so continuing one picks up where the agent left off. A worktree that
+has since been deleted cannot be continued, so its conversations are skipped.
+
+If you use Orca, the tab or pinned worktree name you chose becomes the thread
+title. Conversations Orca still has open arrive as active threads; the rest
+arrive settled.
+
+Select **Generate new titles** to have Floripa Code title each newly imported
+thread from its conversation, using your text generation model. This replaces
+titles from every source, including Orca names. Threads imported earlier keep
+their titles; use **Regenerate title** on a thread to retitle it.
 
 Conversation import is best effort. Floripa Code keeps the first user prompt and the
 newest remaining visible user and assistant messages, with 200 messages total.
@@ -75,6 +88,9 @@ unreadable or unparseable conversations.
 
 Each import attempt reads up to 100 conversation files and 64 MiB per project,
 with up to 100,000 input records. Run import again to continue a large batch.
+
+To import after setup, open **Settings → General → Import history**. Projects
+that already exist pick up any conversations they are missing.
 Completed conversations are not imported again. You can continue without the
 remaining history.
 

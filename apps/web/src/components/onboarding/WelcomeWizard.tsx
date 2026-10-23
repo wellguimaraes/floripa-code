@@ -56,7 +56,7 @@ import {
 } from "../../onboarding/providerReadiness.logic";
 import { newProjectId, randomUUID } from "../../lib/utils";
 import { agentSessionImport } from "../../state/agentSessions";
-import { readProjects, useProjects } from "../../state/entities";
+import { readProjects, useProjects, useServerConfigs } from "../../state/entities";
 import {
   useEnvironments,
   usePrimaryEnvironment,
@@ -308,6 +308,68 @@ export function WelcomeWizard({
         </WizardPanel>
       </WizardPopup>
       <ChatGptWelcomeCoordinator />
+    </Dialog>
+  );
+}
+
+/**
+ * The wizard's import step on its own, so users can bring in projects and
+ * agent history after onboarding. Projects that already exist pick up any
+ * history they are missing.
+ */
+export function ImportHistoryDialog({
+  environmentIds,
+  onClose,
+}: {
+  readonly environmentIds: readonly EnvironmentId[];
+  readonly onClose: () => void;
+}) {
+  const scans = useProjectScans(environmentIds);
+  const [isImporting, setIsImporting] = useState(false);
+  const isLoadingProjects =
+    scans.every((scan) => scan.data === null) && scans.some((scan) => scan.isPending);
+  const finish = useCallback(
+    async (_projectRef?: ScopedProjectRef, importWarning?: string, importedThreadCount = 0) => {
+      onClose();
+      if (importWarning) {
+        toastManager.add({
+          type: "warning",
+          title: "Some history was not imported",
+          description: importWarning,
+          timeout: 0,
+        });
+      } else if (importedThreadCount > 0) {
+        toastManager.add({
+          type: "success",
+          title: `Imported ${importedThreadCount} ${importedThreadCount === 1 ? "thread" : "threads"}`,
+        });
+      }
+      return true;
+    },
+    [onClose],
+  );
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(open, event) => {
+        if (open) return;
+        if (isImporting) event.cancel();
+        else onClose();
+      }}
+    >
+      <WizardPopup size="wide" bottomStickOnMobile={false} showCloseButton={!isImporting}>
+        <WizardHeader title="Import history" />
+        <WizardPanel holdHeight={isLoadingProjects}>
+          <ImportStep
+            scans={scans}
+            isImporting={isImporting}
+            setIsImporting={setIsImporting}
+            onDone={finish}
+            dismissLabel="Cancel"
+          />
+        </WizardPanel>
+      </WizardPopup>
     </Dialog>
   );
 }
@@ -1257,10 +1319,12 @@ function ImportStep({
   isImporting,
   setIsImporting,
   onDone,
+  dismissLabel = "Do not import projects",
 }: {
   readonly scans: ReturnType<typeof useProjectScans>;
   readonly isImporting: boolean;
   readonly setIsImporting: (value: boolean) => void;
+  readonly dismissLabel?: string;
   readonly onDone: (
     projectRef?: ScopedProjectRef,
     importWarning?: string,
@@ -1272,6 +1336,15 @@ function ImportStep({
   const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
   const importThreads = useAtomCommand(agentSessionImport, { reportFailure: false });
   const projects = useProjects();
+  const serverConfigs = useServerConfigs();
+  const canRetitle =
+    scans.length > 0 &&
+    scans.every(
+      (scan) =>
+        serverConfigs.get(scan.environmentId)?.environment.capabilities
+          .agentSessionImportRetitle === true,
+    );
+  const [retitle, setRetitle] = useState(false);
   const [selectedPaths, setSelectedPaths] = useState<ReadonlySet<string> | null>(null);
   const importWarningRef = useRef("");
   const importedThreadCountRef = useRef(0);
@@ -1448,7 +1521,11 @@ function ImportStep({
       }
       const threadImportResult = await importThreads({
         environmentId,
-        input: { projectId, expectedWorkspaceRoot: candidate.path },
+        input: {
+          projectId,
+          expectedWorkspaceRoot: candidate.path,
+          ...(canRetitle && retitle ? { retitle: true } : {}),
+        },
       });
       if (
         importGeneration !== importGenerationRef.current ||
@@ -1500,12 +1577,12 @@ function ImportStep({
         <div className="flex flex-1 flex-col items-center justify-center gap-3 py-6">
           <Spinner size="lg" tone="muted" />
           <p className="text-center text-sm text-muted-foreground">
-            Looking for projects from Claude Code and Codex…
+            Looking for projects from Claude Code, Codex, and Orca…
           </p>
         </div>
         <div className="flex justify-end">
           <Button variant="ghost-muted" onClick={() => void onDone()}>
-            Do not import projects
+            {dismissLabel}
           </Button>
         </div>
       </div>
@@ -1515,7 +1592,7 @@ function ImportStep({
   return (
     <StepShell
       title="Import your projects"
-      description="Import projects and conversations from Claude Code and Codex on your selected computers."
+      description="Import projects and conversations from Claude Code, Codex, and Orca on your selected computers."
     >
       {candidates.length > 0 ? (
         <div className="mt-5 flex items-center justify-between gap-3 text-xs text-muted-foreground">
@@ -1577,7 +1654,7 @@ function ImportStep({
                   </div>
                 ) : scanCandidates.length === 0 ? (
                   <p className="py-2 text-sm text-muted-foreground">
-                    No existing Claude Code or Codex projects found.
+                    No existing Claude Code, Codex, or Orca projects found.
                   </p>
                 ) : null}
                 {scan.data?.truncated ? (
@@ -1595,12 +1672,30 @@ function ImportStep({
           })}
         </div>
       </ScrollArea>
+      {canRetitle && candidates.length > 0 ? (
+        <label className="mt-4 flex cursor-pointer items-start gap-2.5 has-disabled:cursor-default">
+          <span className="flex pt-0.5">
+            <Checkbox
+              checked={retitle}
+              disabled={isImporting}
+              onCheckedChange={(value) => setRetitle(value === true)}
+            />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-medium">Generate new titles</span>
+            <span className="block text-xs text-muted-foreground">
+              Title each imported thread from its conversation. Your messages are sent to your text
+              generation model.
+            </span>
+          </span>
+        </label>
+      ) : null}
       {visibleImportError ? (
         <p className="mt-3 text-sm text-destructive">{visibleImportError}</p>
       ) : null}
       <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
         <Button variant="ghost-muted" disabled={isImporting} onClick={finishAfterImport}>
-          Do not import projects
+          {dismissLabel}
         </Button>
         <Button
           autoFocus
