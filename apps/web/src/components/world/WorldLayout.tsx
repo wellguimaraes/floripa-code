@@ -187,11 +187,6 @@ export function WorldLayout({
   useEffect(() => collapseSidebar(), []);
 
   useEffect(() => {
-    useWorldModeStore.getState().setShown(true);
-    return () => useWorldModeStore.getState().setShown(false);
-  }, []);
-
-  useEffect(() => {
     if (chatTarget === null || covered) return;
     // Cmd+Escape (Ctrl+Escape) closes the panel unless something in it (a menu, picker,
     // dialog) took it first. Plain Escape is left to the chat, so it can't close it by accident.

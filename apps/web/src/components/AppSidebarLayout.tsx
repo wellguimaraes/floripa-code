@@ -11,6 +11,7 @@ import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 
 import { isElectron } from "../env";
 import { getLocalStorageItem, removeLocalStorageItem } from "../hooks/useLocalStorage";
+import { useIsMobile } from "../hooks/useMediaQuery";
 import {
   isRichTextBoldShortcut,
   resolveShortcutCommand,
@@ -241,10 +242,12 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   // folded the sidebar away. Until then the threads must not show.
   const { worldMode } = useWorldRoute();
   const worldShown = useWorldModeStore((state) => state.shown) || worldMode;
-  // Opening the app onto the world starts with the sidebar folded, as the world would fold it.
-  // It still remembers being open, so it comes back when the world closes.
+  // Opening the app onto the world, or onto Settings over it (see WorldHost), starts with the
+  // sidebar folded, as the world would fold it. It still remembers being open, so it comes back
+  // when the world closes.
+  const wide = !useIsMobile();
   const [sidebarStartsOpen] = useState(() => {
-    if (!worldMode) return true;
+    if (!worldMode && !(isOnSettings && wide)) return true;
     const store = useWorldModeStore.getState();
     if (store.sidebarWasOpen === null) store.setSidebarWasOpen(true);
     return false;
