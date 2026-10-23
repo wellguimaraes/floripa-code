@@ -55,7 +55,7 @@ import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { useRightPanelStore } from "~/rightPanelStore";
 
 import { previewBridge } from "./previewBridge";
-import { subscribePreviewAction } from "./previewActionBus";
+import { subscribePreviewAction, takePreviewUrlFocusRequest } from "./previewActionBus";
 import { closePreviewSession } from "./closePreviewSession";
 import { openPreviewSession } from "./openPreviewSession";
 import { showPreviewPopup } from "./showPreviewPopup";
@@ -934,6 +934,11 @@ export function PreviewView({
       if (isMountedRef.current) setPickActive(false);
     };
   }, [runtimeTabId]);
+
+  useEffect(() => {
+    if (!visible || !tabId || !takePreviewUrlFocusRequest(tabId)) return;
+    setFocusUrlNonce((value) => (value ?? 0) + 1);
+  }, [tabId, visible]);
 
   // Subscribe only while visible; `toggle-panel` is owned by ChatView's
   // URL-aware handler regardless of whether the panel is currently mounted.

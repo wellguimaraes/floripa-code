@@ -1,4 +1,4 @@
-import type { BrowserSurfaceRect } from "./browserSurfaceStore";
+import type { BrowserSurfaceCornerRadius, BrowserSurfaceRect } from "./browserSurfaceStore";
 
 export interface HostedBrowserWebviewSize {
   readonly width: number;
@@ -12,7 +12,7 @@ export interface HostedBrowserWebviewWrapperStyle {
   readonly height: number;
   readonly zIndex: number;
   readonly pointerEvents: "auto" | "none";
-  readonly borderRadius?: number;
+  readonly borderRadius?: BrowserSurfaceCornerRadius;
   readonly visibility?: "hidden" | "visible";
 }
 
@@ -22,7 +22,7 @@ export function resolveHostedBrowserWebviewWrapperStyle(input: {
   readonly active: boolean;
   readonly renderingActive: boolean;
   readonly keepPaintableWhenInactive?: boolean;
-  readonly cornerRadius?: number;
+  readonly cornerRadius?: BrowserSurfaceCornerRadius;
   readonly zIndex?: number;
   readonly rect: BrowserSurfaceRect | null;
   readonly hiddenSize: HostedBrowserWebviewSize;
@@ -44,7 +44,7 @@ export function resolveHostedBrowserWebviewWrapperStyle(input: {
       height: rect.height,
       zIndex,
       pointerEvents: "auto",
-      ...(cornerRadius > 0 ? { borderRadius: cornerRadius } : {}),
+      ...(cornerRadius ? { borderRadius: cornerRadius } : {}),
     };
   }
 

@@ -29,3 +29,15 @@ export function subscribePreviewAction(listener: (action: PreviewAction) => void
   window.addEventListener(EVENT_NAME, handler);
   return () => window.removeEventListener(EVENT_NAME, handler);
 }
+
+const pendingUrlFocusTabIds = new Set<string>();
+
+/** Asks the view of a just-created browser tab to focus its URL bar once it shows. */
+export function requestPreviewUrlFocus(tabId: string): void {
+  pendingUrlFocusTabIds.add(tabId);
+}
+
+/** Consumes the URL-bar focus request for `tabId`, if one is waiting. */
+export function takePreviewUrlFocusRequest(tabId: string): boolean {
+  return pendingUrlFocusTabIds.delete(tabId);
+}

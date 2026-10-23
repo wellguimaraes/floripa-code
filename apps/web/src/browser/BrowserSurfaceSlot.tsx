@@ -2,12 +2,53 @@
 
 import { useLayoutEffect, useRef } from "react";
 
-import { acquireBrowserSurface } from "./browserSurfaceStore";
+import { acquireBrowserSurface, type BrowserSurfaceCornerRadius } from "./browserSurfaceStore";
 import { observeResize } from "../lib/observeResize";
+
+const CORNER_TOLERANCE_PX = 1;
+
+/** Nearest ancestor that clips its content to rounded corners, such as the world's frame. */
+function findRoundedClipAncestor(element: HTMLElement): HTMLElement | null {
+  for (let node = element.parentElement; node; node = node.parentElement) {
+    const style = getComputedStyle(node);
+    if (style.overflow === "visible") continue;
+    if (
+      Number.parseFloat(style.borderTopLeftRadius) > 0 ||
+      Number.parseFloat(style.borderTopRightRadius) > 0 ||
+      Number.parseFloat(style.borderBottomRightRadius) > 0 ||
+      Number.parseFloat(style.borderBottomLeftRadius) > 0
+    ) {
+      return node;
+    }
+  }
+  return null;
+}
+
+/**
+ * The overlay webview lives outside the slot's DOM, so the clipping ancestor's rounded corners
+ * do not cut it. Round the slot corners that sit on that ancestor's corners instead.
+ */
+function cornerRadiusWithin(clip: HTMLElement, rect: DOMRect): BrowserSurfaceCornerRadius {
+  const frame = clip.getBoundingClientRect();
+  const style = getComputedStyle(clip);
+  const near = (a: number, b: number) => Math.abs(a - b) <= CORNER_TOLERANCE_PX;
+  const top = near(rect.top, frame.top);
+  const bottom = near(rect.bottom, frame.bottom);
+  const left = near(rect.left, frame.left);
+  const right = near(rect.right, frame.right);
+  const corners = [
+    top && left ? style.borderTopLeftRadius : "0px",
+    top && right ? style.borderTopRightRadius : "0px",
+    bottom && right ? style.borderBottomRightRadius : "0px",
+    bottom && left ? style.borderBottomLeftRadius : "0px",
+  ];
+  return corners.every((corner) => Number.parseFloat(corner) === 0) ? 0 : corners.join(" ");
+}
 
 export function BrowserSurfaceSlot(props: {
   readonly tabId: string;
   readonly visible: boolean;
+  /** Defaults to the corners the slot shares with its nearest rounded, clipping ancestor. */
   readonly cornerRadius?: number;
   readonly zIndex?: number;
   readonly layoutVersion?: string | number;
@@ -17,7 +58,7 @@ export function BrowserSurfaceSlot(props: {
   const {
     tabId,
     visible,
-    cornerRadius = 0,
+    cornerRadius,
     zIndex = 30,
     layoutVersion,
     className,
@@ -31,9 +72,12 @@ export function BrowserSurfaceSlot(props: {
     const element = elementRef.current;
     if (!element) return;
     let lease = acquireBrowserSurface(tabId, fitSourceContent);
+    const clip = findRoundedClipAncestor(element);
     const update = () => {
       const rect = element.getBoundingClientRect();
       const presentation = presentationRef.current;
+      const resolvedCornerRadius =
+        presentation.cornerRadius ?? (clip ? cornerRadiusWithin(clip, rect) : 0);
       const presented = lease.present(
         {
           x: Math.round(rect.x),
@@ -42,7 +86,7 @@ export function BrowserSurfaceSlot(props: {
           height: Math.max(1, Math.round(rect.height)),
         },
         presentation.visible && rect.width > 0 && rect.height > 0,
-        presentation.cornerRadius,
+        resolvedCornerRadius,
         presentation.zIndex,
       );
       if (presentation.visible && !presented) {
@@ -56,7 +100,7 @@ export function BrowserSurfaceSlot(props: {
             height: Math.max(1, Math.round(rect.height)),
           },
           rect.width > 0 && rect.height > 0,
-          presentation.cornerRadius,
+          resolvedCornerRadius,
           presentation.zIndex,
         );
       }

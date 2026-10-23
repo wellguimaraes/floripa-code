@@ -18,6 +18,7 @@ import { selectThreadRightPanelState, useRightPanelStore } from "~/rightPanelSto
 import { __setClientSettingsForTests } from "~/hooks/useSettings";
 
 import { addBrowserSurface } from "./addBrowserSurface";
+import { takePreviewUrlFocusRequest } from "./previewActionBus";
 
 const threadRef = {
   environmentId: "local" as ScopedThreadRef["environmentId"],
@@ -56,6 +57,16 @@ describe("addBrowserSurface", () => {
       viewport: FILL_PREVIEW_VIEWPORT,
       profileId: "profile-work",
     });
+  });
+
+  it("asks the new tab's view to focus its URL bar once", async () => {
+    await addBrowserSurface({
+      threadRef,
+      openPreview: async () => AsyncResult.success(snapshot("tab-1")),
+    });
+
+    expect(takePreviewUrlFocusRequest("tab-1")).toBe(true);
+    expect(takePreviewUrlFocusRequest("tab-1")).toBe(false);
   });
 
   it("creates another preview session when a browser tab is already active", async () => {
