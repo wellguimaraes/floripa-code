@@ -119,7 +119,7 @@ export function RestoreArchivedDialog(props: {
         if (!open) onClose();
       }}
     >
-      <DialogPopup className="max-h-[min(500px,calc(100dvh-2rem))] max-w-md [--glass-opacity:100%]">
+      <DialogPopup className="max-h-[min(500px,calc(100dvh-2rem))] max-w-md">
         <DialogHeader>
           <WorldProjectPill size="sm" project={project} name={title} plate={plate} />
           <DialogTitle>Restore archived agents</DialogTitle>
