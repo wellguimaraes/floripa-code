@@ -125,11 +125,10 @@ export function BubbleComposer(props: {
     onTextChange(next);
     setCursor(nextCursor);
   };
-  // A kept draft comes back selected: type over it or keep going.
+  // A kept draft picks up at its end. Not selected: it may be the chat panel's draft too,
+  // and one keystroke would replace it.
   useEffect(() => {
     editor.current?.focusAtEnd();
-    const editable = frame.current?.querySelector<HTMLElement>("[contenteditable='true']");
-    if (editable && latestText.current !== "") window.getSelection()?.selectAllChildren(editable);
   }, []);
 
   const { resolvedTheme } = useTheme();

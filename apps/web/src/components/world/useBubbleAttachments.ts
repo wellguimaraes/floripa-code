@@ -21,6 +21,7 @@ import {
   awaitAttachmentUploads,
   getUploadedAttachments,
   readAttachmentUpload,
+  releaseDraftAttachment,
   releaseDraftAttachments,
   retryAttachmentUpload,
   startAttachmentUpload,
@@ -71,29 +72,53 @@ function discard(attachments: ReadonlyArray<BubbleAttachment>) {
 }
 
 /**
- * Files staged in a world reply bubble. Same rules as the chat composer:
- * images are downscaled to the wire cap, other files need a server that
- * accepts uploads. Whatever is still staged when the bubble goes away is
- * released, unless it was sent or handed to the full chat.
+ * Files staged in a world bubble. Same rules as the chat composer: images are
+ * downscaled to the wire cap, other files need a server that accepts uploads.
+ *
+ * With a `draftTarget`, the files (and any other context, such as terminal
+ * excerpts added in the full chat) live in that thread's composer draft, so
+ * the bubble and the chat panel share one draft. Without one, they are the
+ * bubble's own, released when it goes away unless sent or handed off.
  */
-export function useBubbleAttachments(environmentId: EnvironmentId) {
-  const [attachments, setAttachments] = useState<BubbleAttachment[]>([]);
+export function useBubbleAttachments(
+  environmentId: EnvironmentId,
+  draftTarget?: ComposerThreadTarget,
+) {
+  const [localAttachments, setAttachments] = useState<BubbleAttachment[]>([]);
   const [preparing, setPreparing] = useState(0);
   const owned = useRef<BubbleAttachment[]>([]);
   useEffect(() => {
-    owned.current = attachments;
-  }, [attachments]);
+    owned.current = localAttachments;
+  }, [localAttachments]);
   useEffect(() => () => discard(owned.current), []);
+
+  const draft = useComposerDraftStore((store) =>
+    draftTarget === undefined ? null : store.getComposerDraft(draftTarget),
+  );
+  const sharesDraft = draftTarget !== undefined;
+  const attachments = useMemo<BubbleAttachment[]>(
+    () => (sharesDraft ? [...(draft?.images ?? []), ...(draft?.files ?? [])] : localAttachments),
+    [sharesDraft, draft, localAttachments],
+  );
+  /** The staged files right now, read past any pending render. */
+  const current = (): BubbleAttachment[] => {
+    if (draftTarget === undefined) return owned.current;
+    const latest = useComposerDraftStore.getState().getComposerDraft(draftTarget);
+    return [...(latest?.images ?? []), ...(latest?.files ?? [])];
+  };
 
   // What the text box's chips show, keyed by the id each chip carries.
   const records = useMemo(
     () =>
       composerContextRecordsFromDraft({
-        terminalContexts: [],
+        terminalContexts: draft?.terminalContexts ?? [],
+        reviewComments: draft?.reviewComments ?? [],
+        previewAnnotations: draft?.previewAnnotations ?? [],
+        threadContexts: draft?.threadContexts ?? [],
         images: attachments.filter((attachment) => attachment.type === "image"),
         files: attachments.filter((attachment) => attachment.type === "file"),
       }),
-    [attachments],
+    [attachments, draft],
   );
 
   /** Stages files; resolves to what was staged and an error to show, if any. */
@@ -102,7 +127,7 @@ export function useBubbleAttachments(environmentId: EnvironmentId) {
   ): Promise<{ staged: BubbleAttachment[]; error: string | null }> => {
     const { fileLimit } = readUploadCapabilities(environmentId);
     let error: string | null = null;
-    let room = PROVIDER_SEND_TURN_MAX_ATTACHMENTS - owned.current.length;
+    let room = PROVIDER_SEND_TURN_MAX_ATTACHMENTS - current().length;
     const images: File[] = [];
     const staged: BubbleAttachment[] = [];
     for (const file of files) {
@@ -148,7 +173,16 @@ export function useBubbleAttachments(environmentId: EnvironmentId) {
       });
       room -= 1;
     }
-    if (staged.length > 0) setAttachments((current) => [...current, ...staged]);
+    if (staged.length > 0) {
+      if (draftTarget === undefined) {
+        setAttachments((existing) => [...existing, ...staged]);
+      } else {
+        // The draft refuses duplicates and anything over its cap; only what it took gets a chip.
+        const files = staged.filter((attachment) => attachment.type === "file");
+        const taken = new Set(useComposerDraftStore.getState().addFiles(draftTarget, files));
+        staged.splice(0, staged.length, ...staged.filter((file) => taken.has(file.id)));
+      }
+    }
     if (images.length === 0) return { staged, error };
 
     setPreparing((count) => count + images.length);
@@ -171,8 +205,13 @@ export function useBubbleAttachments(environmentId: EnvironmentId) {
           previewUrl: URL.createObjectURL(prepared.file),
           file: prepared.file,
         };
+        if (draftTarget === undefined) {
+          setAttachments((existing) => [...existing, image]);
+        } else if (!useComposerDraftStore.getState().addImage(draftTarget, image)) {
+          URL.revokeObjectURL(image.previewUrl);
+          continue;
+        }
         staged.push(image);
-        setAttachments((current) => [...current, image]);
       }
     } finally {
       setPreparing((count) => count - images.length);
@@ -181,10 +220,18 @@ export function useBubbleAttachments(environmentId: EnvironmentId) {
   };
 
   const remove = (id: string) => {
-    const attachment = owned.current.find((candidate) => candidate.id === id);
+    const attachment = current().find((candidate) => candidate.id === id);
     if (attachment === undefined) return;
-    discard([attachment]);
-    setAttachments((current) => current.filter((candidate) => candidate.id !== id));
+    if (draftTarget === undefined) {
+      discard([attachment]);
+      setAttachments((existing) => existing.filter((candidate) => candidate.id !== id));
+      return;
+    }
+    // The draft revokes the preview; the upload is released here, as the chat composer does.
+    releaseDraftAttachment(attachment);
+    const store = useComposerDraftStore.getState();
+    if (attachment.type === "image") store.removeImage(draftTarget, id);
+    else store.removeFile(draftTarget, id);
   };
 
   /** The files as the server takes them: uploaded where it can, else inline images. */
@@ -234,14 +281,28 @@ export function useBubbleAttachments(environmentId: EnvironmentId) {
    * text's chips to them. Throws with a reason it can't send.
    */
   const prepareForSend = async (text: string): Promise<OutgoingMessage> => {
-    const staged = owned.current;
-    if (staged.length === 0) return { text, attachments: [] };
-    const attachments = await prepareFiles(staged);
+    const staged = current();
+    const shared =
+      draftTarget === undefined
+        ? null
+        : useComposerDraftStore.getState().getComposerDraft(draftTarget);
+    const hasContext =
+      (shared?.terminalContexts.length ?? 0) > 0 ||
+      (shared?.reviewComments.length ?? 0) > 0 ||
+      (shared?.previewAnnotations.length ?? 0) > 0 ||
+      (shared?.threadContexts.length ?? 0) > 0;
+    if (staged.length === 0 && !hasContext) return { text, attachments: [] };
+    // A file restored from an earlier session has no bytes here; the full chat re-sends it.
+    if (staged.some((attachment) => attachment.type === "file" && attachment.file === null)) {
+      throw new Error("Open the full chat to send files kept from an earlier session.");
+    }
+    const attachments = staged.length === 0 ? [] : await prepareFiles(staged);
     // Bound by the id the server knows: the upload's, or the local one on the data-URL path.
     const context = buildMessageContext({
-      terminalContexts: [],
-      reviewComments: [],
-      previewAnnotations: [],
+      terminalContexts: shared?.terminalContexts ?? [],
+      reviewComments: shared?.reviewComments ?? [],
+      previewAnnotations: shared?.previewAnnotations ?? [],
+      threadContexts: shared?.threadContexts ?? [],
       attachments: staged.map((attachment, index) => ({
         attachment,
         attachmentId: attachments[index]?.id ?? attachment.id,
@@ -258,15 +319,21 @@ export function useBubbleAttachments(environmentId: EnvironmentId) {
     return { text, attachments, context };
   };
 
-  /** The message went out: drop the staged files the way the chat composer does. */
+  /** The message went out: drop the staged files (and a shared draft) the way the chat composer does. */
   const sent = () => {
-    discard(owned.current);
+    discard(current());
+    if (draftTarget !== undefined) {
+      useComposerDraftStore.getState().clearComposerContent(draftTarget);
+      return;
+    }
     owned.current = [];
     setAttachments([]);
   };
 
   /** Moves staged files into a thread's composer draft, which owns them from then on. */
   const handOff = (target: ComposerThreadTarget) => {
+    // A shared draft already is that composer's.
+    if (draftTarget !== undefined) return;
     const staged = owned.current;
     if (staged.length === 0) return;
     const draft = useComposerDraftStore.getState();

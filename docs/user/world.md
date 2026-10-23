@@ -67,8 +67,9 @@ clicks and right-clicks on it do the same things. Click a character, or its ball
 open a reply bubble beside it; a character with a `!` or `?` balloon opens its chat instead. It shows the first two lines of the last message you sent. Type a
 message and press `Enter` to send it; if the agent is busy, the message waits
 for the current turn to finish. Paste, drop, or use the paperclip to attach
-images and files to the message. The expand button, or `Cmd`+`Enter`
-(`Ctrl`+`Enter`), opens the full chat over the world, keeping anything you typed or attached. The archive button, or `Option`+`A` (`Alt`+`A`), archives the thread; undo it
+images and files to the message. The bubble and the thread's full chat share one draft, so
+what you type or attach in either shows in both. The expand button, or `Cmd`+`Enter`
+(`Ctrl`+`Enter`), opens the full chat over the world. The archive button, or `Option`+`A` (`Alt`+`A`), archives the thread; undo it
 from the notice that appears, or later from **Settings → Archived**. `Option`-click
 (`Alt`-click) a character to skip the bubble and open its chat; the map frames the character's
 island beside the panel. While a chat is open, clicking another character switches the

@@ -2,13 +2,12 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { fileBasename } from "@t3tools/shared/path";
 import { ArchiveIcon, MessagesSquareIcon, RefreshCwIcon, SquareIcon, XIcon } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { formatShortcutLabel } from "../../keybindings";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
-import { stripInlineContextReferences } from "../../lib/composerContextReferences";
 import { cn, newMessageId } from "../../lib/utils";
 import {
   readEnvironmentSupportsTitleRegeneration,
@@ -46,12 +45,6 @@ export function isStoppable(facts: CharacterFacts): boolean {
   if (facts.status === "waiting") return facts.backgroundTask || facts.hasWorkingKids;
   return ["working", "approval", "input"].includes(facts.status);
 }
-
-/**
- * Unsent text per character, kept when the bubble closes without sending so
- * reopening it picks up where you left off.
- */
-const unsentDrafts = new Map<string, string>();
 
 const NO_MODIFIERS = {
   metaKey: false,
@@ -147,26 +140,14 @@ export function WorldBubble(props: {
         ? "Main worktree"
         : (thread.branch ?? fileBasename(thread.worktreePath));
   const [pickingHue, setPickingHue] = useState(false);
-  const [text, setText] = useState(() => unsentDrafts.get(facts.key) ?? "");
-  // Whatever is left unsent when the bubble goes away waits for next time.
-  const keepDraft = useRef(true);
-  const latestText = useRef(text);
-  useEffect(() => {
-    latestText.current = text;
-  }, [text]);
-  useEffect(
-    () => () => {
-      // The staged files go with the bubble, so their chips don't stay in the draft.
-      const kept = stripInlineContextReferences(latestText.current);
-      if (keepDraft.current && kept.trim() !== "") {
-        unsentDrafts.set(facts.key, kept);
-      } else {
-        unsentDrafts.delete(facts.key);
-      }
-    },
-    [facts.key],
+  // The thread's composer draft, shared with the chat panel: what you type in either shows in both.
+  const draftTarget = useMemo(
+    () => scopeThreadRef(facts.ref.environmentId, facts.ref.threadId),
+    [facts.ref.environmentId, facts.ref.threadId],
   );
-  const attachments = useBubbleAttachments(facts.ref.environmentId);
+  const text = useComposerDraftStore((store) => store.getComposerDraft(draftTarget)?.prompt ?? "");
+  const setText = (next: string) => useComposerDraftStore.getState().setPrompt(draftTarget, next);
+  const attachments = useBubbleAttachments(facts.ref.environmentId, draftTarget);
   const [state, setState] = useState<
     | { readonly phase: "idle" | "sending" | "stopping" | "archiving" }
     | { readonly phase: "error"; message: string }
@@ -223,8 +204,7 @@ export function WorldBubble(props: {
       });
       return;
     }
-    // Sent: the bubble has done its job.
-    keepDraft.current = false;
+    // Sent: the bubble has done its job, and the shared draft is empty again.
     attachments.sent();
     onClose();
   };
@@ -277,20 +257,13 @@ export function WorldBubble(props: {
       });
       return;
     }
-    keepDraft.current = false;
     onArchived();
   };
 
   useArchiveShortcut(archive);
 
-  const expand = () => {
-    // Carry the unsent text and files into the full chat's composer.
-    const draft = scopeThreadRef(facts.ref.environmentId, facts.ref.threadId);
-    if (text.trim() !== "") useComposerDraftStore.getState().setPrompt(draft, text);
-    attachments.handOff(draft);
-    keepDraft.current = false;
-    onExpand();
-  };
+  // The draft is the chat's own, so the full chat opens with it as it stands.
+  const expand = onExpand;
 
   return (
     <BubbleComposer
