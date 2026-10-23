@@ -2,11 +2,14 @@ import * as Schema from "effect/Schema";
 import { deriveProjectIdentity } from "../../projectIdentity";
 import { ProjectMonogram } from "../ProjectMonogram";
 import {
+  PROJECT_SEARCH_ENTRIES_MAX_LIMIT,
   ProjectMonogramText,
+  type AssetResource,
   type EnvironmentId,
   type ProjectIconColor,
   type ProjectIconOverride,
 } from "@t3tools/contracts";
+import { ImageIcon } from "lucide-react";
 import { DynamicIcon, type IconName } from "lucide-react/dynamic";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -16,10 +19,12 @@ import {
   PROJECT_ICON_COLORS,
   projectIconColorClassName,
   projectImageIconPaths,
+  isNamedLogoOrIcon,
+  squareImageIconPaths,
 } from "../../projectIconOptions";
 import { cn } from "~/lib/utils";
+import { useAssetUrlEntries } from "../../assets/assetUrls";
 import { useProjectFilePickerQuery } from "../files/projectFilesQueryState";
-import { ProjectFavicon } from "../ProjectFavicon";
 import { Button } from "../ui/button";
 import {
   Dialog,
@@ -163,7 +168,8 @@ export function ProjectIconPickerDialog({
           {mode === "lucide" || mode === "monogram" ? (
             <div>
               <div className="mb-2 text-xs font-medium text-muted-foreground">Color</div>
-              <div className="flex flex-wrap gap-1.5" role="group" aria-label="Icon color">
+              {/* One row: swatches spread across it, and shrink rather than wrap when it's narrow. */}
+              <div className="flex justify-between" role="group" aria-label="Icon color">
                 {PROJECT_ICON_COLORS.map((option) => (
                   <button
                     key={option.value}
@@ -171,12 +177,17 @@ export function ProjectIconPickerDialog({
                     aria-label={option.label}
                     aria-pressed={color === option.value}
                     className={cn(
-                      "flex size-6 items-center justify-center rounded-full border border-transparent outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                      "flex aspect-square max-w-6 min-w-0 flex-1 items-center justify-center rounded-full border border-transparent outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                       color === option.value && "border-foreground/64",
                     )}
                     onClick={() => setColor(option.value)}
                   >
-                    <span className={cn("size-4 rounded-full", option.swatchClassName)} />
+                    <span
+                      className={cn(
+                        "aspect-square w-4 max-w-[66%] rounded-full",
+                        option.swatchClassName,
+                      )}
+                    />
                   </button>
                 ))}
               </div>
@@ -313,18 +324,51 @@ function ProjectImageGrid({
   readonly onSelect: (path: string) => void;
 }) {
   const [query, setQuery] = useState("");
-  const result = useProjectFilePickerQuery(environmentId, cwd, query, PROJECT_IMAGE_LIMIT * 2, {
-    imageOnly: true,
-  });
-  const paths = useMemo(
+  // Paths are cheap and many get left out (docs, tests, odd shapes), so the search asks for
+  // as many as the server allows.
+  const result = useProjectFilePickerQuery(
+    environmentId,
+    cwd,
+    query,
+    PROJECT_SEARCH_ENTRIES_MAX_LIMIT,
+    {
+      imageOnly: true,
+    },
+  );
+  // Twice the tiles we show, so dropping wide or tall images still leaves a full grid.
+  const candidates = useMemo(
     () =>
       projectImageIconPaths(
         result.entries.filter((entry) => entry.kind === "file").map((entry) => entry.path),
         result.matchedQuery,
-        PROJECT_IMAGE_LIMIT,
+        PROJECT_IMAGE_LIMIT * 2,
       ),
     [result.entries, result.matchedQuery],
   );
+  // Each tile shows the file itself. A project-favicon URL would not do: the server serves the
+  // project's saved icon for it whatever path is asked for, so every tile looked the same.
+  const resources = useMemo(
+    () => candidates.map((path): AssetResource => ({ _tag: "draft-workspace-file", cwd, path })),
+    [cwd, candidates],
+  );
+  const assets = useAssetUrlEntries(environmentId, resources);
+  // An icon is square, unless it says otherwise in its name. Raster sizes come from the file
+  // header; others are checked on load.
+  const [wideOnLoad, setWideOnLoad] = useState<ReadonlySet<string>>(() => new Set());
+  const square = useMemo(
+    () =>
+      squareImageIconPaths(
+        candidates,
+        assets.map((asset) => (asset === undefined ? undefined : (asset?.imageDimensions ?? null))),
+        PROJECT_IMAGE_LIMIT,
+      ),
+    [assets, candidates],
+  );
+  const urlByPath = useMemo(
+    () => new Map(candidates.map((path, index) => [path, assets[index]?.url ?? null])),
+    [assets, candidates],
+  );
+  const paths = square.paths.filter((path) => !wideOnLoad.has(path));
   return (
     <>
       <Input
@@ -353,16 +397,23 @@ function ProjectImageGrid({
                     />
                   }
                 >
-                  <ProjectFavicon
-                    project={{
-                      environmentId,
-                      workspaceRoot: cwd,
-                      title: "",
-                      faviconPath: path,
-                      projectIcon: null,
-                    }}
-                    className="size-7"
-                  />
+                  {/* No URL without file read access, and browsers cannot draw .icns. */}
+                  {urlByPath.get(path) ? (
+                    <img
+                      src={urlByPath.get(path)!}
+                      alt=""
+                      loading="lazy"
+                      draggable={false}
+                      className="size-7 object-contain"
+                      onLoad={(event) => {
+                        const { naturalWidth, naturalHeight } = event.currentTarget;
+                        if (naturalWidth === naturalHeight || isNamedLogoOrIcon(path)) return;
+                        setWideOnLoad((current) => new Set(current).add(path));
+                      }}
+                    />
+                  ) : (
+                    <ImageIcon className="size-5 text-muted-foreground" />
+                  )}
                 </TooltipTrigger>
                 <TooltipPopup>{path}</TooltipPopup>
               </Tooltip>
@@ -371,9 +422,9 @@ function ProjectImageGrid({
         </ScrollArea>
       ) : (
         <p className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
-          {result.isPending ? <Spinner size="sm" tone="muted" /> : null}
+          {result.isPending || square.pending ? <Spinner size="sm" tone="muted" /> : null}
           {result.error ??
-            (result.isPending
+            (result.isPending || square.pending
               ? "Looking for images…"
               : query.trim()
                 ? "No matching images."

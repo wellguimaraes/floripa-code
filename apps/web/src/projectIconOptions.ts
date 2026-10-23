@@ -92,8 +92,68 @@ export function projectImageIconPaths(
   query: string,
   limit: number,
 ): ReadonlyArray<string> {
-  if (query.trim().length > 0) return paths.slice(0, limit);
-  const iconLike = paths.filter((path) => ICON_LIKE_IMAGE.test(path));
-  const rest = paths.filter((path) => !ICON_LIKE_IMAGE.test(path));
+  const offered = paths.filter((path) => !isDocumentImage(path));
+  if (query.trim().length > 0) return offered.slice(0, limit);
+  const iconLike = offered.filter((path) => ICON_LIKE_IMAGE.test(path));
+  const rest = offered.filter((path) => !ICON_LIKE_IMAGE.test(path));
   return [...iconLike, ...rest].slice(0, limit);
+}
+
+const DOCUMENT_IMAGE_WORDS = new Set([
+  "pdf",
+  "doc",
+  "docs",
+  "documentation",
+  "screenshot",
+  "screenshots",
+  "snapshot",
+  "snapshots",
+  "test",
+  "tests",
+  "fixture",
+  "fixtures",
+  "diagram",
+  "diagrams",
+]);
+
+/**
+ * An image that illustrates a document, test or screenshot rather than the project, by a word
+ * anywhere in its path. Whole words, so `docker-logo.png` is not a doc.
+ */
+export function isDocumentImage(path: string): boolean {
+  return path
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .some((word) => DOCUMENT_IMAGE_WORDS.has(word));
+}
+
+/** A file named as a logo or icon is one, whatever its shape. */
+export function isNamedLogoOrIcon(path: string): boolean {
+  return /logo|icon/i.test(path.slice(path.lastIndexOf("/") + 1));
+}
+
+/**
+ * The image tiles to show: square images, and any named as a logo or icon, in order, up to `limit`. `sizes` lines up
+ * with `paths`: undefined while a size is still being read, null when it can't be read
+ * (vectors, icons, no file access), which keeps the image. Waits on a pending size so
+ * tiles don't appear and then vanish.
+ */
+export function squareImageIconPaths(
+  paths: ReadonlyArray<string>,
+  sizes: ReadonlyArray<{ readonly width: number; readonly height: number } | null | undefined>,
+  limit: number,
+): { readonly paths: ReadonlyArray<string>; readonly pending: boolean } {
+  const kept: string[] = [];
+  for (const [index, path] of paths.entries()) {
+    if (kept.length === limit) break;
+    if (isNamedLogoOrIcon(path)) {
+      kept.push(path);
+      continue;
+    }
+    const size = sizes[index];
+    if (size === undefined) return { paths: kept, pending: true };
+    if (size === null || size.width === size.height) kept.push(path);
+  }
+  return { paths: kept, pending: false };
 }

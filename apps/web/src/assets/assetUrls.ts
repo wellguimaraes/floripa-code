@@ -6,7 +6,7 @@ import {
   resolveAssetUrl,
 } from "@t3tools/client-runtime/state/assets";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import type { AssetResource, EnvironmentId } from "@t3tools/contracts";
+import type { AssetImageDimensions, AssetResource, EnvironmentId } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { useCallback, useMemo } from "react";
 
@@ -58,10 +58,20 @@ export function useAssetUrlRefresh(
   }, [environmentId, resource, refresh, httpBaseUrl]);
 }
 
-export function useAssetUrls(
+/** A resource's URL and, for raster images, the pixel size read from its header. */
+export interface AssetUrlEntry {
+  readonly url: string;
+  readonly imageDimensions: AssetImageDimensions | undefined;
+}
+
+/**
+ * One entry per resource: undefined while its URL is on the way, null when there is none
+ * (no file access, no connection, or the server refused it).
+ */
+export function useAssetUrlEntries(
   environmentId: EnvironmentId,
   resources: ReadonlyArray<AssetResource>,
-): ReadonlyArray<string | null> {
+): ReadonlyArray<AssetUrlEntry | null | undefined> {
   const preparedConnection = usePreparedConnection(environmentId);
   const { canReadFiles } = useFilesystemReadAccess(environmentId);
   const allowedResources = useMemo(
@@ -94,9 +104,18 @@ export function useAssetUrls(
       )
         return null;
       const result = results[resultIndex++];
-      return result && AsyncResult.isSuccess(result)
-        ? resolveAssetUrl(preparedConnection.value.httpBaseUrl, result.value.relativeUrl)
-        : null;
+      if (result === undefined || AsyncResult.isInitial(result)) return undefined;
+      if (!AsyncResult.isSuccess(result)) return null;
+      const url = resolveAssetUrl(preparedConnection.value.httpBaseUrl, result.value.relativeUrl);
+      return url === null ? null : { url, imageDimensions: result.value.imageDimensions };
     });
   }, [canReadFiles, preparedConnection, resources, results]);
+}
+
+export function useAssetUrls(
+  environmentId: EnvironmentId,
+  resources: ReadonlyArray<AssetResource>,
+): ReadonlyArray<string | null> {
+  const entries = useAssetUrlEntries(environmentId, resources);
+  return useMemo(() => entries.map((entry) => entry?.url ?? null), [entries]);
 }
