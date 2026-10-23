@@ -383,6 +383,19 @@ interface TimelineRowActivityState {
 }
 
 const TimelineRowCtx = createContext<TimelineRowSharedState>(null!);
+/** What a sent message's body and chips read from around them, inside the timeline or out of it. */
+export type UserMessageChipState = Pick<
+  TimelineRowSharedState,
+  | "threadRef"
+  | "markdownCwd"
+  | "resolvedTheme"
+  | "workspaceRoot"
+  | "skills"
+  | "activeThreadEnvironmentId"
+  | "openPullRequest"
+  | "onImageExpand"
+>;
+const UserMessageChipCtx = createContext<UserMessageChipState>(null!);
 const TimelineRowActivityCtx = createContext<TimelineRowActivityState>(null!);
 
 interface WorkGroupViewState {
@@ -1594,83 +1607,85 @@ const ConversationTimeline = memo(function ConversationTimeline({
   return (
     <MarkdownFindContext value={findActive}>
       <TimelineRowCtx value={sharedState}>
-        <TimelineRowActivityCtx value={activityState}>
-          <TooltipScrollDismissArea
-            ref={setTimelineViewportElement}
-            className="relative h-full min-h-0"
-            data-assistant-citation-viewport="true"
-          >
-            {onCiteAssistantText && citationThreadRef ? (
-              <AssistantSelectionToolbar
-                viewport={timelineViewportElement}
-                threadRef={citationThreadRef}
-                onCite={onCiteAssistantText}
+        <UserMessageChipCtx value={sharedState}>
+          <TimelineRowActivityCtx value={activityState}>
+            <TooltipScrollDismissArea
+              ref={setTimelineViewportElement}
+              className="relative h-full min-h-0"
+              data-assistant-citation-viewport="true"
+            >
+              {onCiteAssistantText && citationThreadRef ? (
+                <AssistantSelectionToolbar
+                  viewport={timelineViewportElement}
+                  threadRef={citationThreadRef}
+                  onCite={onCiteAssistantText}
+                />
+              ) : null}
+              <LegendList<MessagesTimelineRow>
+                ref={setTimelineList}
+                data={rows}
+                extraData={`${listIdentityKey}:${rows.length}`}
+                keyExtractor={keyExtractor}
+                getItemType={getItemType}
+                renderItem={renderItem}
+                estimatedItemSize={90}
+                // Short threads sit just above the composer instead of under the header.
+                alignItemsAtEnd
+                initialScrollAtEnd={
+                  !findActive && citationRequest === null && rememberedPosition?.atEnd !== false
+                }
+                // Legend needs a data refresh to mount new pins without a scroll event.
+                dataVersion={readyCitationRequest?.key ?? listIdentityKey}
+                {...(alwaysRender ? { alwaysRender } : {})}
+                onLoad={handleListLoad}
+                {...(anchoredEndSpace ? { anchoredEndSpace } : {})}
+                contentInsetEndAdjustment={anchoredEndSpace ? contentInsetEndAdjustment : 0}
+                maintainScrollAtEnd={
+                  citationPositioning ||
+                  (restoringThreadPosition && rememberedPosition?.atEnd === false) ||
+                  anchoredEndSpace ||
+                  !liveFollowEnabled ||
+                  fullscreenAppRowId !== null ||
+                  disclosureToggleSettling
+                    ? false
+                    : isWorking && !prefersReducedMotion && settlingListIdentity === null
+                      ? TIMELINE_MAINTAIN_SCROLL_AT_END_SMOOTH
+                      : TIMELINE_MAINTAIN_SCROLL_AT_END
+                }
+                maintainVisibleContentPosition={
+                  findActive ||
+                  citationPositioning ||
+                  (restoringThreadPosition && rememberedPosition?.atEnd === false)
+                    ? false
+                    : maintainVisibleContentPosition
+                }
+                maintainScrollAtEndThreshold={1}
+                onScroll={handleScroll}
+                onItemSizeChanged={reportContentOverflow}
+                className={cn(
+                  "messages-timeline-scroll scrollbar-gutter-both h-full min-h-0 overflow-x-hidden overscroll-y-contain [overflow-anchor:none]",
+                  topFadeEnabled && "topbar-scroll-fade",
+                )}
+                ListHeaderComponent={listHeader}
+                ListFooterComponent={timelineListFooter}
               />
-            ) : null}
-            <LegendList<MessagesTimelineRow>
-              ref={setTimelineList}
-              data={rows}
-              extraData={`${listIdentityKey}:${rows.length}`}
-              keyExtractor={keyExtractor}
-              getItemType={getItemType}
-              renderItem={renderItem}
-              estimatedItemSize={90}
-              // Short threads sit just above the composer instead of under the header.
-              alignItemsAtEnd
-              initialScrollAtEnd={
-                !findActive && citationRequest === null && rememberedPosition?.atEnd !== false
-              }
-              // Legend needs a data refresh to mount new pins without a scroll event.
-              dataVersion={readyCitationRequest?.key ?? listIdentityKey}
-              {...(alwaysRender ? { alwaysRender } : {})}
-              onLoad={handleListLoad}
-              {...(anchoredEndSpace ? { anchoredEndSpace } : {})}
-              contentInsetEndAdjustment={anchoredEndSpace ? contentInsetEndAdjustment : 0}
-              maintainScrollAtEnd={
-                citationPositioning ||
-                (restoringThreadPosition && rememberedPosition?.atEnd === false) ||
-                anchoredEndSpace ||
-                !liveFollowEnabled ||
-                fullscreenAppRowId !== null ||
-                disclosureToggleSettling
-                  ? false
-                  : isWorking && !prefersReducedMotion && settlingListIdentity === null
-                    ? TIMELINE_MAINTAIN_SCROLL_AT_END_SMOOTH
-                    : TIMELINE_MAINTAIN_SCROLL_AT_END
-              }
-              maintainVisibleContentPosition={
-                findActive ||
-                citationPositioning ||
-                (restoringThreadPosition && rememberedPosition?.atEnd === false)
-                  ? false
-                  : maintainVisibleContentPosition
-              }
-              maintainScrollAtEndThreshold={1}
-              onScroll={handleScroll}
-              onItemSizeChanged={reportContentOverflow}
-              className={cn(
-                "messages-timeline-scroll scrollbar-gutter-both h-full min-h-0 overflow-x-hidden overscroll-y-contain [overflow-anchor:none]",
-                topFadeEnabled && "topbar-scroll-fade",
-              )}
-              ListHeaderComponent={listHeader}
-              ListFooterComponent={timelineListFooter}
-            />
-            {pinnedPrompt && pinnedPromptRow?.kind === "message" ? (
-              <TimelinePinnedPrompt
-                row={pinnedPromptRow}
-                onSelect={() => scrollToMinimapItem(pinnedPrompt)}
+              {pinnedPrompt && pinnedPromptRow?.kind === "message" ? (
+                <TimelinePinnedPrompt
+                  row={pinnedPromptRow}
+                  onSelect={() => scrollToMinimapItem(pinnedPrompt)}
+                />
+              ) : null}
+              <TimelineMinimap
+                items={minimapItems}
+                hasPersistentGutter={minimapHasPersistentGutter}
+                hitStripWidth={minimapHitStripWidth}
+                currentIndex={minimapCurrentIndex}
+                stripMap={minimapStripMap}
+                onSelect={scrollToMinimapItem}
               />
-            ) : null}
-            <TimelineMinimap
-              items={minimapItems}
-              hasPersistentGutter={minimapHasPersistentGutter}
-              hitStripWidth={minimapHitStripWidth}
-              currentIndex={minimapCurrentIndex}
-              stripMap={minimapStripMap}
-              onSelect={scrollToMinimapItem}
-            />
-          </TooltipScrollDismissArea>
-        </TimelineRowActivityCtx>
+            </TooltipScrollDismissArea>
+          </TimelineRowActivityCtx>
+        </UserMessageChipCtx>
       </TimelineRowCtx>
     </MarkdownFindContext>
   );
@@ -1775,22 +1790,6 @@ function TimelinePinnedPrompt({
   onSelect: () => void;
 }) {
   const ctx = use(TimelineRowCtx);
-  const resolvedContext = useMemo(() => resolveUserMessageContext(row.message), [row.message]);
-  const renderContextReference = useCallback(
-    (reference: ChatMarkdownContextReference) => (
-      <UserMessageContextReferenceChip
-        reference={reference}
-        record={asKnownContextRecord(resolvedContext.recordsById.get(reference.contextId))}
-        annotationImage={null}
-        attachment={null}
-        onExpandImage={NOOP_PINNED_PROMPT_ACTION}
-        onExpandVideo={NOOP_PINNED_PROMPT_ACTION}
-        onOpenFile={NOOP_PINNED_PROMPT_ACTION}
-      />
-    ),
-    [resolvedContext],
-  );
-  const attachmentCount = row.message.attachments?.length ?? 0;
   return (
     // Shares the list's lane padding and gutters, so the bubble lines up with the rows.
     <div className="messages-timeline-scroll scrollbar-gutter-both pointer-events-none absolute inset-x-0 top-0 z-30 overflow-hidden pb-6">
@@ -1809,24 +1808,70 @@ function TimelinePinnedPrompt({
           }}
           className="pointer-events-auto max-w-[80%] cursor-pointer rounded-2xl bg-message p-3 text-message-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
         >
-          {/* Clamp an inner box: the padded bubble would let a third line peek through. */}
-          <div inert className="line-clamp-2">
-            {resolvedContext.text.trim().length > 0 ? (
-              <UserMessageBody
-                text={resolvedContext.text}
-                renderContextReference={renderContextReference}
-                skills={ctx.skills}
-                markdownCwd={ctx.markdownCwd}
-              />
-            ) : (
-              `${attachmentCount} ${attachmentCount === 1 ? "attachment" : "attachments"}`
-            )}
-          </div>
+          <ClampedUserMessage message={row.message} chips={ctx} />
         </div>
       </div>
     </div>
   );
 }
+
+/**
+ * A sent message clipped to two lines, with the timeline's body and chips: the pinned
+ * prompt, and the world's agent bubble. Chips render as labels only, since the whole
+ * preview is one target. Goes inside the padded bubble, never on it, so a third line
+ * can't peek through the padding.
+ */
+export const ClampedUserMessage = memo(function ClampedUserMessage({
+  message,
+  chips,
+}: {
+  message: Pick<ChatMessage, "text" | "context" | "attachments">;
+  chips: UserMessageChipState;
+}) {
+  const resolvedContext = useMemo(() => resolveUserMessageContext(message), [message]);
+  const renderContextReference = useCallback(
+    (reference: ChatMarkdownContextReference) => {
+      const record = asKnownContextRecord(resolvedContext.recordsById.get(reference.contextId));
+      const attachment =
+        record?.kind === "image" || record?.kind === "file"
+          ? (message.attachments?.find(
+              (candidate): candidate is ChatImageAttachment | ChatFileAttachment =>
+                candidate.id === record.attachmentId &&
+                (isImageAttachment(candidate) || isFileAttachment(candidate)),
+            ) ?? null)
+          : null;
+      return (
+        <UserMessageContextReferenceChip
+          reference={reference}
+          record={record}
+          annotationImage={null}
+          attachment={attachment}
+          onExpandImage={NOOP_PINNED_PROMPT_ACTION}
+          onExpandVideo={NOOP_PINNED_PROMPT_ACTION}
+          onOpenFile={NOOP_PINNED_PROMPT_ACTION}
+        />
+      );
+    },
+    [resolvedContext, message.attachments],
+  );
+  const attachmentCount = message.attachments?.length ?? 0;
+  return (
+    <UserMessageChipCtx value={chips}>
+      <div inert className="line-clamp-2">
+        {resolvedContext.text.trim().length > 0 ? (
+          <UserMessageBody
+            text={resolvedContext.text}
+            renderContextReference={renderContextReference}
+            skills={chips.skills}
+            markdownCwd={chips.markdownCwd}
+          />
+        ) : (
+          `${attachmentCount} ${attachmentCount === 1 ? "attachment" : "attachments"}`
+        )}
+      </div>
+    </UserMessageChipCtx>
+  );
+});
 
 const NOOP_PINNED_PROMPT_ACTION = () => {};
 
@@ -4376,7 +4421,7 @@ function UserMessageMentionChip(props: {
   record: Extract<KnownComposerContextRecord, { kind: "mention" }>;
   copyMarkdown: string;
 }) {
-  const ctx = use(TimelineRowCtx);
+  const ctx = use(UserMessageChipCtx);
   return (
     <Tooltip>
       <TooltipTrigger
@@ -4430,7 +4475,7 @@ function UserMessagePullRequestContextChip(props: {
   copyMarkdown: string;
   kind: ContextChipKind;
 }) {
-  const { activeThreadEnvironmentId, openPullRequest } = use(TimelineRowCtx);
+  const { activeThreadEnvironmentId, openPullRequest } = use(UserMessageChipCtx);
   const metadata = props.record.pullRequest;
   if (metadata === undefined) return null;
   return (
@@ -4450,7 +4495,7 @@ function UserMessagePreviewAnnotationDetails(props: {
   record: Extract<KnownComposerContextRecord, { kind: "preview-annotation" }>;
   image: ChatImageAttachment | null;
 }) {
-  const ctx = use(TimelineRowCtx);
+  const ctx = use(UserMessageChipCtx);
   const visibleElements = props.record.elements ?? [];
   return (
     <div className="max-w-full overflow-hidden rounded-lg border border-border/70 bg-background/70">
@@ -4822,7 +4867,7 @@ function UserMessageContextReferenceChip(props: {
   onExpandVideo: (file: ChatFileAttachment) => void;
   onOpenFile: (file: ChatFileAttachment) => void;
 }) {
-  const { resolvedTheme } = use(TimelineRowCtx);
+  const { resolvedTheme } = use(UserMessageChipCtx);
   const copyMarkdown = formatComposerContextReference({
     kind: props.reference.kind,
     contextId: props.reference.contextId as ComposerContextId,
@@ -4924,7 +4969,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   markdownCwd: string | undefined;
 }) {
-  const ctx = use(TimelineRowCtx);
+  const ctx = use(UserMessageChipCtx);
   if (props.text.length === 0) {
     return null;
   }
@@ -4944,7 +4989,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
 });
 
 function UserMessageReviewCommentCard({ comment }: { comment: ReviewCommentContext }) {
-  const ctx = use(TimelineRowCtx);
+  const ctx = use(UserMessageChipCtx);
   const fenceLanguage = comment.fenceLanguage ?? "diff";
   const renderablePatch = getRenderablePatch(
     buildReviewCommentRenderablePatch(comment),

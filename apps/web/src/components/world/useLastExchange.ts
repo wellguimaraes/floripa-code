@@ -12,7 +12,7 @@ function sameExchange(a: LastExchange, b: LastExchange): boolean {
   return (
     a.sent?.id === b.sent?.id &&
     a.sent?.text === b.sent?.text &&
-    a.sent?.attachmentCount === b.sent?.attachmentCount &&
+    a.sent?.attachments.length === b.sent?.attachments.length &&
     a.sent?.queued?.runId === b.sent?.queued?.runId &&
     a.sent?.queued?.steerTargetRunId === b.sent?.queued?.steerTargetRunId &&
     a.reply?.id === b.reply?.id &&

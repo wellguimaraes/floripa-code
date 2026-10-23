@@ -1,5 +1,11 @@
 import { deriveThreadQueueWorkflowState } from "@t3tools/client-runtime/state/thread-workflows";
-import type { ModelSelection, OrchestrationV2ThreadProjection, RunId } from "@t3tools/contracts";
+import type {
+  ChatAttachment,
+  ModelSelection,
+  OrchestrationMessageContext,
+  OrchestrationV2ThreadProjection,
+  RunId,
+} from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
 /** A sent message still waiting behind the agent's current run. */
@@ -12,7 +18,9 @@ export interface QueuedSend {
 export interface SentMessage {
   readonly id: string;
   readonly text: string;
-  readonly attachmentCount: number;
+  /** The chips' records, for rendering them inline as the chat does. */
+  readonly context: OrchestrationMessageContext | undefined;
+  readonly attachments: ReadonlyArray<ChatAttachment>;
   readonly queued: QueuedSend | null;
 }
 
@@ -61,7 +69,8 @@ export function lastExchange(projection: OrchestrationV2ThreadProjection): LastE
         : {
             id: sentMessage.id,
             text: sentMessage.text,
-            attachmentCount: sentMessage.attachments.length,
+            context: sentMessage.context,
+            attachments: sentMessage.attachments,
             queued:
               queuedRun === undefined
                 ? null

@@ -1,5 +1,7 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { resolveProviderSkillsForCwd } from "@t3tools/client-runtime/providerSkills";
+import { shouldPreserveAssistantLineBreaks } from "@t3tools/shared/markdownPipeline";
 import { fileBasename } from "@t3tools/shared/path";
 import { ArchiveIcon, MessagesSquareIcon, RefreshCwIcon, SquareIcon, XIcon } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -23,7 +25,9 @@ import { Button } from "../ui/button";
 import { Kbd } from "../ui/kbd";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import ChatMarkdown from "../ChatMarkdown";
 import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "../chat/composerPromptHistory";
+import { ClampedUserMessage, type UserMessageChipState } from "../chat/MessagesTimeline";
 import { getTriggerDisplayModelName } from "../chat/providerIconUtils";
 import { BubbleComposer } from "./BubbleComposer";
 import type { CharacterFacts } from "./engine/facts";
@@ -31,7 +35,6 @@ import { HuePicker } from "./HuePicker";
 import { type FamilyShades as Shades, palette } from "./scene/palette";
 import { useBubbleAttachments } from "./useBubbleAttachments";
 import { ARCHIVE_SHORTCUT, useArchiveShortcut } from "./useArchiveShortcut";
-import { BubbleMarkdown } from "./BubbleMarkdown";
 import type { QueuedSend } from "./lastExchange";
 import { RollingSwap, TypingDots } from "./RollingSwap";
 import { useLastExchange } from "./useLastExchange";
@@ -45,6 +48,9 @@ export function isStoppable(facts: CharacterFacts): boolean {
   if (facts.status === "waiting") return facts.backgroundTask || facts.hasWorkingKids;
   return ["working", "approval", "input"].includes(facts.status);
 }
+
+const EMPTY_SKILLS: UserMessageChipState["skills"] = [];
+const NOOP = () => {};
 
 const NO_MODIFIERS = {
   metaKey: false,
@@ -114,10 +120,26 @@ export function WorldBubble(props: {
   // Scrolled away from the top: the reply is passing under your pinned message.
   const [exchangeScrolled, setExchangeScrolled] = useState(false);
   const { resolvedTheme } = useTheme();
-  const replyStyle =
-    resolvedTheme === "dark"
-      ? { backgroundColor: palette.bubbleReplyDark, color: palette.bubbleReplyTextDark }
-      : { backgroundColor: palette.bubbleReply, color: palette.bubbleText };
+  // Both messages render as the chat does, chips and skills included.
+  const cwd = thread?.worktreePath ?? project?.workspaceRoot ?? null;
+  const skills = useMemo(
+    () => (provider === null ? EMPTY_SKILLS : resolveProviderSkillsForCwd(provider, cwd)),
+    [provider, cwd],
+  );
+  const chips = useMemo<UserMessageChipState>(
+    () => ({
+      threadRef: facts.ref,
+      markdownCwd: cwd ?? undefined,
+      resolvedTheme,
+      workspaceRoot: project?.workspaceRoot,
+      skills,
+      activeThreadEnvironmentId: facts.ref.environmentId,
+      // The sent message's chips are labels only.
+      openPullRequest: NOOP,
+      onImageExpand: NOOP,
+    }),
+    [facts.ref, cwd, resolvedTheme, project?.workspaceRoot, skills],
+  );
   useLayoutEffect(() => {
     const element = exchange.current;
     if (hasExchange && element !== null) element.scrollTop = element.scrollHeight;
@@ -268,7 +290,7 @@ export function WorldBubble(props: {
   return (
     <BubbleComposer
       environmentId={facts.ref.environmentId}
-      cwd={thread?.worktreePath ?? project?.workspaceRoot ?? null}
+      cwd={cwd}
       provider={provider}
       attachments={attachments}
       text={text}
@@ -399,7 +421,7 @@ export function WorldBubble(props: {
               <XIcon />
             </Button>
           </div>
-          {/* The last exchange as a messaging-app thread: yours on the right, the agent's on the left.
+          {/* The last exchange as the chat shows it: yours in a bubble on the right, the agent's below.
               Capped in height: a long reply scrolls under your message, which stays pinned on top. */}
           {hasExchange ? (
             // Ruled off below, edge to edge, like the header.
@@ -417,21 +439,17 @@ export function WorldBubble(props: {
                     <div className="pointer-events-none absolute inset-x-0 top-full h-10 bg-linear-to-b from-popover to-transparent" />
                   ) : null}
                   <div
-                    className="max-w-[85%] rounded-lg px-3 py-2 break-words"
-                    // Light in every app theme, so the text stays dark on them.
-                    style={{ backgroundColor: palette.bubbleSent, color: palette.bubbleText }}
+                    className="max-w-[85%] rounded-lg bg-message px-3 py-2 break-words text-message-foreground"
                     aria-label="Your last message"
                   >
-                    {/* Clamp on an inner span: overflow clips at the padding edge, so clamping the padded
-                        element lets the third line peek through the bottom padding. */}
                     <RollingSwap swapKey={lastSent.id}>
-                      <span className="line-clamp-2">
-                        {lastSent.text === ATTACHMENT_ONLY_BOOTSTRAP_PROMPT ? (
-                          `${lastSent.attachmentCount} ${lastSent.attachmentCount === 1 ? "attachment" : "attachments"}`
-                        ) : (
-                          <BubbleMarkdown text={lastSent.text} />
-                        )}
-                      </span>
+                      {lastSent.text === ATTACHMENT_ONLY_BOOTSTRAP_PROMPT ? (
+                        <span className="line-clamp-2">
+                          {`${lastSent.attachments.length} ${lastSent.attachments.length === 1 ? "attachment" : "attachments"}`}
+                        </span>
+                      ) : (
+                        <ClampedUserMessage message={lastSent} chips={chips} />
+                      )}
                     </RollingSwap>
                   </div>
                   {lastSent.queued !== null ? (
@@ -439,20 +457,23 @@ export function WorldBubble(props: {
                   ) : null}
                 </div>
               ) : null}
-              {/* The agent's whole answer. */}
+              {/* The agent's whole answer, unboxed across the width like the chat's. */}
               {typing || lastReply !== null ? (
-                <div
-                  className="mr-auto flex max-w-[85%] min-w-0 flex-col rounded-lg px-3 py-2"
-                  style={replyStyle}
-                >
+                <div className="flex min-w-0 flex-col px-1">
                   <RollingSwap swapKey={typing ? "typing" : (lastReply?.id ?? "typing")}>
                     {typing || lastReply === null ? (
                       <TypingDots />
                     ) : (
                       <>
-                        <BubbleMarkdown text={lastReply.text} block />
+                        <ChatMarkdown
+                          text={lastReply.text}
+                          cwd={cwd ?? undefined}
+                          threadRef={facts.ref}
+                          lineBreaks={shouldPreserveAssistantLineBreaks(lastReply.text)}
+                          skills={skills}
+                        />
                         {replyMeta ? (
-                          <span className="mt-1 max-w-full self-end truncate text-xs opacity-60">
+                          <span className="max-w-full self-end truncate py-2 text-muted-foreground text-xs">
                             {replyMeta}
                           </span>
                         ) : null}
