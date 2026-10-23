@@ -20,6 +20,7 @@ import { cn } from "../../lib/utils";
 import { selectThreadRightPanelState, useRightPanelStore } from "../../rightPanelStore";
 import { useThreadShell } from "../../state/entities";
 import { buildThreadRouteParams, type ThreadRouteTarget } from "../../threadRoutes";
+import { DevOnboardingButton } from "../onboarding/DevOnboardingButton";
 import { RightPanelResizeHandle } from "../preview/RightPanelResizeHandle";
 import { ThreadRouteView } from "../ThreadRouteView";
 import { Button } from "../ui/button";
@@ -243,6 +244,7 @@ export function WorldLayout({
           <TimeSlider />
           <WeatherToggle />
           {WORLD_MANAGERS_AVAILABLE ? <ManagerToggle /> : null}
+          <DevOnboardingButton variant="glass" />
           <div ref={setToolbar} className="flex items-center gap-2" />
         </div>
       </div>

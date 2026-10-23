@@ -14,6 +14,7 @@ import {
   useEnvironmentStageLabel,
 } from "../SidebarStageBackdrop";
 import { Badge } from "../ui/badge";
+import { DevOnboardingButton } from "../onboarding/DevOnboardingButton";
 import {
   SidebarFooter,
   SidebarMenu,
@@ -73,6 +74,7 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
           </div>
         ) : null}
       </div>
+      <DevOnboardingButton variant="ghost" />
     </div>
   );
 });
