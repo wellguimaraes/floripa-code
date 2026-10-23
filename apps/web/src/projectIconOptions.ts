@@ -79,3 +79,21 @@ export function firstEmoji(value: string): string | null {
   }
   return segment;
 }
+
+const ICON_LIKE_IMAGE = /(favicon|app-?icon|apple-touch|icon|logo)[^/]*$/i;
+
+/**
+ * The project's images to offer as icons: with no search, files named like an
+ * icon or logo lead, in the server's order otherwise. Capped, since each one
+ * shown asks the server for its URL.
+ */
+export function projectImageIconPaths(
+  paths: ReadonlyArray<string>,
+  query: string,
+  limit: number,
+): ReadonlyArray<string> {
+  if (query.trim().length > 0) return paths.slice(0, limit);
+  const iconLike = paths.filter((path) => ICON_LIKE_IMAGE.test(path));
+  const rest = paths.filter((path) => !ICON_LIKE_IMAGE.test(path));
+  return [...iconLike, ...rest].slice(0, limit);
+}

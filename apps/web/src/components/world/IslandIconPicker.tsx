@@ -118,12 +118,15 @@ export function IslandIconPicker(props: {
     <Suspense fallback={null}>
       <ProjectIconPickerDialog
         current={main.projectIcon ?? null}
+        currentFaviconPath={main.faviconPath ?? null}
+        environmentId={main.environmentId}
+        cwd={main.workspaceRoot}
         projectName={main.title}
         open
         onOpenChange={onOpenChange}
         onSelect={(icon) => {
           onClose();
-          onSelect({ faviconPath: null, projectIcon: icon });
+          onSelect(icon);
         }}
       />
     </Suspense>

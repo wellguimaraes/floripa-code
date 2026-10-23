@@ -590,10 +590,13 @@ function ProjectDetail({
         <Suspense fallback={null}>
           <ProjectIconPickerDialog
             current={projectIcon}
+            currentFaviconPath={representative.faviconPath ?? null}
+            environmentId={representative.environmentId}
+            cwd={representative.workspaceRoot}
             projectName={representative.title}
             open
             onOpenChange={setIconPickerOpen}
-            onSelect={(icon) => void setProjectIcon({ faviconPath: null, projectIcon: icon })}
+            onSelect={(icon) => void setProjectIcon(icon)}
           />
         </Suspense>
       ) : null}

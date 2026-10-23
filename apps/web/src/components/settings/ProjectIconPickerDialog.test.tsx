@@ -1,3 +1,4 @@
+import { EnvironmentId } from "@t3tools/contracts";
 import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vite-plus/test";
@@ -43,6 +44,9 @@ describe("ProjectIconPickerDialog", () => {
     const markup = renderToStaticMarkup(
       <ProjectIconPickerDialog
         current={null}
+        currentFaviconPath={null}
+        environmentId={EnvironmentId.make("environment-test")}
+        cwd="/tmp/test"
         projectName="Test"
         open
         onOpenChange={() => {}}
