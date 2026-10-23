@@ -2280,9 +2280,10 @@ code {
 }
 
 /* Chips type at the prompt's own size here (sent messages keep them a step
-   smaller), nudged up to sit on the text's baseline. */
+   smaller), nudged up to sit on the text's baseline. An offset, not a margin:
+   a middle-aligned inline box moves only half of a negative margin. */
 .composer-tiptap [data-composer-chip] {
-  margin-top: -2px;
+  top: -2px;
 }
 
 .composer-tiptap [data-context-chip] {
