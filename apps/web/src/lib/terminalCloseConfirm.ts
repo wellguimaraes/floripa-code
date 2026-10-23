@@ -13,11 +13,15 @@ export function isTerminalCloseConfirmPending(): boolean {
  * buttons, the `terminal.close` keybinding, and closing a terminal surface from
  * the tab strip. Auto-exit cleanup and bulk tab closes skip this path and close
  * directly. A click passes its button as `anchor`, so the confirmation opens beside it.
+ *
+ * `labels` names only the closing terminals with a running subprocess; with none,
+ * an idle shell has nothing to lose, so the close goes through without asking.
  */
 export async function confirmTerminalClose(
-  labels: readonly [string, ...string[]],
+  labels: readonly string[],
   anchor?: Element | null,
 ): Promise<boolean> {
+  if (labels.length === 0) return true;
   const localApi = readLocalApi();
   if (!localApi) return true;
   pendingConfirmations += 1;

@@ -34,6 +34,7 @@ import {
 } from "react";
 import { Button } from "~/components/ui/button";
 import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { readTextFromClipboard, writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { cn } from "~/lib/utils";
@@ -61,7 +62,7 @@ import {
   terminalDeleteShortcutData,
   terminalNavigationShortcutData,
 } from "../keybindings";
-import { type ThreadTerminalGroup } from "../types";
+import { MAX_TERMINALS_PER_GROUP, type ThreadTerminalGroup } from "../types";
 import { readLocalApi } from "~/localApi";
 import { confirmTerminalClose } from "~/lib/terminalCloseConfirm";
 import { useClientSettings } from "../hooks/useSettings";
@@ -1069,10 +1070,15 @@ interface ThreadTerminalDrawerProps {
   closeShortcutLabel?: string | undefined;
   onActiveTerminalChange: (terminalId: string) => void;
   onCloseTerminal: (terminalId: string) => void;
+  /** Adds a terminal beside the visible ones, from the button floating at the top right. */
+  onSplitTerminal?: (() => void) | undefined;
+  splitShortcutLabel?: string | undefined;
   onAddTerminalContext: (selection: TerminalContextSelection) => void;
   keybindings: ResolvedKeybindingsConfig;
   /** Prefer server-provided tab titles when present (e.g. active subprocess name). */
   terminalLabelsById?: ReadonlyMap<string, string>;
+  /** Terminals with a running subprocess; only these ask before closing. */
+  runningTerminalIds?: ReadonlySet<string>;
   /** Prefer per-session launch locations when the server already knows a terminal. */
   terminalLaunchLocationsById?: ReadonlyMap<string, TerminalLaunchLocation>;
   /** Off when the panel's tab bar already draws its own bottom border (the world's frame). */
@@ -1101,9 +1107,12 @@ export default function ThreadTerminalDrawer({
   closeShortcutLabel,
   onActiveTerminalChange,
   onCloseTerminal,
+  onSplitTerminal,
+  splitShortcutLabel,
   onAddTerminalContext,
   keybindings,
   terminalLabelsById,
+  runningTerminalIds,
   terminalLaunchLocationsById,
   topBorder = true,
 }: ThreadTerminalDrawerProps) {
@@ -1259,14 +1268,22 @@ export default function ThreadTerminalDrawer({
   const confirmCloseTerminal = useCallback(
     (terminalId: string, anchor: Element) => {
       if (!canOperateTerminal) return;
-      const label = terminalLabelById.get(terminalId) ?? getTerminalLabel(terminalId);
-      void confirmTerminalClose([label], anchor).then((confirmed) => {
+      const runningLabels = runningTerminalIds?.has(terminalId)
+        ? [terminalLabelById.get(terminalId) ?? getTerminalLabel(terminalId)]
+        : [];
+      void confirmTerminalClose(runningLabels, anchor).then((confirmed) => {
         if (confirmed && readEnvironmentScope(threadRef.environmentId, AuthTerminalOperateScope)) {
           onCloseTerminal(terminalId);
         }
       });
     },
-    [canOperateTerminal, onCloseTerminal, terminalLabelById, threadRef.environmentId],
+    [
+      canOperateTerminal,
+      onCloseTerminal,
+      runningTerminalIds,
+      terminalLabelById,
+      threadRef.environmentId,
+    ],
   );
 
   useEffect(() => {
@@ -1305,6 +1322,12 @@ export default function ThreadTerminalDrawer({
   }
 
   const activeTerminalLaunchLocation = resolveTerminalLaunchLocation(resolvedActiveTerminalId);
+  const splitLimitReached = normalizedTerminalIds.length >= MAX_TERMINALS_PER_GROUP;
+  const splitActionLabel = splitLimitReached
+    ? `Split terminal (max ${MAX_TERMINALS_PER_GROUP})`
+    : splitShortcutLabel
+      ? `Split terminal (${splitShortcutLabel})`
+      : "Split terminal";
 
   return (
     <aside
@@ -1322,7 +1345,27 @@ export default function ThreadTerminalDrawer({
             hasTerminalSidebar && "gap-1.5",
           )}
         >
-          <div className="min-w-0 flex-1">
+          <div className="relative min-w-0 flex-1">
+            {onSplitTerminal ? (
+              <div className="absolute top-1.5 right-1.5 z-10">
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        aria-label="Split terminal"
+                        size="icon-xs"
+                        variant="ghost-muted"
+                        disabled={!canOperateTerminal || splitLimitReached}
+                        onClick={onSplitTerminal}
+                      />
+                    }
+                  >
+                    <SquareSplitHorizontal className="size-3.5" />
+                  </TooltipTrigger>
+                  <TooltipPopup>{splitActionLabel}</TooltipPopup>
+                </Tooltip>
+              </div>
+            ) : null}
             {isSplitView ? (
               <div
                 className="grid h-full w-full min-w-0 gap-0 overflow-hidden"

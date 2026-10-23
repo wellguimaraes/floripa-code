@@ -318,6 +318,29 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
     }).pipe(Effect.provide(layerKeybindings())),
   );
 
+  it.effect("adds the terminal Cmd+T new-tab rule next to an untouched Mod+T rule", () =>
+    Effect.gen(function* () {
+      const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
+      const keybindings = yield* Keybindings.Keybindings;
+      const existing = {
+        key: "mod+t",
+        command: "rightPanel.new",
+        when: "rightPanelOpen && !terminalFocus",
+      } as const;
+      yield* writeKeybindingsConfig(keybindingsConfigPath, [existing]);
+
+      yield* keybindings.syncDefaultKeybindingsOnStartup;
+      const persisted = yield* readKeybindingsConfig(keybindingsConfigPath);
+      assert.deepStrictEqual(
+        persisted.filter((entry) => entry.command === "rightPanel.new"),
+        [
+          { key: "cmd+t", command: "rightPanel.new", when: "rightPanelOpen && terminalFocus" },
+          existing,
+        ],
+      );
+    }).pipe(Effect.provide(layerKeybindings())),
+  );
+
   it.effect("leaves a customized command without the late default", () =>
     Effect.gen(function* () {
       const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;

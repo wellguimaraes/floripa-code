@@ -119,6 +119,7 @@ import {
 } from "@t3tools/client-runtime/state/threads";
 import { resolveThreadLastVisitedAt } from "./Sidebar.logic";
 import { derivePendingThreadRequests } from "@t3tools/client-runtime/state/thread-requests";
+import { selectRunningSubprocessTerminalIds } from "@t3tools/client-runtime/state/terminal";
 import {
   parseScopedThreadKey,
   scopedThreadKey,
@@ -317,8 +318,6 @@ import {
   ChevronRightIcon,
   DownloadIcon,
   GitBranchIcon,
-  SquareSplitHorizontal,
-  SquareSplitVertical,
   TargetIcon,
   WifiOffIcon,
 } from "lucide-react";
@@ -967,6 +966,8 @@ interface PersistentThreadTerminalPanelProps {
   onNewTerminal: () => void;
   onActiveTerminalChange: (terminalId: string) => void;
   onCloseTerminal: (terminalId: string) => void;
+  onSplitTerminal: () => void;
+  splitShortcutLabel?: string | undefined;
   newShortcutLabel?: string | undefined;
   closeShortcutLabel?: string | undefined;
   topBorder: boolean;
@@ -983,6 +984,8 @@ const PersistentThreadTerminalPanel = memo(function PersistentThreadTerminalPane
   onNewTerminal,
   onActiveTerminalChange,
   onCloseTerminal,
+  onSplitTerminal,
+  splitShortcutLabel,
   newShortcutLabel,
   closeShortcutLabel,
   topBorder,
@@ -1023,6 +1026,10 @@ const PersistentThreadTerminalPanel = memo(function PersistentThreadTerminalPane
     }
     return labels;
   }, [knownTerminalSessions, surface.terminalIds]);
+  const runningTerminalIds = useMemo(
+    () => new Set(selectRunningSubprocessTerminalIds(knownTerminalSessions ?? [])),
+    [knownTerminalSessions],
+  );
   // A running session keeps the cwd it was opened with, even when a sibling
   // thread attaches it; otherwise a script's launch, then the checkout root.
   const terminalLaunchLocationsById = useMemo(() => {
@@ -1100,8 +1107,11 @@ const PersistentThreadTerminalPanel = memo(function PersistentThreadTerminalPane
       closeShortcutLabel={closeShortcutLabel}
       onActiveTerminalChange={onActiveTerminalChange}
       onCloseTerminal={onCloseTerminal}
+      onSplitTerminal={onSplitTerminal}
+      splitShortcutLabel={splitShortcutLabel}
       onAddTerminalContext={onAddTerminalContext}
       terminalLabelsById={terminalLabelsById}
+      runningTerminalIds={runningTerminalIds}
       terminalLaunchLocationsById={terminalLaunchLocationsById}
       keybindings={keybindings}
       topBorder={topBorder}
@@ -3880,11 +3890,6 @@ export default function ChatView(props: ChatViewProps) {
     () => shortcutLabelForCommand(keybindings, "terminal.split", terminalShortcutLabelOptions),
     [keybindings, terminalShortcutLabelOptions],
   );
-  const splitTerminalVerticalShortcutLabel = useMemo(
-    () =>
-      shortcutLabelForCommand(keybindings, "terminal.splitVertical", terminalShortcutLabelOptions),
-    [keybindings, terminalShortcutLabelOptions],
-  );
   const newTerminalShortcutLabel = useMemo(
     () => shortcutLabelForCommand(keybindings, "terminal.new", terminalShortcutLabelOptions),
     [keybindings, terminalShortcutLabelOptions],
@@ -5362,8 +5367,8 @@ export default function ChatView(props: ChatViewProps) {
       terminalScopeInput,
     ],
   );
-  const splitPanelTerminalVertical = useCallback(() => {
-    splitPanelTerminal("vertical");
+  const splitPanelTerminalSideBySide = useCallback(() => {
+    splitPanelTerminal();
   }, [splitPanelTerminal]);
   const activatePanelTerminal = useCallback(
     (terminalId: string) => {
@@ -5430,14 +5435,22 @@ export default function ChatView(props: ChatViewProps) {
   const requestClosePanelTerminal = useCallback(
     (terminalId: string) => {
       if (!hasTerminalWriteAccess()) return;
-      const label = activeTerminalLabelsById.get(terminalId) ?? getTerminalLabel(terminalId);
-      void confirmTerminalClose([label]).then((confirmed) => {
+      const runningLabels = runningTerminalIds.includes(terminalId)
+        ? [activeTerminalLabelsById.get(terminalId) ?? getTerminalLabel(terminalId)]
+        : [];
+      void confirmTerminalClose(runningLabels).then((confirmed) => {
         if (confirmed && readEnvironmentScope(environmentId, AuthTerminalOperateScope)) {
           closePanelTerminal(terminalId);
         }
       });
     },
-    [hasTerminalWriteAccess, activeTerminalLabelsById, closePanelTerminal, environmentId],
+    [
+      hasTerminalWriteAccess,
+      activeTerminalLabelsById,
+      closePanelTerminal,
+      environmentId,
+      runningTerminalIds,
+    ],
   );
   const activateRightPanelSurface = useCallback(
     (surface: RightPanelSurface) => {
@@ -5687,15 +5700,16 @@ export default function ChatView(props: ChatViewProps) {
         finishClose();
         return;
       }
-      const activeLabel =
-        activeTerminalLabelsById.get(surface.activeTerminalId) ??
-        getTerminalLabel(surface.activeTerminalId);
-      const otherLabels = surface.terminalIds
-        .filter((terminalId) => terminalId !== surface.activeTerminalId)
+      // The active terminal leads the list; only busy terminals need a confirmation.
+      const runningLabels = [
+        surface.activeTerminalId,
+        ...surface.terminalIds.filter((terminalId) => terminalId !== surface.activeTerminalId),
+      ]
+        .filter((terminalId) => runningTerminalIds.includes(terminalId))
         .map(
           (terminalId) => activeTerminalLabelsById.get(terminalId) ?? getTerminalLabel(terminalId),
         );
-      void confirmTerminalClose([activeLabel, ...otherLabels], anchor).then((confirmed) => {
+      void confirmTerminalClose(runningLabels, anchor).then((confirmed) => {
         if (confirmed) {
           finishClose();
         }
@@ -5706,6 +5720,7 @@ export default function ChatView(props: ChatViewProps) {
       activeTerminalLabelsById,
       closeAfterAgentBrowserConfirmation,
       finishRightPanelSurfaceClose,
+      runningTerminalIds,
     ],
   );
   const closeOtherRightPanelSurfaces = useCallback(
@@ -10556,6 +10571,8 @@ export default function ChatView(props: ChatViewProps) {
         onNewTerminal={addTerminalSurface}
         onActiveTerminalChange={activatePanelTerminal}
         onCloseTerminal={closePanelTerminal}
+        onSplitTerminal={splitPanelTerminalSideBySide}
+        splitShortcutLabel={splitTerminalShortcutLabel ?? undefined}
         newShortcutLabel={newTerminalShortcutLabel ?? undefined}
         closeShortcutLabel={closeTerminalShortcutLabel ?? undefined}
         topBorder={!worldChatShown || shouldUsePlanSidebarSheet}
@@ -10810,51 +10827,6 @@ export default function ChatView(props: ChatViewProps) {
     deviceAvailable: activeThreadRef !== null,
   };
   const activeRightPanelType = selectActiveRightPanelType(rightPanelState);
-  const terminalSplitLimitReached =
-    activeRightPanelSurface?.kind === "terminal" &&
-    activeRightPanelSurface.terminalIds.length >= MAX_TERMINALS_PER_GROUP;
-  const terminalSplitActions =
-    activeRightPanelType === "terminal" && activeRightPanelSurface?.kind === "terminal"
-      ? (
-          [
-            {
-              label: "Split terminal side by side",
-              shortcut: splitTerminalShortcutLabel,
-              icon: SquareSplitHorizontal,
-              onClick: () => splitPanelTerminal(),
-            },
-            {
-              label: "Split terminal stacked",
-              shortcut: splitTerminalVerticalShortcutLabel,
-              icon: SquareSplitVertical,
-              onClick: splitPanelTerminalVertical,
-            },
-          ] as const
-        ).map((action) => (
-          <Tooltip key={action.label}>
-            <TooltipTrigger
-              render={
-                <Button
-                  aria-label={action.label}
-                  size="icon-xs"
-                  variant="ghost-muted"
-                  disabled={!canOperateTerminal || terminalSplitLimitReached}
-                  onClick={action.onClick}
-                />
-              }
-            >
-              <action.icon className="size-3.5" />
-            </TooltipTrigger>
-            <TooltipPopup>
-              {terminalSplitLimitReached
-                ? `${action.label} (max ${MAX_TERMINALS_PER_GROUP})`
-                : action.shortcut
-                  ? `${action.label} (${action.shortcut})`
-                  : action.label}
-            </TooltipPopup>
-          </Tooltip>
-        ))
-      : null;
   const startAgentInWorktree =
     activeProjectRef && activeWorktreeScope
       ? () =>
@@ -11656,7 +11628,6 @@ export default function ChatView(props: ChatViewProps) {
             {...rightPanelTypeAvailability}
             activeType={activeRightPanelType}
             onActivateType={activateRightPanelType}
-            typeActions={terminalSplitActions}
           >
             {rightPanelContent}
           </RightPanelTabs>
@@ -11724,7 +11695,6 @@ export default function ChatView(props: ChatViewProps) {
               {...rightPanelTypeAvailability}
               activeType={activeRightPanelType}
               onActivateType={activateRightPanelType}
-              typeActions={terminalSplitActions}
             >
               {rightPanelContent}
             </RightPanelTabs>

@@ -127,6 +127,19 @@ const LATE_DEFAULT_KEYBINDINGS: ReadonlyArray<{
       when: "composerFocus && draftThreadRoute",
     },
   },
+  {
+    id: "rightPanel.new:cmd+t:terminalFocus",
+    alongside: {
+      key: "mod+t",
+      command: "rightPanel.new",
+      when: "rightPanelOpen && !terminalFocus",
+    },
+    rule: {
+      key: "cmd+t",
+      command: "rightPanel.new",
+      when: "rightPanelOpen && terminalFocus",
+    },
+  },
 ];
 
 function keybindingShortcutContext(rule: KeybindingRule): string | null {

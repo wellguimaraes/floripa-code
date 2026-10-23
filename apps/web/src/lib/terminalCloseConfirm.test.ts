@@ -46,6 +46,12 @@ describe("terminal close confirmation", () => {
     unregister();
   });
 
+  it("closes without asking when no closing terminal is running anything", async () => {
+    await expect(confirmTerminalClose([])).resolves.toBe(true);
+    expect(confirmMock).not.toHaveBeenCalled();
+    expect(isTerminalCloseConfirmPending()).toBe(false);
+  });
+
   it("tracks pending state until the confirmation settles", async () => {
     let settle: (value: boolean) => void = () => undefined;
     confirmMock.mockImplementation(() => new Promise<boolean>((resolve) => (settle = resolve)));
