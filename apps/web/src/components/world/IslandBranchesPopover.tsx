@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 
+import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useEnvironmentQuery } from "../../state/query";
 import { vcsEnvironment } from "../../state/vcs";
@@ -41,6 +42,22 @@ const isGitCommandError = Schema.is(GitCommandError);
 
 /** How long a Delete button waits for its confirming second click. */
 const CONFIRM_MS = 4_000;
+
+/**
+ * Rows whose delete is still running. Kept outside the popover, since a delete outlives it, so
+ * a reopened popover shows one still going.
+ */
+const deletingRowsAtom = Atom.make<ReadonlySet<string>>(new Set<string>()).pipe(
+  Atom.keepAlive,
+  Atom.withLabel("world:island-deleting-rows"),
+);
+
+function setRowDeleting(key: string, deleting: boolean): void {
+  const next = new Set(appAtomRegistry.get(deletingRowsAtom));
+  if (deleting) next.add(key);
+  else next.delete(key);
+  appAtomRegistry.set(deletingRowsAtom, next);
+}
 
 interface BranchRow {
   readonly key: string;
@@ -215,7 +232,8 @@ export function IslandBranchesPopover(props: {
   );
 }
 
-type DeleteStep = "idle" | "confirm" | "unmerged" | "deleting";
+type ConfirmStep = "idle" | "confirm" | "unmerged";
+type DeleteStep = ConfirmStep | "deleting";
 
 function BranchItem({
   list,
@@ -257,7 +275,8 @@ function BranchItem({
   // Every row goes by its branch, its folder in the details, save the main worktree, which
   // goes by that name and shows its branch instead.
   const mainWorktree = worktree !== null && row.inProjectFolder;
-  const [step, setStep] = useState<DeleteStep>("idle");
+  const [confirmStep, setStep] = useState<ConfirmStep>("idle");
+  const step: DeleteStep = useAtomValue(deletingRowsAtom).has(row.key) ? "deleting" : confirmStep;
 
   // A confirming click only counts for a moment; after that the button goes back to Delete.
   useEffect(() => {
@@ -267,18 +286,20 @@ function BranchItem({
   }, [step]);
 
   const remove = async (force: boolean) => {
-    setStep("deleting");
-    const result =
+    setStep("idle");
+    setRowDeleting(row.key, true);
+    const result = await (
       worktree !== null
         ? // Removing a worktree throws its uncommitted changes away, like deleting its branch.
-          await removeWorktree({
+          removeWorktree({
             environmentId: row.environmentId,
             input: { cwd: row.cwd, path: worktree, force: true },
           })
-        : await deleteRef({
+        : deleteRef({
             environmentId: row.environmentId,
             input: { cwd: row.cwd, refName: row.name, ...(force ? { force: true } : {}) },
-          });
+          })
+    ).finally(() => setRowDeleting(row.key, false));
     if (result._tag === "Success" || isAtomCommandInterrupted(result)) {
       setStep("idle");
       return;
