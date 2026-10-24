@@ -262,7 +262,12 @@ export function WorldLayout({
         <Activity mode={chatTarget !== null && !covered ? "visible" : "hidden"}>
           <div
             ref={panelRef}
-            className="absolute top-[calc(var(--workspace-topbar-height)+0.25rem)] right-3 bottom-3 w-[min(calc(var(--resizable-width)+var(--world-frame-offset)),calc(100%-4rem))]"
+            className={cn(
+              "absolute top-[calc(var(--workspace-topbar-height)+0.25rem)] right-3 bottom-3 w-[min(calc(var(--resizable-width)+var(--world-frame-offset)),calc(100%-4rem))]",
+              // Collapsing either side shrinks the frame at the pace the panel inside closes, so
+              // the side that stays keeps its width throughout.
+              "[[data-panel-animations=true]_&]:transition-[width] [[data-panel-animations=true]_&]:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:ease-out",
+            )}
             style={
               {
                 [RESIZABLE_WIDTH_PROPERTY]: `${frameWidth.width}px`,

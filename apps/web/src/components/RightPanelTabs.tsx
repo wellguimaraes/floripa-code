@@ -936,6 +936,9 @@ function surfaceTypeAvailable(
   }
 }
 
+/** The type rail's `w-11`, so a closing panel can settle exactly where the rail takes over. */
+export const RIGHT_PANEL_TYPE_RAIL_WIDTH = "2.75rem";
+
 /**
  * The column of surface types beside the panel. Each type shows how many tabs
  * it holds; picking one shows its tabs. It stays visible while the panel is
@@ -1412,6 +1415,9 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       {...(props.widthStorageKey !== undefined ? { widthStorageKey: props.widthStorageKey } : {})}
       {...(props.defaultWidth !== undefined ? { defaultWidth: props.defaultWidth } : {})}
       {...(props.inlineSize ? { inlineSize: props.inlineSize } : {})}
+      {...(props.onActivateType ? { closedWidth: RIGHT_PANEL_TYPE_RAIL_WIDTH } : {})}
+      // The world's frame animates its own width around the surfaces when the chat collapses.
+      {...(props.floating ? { keepWidthWhenMaximized: true } : {})}
     >
       <div className="flex min-h-0 flex-1">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">

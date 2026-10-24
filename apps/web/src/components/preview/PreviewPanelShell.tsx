@@ -41,6 +41,10 @@ interface PreviewPanelShellProps {
   widthStorageKey?: string;
   /** Overrides the initial width (px) before the user has resized the panel. */
   defaultWidth?: number;
+  /** CSS width a collapsible panel opens from and closes to, e.g. a rail that stays visible. */
+  closedWidth?: string;
+  /** Maximized, keep the panel's own width because its container shrinks around it instead. */
+  keepWidthWhenMaximized?: boolean;
   children: ReactNode;
 }
 
@@ -77,26 +81,29 @@ function PreviewPanelShellFrame(
   const hostRef = props.hostRef ?? localHostRef;
   const { width, handlers } = props.inlineSize;
   // Derive suppression before the layout commits so the browser never creates
-  // a width transition for resize or maximize changes.
+  // a width transition for resize changes.
   const [layoutTransition, setLayoutTransition] = useState(() => ({
     open,
     width,
     maximized,
     suppressed: false,
+    tracksWidth: false,
   }));
   if (
     layoutTransition.open !== open ||
     layoutTransition.width !== width ||
     layoutTransition.maximized !== maximized
   ) {
+    const openChanged = layoutTransition.open !== open;
     setLayoutTransition({
       open,
       width,
       maximized,
-      suppressed:
-        collapsible &&
-        layoutTransition.open === open &&
-        (layoutTransition.width !== width || layoutTransition.maximized !== maximized),
+      suppressed: collapsible && !openChanged && layoutTransition.width !== width,
+      // Opening and closing slide content of a fixed width. Maximizing or restoring keeps the
+      // panel open, so its content follows the width instead of leaving a gap beside it.
+      tracksWidth:
+        !openChanged && (layoutTransition.tracksWidth || layoutTransition.maximized !== maximized),
     });
   }
   const suppressWidthTransition = layoutTransition.suppressed;
@@ -118,22 +125,28 @@ function PreviewPanelShellFrame(
       ref={hostRef}
       className={cn(
         "relative flex h-full min-h-0 min-w-0 max-w-full flex-col self-stretch bg-background",
-        // Maximized, the chat is collapsed and nothing sits beside the panel to rule off.
-        isInline ? (maximized ? "flex-1" : "shrink-0 border-l border-border") : "w-full",
+        // Only this width animates; the sibling column fills the rest of the row. Maximized, the
+        // width is the whole row, shrinking past siblings like the chat's agent rail, and nothing
+        // sits beside the panel to rule off.
+        !isInline ? "w-full" : !maximized && "border-l border-border",
         collapsible &&
           "[[data-panel-animations=true]_&]:transition-[width] [[data-panel-animations=true]_&]:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:ease-out",
-        collapsible && open && "[[data-panel-animations=true]_&]:starting:w-0!",
+        collapsible &&
+          open &&
+          "[[data-panel-animations=true]_&]:starting:w-(--preview-panel-closed-width)!",
         collapsible && !open && "pointer-events-none",
       )}
       style={
         isInline
           ? ({
               [RESIZABLE_WIDTH_PROPERTY]: `${width}px`,
-              width: maximized
-                ? "100%"
-                : collapsible && !open
-                  ? "0px"
-                  : `var(${RESIZABLE_WIDTH_PROPERTY})`,
+              "--preview-panel-closed-width": props.closedWidth ?? "0px",
+              width:
+                collapsible && !open
+                  ? (props.closedWidth ?? "0px")
+                  : maximized && !props.keepWidthWhenMaximized
+                    ? "100%"
+                    : `var(${RESIZABLE_WIDTH_PROPERTY})`,
               transitionDuration: suppressWidthTransition ? "0ms" : undefined,
             } as CSSProperties)
           : undefined
@@ -142,12 +155,18 @@ function PreviewPanelShellFrame(
       data-preview-panel-maximized={maximized ? "true" : "false"}
     >
       {isInline && !maximized ? <RightPanelResizeHandle handlers={handlers} /> : null}
-      <div className={cn("h-full min-h-0 w-full", collapsible && "overflow-clip")}>
+      {/* Pinned to the fixed right edge, so a rail at the end stays put while the panel closes. */}
+      <div className={cn("h-full min-h-0 w-full", collapsible && "flex justify-end overflow-clip")}>
         <div
-          className="flex h-full min-h-0 min-w-0 flex-col"
+          className="flex h-full min-h-0 min-w-0 shrink-0 flex-col"
           style={
-            collapsible && !maximized
-              ? { width: `calc(var(${RESIZABLE_WIDTH_PROPERTY}) - 1px)` }
+            collapsible
+              ? {
+                  width:
+                    maximized || layoutTransition.tracksWidth
+                      ? "100%"
+                      : `calc(var(${RESIZABLE_WIDTH_PROPERTY}) - 1px)`,
+                }
               : undefined
           }
         >

@@ -1964,6 +1964,29 @@ export default function ChatView(props: ChatViewProps) {
   // The open right panel takes the titlebar's right end, so the thread panel toggle moves
   // into the chat's header.
   const splitTitleBarControls = inlineRightPanelOwnsTitleBar;
+  const chatColumnRef = useRef<HTMLDivElement | null>(null);
+  const chatShownWidthRef = useRef<number | null>(null);
+  // Collapsing or restoring the chat clips its content at the width it shows at, so it slides
+  // under the moving edge instead of rewrapping every frame.
+  useLayoutEffect(() => {
+    const column = chatColumnRef.current;
+    if (!column) return;
+    // Layout effects run before the collapse advances, so this is the shown width. A restore
+    // still in flight holds a width already and is not settled enough to measure.
+    if (rightPanelMaximized && !column.style.getPropertyValue("--chat-content-width")) {
+      const width = column.getBoundingClientRect().width;
+      if (width > 0) chatShownWidthRef.current = width;
+    }
+    const width = chatShownWidthRef.current;
+    if (width === null || (!rightPanelMaximized && !panelAnimationsActive)) return;
+    column.style.setProperty("--chat-content-width", `${width}px`);
+    if (rightPanelMaximized) return;
+    const timeout = window.setTimeout(
+      () => column.style.removeProperty("--chat-content-width"),
+      panelAnimationDurationMs,
+    );
+    return () => window.clearTimeout(timeout);
+  }, [panelAnimationDurationMs, panelAnimationsActive, rightPanelMaximized]);
   const [threadPanelPresentation, setThreadPanelPresentation] =
     useState<ThreadPanelPresentation>("inline");
   const [threadPanelPopoverHandle] = useState(PopoverCreateHandle);
@@ -10881,7 +10904,7 @@ export default function ChatView(props: ChatViewProps) {
       ref={threadPanelPopoverAnchorRef}
       data-chat-header
       className={cn(
-        "relative bg-background [[data-panel-animations=true]_&]:motion-safe:transition-[padding-left] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-out",
+        "relative w-full min-w-(--chat-content-width) bg-background [[data-panel-animations=true]_&]:motion-safe:transition-[padding-left] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-out",
         isElectron
           ? cn(
               "drag-region flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center px-3 sm:px-5",
@@ -10956,15 +10979,18 @@ export default function ChatView(props: ChatViewProps) {
         ) : null}
         <div
           className={cn(
-            "flex min-h-0 min-w-0 flex-col overflow-x-hidden",
-            rightPanelMaximized ? "w-0 flex-none" : "flex-1",
+            // Collapsed, the right panel's width takes the whole row and this column fills nothing.
+            "flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden",
+            // The world's frame collapses the chat from its left edge, so content clings right.
+            worldChatShown && "items-end",
           )}
+          ref={chatColumnRef}
           data-chat-column-maximized-away={rightPanelMaximized ? "true" : "false"}
         >
           {worldChatShown ? null : chatTopBar}
 
           {/* Main content area with optional plan sidebar */}
-          <div className="relative flex min-h-0 min-w-0 flex-1">
+          <div className="relative flex min-h-0 w-full min-w-(--chat-content-width) flex-1">
             {/* Chat column */}
             <ThreadFindCanvas
               findOptions={{
