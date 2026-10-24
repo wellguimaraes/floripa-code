@@ -31,9 +31,9 @@ applies to the web and desktop clients.
 
 ## Motion
 
-The main sidebar and right panel open and close immediately by default. Move the
-**Panel animations** slider above 0 ms to add motion, up to 400 ms, unless reduced motion is enabled
-in your operating system. Moving between threads always snaps to the selected thread's panel state
+The main sidebar and right panel animate over 250 ms by default. Move the **Panel animations**
+slider between 0 ms (no motion) and 400 ms to change that. Reduced motion in your operating system
+turns the animations off. Moving between threads always snaps to the selected thread's panel state
 without replaying its transitions.
 
 ## Custom themes
