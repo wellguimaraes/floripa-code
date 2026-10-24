@@ -15,8 +15,10 @@ import {
 } from "react";
 
 import { isElectron } from "../../env";
+import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { RESIZABLE_WIDTH_PROPERTY, useResizableWidth } from "../../hooks/useResizableWidth";
 import { cn } from "../../lib/utils";
+import { usePanelAnimationSettings, usePanelPresence } from "../../panelAnimations";
 import { selectThreadRightPanelState, useRightPanelStore } from "../../rightPanelStore";
 import { useThreadShell } from "../../state/entities";
 import { buildThreadRouteParams, type ThreadRouteTarget } from "../../threadRoutes";
@@ -158,6 +160,18 @@ export function WorldLayout({
   const frameWidth = chatShown ? chatAndSurfacesWidth : surfacesWidth;
   // Closed surfaces leave only their rail beside the chat.
   const frameOffset = chatShown && !surfaces.isOpen ? RAILS_WIDTH - surfacesWidth.width : 0;
+  // A closed chat slides its frame out before it hides. Closing navigates, which holds panel
+  // motion for a frame, so the slide only follows the Motion duration. Settings covers it at once.
+  const frameShown = chatTarget !== null && !covered;
+  const { durationMs: frameMotionMs } = usePanelAnimationSettings();
+  const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
+  const framePresent = usePanelPresence(
+    frameShown,
+    true,
+    frameMotionMs > 0 && !reducedMotion && !covered,
+    null,
+    frameMotionMs,
+  ).present;
   const chatArchived = chatThread !== null && chatThread.archivedAt != null;
   const chatWasArchived = useRef<{ key: string | null; archived: boolean }>({
     key: null,
@@ -205,7 +219,9 @@ export function WorldLayout({
   }, [chatTarget, covered, navigate]);
 
   return (
-    <SidebarInset className="h-svh min-h-0 overflow-hidden md:h-dvh">
+    // Clip, not hidden: the chat frame slides in from beyond the right edge while its composer
+    // takes focus, and a hidden overflow would scroll the whole world over to reveal it.
+    <SidebarInset className="h-svh min-h-0 overflow-clip md:h-dvh">
       {/* The sea's blue until the scene fades in over it. */}
       <div className="absolute inset-0" style={{ backgroundColor: palette.loadingSea }}>
         <Suspense fallback={null}>
@@ -248,10 +264,9 @@ export function WorldLayout({
         className="pointer-events-none absolute bottom-3 left-3 z-10 flex"
         // Stops short of the open chat, which also sits on the bottom edge.
         style={{
-          right:
-            chatTarget === null
-              ? "0.75rem"
-              : `calc(min(${frameWidth.width + frameOffset}px, 100% - 4rem) + 1.5rem)`,
+          right: !framePresent
+            ? "0.75rem"
+            : `calc(min(${frameWidth.width + frameOffset}px, 100% - 4rem) + 1.5rem)`,
         }}
       >
         <div className="pointer-events-auto min-w-0">
@@ -259,14 +274,18 @@ export function WorldLayout({
         </div>
       </div>
       {heldTarget !== null ? (
-        <Activity mode={chatTarget !== null && !covered ? "visible" : "hidden"}>
+        <Activity mode={framePresent ? "visible" : "hidden"}>
           <div
             ref={panelRef}
+            inert={!frameShown}
             className={cn(
               "absolute top-[calc(var(--workspace-topbar-height)+0.25rem)] right-3 bottom-3 w-[min(calc(var(--resizable-width)+var(--world-frame-offset)),calc(100%-4rem))]",
+              // The frame slides in from the right and back out when the chat closes.
+              "transition-[translate] duration-(--panel-animation-duration) ease-out motion-safe:starting:translate-x-[calc(100%+0.75rem)]",
               // Collapsing either side shrinks the frame at the pace the panel inside closes, so
               // the side that stays keeps its width throughout.
-              "[[data-panel-animations=true]_&]:transition-[width] [[data-panel-animations=true]_&]:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:ease-out",
+              "[[data-panel-animations=true]_&]:transition-[width,translate]",
+              !frameShown && "translate-x-[calc(100%+0.75rem)]",
             )}
             style={
               {
