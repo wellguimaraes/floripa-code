@@ -43,7 +43,7 @@ import { mediaFileReference } from "@t3tools/client-runtime/media-reference";
 import { FolderTree, Globe2, WrapTextIcon } from "lucide-react";
 import { Code2, Eye, Table2 } from "lucide";
 import * as Schema from "effect/Schema";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { isBrowserPreviewFile, openFileInPreview } from "~/browser/openFileInPreview";
 import { useAssetUrlRefresh, useAssetUrlState } from "~/assets/assetUrls";
@@ -56,6 +56,8 @@ import { useClientSettings, useUpdateClientSettings } from "~/hooks/useSettings"
 import { useTheme } from "~/hooks/useTheme";
 import { getLocalStorageItem, setLocalStorageItem, useLocalStorage } from "~/hooks/useLocalStorage";
 import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh";
+import { RESIZABLE_WIDTH_PROPERTY, useResizableWidth } from "~/hooks/useResizableWidth";
+import { RightPanelResizeHandle } from "~/components/preview/RightPanelResizeHandle";
 import { resolveDiffThemeName } from "~/lib/diffRendering";
 import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 import { cn } from "~/lib/utils";
@@ -138,6 +140,7 @@ interface FilePreviewPanelProps {
 }
 
 const FILE_EXPLORER_STORAGE_KEY = "floripacode.fileExplorerOpen";
+const FILE_EXPLORER_WIDTH_STORAGE_KEY = "floripacode.fileExplorerWidth";
 const RENDER_MARKDOWN_STORAGE_KEY = "floripacode.renderMarkdown";
 const RENDER_BROWSER_FILE_STORAGE_KEY = "floripacode.renderBrowserFile";
 const RENDER_TABLE_STORAGE_KEY = "floripacode.renderTable";
@@ -1104,6 +1107,14 @@ export default function FilePreviewPanel({
     explorerOpen,
     attachmentOpen: attachment !== undefined,
   });
+  // Beside a preview, the tree's right edge drags; the preview keeps at least 12rem.
+  const explorerWidth = useResizableWidth({
+    storageKey: FILE_EXPLORER_WIDTH_STORAGE_KEY,
+    defaultWidth: 352,
+    minWidth: 200,
+    maxWidth: 960,
+    edge: "right",
+  });
   // Reading markdown rendered is a preference, not a property of one file. Keeping
   // it on the panel meant a thread switch dropped it and forced source back.
   const [renderMarkdownPreferred, setRenderMarkdownPreferred] = useLocalStorage(
@@ -1499,12 +1510,23 @@ export default function FilePreviewPanel({
         {showExplorer ? (
           <aside
             className={cn(
-              "order-first flex min-h-0 shrink-0 bg-background",
+              "relative order-first flex min-h-0 shrink-0 bg-background",
               previewPath
-                ? "w-[min(22rem,46%)] min-w-64 border-r border-border/60"
+                ? "w-(--resizable-width) max-w-[calc(100%-12rem)] border-r border-border/60"
                 : "min-w-0 flex-1",
             )}
+            style={
+              previewPath
+                ? ({ [RESIZABLE_WIDTH_PROPERTY]: `${explorerWidth.width}px` } as CSSProperties)
+                : undefined
+            }
           >
+            {previewPath ? (
+              <RightPanelResizeHandle
+                handlers={explorerWidth.handlers}
+                className="right-[-5px] left-auto"
+              />
+            ) : null}
             <FileBrowserPanel
               key={`${environmentId}:${cwd}`}
               environmentId={environmentId}
