@@ -83,6 +83,7 @@ import { ProjectVisibilityMenu } from "./ProjectVisibilityMenu";
 import { IslandBranchesPopover, type WorktreeSurfacesTarget } from "./IslandBranchesPopover";
 import { useCreateIdleWorldThread } from "./useStartWorldAgent";
 import { canChangeIslandIcon, IslandIconPicker, useSetIslandIcon } from "./IslandIconPicker";
+import { useRemoveIsland } from "./useRemoveIsland";
 import { RestoreArchivedDialog } from "./RestoreArchivedDialog";
 import { layoutTags, type ScreenPoint } from "./scene/tagLayout";
 import { isStoppable, WorldBubble } from "./WorldBubble";
@@ -677,9 +678,11 @@ export default function WorldCanvas(props: {
     }
     setIconPicking({ key, picker: "icon" });
   };
+  const removeIsland = useRemoveIsland();
   const showIslandMenu = async (key: string, point: { x: number; y: number }) => {
     const api = readLocalApi();
     if (api === undefined) return;
+    const checkouts = projectCheckouts.get(key) ?? [];
     const idle =
       islands
         .find((island) => island.key === key)
@@ -696,10 +699,19 @@ export default function WorldCanvas(props: {
           separatorBefore: true,
         },
         { id: "restore-archived", label: "Restore archived agent…" },
+        // Hiding keeps the project; removing it drops the project and its threads.
+        {
+          id: "remove",
+          label: "Remove project…",
+          disabled: !canChangeIslandIcon(checkouts),
+          separatorBefore: true,
+        },
       ],
       point,
     );
     if (clicked === "only") showOnlyIsland(key, projectOrder);
+    else if (clicked === "remove")
+      void removeIsland(checkouts, projectTitles.get(key) ?? "Project");
     else if (clicked === "hide") hideIsland(key);
     else if (clicked === "zoom") setZoomTo({ key });
     else if (clicked === "archive-idle") void archiveAll(idle);
