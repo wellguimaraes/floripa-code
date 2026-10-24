@@ -7612,6 +7612,15 @@ export default function ChatView(props: ChatViewProps) {
       });
       if (!command) return;
 
+      // In the world the chat floats in its own frame, which the close chord closes like a
+      // window, surfaces and terminal included, rather than closing the app's window.
+      if (worldChatShown && (command === "rightPanel.close" || command === "terminal.close")) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) void navigate({ to: "/" });
+        return;
+      }
+
       if (command === "thread.copyReference") {
         event.preventDefault();
         event.stopPropagation();
@@ -7890,6 +7899,8 @@ export default function ChatView(props: ChatViewProps) {
       window.removeEventListener("keydown", handleUnclaimedKey);
     };
   }, [
+    worldChatShown,
+    navigate,
     activeProject,
     activeRightPanelSurface,
     activeProjectScripts,
