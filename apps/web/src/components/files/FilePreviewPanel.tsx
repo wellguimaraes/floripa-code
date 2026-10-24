@@ -1,5 +1,8 @@
+import { Button } from "~/components/ui/button";
 import { Spinner } from "~/components/ui/spinner";
+import { useFileContextMenu } from "~/fileContextMenu";
 import {
+  AuthOrchestrationOperateScope,
   AuthPreviewOperateScope,
   type EditorId,
   type EnvironmentId,
@@ -1072,6 +1075,10 @@ export default function FilePreviewPanel({
   const fileAccess = useFilesystemReadAccess(environmentId);
   const { canReadFiles } = fileAccess;
   const canWriteFiles = useEnvironmentScope(environmentId, AuthFilesystemWriteScope);
+  // A file that can't show as text can still be revealed, which runs on the environment's host.
+  const canOperateHost = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
+  const fileContextMenu = useFileContextMenu(environmentId);
+  const revealLabel = canOperateHost ? fileContextMenu.capabilities.revealLabel : undefined;
   // Media and PDFs render from their absolute path, so their contents are never
   // shown. The read still runs: a folder named `assets.png` is only knowable as a
   // folder from the read failure, and the server stats before reading, so a folder
@@ -1414,6 +1421,17 @@ export default function FilePreviewPanel({
                       {attemptedPath}
                     </code>
                   </p>
+                ) : null}
+                {file.readError?.failure === "binary_file" && absolutePath && revealLabel ? (
+                  <div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void fileContextMenu.revealPath(absolutePath)}
+                    >
+                      {revealLabel}
+                    </Button>
+                  </div>
                 ) : null}
                 {!isHostFile ? (
                   <p className="text-muted-foreground">

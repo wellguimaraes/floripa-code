@@ -139,7 +139,15 @@ export function useFileContextMenu(environmentId: EnvironmentId | null) {
       target: FileContextMenuTarget,
     ): Promise<void> => {
       const absolutePath = resolveFileContextMenuAbsolutePath(target);
-      if (absolutePath === null || environmentId === null) return;
+      if (absolutePath === null) return;
+      await activatePath(action, absolutePath);
+    };
+
+    const activatePath = async (
+      action: FileContextMenuAction,
+      absolutePath: string,
+    ): Promise<void> => {
+      if (environmentId === null) return;
 
       const reveal = action === "reveal-in-folder";
       const editor =
@@ -188,6 +196,8 @@ export function useFileContextMenu(environmentId: EnvironmentId | null) {
         }),
       capabilities,
       activate,
+      /** Reveals an absolute path on the environment host in its file manager. */
+      revealPath: (absolutePath: string) => activatePath("reveal-in-folder", absolutePath),
       show,
     };
   }, [environmentId, openInEditor, serverConfig]);
