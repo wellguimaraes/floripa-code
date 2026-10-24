@@ -1,5 +1,6 @@
 import { Outlet, createFileRoute, redirect, useLocation } from "@tanstack/react-router";
-import { useState, type ReactNode } from "react";
+import { isMacPlatform } from "@t3tools/shared/keybindings";
+import { useEffect, useEffectEvent, useState, type ReactNode } from "react";
 import { RotateCcwIcon, XIcon } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Dialog, DialogClose, DialogPopup } from "../components/ui/dialog";
@@ -191,6 +192,20 @@ function SettingsDialog({
   onClose: () => void;
   children: ReactNode;
 }) {
+  // The close-window chord closes the dialog instead of the app's window.
+  const closeOnCloseChord = useEffectEvent((event: KeyboardEvent) => {
+    const mod = isMacPlatform(navigator.platform)
+      ? event.metaKey && !event.ctrlKey
+      : event.ctrlKey && !event.metaKey;
+    if (!mod || event.altKey || event.shiftKey || event.key.toLowerCase() !== "w") return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!event.repeat) onClose();
+  });
+  useEffect(() => {
+    window.addEventListener("keydown", closeOnCloseChord, true);
+    return () => window.removeEventListener("keydown", closeOnCloseChord, true);
+  }, []);
   return (
     <Dialog
       open
