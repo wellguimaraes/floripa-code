@@ -17,6 +17,16 @@ export const PIERRE_TREE_UNSAFE_CSS = `
   /* Smaller than the library's, so folder names lead the row rather than their arrows. */
   svg[data-icon-name='file-tree-icon-chevron'] { width: 12px; height: 12px; }
   svg[data-icon-name='t3-tree-icon-loading'] { opacity: 0.6; }
+  /* Names show in full; a long one scrolls the tree sideways instead of middle-truncating. */
+  [data-file-tree-virtualized-scroll='true'] { overflow-x: auto; }
+  [data-file-tree-virtualized-list='true'] { width: max-content; min-width: 100%; }
+  [data-file-tree-virtualized-sticky='true'] { width: max-content; min-width: 100%; }
+  [data-item-section='content'],
+  [data-truncate-group-container] > div { flex: none; max-width: none; overflow: visible; }
+  [data-truncate-container] { overflow: visible; }
+  [data-truncate-grid] { display: flex; }
+  [data-truncate-marker-cell],
+  [data-truncate-content='overflow'] { display: none; }
   @media (prefers-reduced-motion: no-preference) {
     svg[data-icon-name='t3-tree-icon-loading'] { animation: t3-tree-spin 1s linear infinite; }
   }

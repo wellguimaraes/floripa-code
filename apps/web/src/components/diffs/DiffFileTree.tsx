@@ -165,7 +165,7 @@ export function DiffFileTree({
   }, [model, paths, revealRequestId, selectedPath]);
 
   return (
-    <div className={cn("flex min-h-0 flex-1 flex-col bg-background", className)}>
+    <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col bg-background", className)}>
       <div
         className="flex h-10 min-h-10 shrink-0 items-center gap-1 border-b border-border/60 bg-background px-2 text-xs text-muted-foreground"
         data-surface-subheader

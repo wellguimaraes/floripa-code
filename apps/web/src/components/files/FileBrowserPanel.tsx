@@ -506,7 +506,7 @@ export default function FileBrowserPanel({
   return (
     <div
       ref={panelRef}
-      className="flex min-h-0 flex-1 flex-col bg-code"
+      className="flex min-h-0 min-w-0 flex-1 flex-col bg-code"
       data-file-browser-panel={`${environmentId}:${cwd}`}
     >
       <div
