@@ -93,6 +93,7 @@ import {
 import { useEnvironmentQuery } from "~/state/query";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 
+import { DeviceRepairInputButton } from "./device/DeviceRepairInputButton";
 import { PreviewPanelShell, type PreviewPanelMode } from "./preview/PreviewPanelShell";
 import { FaviconImage } from "./preview/PreviewFaviconIcon";
 import { previewBridge } from "./preview/previewBridge";
@@ -1072,6 +1073,10 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   const showsTabBar = showsTabs || reservesTitleBarControls || props.layoutControls != null;
   // Pull-request tabs follow the thread, so the reader neither adds nor closes them.
   const tabsFollowThread = activeType === "pull-request";
+  const activeDeviceSurface = props.surfaces.find(
+    (surface): surface is Extract<RightPanelSurface, { kind: "device" }> =>
+      surface.kind === "device" && surface.id === props.activeSurfaceId,
+  );
   const canAddToActiveType = activeTypeAvailable && showsTabs && !tabsFollowThread;
   const addToActiveType = () => {
     switch (activeType) {
@@ -1829,6 +1834,12 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   <TooltipPopup>Scroll tabs right</TooltipPopup>
                 </Tooltip>
               </div>
+            ) : null}
+            {activeDeviceSurface && props.environmentId ? (
+              <DeviceRepairInputButton
+                environmentId={props.environmentId}
+                surface={activeDeviceSurface}
+              />
             ) : null}
             {props.layoutControls}
             {ownsDesktopTitleBar && !props.layoutControls ? (
