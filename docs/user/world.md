@@ -93,7 +93,10 @@ Drag to pan the map and scroll to zoom. Double-click an island to zoom
 to it, or the sea to see every island. Right-click an island to show only that
 island, hide it, grow or shrink it, zoom to it, or archive every agent resting
 on its beach. **Restore archived agent…** lists the island's archived agents,
-newest first; click **Restore** on one to bring it back. **Remove project…** removes the
+newest first; click **Restore** on one to bring it back. Its search box matches words in titles
+and messages, and also matches by meaning, so a paraphrase or another language can find an
+agent. The first search downloads a local model (about 150 MB) and reads the island's archived
+agents once. Until that finishes, results show word matches only. **Remove project…** removes the
 project and deletes its threads after you confirm; hiding only takes the island off the map, and
 neither touches the files on disk. An island comes in three
 sizes: 8 rock piles and 9 beach spots, 12 and 14, or 16 and 18, plus 4 chairs on

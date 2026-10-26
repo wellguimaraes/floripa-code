@@ -9,18 +9,22 @@ import {
   type EnvironmentThreadSearchMatch,
 } from "@t3tools/client-runtime/state/thread-search";
 import { type VcsRefTarget } from "@t3tools/client-runtime/state/vcs";
-import type {
+import {
   EnvironmentId,
-  ProjectContentMatch,
-  ProjectEntry,
-  ProjectEntryKind,
-  ThreadId,
-  TurnItemId,
-  VcsListRefsResult,
-  VcsRef,
+  type OrchestrationArchivedThreadSearchIndex,
+  ProjectId,
+  type ProjectContentMatch,
+  type ProjectEntry,
+  type ProjectEntryKind,
+  type ScopedProjectRef,
+  type ThreadId,
+  type TurnItemId,
+  type VcsListRefsResult,
+  type VcsRef,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -97,6 +101,99 @@ export function useThreadSearch(
     matches: isDebouncing ? EMPTY_THREAD_SEARCH_MATCHES : result.matches,
     query: settledQuery ?? "",
     isPending: canSearch && (isDebouncing || result.isLoading),
+  };
+}
+
+interface ArchivedThreadSearchState {
+  readonly matches: ReadonlyArray<EnvironmentThreadSearchMatch>;
+  /** Summed over environments; null until every environment has answered once. */
+  readonly index: OrchestrationArchivedThreadSearchIndex | null;
+}
+
+const ArchivedThreadSearchKey = Schema.fromJsonString(
+  Schema.Tuple([
+    Schema.Array(Schema.Tuple([EnvironmentId, Schema.Array(ProjectId)])),
+    Schema.String,
+  ]),
+);
+const decodeArchivedThreadSearchKey = Schema.decodeUnknownOption(ArchivedThreadSearchKey);
+const INDEX_STATUS_WEIGHT = { preparing: 3, indexing: 2, unavailable: 1, ready: 0 } as const;
+const EMPTY_ARCHIVED_THREAD_SEARCH_ATOM = Atom.make<ArchivedThreadSearchState>({
+  matches: EMPTY_THREAD_SEARCH_MATCHES,
+  index: null,
+}).pipe(Atom.withLabel("web:archived-thread-search:empty"));
+
+// Environments that predate archived search fail the call; they add no
+// matches and leave the dialog's title filter to stand in.
+const archivedThreadSearchAtom = Atom.family((key: string) =>
+  Atom.make((get): ArchivedThreadSearchState => {
+    const parsed = decodeArchivedThreadSearchKey(key);
+    if (Option.isNone(parsed)) return { matches: [], index: null };
+    const [scopes, query] = parsed.value;
+    const matches: EnvironmentThreadSearchMatch[] = [];
+    let index: OrchestrationArchivedThreadSearchIndex | null = {
+      status: "ready",
+      indexed: 0,
+      total: 0,
+    };
+    for (const [environmentId, projectIds] of scopes) {
+      const result = get(
+        orchestrationEnvironment.archivedThreadSearch({
+          environmentId,
+          input: { query, projectIds },
+        }),
+      );
+      const value = Option.getOrNull(AsyncResult.value(result));
+      if (value === null) {
+        if (result._tag !== "Failure") index = null;
+        continue;
+      }
+      matches.push(...value.matches.map((match) => ({ ...match, environmentId })));
+      if (index === null) continue;
+      index = {
+        status:
+          INDEX_STATUS_WEIGHT[value.index.status] > INDEX_STATUS_WEIGHT[index.status]
+            ? value.index.status
+            : index.status,
+        indexed: index.indexed + value.index.indexed,
+        total: index.total + value.index.total,
+      };
+    }
+    return { matches, index };
+  }).pipe(Atom.withLabel(`web:archived-thread-search:${key}`)),
+);
+
+/** Archived threads in `projectRefs` that match `query` by keyword or meaning. */
+export function useArchivedThreadSearch(
+  projectRefs: ReadonlyArray<ScopedProjectRef>,
+  query: string,
+): ArchivedThreadSearchState & { readonly isPending: boolean } {
+  const normalizedQuery = query.trim();
+  const debouncedQuery = useDebouncedValue(normalizedQuery, THREAD_SEARCH_DEBOUNCE_MS);
+  const canSearch = projectRefs.length > 0 && normalizedQuery.length >= 2;
+  const settledQuery = canSearch && normalizedQuery === debouncedQuery ? debouncedQuery : null;
+  const searchKey = useMemo(() => {
+    if (settledQuery === null) return null;
+    const byEnvironment = new Map<EnvironmentId, ProjectId[]>();
+    for (const ref of projectRefs) {
+      byEnvironment.set(ref.environmentId, [
+        ...(byEnvironment.get(ref.environmentId) ?? []),
+        ref.projectId,
+      ]);
+    }
+    const scopes = [...byEnvironment.entries()]
+      .map(([environmentId, projectIds]) => [environmentId, projectIds.toSorted()] as const)
+      .toSorted(([left], [right]) => left.localeCompare(right));
+    return JSON.stringify([scopes, settledQuery]);
+  }, [projectRefs, settledQuery]);
+  const result = useAtomValue(
+    searchKey === null ? EMPTY_ARCHIVED_THREAD_SEARCH_ATOM : archivedThreadSearchAtom(searchKey),
+  );
+  const isDebouncing = canSearch && normalizedQuery !== debouncedQuery;
+  return {
+    matches: isDebouncing ? EMPTY_THREAD_SEARCH_MATCHES : result.matches,
+    index: isDebouncing ? null : result.index,
+    isPending: canSearch && (isDebouncing || result.index === null),
   };
 }
 

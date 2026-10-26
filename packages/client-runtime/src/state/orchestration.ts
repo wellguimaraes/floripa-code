@@ -73,6 +73,14 @@ export function createOrchestrationEnvironmentAtoms<R, E>(
       staleTimeMs: 30_000,
       idleTtlMs: 60_000,
     }),
+    // Streams improving rankings while the server embeds threads, then ends.
+    archivedThreadSearch: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:orchestration:archived-thread-search",
+      tag: ORCHESTRATION_V2_WS_METHODS.searchArchivedThreads,
+      completeWhen: (result) =>
+        result.index.status === "ready" || result.index.status === "unavailable",
+      idleTtlMs: 60_000,
+    }),
     archivedShellSnapshot: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:orchestration:archived-shell-snapshot",
       tag: ORCHESTRATION_V2_WS_METHODS.getArchivedShellSnapshot,

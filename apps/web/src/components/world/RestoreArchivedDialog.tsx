@@ -8,15 +8,24 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, ScopedProjectRef } from "@t3tools/contracts";
-import { ArchiveIcon, ArchiveRestoreIcon, type LucideIcon, MessageSquareIcon } from "lucide-react";
+import type { OrchestrationArchivedThreadSearchIndex } from "@t3tools/contracts";
+import {
+  ArchiveIcon,
+  ArchiveRestoreIcon,
+  type LucideIcon,
+  MessageSquareIcon,
+  SearchIcon,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
+import { useArchivedThreadSearch } from "../../state/queries";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import type { ProjectFaviconProject } from "../ProjectFavicon";
 import { Button } from "../ui/button";
 import { Dialog, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "../ui/dialog";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group";
 import { Spinner } from "../ui/spinner";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -58,6 +67,21 @@ function TimeLabel(props: {
   );
 }
 
+/** What semantic search is still doing, or null once it has nothing to add. */
+function indexStatusLabel(index: OrchestrationArchivedThreadSearchIndex | null): string | null {
+  if (index === null) return null;
+  switch (index.status) {
+    case "preparing":
+      return index.indexed < index.total ? "Preparing search by meaning…" : null;
+    case "indexing":
+      return `Reading archived agents for search by meaning… ${index.indexed} of ${index.total}`;
+    case "unavailable":
+      return "Search by meaning is unavailable; showing word matches.";
+    case "ready":
+      return null;
+  }
+}
+
 export function RestoreArchivedDialog(props: {
   readonly title: string;
   /** The project whose icon leads the header's pill. */
@@ -94,6 +118,40 @@ export function RestoreArchivedDialog(props: {
       );
   }, [snapshots, projectRefs]);
 
+  const [query, setQuery] = useState("");
+  const search = useArchivedThreadSearch(projectRefs, query);
+  // Server matches lead in their ranked order; a title filter answers
+  // instantly and covers environments that cannot search archives.
+  const visible = useMemo(() => {
+    const needle = query.trim().toLocaleLowerCase();
+    if (needle.length === 0) return threads.map((thread) => ({ thread, snippet: null }));
+    const byKey = new Map(
+      threads.map((thread) => [`${thread.environmentId}:${thread.id}`, thread]),
+    );
+    const seen = new Set<string>();
+    const ranked: Array<{ thread: (typeof threads)[number]; snippet: string | null }> = [];
+    for (const match of search.matches) {
+      const key = `${match.environmentId}:${match.threadId}`;
+      const thread = byKey.get(key);
+      if (thread === undefined || seen.has(key)) continue;
+      seen.add(key);
+      ranked.push({ thread, snippet: match.snippet || null });
+    }
+    for (const thread of threads) {
+      const key = `${thread.environmentId}:${thread.id}`;
+      if (seen.has(key) || !thread.title.toLocaleLowerCase().includes(needle)) continue;
+      ranked.push({ thread, snippet: null });
+    }
+    return ranked;
+  }, [threads, query, search.matches]);
+  const searching = query.trim().length >= 2;
+  const statusLabel = searching ? indexStatusLabel(search.index) : null;
+  const isSearchLoading =
+    searching &&
+    (search.isPending ||
+      search.index?.status === "preparing" ||
+      search.index?.status === "indexing");
+
   const { unarchiveThread } = useThreadActions();
   const [restoring, setRestoring] = useState<ReadonlySet<string>>(new Set());
   const restore = async (thread: (typeof threads)[number]) => {
@@ -122,10 +180,35 @@ export function RestoreArchivedDialog(props: {
         if (!open) onClose();
       }}
     >
-      <DialogPopup className="max-h-[min(500px,calc(100dvh-2rem))] max-w-md">
+      {/* A fixed height keeps the search box still while results come and go. */}
+      <DialogPopup className="h-[min(500px,calc(100dvh-2rem))] max-w-md">
         <DialogHeader>
           <WorldProjectPill size="sm" project={project} name={title} plate={plate} />
           <DialogTitle>Restore archived agents</DialogTitle>
+          {threads.length > 0 ? (
+            <InputGroup className="mt-2">
+              <InputGroupAddon>
+                <SearchIcon aria-hidden className="size-3.5" />
+              </InputGroupAddon>
+              <InputGroupInput
+                aria-label="Search archived agents"
+                autoFocus
+                onChange={(event) => setQuery(event.currentTarget.value)}
+                placeholder="Search by words or meaning"
+                size="sm"
+                type="search"
+                value={query}
+              />
+              {isSearchLoading ? (
+                <InputGroupAddon align="inline-end">
+                  <Spinner size="sm" tone="muted" />
+                </InputGroupAddon>
+              ) : null}
+            </InputGroup>
+          ) : null}
+          {statusLabel !== null ? (
+            <p className="text-xs text-muted-foreground">{statusLabel}</p>
+          ) : null}
         </DialogHeader>
         <DialogPanel>
           {threads.length === 0 ? (
@@ -135,9 +218,13 @@ export function RestoreArchivedDialog(props: {
                 ? "Loading archived agents…"
                 : (error ?? "No archived agents on this island.")}
             </p>
+          ) : visible.length === 0 ? (
+            <p className="py-2 text-sm text-muted-foreground">
+              {search.isPending ? "Searching…" : "No archived agents match."}
+            </p>
           ) : (
             <ul className="-mx-2 flex flex-col">
-              {threads.map((thread) => {
+              {visible.map(({ thread, snippet }) => {
                 const key = `${thread.environmentId}:${thread.id}`;
                 return (
                   <li
@@ -146,6 +233,9 @@ export function RestoreArchivedDialog(props: {
                   >
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm">{thread.title || "Untitled thread"}</p>
+                      {snippet !== null ? (
+                        <p className="truncate text-xs text-muted-foreground">{snippet}</p>
+                      ) : null}
                       <p className="flex items-center gap-3 text-xs text-muted-foreground">
                         <TimeLabel
                           icon={MessageSquareIcon}
