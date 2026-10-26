@@ -1,6 +1,7 @@
 import {
   ScheduledTaskId,
   ScheduledTask,
+  OrchestrationArchivedThreadSearchIndex,
   OrchestrationSearchThreadsInput,
   OrchestrationSearchThreadsResult,
   OrchestrationV2ThreadForkSourcePoint,
@@ -243,12 +244,16 @@ const ThreadTransfersTool = Tool.make("t3_thread_transfers", {
 const ThreadSearchTool = Tool.make("t3_thread_search", {
   ...commandTool,
   description:
-    "Search active thread titles and content with the app's existing bounded search. Matches are limited to one project (projectId, else the calling thread's project) out of the global top matches, so this may return fewer than limit. A caller outside a T3 thread that omits projectId searches every project. No pagination or exhaustive-result guarantee.",
+    "Search active thread titles and content with the app's existing bounded search. Matches are limited to one project (projectId, else the calling thread's project) out of the global top matches, so this may return fewer than limit. A caller outside a T3 thread that omits projectId searches every project. No pagination or exhaustive-result guarantee. Set archived to search archived threads instead, by keyword and by meaning (multilingual, so a paraphrase or another language can match); its first use downloads a local model and embeds threads, and `index` reports whether that finished in time.",
   parameters: Schema.Struct({
     ...OrchestrationSearchThreadsInput.fields,
     projectId: Schema.optional(ProjectId),
+    archived: Schema.optional(Schema.Boolean),
   }),
-  success: OrchestrationSearchThreadsResult,
+  success: Schema.Struct({
+    ...OrchestrationSearchThreadsResult.fields,
+    index: Schema.optional(OrchestrationArchivedThreadSearchIndex),
+  }),
   dependencies: [...commandTool.dependencies, ThreadSearch.ThreadSearch],
 })
   .annotate(Tool.Readonly, true)

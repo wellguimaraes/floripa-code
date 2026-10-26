@@ -7,7 +7,10 @@ import {
   OrchestratorMcpFailure,
   type OrchestrationV2Command,
 } from "@t3tools/contracts";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Stream from "effect/Stream";
 import { modelSelectionCommandType } from "@t3tools/shared/model";
 
 import * as McpToolAccess from "../../McpToolAccess.ts";
@@ -22,6 +25,8 @@ import * as ThreadSearch from "../../../orchestration-v2/ThreadSearch.ts";
 import * as ScheduledTasks from "../../../scheduledTasks/ScheduledTaskService.ts";
 import { queuedRunsInDeliveryOrder } from "../../../orchestration-v2/QueuedRunOrder.ts";
 import { ThreadToolkit } from "./tools.ts";
+
+const ARCHIVED_SEARCH_BUDGET = Duration.seconds(30);
 
 function queueEntry(
   projection: Pick<OrchestrationV2ThreadProjection, "runs" | "messages">,
@@ -100,11 +105,26 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
   t3_thread_search: McpToolAccess.reads((input) =>
     Effect.gen(function* () {
       const { caller } = yield* readCaller();
-      const { projectId: requested, ...query } = input;
+      const { projectId: requested, archived, ...query } = input;
       // Like the other project tools, an omitted project means the caller's own; a client
       // outside a thread searches every project.
       const projectId = requested ?? caller?.projectId;
       const threadSearch = yield* ThreadSearch.ThreadSearch;
+      if (archived === true) {
+        // Indexing a large archive the first time can outlast a tool call;
+        // report the best ranking so far and let the next call finish it.
+        const latest = yield* threadSearch
+          .searchArchived({
+            ...query,
+            ...(projectId === undefined ? {} : { projectIds: [projectId] }),
+          })
+          .pipe(
+            Stream.interruptWhen(Effect.sleep(ARCHIVED_SEARCH_BUDGET)),
+            Stream.runLast,
+            Effect.mapError(unavailable),
+          );
+        return Option.getOrElse(latest, () => ({ matches: [] }));
+      }
       const result = yield* threadSearch.search(query).pipe(Effect.mapError(unavailable));
       return {
         matches:

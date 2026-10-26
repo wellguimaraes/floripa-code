@@ -40,3 +40,34 @@ export class OrchestrationSearchThreadsError extends Schema.TaggedError<Orchestr
     cause: Schema.optional(Schema.Defect()),
   },
 ) {}
+
+/** Search scoped to archived threads, ranking by keyword and by meaning. */
+export const OrchestrationSearchArchivedThreadsInput = Schema.Struct({
+  query: OrchestrationSearchThreadsInput.fields.query,
+  /** Omitted searches every project. */
+  projectIds: Schema.optionalKey(Schema.Array(ProjectId).check(Schema.isMaxLength(100))),
+  limit: OrchestrationSearchThreadsInput.fields.limit,
+});
+export type OrchestrationSearchArchivedThreadsInput =
+  typeof OrchestrationSearchArchivedThreadsInput.Type;
+
+/**
+ * How far semantic ranking has got. `preparing` covers the first-use model
+ * download; `indexing` embeds threads that changed since they were last seen;
+ * `unavailable` means only keyword matches are ranked.
+ */
+export const OrchestrationArchivedThreadSearchIndex = Schema.Struct({
+  status: Schema.Literals(["preparing", "indexing", "ready", "unavailable"]),
+  indexed: Schema.Int,
+  total: Schema.Int,
+});
+export type OrchestrationArchivedThreadSearchIndex =
+  typeof OrchestrationArchivedThreadSearchIndex.Type;
+
+/** Streamed: each value replaces the last, and the stream ends once `index` settles. */
+export const OrchestrationSearchArchivedThreadsResult = Schema.Struct({
+  matches: Schema.Array(OrchestrationThreadSearchMatch),
+  index: OrchestrationArchivedThreadSearchIndex,
+});
+export type OrchestrationSearchArchivedThreadsResult =
+  typeof OrchestrationSearchArchivedThreadsResult.Type;

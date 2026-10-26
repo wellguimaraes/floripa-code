@@ -10,15 +10,58 @@ import {
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
+
+import * as TextEmbedder from "../embeddings/TextEmbedder.ts";
 
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as ThreadSearch from "./ThreadSearch.ts";
 
+// Stands in for the model: words about one concept share an axis, so text in
+// different words or languages lands together, as e5 places it.
+const CONCEPTS = [
+  ["signing", "assinatura", "certificate", "notarize"],
+  ["terminal", "split"],
+];
+const embedder = {
+  passages: 0,
+  failing: false,
+};
+const fakeEmbedderLayer = Layer.succeed(
+  TextEmbedder.TextEmbedder,
+  TextEmbedder.TextEmbedder.of({
+    embed: (role, texts) =>
+      Effect.suspend(() => {
+        if (embedder.failing) {
+          return Effect.fail(
+            new TextEmbedder.TextEmbedderError({ stage: "download", cause: new Error("offline") }),
+          );
+        }
+        if (role === "passage") embedder.passages += texts.length;
+        return Effect.succeed(
+          texts.map((text) => {
+            const lower = text.toLowerCase();
+            const axes = CONCEPTS.map((words) => (words.some((w) => lower.includes(w)) ? 1 : 0));
+            // Text about none of them is unrelated to everything else.
+            const none = axes.includes(1) ? 0 : 1;
+            const vector = Float32Array.from([
+              ...axes,
+              role === "query" ? none : 0,
+              role === "passage" ? none : 0,
+            ]);
+            const norm = Math.hypot(...vector);
+            return vector.map((value) => value / norm);
+          }),
+        );
+      }),
+  }),
+);
+
 const layerTest = Layer.mergeAll(
-  ThreadSearch.layer,
+  ThreadSearch.layer.pipe(Layer.provide(fakeEmbedderLayer)),
   ProjectionStore.layer,
   ProjectStore.layer,
 ).pipe(Layer.provideMerge(SqlitePersistence.layerMemory));
@@ -54,7 +97,11 @@ const createProject = (projectId: ProjectId) =>
 const thread = (
   threadId: ThreadId,
   projectId: ProjectId,
-  overrides: { readonly archivedAt?: DateTime.Utc; readonly deletedAt?: DateTime.Utc } = {},
+  overrides: {
+    readonly archivedAt?: DateTime.Utc;
+    readonly deletedAt?: DateTime.Utc;
+    readonly title?: string;
+  } = {},
 ): OrchestrationV2DomainEvent => ({
   id: EventId.make(`created:${threadId}`),
   type: "thread.created",
@@ -66,7 +113,7 @@ const thread = (
     creationSource: "web",
     id: threadId,
     projectId,
-    title: threadId,
+    title: overrides.title ?? threadId,
     providerInstanceId,
     modelSelection: { instanceId: providerInstanceId, model: "gpt-5" },
     runtimeMode: "full-access",
@@ -196,6 +243,98 @@ it.layer(layerTest)("ThreadSearch", (it) => {
 
       const error = yield* Effect.flip(search.search({ query: "0260927" }));
       assert.equal(error.operation, "decode");
+    }),
+  );
+
+  it.effect("ranks archived threads by keyword and by meaning, indexing them once", () =>
+    Effect.gen(function* () {
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const search = yield* ThreadSearch.ThreadSearch;
+      const project = ProjectId.make("project:archived");
+      yield* createProject(project);
+      const signing = ThreadId.make("thread:archived-signing");
+      const terminal = ThreadId.make("thread:archived-terminal");
+      const titled = ThreadId.make("thread:archived-titled");
+      const active = ThreadId.make("thread:active-signing");
+      yield* Effect.forEach(
+        [
+          thread(signing, project, { archivedAt: at(5), title: "Release build" }),
+          message(signing, "signing-user", "user", "Corrigir a assinatura do app no mac"),
+          thread(terminal, project, { archivedAt: at(4), title: "Tab bar" }),
+          message(terminal, "terminal-user", "user", "The split terminal button looks wrong"),
+          message(terminal, "terminal-answer", "assistant", "Fixed the button color"),
+          thread(titled, project, { archivedAt: at(3), title: "Button polish" }),
+          message(titled, "titled-user", "user", "Make it rounder"),
+          thread(active, project, { title: "Signing" }),
+          message(active, "active-user", "user", "notarize the certificate"),
+        ],
+        projections.apply,
+        { discard: true },
+      );
+      embedder.passages = 0;
+
+      const run = (query: string) =>
+        Stream.runCollect(search.searchArchived({ query, projectIds: [project] }));
+
+      const updates = yield* run("notarize certificate");
+      const final = updates.at(-1)!;
+      // Keyword ranking arrives before the model has seen anything.
+      assert.deepEqual(updates[0]!.index, { status: "preparing", indexed: 0, total: 3 });
+      assert.deepEqual(final.index, { status: "ready", indexed: 3, total: 3 });
+      // Portuguese wording matches by meaning; the active thread stays out.
+      assert.deepEqual(
+        final.matches.map((match) => [match.threadId, match.snippet]),
+        [[signing, "Corrigir a assinatura do app no mac"]],
+      );
+      assert.equal(embedder.passages, 3);
+
+      // Every word, in any order, within the title or one message.
+      const matchesOf = (query: string) =>
+        run(query).pipe(
+          Effect.map((updates) =>
+            updates.at(-1)!.matches.map((match) => [match.threadId, match.snippet]),
+          ),
+        );
+      assert.deepEqual(yield* matchesOf("polish button"), [[titled, "Make it rounder"]]);
+      assert.deepEqual(yield* matchesOf("wrong button"), [
+        [terminal, "The split terminal button looks wrong"],
+      ]);
+      assert.deepEqual(yield* matchesOf("rounder polish"), []);
+      // Vectors are reused until the thread changes.
+      assert.equal(embedder.passages, 3);
+      yield* projections.apply(
+        message(terminal, "terminal-late", "user", "one more thing", { minute: 9 }),
+      );
+      yield* run("anything");
+      assert.equal(embedder.passages, 4);
+    }),
+  );
+
+  it.effect("falls back to keyword matches when the model is unavailable", () =>
+    Effect.gen(function* () {
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const search = yield* ThreadSearch.ThreadSearch;
+      const project = ProjectId.make("project:archived-offline");
+      const threadId = ThreadId.make("thread:archived-offline");
+      yield* createProject(project);
+      yield* Effect.forEach(
+        [
+          thread(threadId, project, { archivedAt: at(1) }),
+          message(threadId, "offline-user", "user", "needle in the archive"),
+        ],
+        projections.apply,
+        { discard: true },
+      );
+      embedder.failing = true;
+      const final = (yield* Stream.runCollect(
+        search.searchArchived({ query: "needle", projectIds: [project] }),
+      )).at(-1)!;
+      embedder.failing = false;
+      assert.deepEqual(final.index, { status: "unavailable", indexed: 0, total: 1 });
+      assert.deepEqual(
+        final.matches.map((match) => match.threadId),
+        [threadId],
+      );
     }),
   );
 });
