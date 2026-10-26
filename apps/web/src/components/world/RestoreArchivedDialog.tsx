@@ -24,7 +24,7 @@ import { signTextColor } from "./scene/Sign";
 import { WorldProjectPill } from "./WorldProjectPill";
 
 /**
- * Lists an island's archived agents, most recently active first, each with a
+ * Lists an island's archived agents, most recently archived first, each with a
  * button that brings it back. Restored agents leave the list; the dialog
  * stays open so several can come back in one go.
  */
@@ -87,7 +87,10 @@ export function RestoreArchivedDialog(props: {
         ),
       )
       .toSorted(
-        (a, b) => lastMessageAt(b).localeCompare(lastMessageAt(a)) || b.id.localeCompare(a.id),
+        (a, b) =>
+          (b.archivedAt ?? "").localeCompare(a.archivedAt ?? "") ||
+          lastMessageAt(b).localeCompare(lastMessageAt(a)) ||
+          b.id.localeCompare(a.id),
       );
   }, [snapshots, projectRefs]);
 
