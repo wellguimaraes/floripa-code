@@ -29,12 +29,14 @@ import {
   deriveTimelineEntriesFromVisibleTurnItemsWithState,
   deriveRevertTurnCountByUserMessageId,
   derivePhase,
+  deriveTimelineActivity,
   findLatestProposedPlan,
   isLatestRunSettled,
   selectHandoffImageResources,
   selectMessageImageResources,
   createMessageAttachmentPreviewProjector,
   providerErrorPresentation,
+  type ThreadRunState,
   type TimelineEntry,
   workEntryIndicatesToolFailure,
   workEntryDisplayIndicatesToolFailure,
@@ -69,6 +71,44 @@ describe("V2 session presentation", () => {
         { status: "running", activeRunId: RunId.make("run-active") },
       ),
     ).toBe(false);
+  });
+
+  it("shares one notion of agent work between the chat and views outside it", () => {
+    const runId = RunId.make("run-activity");
+    const runs = (
+      status: ThreadRuntimeSummary["status"],
+      runlessWorkStartedAt: string | null = null,
+    ): ThreadRunState => {
+      const run = {
+        runId,
+        status,
+        startedAt: "2026-10-26T10:00:00.000Z",
+        requestedAt: "2026-10-26T10:00:00.000Z",
+        completedAt: null,
+      } as unknown as ThreadRunState["latestRun"];
+      return {
+        latestRun: run,
+        activityRun: run,
+        runtime: { status, activeRunId: runId } as unknown as ThreadRuntimeSummary,
+        runlessWorkStartedAt,
+      };
+    };
+
+    const running = deriveTimelineActivity(runs("running"));
+    expect(running).toMatchObject({ isWorking: true, runningRunId: runId });
+    expect(running.activeTurnStartedAt).not.toBeNull();
+    // A run still starting is not work yet, unless this client is sending it.
+    expect(deriveTimelineActivity(runs("starting"))).toMatchObject({
+      isWorking: false,
+      activeTurnInProgress: true,
+    });
+    expect(
+      deriveTimelineActivity(runs("starting"), { work: true, dispatchStartedAt: null }).isWorking,
+    ).toBe(true);
+    expect(deriveTimelineActivity(runs("idle", "2026-10-26T10:00:00.000Z"))).toMatchObject({
+      isWorking: true,
+      runlessWorkActive: true,
+    });
   });
 
   it("offers Stop while a run is preparing/starting, not just once it's running (#13392)", () => {

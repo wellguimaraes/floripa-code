@@ -1,12 +1,11 @@
 import { deriveThreadQueueWorkflowState } from "@t3tools/client-runtime/state/thread-workflows";
 import type {
   ChatAttachment,
-  ModelSelection,
+  MessageId,
   OrchestrationMessageContext,
   OrchestrationV2ThreadProjection,
   RunId,
 } from "@t3tools/contracts";
-import * as DateTime from "effect/DateTime";
 
 /** A sent message still waiting behind the agent's current run. */
 export interface QueuedSend {
@@ -16,7 +15,7 @@ export interface QueuedSend {
 }
 
 export interface SentMessage {
-  readonly id: string;
+  readonly id: MessageId;
   readonly text: string;
   /** The chips' records, for rendering them inline as the chat does. */
   readonly context: OrchestrationMessageContext | undefined;
@@ -24,20 +23,9 @@ export interface SentMessage {
   readonly queued: QueuedSend | null;
 }
 
-export interface AgentReply {
-  readonly id: string;
-  readonly text: string;
-  /** When the reply finished, as an ISO timestamp. */
-  readonly at: string;
-  /** The model of the run that wrote it; null for a reply outside a run. */
-  readonly model: ModelSelection | null;
-}
-
 export interface LastExchange {
   /** The last message you wrote, not one an agent or the system posted for you. */
   readonly sent: SentMessage | null;
-  /** The agent's latest finished reply after it; null while it has not answered yet. */
-  readonly reply: AgentReply | null;
 }
 
 export function lastExchange(projection: OrchestrationV2ThreadProjection): LastExchange {
@@ -53,13 +41,6 @@ export function lastExchange(projection: OrchestrationV2ThreadProjection): LastE
       candidate.role === "user" && candidate.createdBy === "user" && !withdrawn.has(candidate.id),
   );
   const sentMessage = sentIndex === -1 ? undefined : messages[sentIndex];
-  // Streaming replies wait until they finish, so a reply doesn't re-render on every token.
-  const replyMessage = messages
-    .slice(sentIndex + 1)
-    .findLast(
-      (candidate) =>
-        candidate.role === "assistant" && !candidate.streaming && candidate.text.trim() !== "",
-    );
   const queue = deriveThreadQueueWorkflowState(projection);
   const queuedRun = queue.queuedRuns.find(({ messageId }) => messageId === sentMessage?.id)?.run;
   return {
@@ -81,16 +62,6 @@ export function lastExchange(projection: OrchestrationV2ThreadProjection): LastE
                         ? queue.activeRun.id
                         : null,
                   },
-          },
-    reply:
-      replyMessage === undefined
-        ? null
-        : {
-            id: replyMessage.id,
-            text: replyMessage.text,
-            at: DateTime.formatIso(replyMessage.updatedAt),
-            model:
-              projection.runs.find((run) => run.id === replyMessage.runId)?.modelSelection ?? null,
           },
   };
 }

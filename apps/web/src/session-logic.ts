@@ -36,7 +36,13 @@ import type {
   ThreadPendingUserInput,
 } from "@t3tools/client-runtime/state/thread-requests";
 import type { ThreadRunSummary, ThreadRuntimeSummary } from "@t3tools/client-runtime/state/shell";
-import { threadRuntimeHasInterruptibleRun } from "@t3tools/client-runtime/state/thread-execution";
+import {
+  deriveLatestThreadRun,
+  deriveRunlessWorkStartedAt,
+  deriveThreadActivityRun,
+  deriveThreadRuntime,
+  threadRuntimeHasInterruptibleRun,
+} from "@t3tools/client-runtime/state/thread-execution";
 import { turnItemIsWorkspacePreparation } from "@t3tools/client-runtime/state/turn-item-presentation";
 
 import {
@@ -245,6 +251,62 @@ export function deriveActiveWorkStartedAt(
   // Local dispatch has a clock only until the server supplies the owning run.
   return startedAt ?? (runtime?.activeRunId == null ? sendStartedAt : null);
 }
+
+export interface ThreadRunState {
+  readonly latestRun: ThreadRunSummary | null;
+  readonly activityRun: ThreadRunSummary | null;
+  readonly runtime: ThreadRuntimeSummary | null;
+  /** When a provider-native subagent's runless work began; null while it has none. */
+  readonly runlessWorkStartedAt: string | null;
+}
+
+/** A thread's runs as the timeline reads them, from its projection. */
+export function deriveThreadRunState(projection: OrchestrationV2ThreadProjection): ThreadRunState {
+  return {
+    latestRun: deriveLatestThreadRun(projection),
+    activityRun: deriveThreadActivityRun(projection),
+    runtime: deriveThreadRuntime(projection),
+    runlessWorkStartedAt: deriveRunlessWorkStartedAt(projection),
+  };
+}
+
+export interface TimelineActivity {
+  readonly isWorking: boolean;
+  /** The live work belongs to a runless root turn (a provider-native subagent). */
+  readonly runlessWorkActive: boolean;
+  /** Working, or the latest run has not settled yet. */
+  readonly activeTurnInProgress: boolean;
+  readonly activeTurnStartedAt: string | null;
+  readonly runningRunId: RunId | null;
+}
+
+/**
+ * Whether the agent is at work, as the timeline shows it. `localWork` is
+ * work this client started that the server may not report yet, such as a
+ * send in flight, and `localDispatchStartedAt` that send's clock until the
+ * server supplies the run.
+ */
+export function deriveTimelineActivity(
+  runs: ThreadRunState,
+  local: { readonly work: boolean; readonly dispatchStartedAt: string | null } = NO_LOCAL_WORK,
+): TimelineActivity {
+  const { latestRun, activityRun, runtime, runlessWorkStartedAt } = runs;
+  // A rewind is not agent work: the composer shows "Rewinding conversation"
+  // instead of the timeline growing a Thinking row.
+  const isWorking =
+    derivePhase(runtime) === "running" || local.work || runlessWorkStartedAt !== null;
+  return {
+    isWorking,
+    runlessWorkActive: runlessWorkStartedAt !== null,
+    activeTurnInProgress: isWorking || !isLatestRunSettled(latestRun, runtime),
+    activeTurnStartedAt:
+      deriveActiveWorkStartedAt(activityRun, runtime, local.dispatchStartedAt) ??
+      runlessWorkStartedAt,
+    runningRunId: runtime?.activeRunId ?? null,
+  };
+}
+
+const NO_LOCAL_WORK = { work: false, dispatchStartedAt: null };
 
 export function derivePendingApprovals(
   approvals: ReadonlyArray<ThreadPendingApproval>,

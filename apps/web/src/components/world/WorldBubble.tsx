@@ -1,15 +1,15 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { resolveProviderSkillsForCwd } from "@t3tools/client-runtime/providerSkills";
-import { shouldPreserveAssistantLineBreaks } from "@t3tools/shared/markdownPipeline";
 import { fileBasename } from "@t3tools/shared/path";
+import type { ServerProvider } from "@t3tools/contracts";
 import { ArchiveIcon, MessagesSquareIcon, RefreshCwIcon, SquareIcon, XIcon } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { formatShortcutLabel } from "../../keybindings";
-import { formatRelativeTimeLabel } from "../../timestampFormat";
+import { observeResize } from "../../lib/observeResize";
 import { cn, newMessageId } from "../../lib/utils";
 import {
   readEnvironmentSupportsTitleRegeneration,
@@ -25,10 +25,8 @@ import { Button } from "../ui/button";
 import { Kbd } from "../ui/kbd";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import ChatMarkdown from "../ChatMarkdown";
 import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "../chat/composerPromptHistory";
 import { ClampedUserMessage, type UserMessageChipState } from "../chat/MessagesTimeline";
-import { getTriggerDisplayModelName } from "../chat/providerIconUtils";
 import { BubbleComposer } from "./BubbleComposer";
 import type { CharacterFacts } from "./engine/facts";
 import { HuePicker } from "./HuePicker";
@@ -36,7 +34,8 @@ import { type FamilyShades as Shades, palette } from "./scene/palette";
 import { useBubbleAttachments } from "./useBubbleAttachments";
 import { ARCHIVE_SHORTCUT, useArchiveShortcut } from "./useArchiveShortcut";
 import type { QueuedSend } from "./lastExchange";
-import { RollingSwap, TypingDots } from "./RollingSwap";
+import { LatestTurn } from "./LatestTurn";
+import { RollingSwap } from "./RollingSwap";
 import { useLastExchange } from "./useLastExchange";
 
 /**
@@ -50,6 +49,7 @@ export function isStoppable(facts: CharacterFacts): boolean {
 }
 
 const EMPTY_SKILLS: UserMessageChipState["skills"] = [];
+const EMPTY_PROVIDERS: ReadonlyArray<ServerProvider> = [];
 const NOOP = () => {};
 
 const NO_MODIFIERS = {
@@ -91,32 +91,12 @@ export function WorldBubble(props: {
   const provider =
     providers?.find((candidate) => candidate.instanceId === thread?.modelSelection.instanceId) ??
     null;
-  const { sent: lastSent, reply: lastReply } = useLastExchange(facts.ref);
-  // Who answered and when, under the reply: the run's model, which may not be the thread's now.
-  const replyModel = lastReply?.model ?? null;
-  const replyModelOption =
-    replyModel === null
-      ? undefined
-      : providers
-          ?.find((candidate) => candidate.instanceId === replyModel.instanceId)
-          ?.models.find((model) => model.slug === replyModel.model);
-  const replyMeta =
-    lastReply === null
-      ? null
-      : [
-          replyModelOption !== undefined
-            ? getTriggerDisplayModelName(replyModelOption)
-            : replyModel?.model,
-          formatRelativeTimeLabel(lastReply.at),
-        ]
-          .filter((part) => part !== undefined && part !== "")
-          .join(" · ");
-  // While the agent works its bubble shows typing dots; the finished reply rolls in after.
-  const typing = facts.status === "working";
-  // The exchange opens scrolled to its end, where the latest words are; the thread can load
-  // after the bubble opens, so it scrolls again once the exchange shows.
+  const { sent: lastSent } = useLastExchange(facts.ref);
+  // The exchange opens scrolled to its end, where the latest words are, and follows the agent's
+  // work as it grows unless you scrolled up to read.
   const exchange = useRef<HTMLDivElement>(null);
-  const hasExchange = lastSent !== null || lastReply !== null || typing;
+  const exchangeContent = useRef<HTMLDivElement>(null);
+  const followingEnd = useRef(true);
   // Scrolled away from the top: the reply is passing under your pinned message.
   const [exchangeScrolled, setExchangeScrolled] = useState(false);
   const { resolvedTheme } = useTheme();
@@ -142,8 +122,14 @@ export function WorldBubble(props: {
   );
   useLayoutEffect(() => {
     const element = exchange.current;
-    if (hasExchange && element !== null) element.scrollTop = element.scrollHeight;
-  }, [hasExchange]);
+    const content = exchangeContent.current;
+    if (element === null || content === null) return;
+    const toEnd = () => {
+      if (followingEnd.current) element.scrollTop = element.scrollHeight;
+    };
+    toEnd();
+    return observeResize(content, toEnd);
+  }, []);
   const startTurn = useOrchestrationCommand(threadEnvironment.startTurn, {
     reportFailure: false,
   });
@@ -421,19 +407,24 @@ export function WorldBubble(props: {
               <XIcon />
             </Button>
           </div>
-          {/* The last exchange as the chat shows it: yours in a bubble on the right, the agent's below.
-              Capped in height: a long reply scrolls under your message, which stays pinned on top. */}
-          {hasExchange ? (
-            // Ruled off below, edge to edge, like the header.
-            <div
-              ref={exchange}
-              onScroll={(event) => setExchangeScrolled(event.currentTarget.scrollTop > 0)}
-              className="-mx-2.5 mt-1 flex max-h-80 flex-col gap-2 overflow-y-auto border-b border-border px-2.5 pb-2.5 text-bubble"
-            >
+          {/* The last exchange as the chat shows it: yours in a bubble on the right, then everything
+              the agent did after it. Capped in height: the turn scrolls under your message, which
+              stays pinned on top. Ruled off below, edge to edge, like the header; gone while empty. */}
+          <div
+            ref={exchange}
+            onScroll={(event) => {
+              const element = event.currentTarget;
+              setExchangeScrolled(element.scrollTop > 0);
+              followingEnd.current =
+                element.scrollHeight - element.scrollTop - element.clientHeight < 4;
+            }}
+            className="-mx-2.5 mt-1 max-h-80 overflow-y-auto border-b border-border px-2.5 pb-2.5 text-bubble has-[>[data-exchange]:empty]:hidden"
+          >
+            <div ref={exchangeContent} data-exchange className="flex min-w-0 flex-col gap-2">
               {lastSent !== null ? (
-                // Covers the reply scrolling under it, which fades out beneath it.
+                // Covers the turn scrolling under it, which fades out beneath it.
                 <div className="sticky top-0 z-10 flex flex-col items-end gap-0.5 bg-popover">
-                  {/* A fractional scroll offset can leak a row of the reply above the pin; this caps it. */}
+                  {/* A fractional scroll offset can leak a row of the turn above the pin; this caps it. */}
                   <div className="pointer-events-none absolute inset-x-0 bottom-full h-1 bg-popover" />
                   {exchangeScrolled ? (
                     <div className="pointer-events-none absolute inset-x-0 top-full h-10 bg-linear-to-b from-popover to-transparent" />
@@ -457,33 +448,19 @@ export function WorldBubble(props: {
                   ) : null}
                 </div>
               ) : null}
-              {/* The agent's whole answer, unboxed across the width like the chat's. */}
-              {typing || lastReply !== null ? (
-                <div className="flex min-w-0 flex-col px-1">
-                  <RollingSwap swapKey={typing ? "typing" : (lastReply?.id ?? "typing")}>
-                    {typing || lastReply === null ? (
-                      <TypingDots />
-                    ) : (
-                      <>
-                        <ChatMarkdown
-                          text={lastReply.text}
-                          cwd={cwd ?? undefined}
-                          threadRef={facts.ref}
-                          lineBreaks={shouldPreserveAssistantLineBreaks(lastReply.text)}
-                          skills={skills}
-                        />
-                        {replyMeta ? (
-                          <span className="max-w-full self-end truncate py-2 text-muted-foreground text-xs">
-                            {replyMeta}
-                          </span>
-                        ) : null}
-                      </>
-                    )}
-                  </RollingSwap>
-                </div>
-              ) : null}
+              <LatestTurn
+                threadRef={facts.ref}
+                sentMessageId={lastSent?.id ?? null}
+                awaitingUser={facts.status === "approval" || facts.status === "input"}
+                cwd={cwd}
+                workspaceRoot={project?.workspaceRoot}
+                resolvedTheme={resolvedTheme}
+                skills={skills}
+                providers={providers ?? EMPTY_PROVIDERS}
+                onOpenFullChat={expand}
+              />
             </div>
-          ) : null}
+          </div>
         </>
       }
     />

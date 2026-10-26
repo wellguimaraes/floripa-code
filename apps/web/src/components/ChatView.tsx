@@ -99,10 +99,6 @@ import {
   deriveProviderSubagentStatus,
   deriveReportedModelSelection,
   formatModelSelectionEffort,
-  deriveRunlessWorkStartedAt,
-  deriveThreadActivityRun,
-  deriveLatestThreadRun,
-  deriveThreadRuntime,
   presentPendingBackgroundWork,
   presentProviderGoal,
 } from "@t3tools/client-runtime/state/thread-execution";
@@ -195,11 +191,10 @@ import {
   derivePendingApprovals,
   derivePendingUserInputs,
   derivePhase,
-  deriveTimelineEntriesFromVisibleTurnItemsWithState,
   selectHandoffImageResources,
-  type TimelineEntriesProjection,
   deriveActivePlanState,
-  deriveActiveWorkStartedAt,
+  deriveThreadRunState,
+  deriveTimelineActivity,
   deriveCanInterruptRunningThread,
   findLatestProposedPlan,
   hasActionableProposedPlan,
@@ -245,6 +240,7 @@ import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { subscribeSnapShotComposerFocus } from "../lib/desktopSnapShot";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
+import { useTimelineEntries } from "../hooks/useTimelineEntries";
 import { usePreviewPanelInlineSize } from "../hooks/usePreviewPanelInlineSize";
 import {
   RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY,
@@ -1657,22 +1653,14 @@ export default function ChatView(props: ChatViewProps) {
   );
   const isServerThread = serverThread !== null;
   const activeThread = isServerThread ? serverThread : localDraftThread;
-  const serverLatestRun = useMemo(
-    () => (serverProjection === null ? null : deriveLatestThreadRun(serverProjection)),
+  const serverRunState = useMemo(
+    () => (serverProjection === null ? null : deriveThreadRunState(serverProjection)),
     [serverProjection],
   );
-  const serverActivityRun = useMemo(
-    () => (serverProjection === null ? null : deriveThreadActivityRun(serverProjection)),
-    [serverProjection],
-  );
-  const serverRuntime = useMemo(
-    () => (serverProjection === null ? null : deriveThreadRuntime(serverProjection)),
-    [serverProjection],
-  );
-  const runlessWorkStartedAt = useMemo(
-    () => (serverProjection === null ? null : deriveRunlessWorkStartedAt(serverProjection)),
-    [serverProjection],
-  );
+  const serverLatestRun = serverRunState?.latestRun ?? null;
+  const serverActivityRun = serverRunState?.activityRun ?? null;
+  const serverRuntime = serverRunState?.runtime ?? null;
+  const runlessWorkStartedAt = serverRunState?.runlessWorkStartedAt ?? null;
   const providerSubagentStatus = useMemo(
     () => (serverProjection === null ? null : deriveProviderSubagentStatus(serverProjection)),
     [serverProjection],
@@ -3206,14 +3194,16 @@ export default function ChatView(props: ChatViewProps) {
     (isSendBusy || phase === "connecting" || phase === "running") &&
     compactRequestIsActive &&
     !compactionSettled;
-  // A rewind is not agent work: the composer shows "Rewinding conversation"
-  // instead of the timeline growing a Thinking row.
-  const isWorking =
-    phase === "running" ||
-    isSendBusy ||
-    isConnecting ||
-    isCompacting ||
-    runlessWorkStartedAt !== null;
+  const timelineActivity = deriveTimelineActivity(
+    {
+      latestRun: activeLatestRun,
+      activityRun: activeActivityRun,
+      runtime: activeRuntime,
+      runlessWorkStartedAt,
+    },
+    { work: isSendBusy || isConnecting || isCompacting, dispatchStartedAt: localDispatchStartedAt },
+  );
+  const { isWorking } = timelineActivity;
   const activeContextWindow = useMemo(
     () =>
       deriveLatestContextWindowSnapshot(
@@ -3250,9 +3240,7 @@ export default function ChatView(props: ChatViewProps) {
       }),
     ];
   }, [serverProjection]);
-  const activeWorkStartedAt =
-    deriveActiveWorkStartedAt(activeActivityRun, activeRuntime, localDispatchStartedAt) ??
-    runlessWorkStartedAt;
+  const activeWorkStartedAt = timelineActivity.activeTurnStartedAt;
   // Server-side workspace preparation: unlike the local-dispatch flag this
   // survives reloads and shows on remote viewers of the same thread.
   const activeRunPreparing = activeActivityRun?.status === "preparing";
@@ -3500,38 +3488,14 @@ export default function ChatView(props: ChatViewProps) {
       ),
     [feedbackSubmissions],
   );
-  const timelineProjectionRef = useRef<{
-    readonly threadKey: string | null;
-    readonly projection: TimelineEntriesProjection;
-  } | null>(null);
-  const serverTimelineEntries = useMemo(() => {
-    const previous = timelineProjectionRef.current;
-    const projection = deriveTimelineEntriesFromVisibleTurnItemsWithState(
-      {
-        visibleTurnItems: serverVisibleTurnItems,
-        optimisticMessages: optimisticUserMessages,
-        anchoredMessages: anchoredTimelineMessages,
-        attachmentUrlById: timelineAttachmentUrlById,
-        ...(serverProjection === null
-          ? {}
-          : {
-              attempts: serverProjection.attempts,
-              nodes: serverProjection.nodes,
-              plans: serverProjection.plans,
-            }),
-      },
-      previous?.threadKey === activeThreadKey ? previous.projection : null,
-    );
-    timelineProjectionRef.current = { threadKey: activeThreadKey, projection };
-    return projection.entries;
-  }, [
-    activeThreadKey,
-    anchoredTimelineMessages,
-    optimisticUserMessages,
-    serverVisibleTurnItems,
-    serverProjection,
-    timelineAttachmentUrlById,
-  ]);
+  const serverTimelineEntries = useTimelineEntries({
+    threadKey: activeThreadKey,
+    projection: serverProjection,
+    visibleTurnItems: serverVisibleTurnItems,
+    optimisticMessages: optimisticUserMessages,
+    anchoredMessages: anchoredTimelineMessages,
+    attachmentUrlById: timelineAttachmentUrlById,
+  });
   const draftTimelineEntries = useMemo(
     () =>
       optimisticUserMessages.map(
@@ -5138,7 +5102,7 @@ export default function ChatView(props: ChatViewProps) {
         visiblePullRequests.map((link) => [link.host, link.repository, link.number]).sort(),
       )
     : linkedThreadPullRequestKey;
-  const activeRunningTurnId = activeRuntime?.activeRunId ?? null;
+  const activeRunningTurnId = timelineActivity.runningRunId;
   const proactivePanelObservationRef = useRef<ReturnType<
     typeof observeProactivePanelUserChoice
   > | null>(null);
@@ -11073,9 +11037,9 @@ export default function ChatView(props: ChatViewProps) {
                       }
                     : {})}
                   isWorking={!paintOnlyDisplayedTimeline && isWorking}
-                  runlessWorkActive={runlessWorkStartedAt !== null}
+                  runlessWorkActive={timelineActivity.runlessWorkActive}
                   activeTurnInProgress={
-                    !paintOnlyDisplayedTimeline && (isWorking || !latestRunSettled)
+                    !paintOnlyDisplayedTimeline && timelineActivity.activeTurnInProgress
                   }
                   isCompacting={!paintOnlyDisplayedTimeline && isCompacting}
                   awaitingUser={

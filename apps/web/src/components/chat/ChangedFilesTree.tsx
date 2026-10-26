@@ -21,6 +21,29 @@ const EMPTY_DIRECTORY_OVERRIDES: Record<string, boolean> = {};
 /** Opens the OS-level context menu for a changed file (reveal in file manager, open in editor). */
 export type ChangedFileContextMenuHandler = (filePath: string, event: MouseEvent) => void;
 
+/** How many files a turn changed and by how much, in one line. */
+export const ChangedFilesSummary = memo(function ChangedFilesSummary(props: {
+  files: ReadonlyArray<TurnDiffFileChange>;
+}) {
+  const { files } = props;
+  const summaryStat = useMemo(() => summarizeTurnDiffStats(files), [files]);
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-foreground">
+      <span>
+        {files.length} changed file{files.length === 1 ? "" : "s"}
+      </span>
+      {hasNonZeroStat(summaryStat) && (
+        <DiffStatLabel
+          additions={summaryStat.additions}
+          deletions={summaryStat.deletions}
+          layout="inline"
+          className="text-xs leading-4"
+        />
+      )}
+    </div>
+  );
+});
+
 export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
   runId: RunId;
   files: ReadonlyArray<TurnDiffFileChange>;
@@ -39,7 +62,6 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
     onOpenTurnDiff,
     onFileContextMenu,
   } = props;
-  const summaryStat = useMemo(() => summarizeTurnDiffStats(files), [files]);
   const hasDirectories = files.some((file) => /[/\\]/.test(file.path));
 
   return (
@@ -51,19 +73,7 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
         data-changed-files-header=""
         className="sticky top-2 z-10 flex items-center justify-between gap-2 rounded-t-lg bg-secondary px-3 py-2 dark:bg-background dark:bg-linear-to-b dark:from-input/20 dark:to-input/20"
       >
-        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-foreground">
-          <span>
-            {files.length} changed file{files.length === 1 ? "" : "s"}
-          </span>
-          {hasNonZeroStat(summaryStat) && (
-            <DiffStatLabel
-              additions={summaryStat.additions}
-              deletions={summaryStat.deletions}
-              layout="inline"
-              className="text-xs leading-4"
-            />
-          )}
-        </div>
+        <ChangedFilesSummary files={files} />
         <div className="flex shrink-0 items-center gap-1">
           {hasDirectories && (
             <Tooltip>

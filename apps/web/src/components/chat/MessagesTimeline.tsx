@@ -34,7 +34,11 @@ import {
   ThreadId,
   type ToolActivityIcon,
 } from "@t3tools/contracts";
-import { parseScopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import {
+  parseScopedThreadKey,
+  scopedThreadKey,
+  scopeThreadRef,
+} from "@t3tools/client-runtime/environment";
 import { useAtomValue } from "@effect/atom-react";
 import { environmentThreadDetails } from "../../state/threads";
 import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
@@ -176,7 +180,7 @@ import {
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { HtmlRenderFrame } from "./HtmlRenderFrame";
 import { McpAppFrame } from "./McpAppFrame";
-import { ChangedFilesCard } from "./ChangedFilesTree";
+import { ChangedFilesCard, ChangedFilesSummary } from "./ChangedFilesTree";
 import { useFileContextMenuHandler } from "../../fileContextMenu";
 import { useProject, useThreadShell } from "../../state/entities";
 import {
@@ -198,6 +202,7 @@ import {
 import { useAssistantCitationTarget, type CitationHistoryPage } from "./useAssistantCitationTarget";
 import {
   computeStableMessagesTimelineRows,
+  type MessagesTimelineRowsInput,
   deriveMessagesTimelineRowsWithState,
   type MessagesTimelineRowsProjection,
   liveWorkEntryLabel,
@@ -279,6 +284,7 @@ import { type TimestampFormat } from "@t3tools/contracts/settings";
 import {
   formatChatTimestampTooltip,
   formatDayAwareTimestamp,
+  formatRelativeTimeLabel,
   formatUpcomingTimestamp,
 } from "../../timestampFormat";
 import { FetchedToolOutput, V2ItemInspector } from "./V2ItemInspector";
@@ -293,6 +299,7 @@ import {
   type HandoffTimelineRun,
 } from "./V2LifecycleRow";
 import { SecretRequestCard } from "./SecretRequestCard";
+import { getTriggerDisplayModelName } from "./providerIconUtils";
 import { TimelineSystemDivider } from "./TimelineSystemDivider";
 
 import { SkillChipIcon, SkillInlineText } from "./SkillInlineText";
@@ -342,14 +349,14 @@ interface TimelineRowSharedState {
   displayThreadKey?: string;
   onOpenTurnDiff: (runId: RunId, filePath?: string) => void;
   onOpenThread: (threadId: OrchestrationV2TurnItem["threadId"]) => void;
-  onForkFromRun: (input: {
-    readonly sourceThreadId: ThreadId;
-    readonly runId: RunId;
-  }) => Promise<void>;
-  onRollbackCheckpoint: (input: {
-    readonly checkpointId: string;
-    readonly scopeId: string;
-  }) => void;
+  /** Absent where a response can't be forked from, which hides the button. */
+  onForkFromRun:
+    | ((input: { readonly sourceThreadId: ThreadId; readonly runId: RunId }) => Promise<void>)
+    | undefined;
+  /** Absent where checkpoints can't be rolled back, which hides the action. */
+  onRollbackCheckpoint:
+    | ((input: { readonly checkpointId: string; readonly scopeId: string }) => void)
+    | undefined;
   onToggleTurnFold: (runId: RunId) => void;
   onToggleAttemptFold: (attemptId: RunAttemptId) => void;
   onFileOpen: (attachment: ChatFileAttachment) => void;
@@ -363,6 +370,12 @@ interface TimelineRowSharedState {
   onWorktreeSetupWorkLocally: (() => void) | null;
   onOpenWorktreeSetupTerminal: ((terminalId: string) => void) | null;
   workGroupViewState: WorkGroupViewState;
+  /**
+   * Rows drawn outside the chat: a reply ends in one line of what the turn
+   * changed and who answered when, instead of the changed-files card and the
+   * copy and timestamp row.
+   */
+  compact: boolean;
 }
 
 interface TimelineRowActivityState {
@@ -685,7 +698,6 @@ const ConversationTimeline = memo(function ConversationTimeline({
     setExpandedAttemptIds(paintedExpandedAttemptIds);
   }
   const citationThreadRef = useMemo(() => parseScopedThreadKey(routeThreadKey), [routeThreadKey]);
-  const openPullRequest = useOpenPrLink(citationThreadRef ?? undefined);
   const expandCitedRun = useCallback((runId: RunId) => {
     setExpandedRunIds((current) => (current.has(runId) ? current : new Set([...current, runId])));
   }, []);
@@ -767,45 +779,21 @@ const ConversationTimeline = memo(function ConversationTimeline({
   const onToggleTurnFold = useCallback(
     (runId: RunId) => {
       suspendEndScrollMaintenanceForDisclosure(`turn-fold:${runId}`);
-      setExpandedRunIds((existing) => {
-        const next = new Set(existing);
-        if (next.has(runId)) {
-          next.delete(runId);
-        } else {
-          next.add(runId);
-        }
-        return next;
-      });
+      setExpandedRunIds((existing) => toggledSet(existing, runId));
     },
     [suspendEndScrollMaintenanceForDisclosure],
   );
   const onToggleWorkGroup = useCallback(
     (groupId: string, anchorKey: string) => {
       suspendEndScrollMaintenanceForDisclosure(anchorKey, expandedWorkGroupIds.has(groupId));
-      setExpandedWorkGroupIds((existing) => {
-        const next = new Set(existing);
-        if (next.has(groupId)) {
-          next.delete(groupId);
-        } else {
-          next.add(groupId);
-        }
-        return next;
-      });
+      setExpandedWorkGroupIds((existing) => toggledSet(existing, groupId));
     },
     [expandedWorkGroupIds, suspendEndScrollMaintenanceForDisclosure],
   );
   const onToggleAttemptFold = useCallback(
     (attemptId: RunAttemptId) => {
       suspendEndScrollMaintenanceForDisclosure(`attempt-fold:${attemptId}`);
-      setExpandedAttemptIds((existing) => {
-        const next = new Set(existing);
-        if (next.has(attemptId)) {
-          next.delete(attemptId);
-        } else {
-          next.add(attemptId);
-        }
-        return next;
-      });
+      setExpandedAttemptIds((existing) => toggledSet(existing, attemptId));
     },
     [suspendEndScrollMaintenanceForDisclosure],
   );
@@ -887,55 +875,23 @@ const ConversationTimeline = memo(function ConversationTimeline({
     [activeFindAttemptId, paintedExpandedAttemptIds],
   );
 
-  const rowsProjectionRef = useRef<{
-    readonly threadKey: string;
-    readonly workspaceRoot: string | undefined;
-    readonly projection: MessagesTimelineRowsProjection;
-  } | null>(null);
-  const rawRows = useMemo(() => {
-    const previous = rowsProjectionRef.current;
-    const projection = deriveMessagesTimelineRowsWithState(
-      {
-        timelineEntries,
-        latestRun,
-        runningRunId,
-        expandedRunIds: visibleExpandedRunIds,
-        expandedAttemptIds: visibleExpandedAttemptIds,
-        expandedWorkGroupIds,
-        isWorking,
-        runlessWorkActive,
-        activeTurnStartedAt,
-        turnDiffSummaries,
-        supportsConversationRollback,
-        worktreeSetup,
-      },
-      previous?.threadKey === listIdentityKey && previous.workspaceRoot === workspaceRoot
-        ? previous.projection
-        : null,
-    );
-    rowsProjectionRef.current = { threadKey: listIdentityKey, workspaceRoot, projection };
-    return projection.rows;
-  }, [
-    rowsProjectionRef,
-    listIdentityKey,
-    workspaceRoot,
-    timelineEntries,
-    latestRun,
-    runningRunId,
-    visibleExpandedRunIds,
-    visibleExpandedAttemptIds,
-    expandedWorkGroupIds,
-    isWorking,
-    runlessWorkActive,
-    activeTurnStartedAt,
-    turnDiffSummaries,
-    supportsConversationRollback,
-    worktreeSetup,
-  ]);
-  const rows = useStableRows(rawRows, listIdentityKey);
-  // Run status/timestamps churn on every stream event; the shared row context
-  // must not change with them or every timeline row re-renders per event.
-  const runs = useStableHandoffRuns(runsProp);
+  const rows = useMessagesTimelineRows(
+    {
+      timelineEntries,
+      latestRun,
+      runningRunId,
+      expandedRunIds: visibleExpandedRunIds,
+      expandedAttemptIds: visibleExpandedAttemptIds,
+      expandedWorkGroupIds,
+      isWorking,
+      runlessWorkActive,
+      activeTurnStartedAt,
+      turnDiffSummaries,
+      supportsConversationRollback,
+      worktreeSetup,
+    },
+    { threadKey: listIdentityKey, workspaceRoot },
+  );
   const minimapItems = useMemo(() => deriveTimelineMinimapItems(rows), [rows]);
   const restoreRowIndex =
     restoringThreadPosition && rememberedPosition?.atEnd === false
@@ -1324,85 +1280,44 @@ const ConversationTimeline = memo(function ConversationTimeline({
     };
   }, [timelineViewportElement, rows.length, reportContentOverflow, chatWidth]);
 
-  const sharedState = useMemo<TimelineRowSharedState>(
-    () => ({
-      citationRequest: readyCitationRequest,
-      listRef,
-      timestampFormat,
-      routeThreadKey,
-      // Keep Markdown callbacks memoized during unrelated activity updates.
-      threadRef: citationThreadRef,
-      markdownCwd,
-      resolvedTheme,
-      workspaceRoot,
-      skills,
-      providerStatuses,
-      runs,
-      activeThreadEnvironmentId,
-      onRevertToTurnCount,
-      onRunShellCommand,
-      findActive,
-      onImageExpand,
-      onFileOpen,
-      onUseArtifactTemplate,
-      onSendAppMessage,
-      onAppFullscreenChange,
-      onFileDownload,
-      openPullRequest,
-      onOpenTurnDiff,
-      onOpenThread,
-      onForkFromRun,
-      onRollbackCheckpoint,
-      onToggleTurnFold,
-      onToggleAttemptFold,
-      onToggleWorkGroup,
-      onToggleWorkEntry: suspendEndScrollMaintenanceForDisclosure,
-      onCancelWorktreeSetup: onCancelWorktreeSetup ?? null,
-      retryableWorkspacePreparationRunIds,
-      onRetryWorkspacePreparation: onRetryWorkspacePreparation ?? null,
-      onWorktreeSetupWorkLocally: onWorktreeSetupWorkLocally ?? null,
-      onOpenWorktreeSetupTerminal: onOpenWorktreeSetupTerminal ?? null,
-      workGroupViewState,
-    }),
-    [
-      readyCitationRequest,
-      listRef,
-      timestampFormat,
-      routeThreadKey,
-      citationThreadRef,
-      markdownCwd,
-      resolvedTheme,
-      workspaceRoot,
-      skills,
-      providerStatuses,
-      runs,
-      activeThreadEnvironmentId,
-      onRevertToTurnCount,
-      onRunShellCommand,
-      findActive,
-      onImageExpand,
-      onFileOpen,
-      onUseArtifactTemplate,
-      onSendAppMessage,
-      onAppFullscreenChange,
-      onFileDownload,
-      openPullRequest,
-      onOpenTurnDiff,
-      onOpenThread,
-      onForkFromRun,
-      onRollbackCheckpoint,
-      onToggleTurnFold,
-      onToggleAttemptFold,
-      onToggleWorkGroup,
-      suspendEndScrollMaintenanceForDisclosure,
-      onCancelWorktreeSetup,
-      retryableWorkspacePreparationRunIds,
-      onRetryWorkspacePreparation,
-      onWorktreeSetupWorkLocally,
-      onOpenWorktreeSetupTerminal,
-      workGroupViewState,
-    ],
-  );
+  const sharedState = useTimelineRowSharedState({
+    citationRequest: readyCitationRequest,
+    listRef,
+    timestampFormat,
+    routeThreadKey,
+    threadRef: citationThreadRef,
+    markdownCwd,
+    resolvedTheme,
+    workspaceRoot,
+    skills,
+    providerStatuses,
+    runs: runsProp,
+    activeThreadEnvironmentId,
+    onRevertToTurnCount,
+    onRunShellCommand,
+    findActive,
+    onImageExpand,
+    onFileOpen,
+    onUseArtifactTemplate,
+    onSendAppMessage,
+    onAppFullscreenChange,
+    onFileDownload,
+    onOpenTurnDiff,
+    onOpenThread,
+    onForkFromRun,
+    onRollbackCheckpoint,
+    onToggleTurnFold,
+    onToggleAttemptFold,
+    onToggleWorkGroup,
+    onToggleWorkEntry: suspendEndScrollMaintenanceForDisclosure,
+    onCancelWorktreeSetup: onCancelWorktreeSetup ?? null,
+    retryableWorkspacePreparationRunIds,
+    onRetryWorkspacePreparation: onRetryWorkspacePreparation ?? null,
+    onWorktreeSetupWorkLocally: onWorktreeSetupWorkLocally ?? null,
+    onOpenWorktreeSetupTerminal: onOpenWorktreeSetupTerminal ?? null,
+    workGroupViewState,
+    compact: false,
+  });
   const compactionAwaitingRow =
     isCompacting && !rows.some((row) => row.kind === "context-compaction" && row.active);
   const backgroundWorktreeSetup =
@@ -1412,28 +1327,16 @@ const ConversationTimeline = memo(function ConversationTimeline({
     latestRun?.startedAt != null
       ? worktreeSetup
       : null;
-  const activityState = useMemo<TimelineRowActivityState>(
-    () => ({
-      isWorking,
-      isCompacting: compactionAwaitingRow,
-      isRevertingCheckpoint,
-      backgroundWorktreeSetup,
-      activeTurnInProgress,
-      awaitingUser,
-      isPreparingWorktree,
-      latestRunId: latestRun?.runId ?? null,
-    }),
-    [
-      awaitingUser,
-      compactionAwaitingRow,
-      backgroundWorktreeSetup,
-      activeTurnInProgress,
-      isPreparingWorktree,
-      isRevertingCheckpoint,
-      isWorking,
-      latestRun?.runId,
-    ],
-  );
+  const activityState = useTimelineRowActivityState({
+    isWorking,
+    isCompacting: compactionAwaitingRow,
+    isRevertingCheckpoint,
+    backgroundWorktreeSetup,
+    activeTurnInProgress,
+    awaitingUser,
+    isPreparingWorktree,
+    latestRunId: latestRun?.runId ?? null,
+  });
   const listHeader = useMemo(() => {
     const leadingContent =
       parentThreadLink === null ? (
@@ -1606,90 +1509,513 @@ const ConversationTimeline = memo(function ConversationTimeline({
 
   return (
     <MarkdownFindContext value={findActive}>
-      <TimelineRowCtx value={sharedState}>
-        <UserMessageChipCtx value={sharedState}>
-          <TimelineRowActivityCtx value={activityState}>
-            <TooltipScrollDismissArea
-              ref={setTimelineViewportElement}
-              className="relative h-full min-h-0"
-              data-assistant-citation-viewport="true"
-            >
-              {onCiteAssistantText && citationThreadRef ? (
-                <AssistantSelectionToolbar
-                  viewport={timelineViewportElement}
-                  threadRef={citationThreadRef}
-                  onCite={onCiteAssistantText}
-                />
-              ) : null}
-              <LegendList<MessagesTimelineRow>
-                ref={setTimelineList}
-                data={rows}
-                extraData={`${listIdentityKey}:${rows.length}`}
-                keyExtractor={keyExtractor}
-                getItemType={getItemType}
-                renderItem={renderItem}
-                estimatedItemSize={90}
-                // Short threads sit just above the composer instead of under the header.
-                alignItemsAtEnd
-                initialScrollAtEnd={
-                  !findActive && citationRequest === null && rememberedPosition?.atEnd !== false
-                }
-                // Legend needs a data refresh to mount new pins without a scroll event.
-                dataVersion={readyCitationRequest?.key ?? listIdentityKey}
-                {...(alwaysRender ? { alwaysRender } : {})}
-                onLoad={handleListLoad}
-                {...(anchoredEndSpace ? { anchoredEndSpace } : {})}
-                contentInsetEndAdjustment={anchoredEndSpace ? contentInsetEndAdjustment : 0}
-                maintainScrollAtEnd={
-                  citationPositioning ||
-                  (restoringThreadPosition && rememberedPosition?.atEnd === false) ||
-                  anchoredEndSpace ||
-                  !liveFollowEnabled ||
-                  fullscreenAppRowId !== null ||
-                  disclosureToggleSettling
-                    ? false
-                    : isWorking && !prefersReducedMotion && settlingListIdentity === null
-                      ? TIMELINE_MAINTAIN_SCROLL_AT_END_SMOOTH
-                      : TIMELINE_MAINTAIN_SCROLL_AT_END
-                }
-                maintainVisibleContentPosition={
-                  findActive ||
-                  citationPositioning ||
-                  (restoringThreadPosition && rememberedPosition?.atEnd === false)
-                    ? false
-                    : maintainVisibleContentPosition
-                }
-                maintainScrollAtEndThreshold={1}
-                onScroll={handleScroll}
-                onItemSizeChanged={reportContentOverflow}
-                className={cn(
-                  "messages-timeline-scroll scrollbar-gutter-both h-full min-h-0 overflow-x-hidden overscroll-y-contain [overflow-anchor:none]",
-                  topFadeEnabled && "topbar-scroll-fade",
-                )}
-                ListHeaderComponent={listHeader}
-                ListFooterComponent={timelineListFooter}
-              />
-              {pinnedPrompt && pinnedPromptRow?.kind === "message" ? (
-                <TimelinePinnedPrompt
-                  row={pinnedPromptRow}
-                  onSelect={() => scrollToMinimapItem(pinnedPrompt)}
-                />
-              ) : null}
-              <TimelineMinimap
-                items={minimapItems}
-                hasPersistentGutter={minimapHasPersistentGutter}
-                hitStripWidth={minimapHitStripWidth}
-                currentIndex={minimapCurrentIndex}
-                stripMap={minimapStripMap}
-                onSelect={scrollToMinimapItem}
-              />
-            </TooltipScrollDismissArea>
-          </TimelineRowActivityCtx>
-        </UserMessageChipCtx>
-      </TimelineRowCtx>
+      <TimelineRowProviders shared={sharedState} activity={activityState}>
+        <TooltipScrollDismissArea
+          ref={setTimelineViewportElement}
+          className="relative h-full min-h-0"
+          data-assistant-citation-viewport="true"
+        >
+          {onCiteAssistantText && citationThreadRef ? (
+            <AssistantSelectionToolbar
+              viewport={timelineViewportElement}
+              threadRef={citationThreadRef}
+              onCite={onCiteAssistantText}
+            />
+          ) : null}
+          <LegendList<MessagesTimelineRow>
+            ref={setTimelineList}
+            data={rows}
+            extraData={`${listIdentityKey}:${rows.length}`}
+            keyExtractor={keyExtractor}
+            getItemType={getItemType}
+            renderItem={renderItem}
+            estimatedItemSize={90}
+            // Short threads sit just above the composer instead of under the header.
+            alignItemsAtEnd
+            initialScrollAtEnd={
+              !findActive && citationRequest === null && rememberedPosition?.atEnd !== false
+            }
+            // Legend needs a data refresh to mount new pins without a scroll event.
+            dataVersion={readyCitationRequest?.key ?? listIdentityKey}
+            {...(alwaysRender ? { alwaysRender } : {})}
+            onLoad={handleListLoad}
+            {...(anchoredEndSpace ? { anchoredEndSpace } : {})}
+            contentInsetEndAdjustment={anchoredEndSpace ? contentInsetEndAdjustment : 0}
+            maintainScrollAtEnd={
+              citationPositioning ||
+              (restoringThreadPosition && rememberedPosition?.atEnd === false) ||
+              anchoredEndSpace ||
+              !liveFollowEnabled ||
+              fullscreenAppRowId !== null ||
+              disclosureToggleSettling
+                ? false
+                : isWorking && !prefersReducedMotion && settlingListIdentity === null
+                  ? TIMELINE_MAINTAIN_SCROLL_AT_END_SMOOTH
+                  : TIMELINE_MAINTAIN_SCROLL_AT_END
+            }
+            maintainVisibleContentPosition={
+              findActive ||
+              citationPositioning ||
+              (restoringThreadPosition && rememberedPosition?.atEnd === false)
+                ? false
+                : maintainVisibleContentPosition
+            }
+            maintainScrollAtEndThreshold={1}
+            onScroll={handleScroll}
+            onItemSizeChanged={reportContentOverflow}
+            className={cn(
+              "messages-timeline-scroll scrollbar-gutter-both h-full min-h-0 overflow-x-hidden overscroll-y-contain [overflow-anchor:none]",
+              topFadeEnabled && "topbar-scroll-fade",
+            )}
+            ListHeaderComponent={listHeader}
+            ListFooterComponent={timelineListFooter}
+          />
+          {pinnedPrompt && pinnedPromptRow?.kind === "message" ? (
+            <TimelinePinnedPrompt
+              row={pinnedPromptRow}
+              onSelect={() => scrollToMinimapItem(pinnedPrompt)}
+            />
+          ) : null}
+          <TimelineMinimap
+            items={minimapItems}
+            hasPersistentGutter={minimapHasPersistentGutter}
+            hitStripWidth={minimapHitStripWidth}
+            currentIndex={minimapCurrentIndex}
+            stripMap={minimapStripMap}
+            onSelect={scrollToMinimapItem}
+          />
+        </TooltipScrollDismissArea>
+      </TimelineRowProviders>
     </MarkdownFindContext>
   );
 });
+
+/**
+ * The rows for a timeline's entries. Rows carry over from the last derivation
+ * for the same thread and workspace, so streaming only replaces what changed.
+ */
+function useMessagesTimelineRows(
+  input: Required<Omit<MessagesTimelineRowsInput, "liveAgentTaskIds">>,
+  identity: { readonly threadKey: string; readonly workspaceRoot: string | undefined },
+): MessagesTimelineRow[] {
+  const {
+    timelineEntries,
+    latestRun,
+    runningRunId,
+    expandedRunIds,
+    expandedAttemptIds,
+    expandedWorkGroupIds,
+    isWorking,
+    runlessWorkActive,
+    activeTurnStartedAt,
+    turnDiffSummaries,
+    supportsConversationRollback,
+    worktreeSetup,
+  } = input;
+  const { threadKey, workspaceRoot } = identity;
+  const previousRef = useRef<{
+    readonly threadKey: string;
+    readonly workspaceRoot: string | undefined;
+    readonly projection: MessagesTimelineRowsProjection;
+  } | null>(null);
+  const rawRows = useMemo(() => {
+    const previous = previousRef.current;
+    const projection = deriveMessagesTimelineRowsWithState(
+      {
+        timelineEntries,
+        latestRun,
+        runningRunId,
+        expandedRunIds,
+        expandedAttemptIds,
+        expandedWorkGroupIds,
+        isWorking,
+        runlessWorkActive,
+        activeTurnStartedAt,
+        turnDiffSummaries,
+        supportsConversationRollback,
+        worktreeSetup,
+      },
+      previous?.threadKey === threadKey && previous.workspaceRoot === workspaceRoot
+        ? previous.projection
+        : null,
+    );
+    previousRef.current = { threadKey, workspaceRoot, projection };
+    return projection.rows;
+  }, [
+    threadKey,
+    workspaceRoot,
+    timelineEntries,
+    latestRun,
+    runningRunId,
+    expandedRunIds,
+    expandedAttemptIds,
+    expandedWorkGroupIds,
+    isWorking,
+    runlessWorkActive,
+    activeTurnStartedAt,
+    turnDiffSummaries,
+    supportsConversationRollback,
+    worktreeSetup,
+  ]);
+  return useStableRows(rawRows, threadKey);
+}
+
+/**
+ * The state every row reads, held still while the thread streams: run
+ * status and timestamps churn on every event, and a changed context would
+ * re-render every row.
+ */
+function useTimelineRowSharedState(
+  input: Omit<TimelineRowSharedState, "openPullRequest">,
+): TimelineRowSharedState {
+  const {
+    citationRequest,
+    listRef,
+    timestampFormat,
+    routeThreadKey,
+    threadRef,
+    markdownCwd,
+    resolvedTheme,
+    workspaceRoot,
+    skills,
+    providerStatuses,
+    activeThreadEnvironmentId,
+    onRevertToTurnCount,
+    onRunShellCommand,
+    findActive,
+    onImageExpand,
+    onFileOpen,
+    onUseArtifactTemplate,
+    onSendAppMessage,
+    onAppFullscreenChange,
+    onFileDownload,
+    onOpenTurnDiff,
+    onOpenThread,
+    onForkFromRun,
+    onRollbackCheckpoint,
+    onToggleTurnFold,
+    onToggleAttemptFold,
+    onToggleWorkGroup,
+    onToggleWorkEntry,
+    onCancelWorktreeSetup,
+    retryableWorkspacePreparationRunIds,
+    onRetryWorkspacePreparation,
+    onWorktreeSetupWorkLocally,
+    onOpenWorktreeSetupTerminal,
+    workGroupViewState,
+    compact,
+  } = input;
+  const runs = useStableHandoffRuns(input.runs);
+  const openPullRequest = useOpenPrLink(threadRef ?? undefined);
+  return useMemo(
+    () => ({
+      citationRequest,
+      listRef,
+      timestampFormat,
+      routeThreadKey,
+      threadRef,
+      markdownCwd,
+      resolvedTheme,
+      workspaceRoot,
+      skills,
+      providerStatuses,
+      runs,
+      activeThreadEnvironmentId,
+      onRevertToTurnCount,
+      onRunShellCommand,
+      findActive,
+      onImageExpand,
+      onFileOpen,
+      onUseArtifactTemplate,
+      onSendAppMessage,
+      onAppFullscreenChange,
+      onFileDownload,
+      openPullRequest,
+      onOpenTurnDiff,
+      onOpenThread,
+      onForkFromRun,
+      onRollbackCheckpoint,
+      onToggleTurnFold,
+      onToggleAttemptFold,
+      onToggleWorkGroup,
+      onToggleWorkEntry,
+      onCancelWorktreeSetup,
+      retryableWorkspacePreparationRunIds,
+      onRetryWorkspacePreparation,
+      onWorktreeSetupWorkLocally,
+      onOpenWorktreeSetupTerminal,
+      workGroupViewState,
+      compact,
+    }),
+    [
+      citationRequest,
+      listRef,
+      timestampFormat,
+      routeThreadKey,
+      threadRef,
+      markdownCwd,
+      resolvedTheme,
+      workspaceRoot,
+      skills,
+      providerStatuses,
+      runs,
+      activeThreadEnvironmentId,
+      onRevertToTurnCount,
+      onRunShellCommand,
+      findActive,
+      onImageExpand,
+      onFileOpen,
+      onUseArtifactTemplate,
+      onSendAppMessage,
+      onAppFullscreenChange,
+      onFileDownload,
+      openPullRequest,
+      onOpenTurnDiff,
+      onOpenThread,
+      onForkFromRun,
+      onRollbackCheckpoint,
+      onToggleTurnFold,
+      onToggleAttemptFold,
+      onToggleWorkGroup,
+      onToggleWorkEntry,
+      onCancelWorktreeSetup,
+      retryableWorkspacePreparationRunIds,
+      onRetryWorkspacePreparation,
+      onWorktreeSetupWorkLocally,
+      onOpenWorktreeSetupTerminal,
+      workGroupViewState,
+      compact,
+    ],
+  );
+}
+
+function useTimelineRowActivityState(input: TimelineRowActivityState): TimelineRowActivityState {
+  const {
+    isWorking,
+    isCompacting,
+    isRevertingCheckpoint,
+    backgroundWorktreeSetup,
+    activeTurnInProgress,
+    awaitingUser,
+    isPreparingWorktree,
+    latestRunId,
+  } = input;
+  return useMemo(
+    () => ({
+      isWorking,
+      isCompacting,
+      isRevertingCheckpoint,
+      backgroundWorktreeSetup,
+      activeTurnInProgress,
+      awaitingUser,
+      isPreparingWorktree,
+      latestRunId,
+    }),
+    [
+      isWorking,
+      isCompacting,
+      isRevertingCheckpoint,
+      backgroundWorktreeSetup,
+      activeTurnInProgress,
+      awaitingUser,
+      isPreparingWorktree,
+      latestRunId,
+    ],
+  );
+}
+
+/** What every row reads from around it, wherever the rows are laid out. */
+function TimelineRowProviders(props: {
+  readonly shared: TimelineRowSharedState;
+  readonly activity: TimelineRowActivityState;
+  readonly children: ReactNode;
+}) {
+  return (
+    <TimelineRowCtx value={props.shared}>
+      <UserMessageChipCtx value={props.shared}>
+        <TimelineRowActivityCtx value={props.activity}>{props.children}</TimelineRowActivityCtx>
+      </UserMessageChipCtx>
+    </TimelineRowCtx>
+  );
+}
+
+interface InlineTimelineRowsProps {
+  threadRef: ScopedThreadRef;
+  timelineEntries: ReadonlyArray<TimelineEntry>;
+  /** A message shown elsewhere, such as a pinned prompt; its row is left out. */
+  hiddenMessageId: MessageId | null;
+  isWorking: boolean;
+  runlessWorkActive: boolean;
+  activeTurnInProgress: boolean;
+  activeTurnStartedAt: string | null;
+  awaitingUser: boolean;
+  latestRun: TimelineLatestRun | null;
+  runningRunId: RunId | null;
+  runs: ReadonlyArray<HandoffTimelineRun>;
+  turnDiffSummaries: ReadonlyArray<TurnDiffSummary>;
+  providerStatuses: ReadonlyArray<ServerProvider>;
+  markdownCwd: string | undefined;
+  workspaceRoot: string | undefined;
+  resolvedTheme: "light" | "dark";
+  timestampFormat: TimestampFormat;
+  skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
+  onOpenTurnDiff: (runId: RunId, filePath?: string) => void;
+  onOpenThread: (threadId: OrchestrationV2TurnItem["threadId"]) => void;
+  onImageExpand: (preview: ExpandedImagePreview) => void;
+}
+
+const NOOP_REVERT = (_targetTurnCount: number, _messageId: MessageId) => {};
+const NOOP_APP_FULLSCREEN = (_rowId: string, _fullscreen: boolean) => {};
+const NOOP_TOGGLE_WORK_ENTRY = (_anchorKey: string, _collapsed: boolean) => {};
+const NOOP_TOGGLE_TURN_FOLD = (_runId: RunId) => {};
+
+/**
+ * Timeline rows as the chat draws them, laid out in place instead of in the
+ * chat's virtualized list: for a short slice, such as the latest turn, shown
+ * outside the chat. Rows are compact, a finished turn's work stays folded
+ * away, and forking, rollback, revert and citing stay in the chat.
+ */
+export function InlineTimelineRows({
+  threadRef,
+  timelineEntries,
+  hiddenMessageId,
+  isWorking,
+  runlessWorkActive,
+  activeTurnInProgress,
+  activeTurnStartedAt,
+  awaitingUser,
+  latestRun,
+  runningRunId,
+  runs,
+  turnDiffSummaries,
+  providerStatuses,
+  markdownCwd,
+  workspaceRoot,
+  resolvedTheme,
+  timestampFormat,
+  skills,
+  onOpenTurnDiff,
+  onOpenThread,
+  onImageExpand,
+}: InlineTimelineRowsProps) {
+  const routeThreadKey = scopedThreadKey(threadRef);
+  const [expandedWorkGroupIds, setExpandedWorkGroupIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const [expandedAttemptIds, setExpandedAttemptIds] = useState<ReadonlySet<RunAttemptId>>(
+    () => new Set(),
+  );
+  const onToggleWorkGroup = useCallback(
+    (groupId: string) => setExpandedWorkGroupIds((existing) => toggledSet(existing, groupId)),
+    [],
+  );
+  const onToggleAttemptFold = useCallback(
+    (attemptId: RunAttemptId) =>
+      setExpandedAttemptIds((existing) => toggledSet(existing, attemptId)),
+    [],
+  );
+  const allRows = useMessagesTimelineRows(
+    {
+      timelineEntries,
+      latestRun,
+      runningRunId,
+      expandedRunIds: EMPTY_RUN_IDS,
+      expandedAttemptIds,
+      expandedWorkGroupIds,
+      isWorking,
+      runlessWorkActive,
+      activeTurnStartedAt,
+      turnDiffSummaries,
+      supportsConversationRollback: false,
+      worktreeSetup: null,
+    },
+    { threadKey: routeThreadKey, workspaceRoot },
+  );
+  // A finished turn's work stays folded away, without the fold to open it: the chat has it.
+  const rows = useMemo(
+    () =>
+      allRows.filter(
+        (row) =>
+          row.kind !== "turn-fold" &&
+          !(row.kind === "message" && row.message.id === hiddenMessageId),
+      ),
+    [allRows, hiddenMessageId],
+  );
+  const listRef = useRef<LegendListRef | null>(null);
+  const [workGroupViewState] = useState<WorkGroupViewState>(() => ({
+    scrollPositions: new Map(),
+    expandedEntries: new Set(),
+  }));
+  const sharedState = useTimelineRowSharedState({
+    citationRequest: null,
+    listRef,
+    timestampFormat,
+    routeThreadKey,
+    threadRef,
+    markdownCwd,
+    resolvedTheme,
+    workspaceRoot,
+    skills,
+    providerStatuses,
+    runs,
+    activeThreadEnvironmentId: threadRef.environmentId,
+    onRevertToTurnCount: NOOP_REVERT,
+    onRunShellCommand: undefined,
+    findActive: false,
+    onImageExpand,
+    onFileOpen: NOOP_OPEN_ATTACHMENT,
+    onUseArtifactTemplate: NOOP_USE_ARTIFACT_TEMPLATE,
+    onSendAppMessage: undefined,
+    onAppFullscreenChange: NOOP_APP_FULLSCREEN,
+    onFileDownload: NOOP_OPEN_ATTACHMENT,
+    onOpenTurnDiff,
+    onOpenThread,
+    onForkFromRun: undefined,
+    onRollbackCheckpoint: undefined,
+    onToggleTurnFold: NOOP_TOGGLE_TURN_FOLD,
+    onToggleAttemptFold,
+    onToggleWorkGroup,
+    onToggleWorkEntry: NOOP_TOGGLE_WORK_ENTRY,
+    onCancelWorktreeSetup: null,
+    retryableWorkspacePreparationRunIds: EMPTY_RUN_IDS,
+    onRetryWorkspacePreparation: null,
+    onWorktreeSetupWorkLocally: null,
+    onOpenWorktreeSetupTerminal: null,
+    workGroupViewState,
+    compact: true,
+  });
+  const activityState = useTimelineRowActivityState({
+    isWorking,
+    isCompacting: false,
+    isRevertingCheckpoint: false,
+    backgroundWorktreeSetup: null,
+    activeTurnInProgress,
+    awaitingUser,
+    isPreparingWorktree: false,
+    latestRunId: latestRun?.runId ?? null,
+  });
+  return (
+    <TimelineRowProviders shared={sharedState} activity={activityState}>
+      {rows.map((row, index) => (
+        <div
+          key={row.id}
+          // The chat spaces a row from the next; the last one here sits on whatever holds it.
+          className={cn("min-w-0", index === rows.length - 1 && "*:pb-0")}
+          data-timeline-root="true"
+        >
+          <TimelineRowContent row={row} />
+        </div>
+      ))}
+    </TimelineRowProviders>
+  );
+}
+
+function toggledSet<T>(existing: ReadonlySet<T>, value: T): ReadonlySet<T> {
+  const next = new Set(existing);
+  if (next.has(value)) next.delete(value);
+  else next.add(value);
+  return next;
+}
 
 function TimelineHistoryControl(props: MessagesTimelineHistoryControls) {
   if (!props.hasMoreHistory && props.error === null) {
@@ -2951,30 +3277,86 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
             />
           </AssistantCitationSource>
         </div>
-        <AssistantChangedFilesSection
-          turnSummary={row.assistantTurnDiffSummary}
-          routeThreadKey={ctx.routeThreadKey}
-          resolvedTheme={ctx.resolvedTheme}
-          onOpenTurnDiff={ctx.onOpenTurnDiff}
-        />
-        {row.showAssistantMeta ? (
-          <AssistantMessageMeta
-            className="mt-1.5"
-            projectedItem={row.projectedItem}
+        {ctx.compact ? (
+          <CompactAssistantFooter
             message={row.message}
-            showCopyButton={row.showAssistantCopyButton}
-            copyStreaming={row.assistantCopyStreaming}
+            files={row.assistantTurnDiffSummary?.files ?? EMPTY_CHANGED_FILES}
+            showMeta={row.showAssistantMeta}
           />
-        ) : null}
+        ) : (
+          <>
+            <AssistantChangedFilesSection
+              turnSummary={row.assistantTurnDiffSummary}
+              routeThreadKey={ctx.routeThreadKey}
+              resolvedTheme={ctx.resolvedTheme}
+              onOpenTurnDiff={ctx.onOpenTurnDiff}
+            />
+            {row.showAssistantMeta ? (
+              <AssistantMessageMeta
+                className="mt-1.5"
+                projectedItem={row.projectedItem}
+                message={row.message}
+                showCopyButton={row.showAssistantCopyButton}
+                copyStreaming={row.assistantCopyStreaming}
+              />
+            ) : null}
+          </>
+        )}
       </div>
     </>
   );
 }
 
+const EMPTY_CHANGED_FILES: TurnDiffSummary["files"] = [];
+
+/** A reply's footer in compact rows: what the turn changed, then the model that answered and when. */
+function CompactAssistantFooter({
+  message,
+  files,
+  showMeta,
+}: {
+  message: ChatMessage;
+  files: TurnDiffSummary["files"];
+  showMeta: boolean;
+}) {
+  const ctx = use(TimelineRowCtx);
+  // The run's model, which may not be the thread's now.
+  const model =
+    message.runId === null
+      ? undefined
+      : ctx.runs.find((run) => run.id === message.runId)?.modelSelection;
+  const modelOption =
+    model === undefined
+      ? undefined
+      : ctx.providerStatuses
+          .find((provider) => provider.instanceId === model.instanceId)
+          ?.models.find((option) => option.slug === model.model);
+  const meta =
+    showMeta && !message.streaming
+      ? [
+          modelOption !== undefined ? getTriggerDisplayModelName(modelOption) : model?.model,
+          formatRelativeTimeLabel(message.updatedAt),
+        ]
+          .filter((part) => part !== undefined && part !== "")
+          .join(" · ")
+      : "";
+  if (files.length === 0 && meta === "") return null;
+  return (
+    <div className="flex items-center gap-3 pt-2">
+      {files.length > 0 ? <ChangedFilesSummary files={files} /> : null}
+      {meta !== "" ? (
+        <span className="ml-auto min-w-0 truncate text-muted-foreground text-xs">{meta}</span>
+      ) : null}
+    </div>
+  );
+}
+
 function AssistantForkButton({
   projectedItem,
+  onFork,
 }: {
   readonly projectedItem: NonNullable<Extract<TimelineRow, { kind: "message" }>["projectedItem"]>;
+  readonly onFork: NonNullable<TimelineRowSharedState["onForkFromRun"]>;
 }) {
   const ctx = use(TimelineRowCtx);
   const [busy, setBusy] = useState(false);
@@ -3002,9 +3384,9 @@ function AssistantForkButton({
             disabled={busy}
             onClick={() => {
               setBusy(true);
-              void ctx
-                .onForkFromRun({ sourceThreadId: projectedItem.sourceThreadId, runId })
-                .finally(() => setBusy(false));
+              void onFork({ sourceThreadId: projectedItem.sourceThreadId, runId }).finally(() =>
+                setBusy(false),
+              );
             }}
             aria-label="Fork from this response"
           />
@@ -3073,8 +3455,8 @@ function AssistantMessageMeta({
         showCopyButton={showCopyButton}
         streaming={copyStreaming}
       />
-      {projectedItem?.item.type === "assistant_message" ? (
-        <AssistantForkButton projectedItem={projectedItem} />
+      {projectedItem?.item.type === "assistant_message" && ctx.onForkFromRun ? (
+        <AssistantForkButton projectedItem={projectedItem} onFork={ctx.onForkFromRun} />
       ) : null}
       {!message.streaming && (
         <Tooltip>

@@ -1,4 +1,3 @@
-import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { OrchestrationV2ThreadProjection } from "@t3tools/contracts";
@@ -45,35 +44,5 @@ describe("lastExchange", () => {
       ),
     );
     expect(exchange.sent).toMatchObject({ id: "first", queued: null });
-  });
-
-  it("tells which model wrote the reply and when it finished", () => {
-    const model = { instanceId: "claude", model: "claude-opus-5-5" };
-    const exchange = lastExchange(
-      projection(
-        [
-          {
-            id: "run-1",
-            status: "completed",
-            userMessageId: "first",
-            startedAt: "t",
-            ordinal: 1,
-            modelSelection: model,
-          },
-        ],
-        [
-          sent("first"),
-          {
-            id: "answer",
-            role: "assistant",
-            runId: "run-1",
-            text: "done",
-            streaming: false,
-            updatedAt: DateTime.makeUnsafe("2026-10-21T17:00:00.000Z"),
-          },
-        ],
-      ),
-    );
-    expect(exchange.reply).toMatchObject({ id: "answer", at: "2026-10-21T17:00:00.000Z", model });
   });
 });
