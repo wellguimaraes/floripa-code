@@ -9,7 +9,48 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
     { tag: "path", attrs: { d: "M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" } },
     { tag: "path", attrs: { d: "M10 12h4" } },
   ],
+  "archive-restore": [
+    { tag: "rect", attrs: { width: "20", height: "5", x: "2", y: "3", rx: "1" } },
+    { tag: "path", attrs: { d: "M4 8v11a2 2 0 0 0 2 2h2" } },
+    { tag: "path", attrs: { d: "M20 8v11a2 2 0 0 1-2 2h-2" } },
+    { tag: "path", attrs: { d: "m9 15 3-3 3 3" } },
+    { tag: "path", attrs: { d: "M12 12v9" } },
+  ],
+  "bell-off": [
+    { tag: "path", attrs: { d: "M10.268 21a2 2 0 0 0 3.464 0" } },
+    {
+      tag: "path",
+      attrs: { d: "M17 17H4a1 1 0 0 1-.74-1.673C4.59 13.956 6 12.499 6 8a6 6 0 0 1 .258-1.742" },
+    },
+    { tag: "path", attrs: { d: "m2 2 20 20" } },
+    { tag: "path", attrs: { d: "M8.668 3.01A6 6 0 0 1 18 8c0 2.687.77 4.653 1.707 6.05" } },
+  ],
   check: [{ tag: "path", attrs: { d: "M20 6 9 17l-5-5" } }],
+  eye: [
+    {
+      tag: "path",
+      attrs: {
+        d: "M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0",
+      },
+    },
+    { tag: "circle", attrs: { cx: "12", cy: "12", r: "3" } },
+  ],
+  "eye-off": [
+    {
+      tag: "path",
+      attrs: {
+        d: "M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49",
+      },
+    },
+    { tag: "path", attrs: { d: "M14.084 14.158a3 3 0 0 1-4.242-4.242" } },
+    {
+      tag: "path",
+      attrs: {
+        d: "M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143",
+      },
+    },
+    { tag: "path", attrs: { d: "m2 2 20 20" } },
+  ],
   timer: [
     { tag: "line", attrs: { x1: "10", x2: "14", y1: "2", y2: "2" } },
     { tag: "line", attrs: { x1: "12", x2: "15", y1: "14", y2: "11" } },
@@ -126,6 +167,12 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
     },
     { tag: "path", attrs: { d: "M3 5a2 2 0 0 0 2 2h3" } },
     { tag: "path", attrs: { d: "M3 3v13a2 2 0 0 0 2 2h3" } },
+  ],
+  "zoom-in": [
+    { tag: "circle", attrs: { cx: "11", cy: "11", r: "8" } },
+    { tag: "line", attrs: { x1: "21", x2: "16.65", y1: "21", y2: "16.65" } },
+    { tag: "line", attrs: { x1: "11", x2: "11", y1: "8", y2: "14" } },
+    { tag: "line", attrs: { x1: "8", x2: "14", y1: "11", y2: "11" } },
   ],
   trash: [
     { tag: "path", attrs: { d: "M3 6h18" } },

@@ -60,6 +60,36 @@ export class ElectronMenu extends Context.Service<
   }
 >()("@t3tools/desktop/electron/ElectronMenu") {}
 
+/**
+ * The SF Symbol each icon keyword the web fallback draws (see `contextMenuFallback.ts`) shows
+ * as in a macOS menu. A keyword without one shows no icon there.
+ */
+const SF_SYMBOLS: Readonly<Record<string, string>> = {
+  archive: "archivebox",
+  "archive-restore": "arrow.uturn.backward",
+  "bell-off": "bell.slash",
+  check: "checkmark",
+  "circle-check": "checkmark.circle",
+  clock: "clock",
+  copy: "doc.on.doc",
+  eye: "eye",
+  "eye-off": "eye.slash",
+  folder: "folder",
+  "folder-tree": "folder",
+  "git-branch": "arrow.triangle.branch",
+  hash: "number",
+  "mail-open": "envelope.open",
+  "message-square-plus": "plus.bubble",
+  pencil: "pencil",
+  pin: "pin",
+  "pin-off": "pin.slash",
+  "refresh-cw": "arrow.clockwise",
+  settings: "gearshape",
+  timer: "timer",
+  trash: "trash",
+  "zoom-in": "plus.magnifyingglass",
+};
+
 function normalizeContextMenuItems(source: readonly ContextMenuItem[]): ContextMenuItem[] {
   const normalizedItems: ContextMenuItem[] = [];
 
@@ -81,6 +111,7 @@ function normalizeContextMenuItems(source: readonly ContextMenuItem[]): ContextM
       disabled: sourceItem.disabled === true,
       ...(sourceItem.separatorBefore === true ? { separatorBefore: true } : {}),
       ...(typeof sourceItem.checked === "boolean" ? { checked: sourceItem.checked } : {}),
+      ...(typeof sourceItem.icon === "string" ? { icon: sourceItem.icon } : {}),
     };
 
     if (sourceItem.children) {
@@ -115,28 +146,30 @@ const normalizePosition = (
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const platform = yield* HostProcess.Platform;
-  let destructiveMenuIconCache: Option.Option<Electron.NativeImage> | undefined;
+  const menuIconCache = new Map<string, Option.Option<Electron.NativeImage>>();
 
-  const getDestructiveMenuIcon = (): Option.Option<Electron.NativeImage> => {
-    if (platform !== "darwin") {
+  // Only macOS menus take an SF Symbol; elsewhere native menus go without icons.
+  const getMenuIcon = (keyword: string): Option.Option<Electron.NativeImage> => {
+    const symbol = SF_SYMBOLS[keyword];
+    if (platform !== "darwin" || symbol === undefined) {
       return Option.none();
     }
-    if (destructiveMenuIconCache !== undefined) {
-      return destructiveMenuIconCache;
+    const cached = menuIconCache.get(symbol);
+    if (cached !== undefined) {
+      return cached;
     }
 
+    let icon: Option.Option<Electron.NativeImage>;
     try {
-      const icon = Electron.nativeImage.createFromNamedImage("trash").resize({
-        width: 12,
-        height: 12,
-      });
-      icon.setTemplateImage(true);
-      destructiveMenuIconCache = icon.isEmpty() ? Option.none() : Option.some(icon);
+      // Height only, so wider symbols keep their aspect ratio.
+      const image = Electron.nativeImage.createFromNamedImage(symbol).resize({ height: 12 });
+      image.setTemplateImage(true);
+      icon = image.isEmpty() ? Option.none() : Option.some(image);
     } catch {
-      destructiveMenuIconCache = Option.none();
+      icon = Option.none();
     }
-
-    return destructiveMenuIconCache;
+    menuIconCache.set(symbol, icon);
+    return icon;
   };
 
   const buildTemplate = (
@@ -176,11 +209,10 @@ export const make = Effect.gen(function* () {
       } else {
         itemOption.click = () => complete(Option.some(item.id));
       }
-      if (item.destructive && (!item.children || item.children.length === 0)) {
-        const destructiveIcon = getDestructiveMenuIcon();
-        if (Option.isSome(destructiveIcon)) {
-          itemOption.icon = destructiveIcon.value;
-        }
+      const isLeaf = !item.children || item.children.length === 0;
+      const icon = getMenuIcon(item.icon ?? (item.destructive && isLeaf ? "trash" : ""));
+      if (Option.isSome(icon)) {
+        itemOption.icon = icon.value;
       }
 
       template.push(itemOption);

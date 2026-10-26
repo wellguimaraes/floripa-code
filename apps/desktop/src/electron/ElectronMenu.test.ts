@@ -148,6 +148,46 @@ describe("ElectronMenu", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
+  it.effect("shows icon keywords as SF Symbols on macOS, destructive leaves as a trash can", () =>
+    Effect.gen(function* () {
+      createFromNamedImageMock.mockImplementation((name: string) => {
+        const image = {
+          name,
+          resize: () => image,
+          setTemplateImage: () => {},
+          isEmpty: () => false,
+        };
+        return image;
+      });
+      buildFromTemplateMock.mockImplementation(() => ({
+        popup: (options: Electron.PopupOptions) => options.callback?.(),
+      }));
+
+      const electronMenu = yield* ElectronMenu.ElectronMenu;
+      yield* electronMenu.showContextMenu({
+        window: makeWindow(),
+        items: [
+          { id: "hide", label: "Hide", icon: "eye-off" },
+          { id: "other", label: "Other", icon: "unknown-keyword" },
+          { id: "delete", label: "Delete", destructive: true },
+        ],
+        position: Option.none(),
+      });
+
+      assert.deepEqual(
+        buildFromTemplateMock.mock.calls[0]?.[0].map(
+          (item: Electron.MenuItemConstructorOptions) =>
+            (item.icon as { readonly name: string } | undefined)?.name ?? null,
+        ),
+        ["eye.slash", null, null, "trash"],
+      );
+    }).pipe(
+      Effect.provide(
+        ElectronMenu.layer.pipe(Layer.provide(Layer.succeed(HostProcess.Platform, "darwin"))),
+      ),
+    ),
+  );
+
   it.effect("defers popupTemplate side effects until the returned Effect runs", () =>
     Effect.gen(function* () {
       const popupMock = vi.fn();
