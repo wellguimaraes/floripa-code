@@ -136,6 +136,10 @@ interface RightPanelTabsProps {
    */
   previewRuntimeTabId?: ((tabId: string) => string) | undefined;
   terminalLabelsById: ReadonlyMap<string, string>;
+  /** With both, a split terminal tab shows each of its terminals as a button of its own. */
+  onActivateTerminal?: (terminalId: string) => void;
+  /** `anchor` is the clicked close button, for a confirmation to open beside it. */
+  onCloseTerminal?: (terminalId: string, anchor: Element) => void;
   onActivate: (surface: RightPanelSurface) => void;
   onRenameDevice?: (surfaceId: string, title: string) => void;
   /** `anchor` is the clicked close button, for a confirmation to open beside it. */
@@ -1458,6 +1462,68 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                 >
                   {(showsTabs ? visibleSurfaces : []).map((surface) => {
                     const active = surface.id === props.activeSurfaceId;
+                    if (
+                      surface.kind === "terminal" &&
+                      surface.terminalIds.length > 1 &&
+                      props.onActivateTerminal &&
+                      props.onCloseTerminal
+                    ) {
+                      const { onActivateTerminal, onCloseTerminal } = props;
+                      return (
+                        <SortableTab
+                          key={surface.id}
+                          surfaceId={surface.id}
+                          disabled={!moveVisibleSurface}
+                          data-active-tab={active}
+                          onMouseDown={handleTabMouseDown}
+                          onAuxClick={(event) => handleTabAuxClick(event, surface)}
+                          onContextMenu={(event) => void handleTabContextMenu(event, surface)}
+                          className={cn(
+                            "flex h-6 shrink-0 items-center gap-0.5 rounded-md border p-0.5 text-xs",
+                            active ? "border-border" : "border-border/60",
+                            ownsDesktopTitleBar && "[-webkit-app-region:no-drag]",
+                          )}
+                        >
+                          {surface.terminalIds.map((terminalId) => {
+                            const terminalActive =
+                              active && terminalId === surface.activeTerminalId;
+                            const label =
+                              props.terminalLabelsById.get(terminalId) ??
+                              getTerminalLabel(terminalId);
+                            return (
+                              <div
+                                key={terminalId}
+                                className={cn(
+                                  "flex h-full min-w-0 max-w-32 items-center gap-1 rounded-[5px] pr-0.5 pl-1",
+                                  terminalActive
+                                    ? "bg-foreground/10 text-foreground"
+                                    : "text-muted-foreground hover:bg-foreground/6 hover:text-foreground",
+                                )}
+                              >
+                                <button
+                                  type="button"
+                                  className="cursor-pointer flex min-w-0 flex-1 items-center gap-1"
+                                  onClick={() => onActivateTerminal(terminalId)}
+                                >
+                                  <TerminalSquare className="size-3 shrink-0" />
+                                  <span className="truncate">{label}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  className="cursor-pointer flex size-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+                                  aria-label={`Close ${label}`}
+                                  onClick={(event) =>
+                                    onCloseTerminal(terminalId, event.currentTarget)
+                                  }
+                                >
+                                  <X className="size-3" />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </SortableTab>
+                      );
+                    }
                     const pending = props.pendingSurfaceIds.has(surface.id);
                     const title = surfaceTitle(
                       surface,

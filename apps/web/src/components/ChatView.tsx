@@ -115,7 +115,6 @@ import {
 } from "@t3tools/client-runtime/state/threads";
 import { resolveThreadLastVisitedAt } from "./Sidebar.logic";
 import { derivePendingThreadRequests } from "@t3tools/client-runtime/state/thread-requests";
-import { selectRunningSubprocessTerminalIds } from "@t3tools/client-runtime/state/terminal";
 import {
   parseScopedThreadKey,
   scopedThreadKey,
@@ -965,7 +964,6 @@ interface PersistentThreadTerminalPanelProps {
   onSplitTerminal: () => void;
   splitShortcutLabel?: string | undefined;
   newShortcutLabel?: string | undefined;
-  closeShortcutLabel?: string | undefined;
   topBorder: boolean;
 }
 
@@ -983,7 +981,6 @@ const PersistentThreadTerminalPanel = memo(function PersistentThreadTerminalPane
   onSplitTerminal,
   splitShortcutLabel,
   newShortcutLabel,
-  closeShortcutLabel,
   topBorder,
 }: PersistentThreadTerminalPanelProps) {
   const scope = useThreadWorktreeScope(threadRef);
@@ -1022,10 +1019,6 @@ const PersistentThreadTerminalPanel = memo(function PersistentThreadTerminalPane
     }
     return labels;
   }, [knownTerminalSessions, surface.terminalIds]);
-  const runningTerminalIds = useMemo(
-    () => new Set(selectRunningSubprocessTerminalIds(knownTerminalSessions ?? [])),
-    [knownTerminalSessions],
-  );
   // A running session keeps the cwd it was opened with, even when a sibling
   // thread attaches it; otherwise a script's launch, then the checkout root.
   const terminalLaunchLocationsById = useMemo(() => {
@@ -1100,14 +1093,12 @@ const PersistentThreadTerminalPanel = memo(function PersistentThreadTerminalPane
       focusRequestId={focusRequestId}
       onNewTerminal={onNewTerminal}
       newShortcutLabel={newShortcutLabel}
-      closeShortcutLabel={closeShortcutLabel}
       onActiveTerminalChange={onActiveTerminalChange}
       onCloseTerminal={onCloseTerminal}
       onSplitTerminal={onSplitTerminal}
       splitShortcutLabel={splitShortcutLabel}
       onAddTerminalContext={onAddTerminalContext}
       terminalLabelsById={terminalLabelsById}
-      runningTerminalIds={runningTerminalIds}
       terminalLaunchLocationsById={terminalLaunchLocationsById}
       keybindings={keybindings}
       topBorder={topBorder}
@@ -3873,16 +3864,13 @@ export default function ChatView(props: ChatViewProps) {
     }),
     [terminalPanelOpen],
   );
-  const splitTerminalShortcutLabel = useMemo(
-    () => shortcutLabelForCommand(keybindings, "terminal.split", terminalShortcutLabelOptions),
+  const splitTerminalVerticalShortcutLabel = useMemo(
+    () =>
+      shortcutLabelForCommand(keybindings, "terminal.splitVertical", terminalShortcutLabelOptions),
     [keybindings, terminalShortcutLabelOptions],
   );
   const newTerminalShortcutLabel = useMemo(
     () => shortcutLabelForCommand(keybindings, "terminal.new", terminalShortcutLabelOptions),
-    [keybindings, terminalShortcutLabelOptions],
-  );
-  const closeTerminalShortcutLabel = useMemo(
-    () => shortcutLabelForCommand(keybindings, "terminal.close", terminalShortcutLabelOptions),
     [keybindings, terminalShortcutLabelOptions],
   );
   const onToggleDiff = useCallback(() => {
@@ -5354,27 +5342,31 @@ export default function ChatView(props: ChatViewProps) {
       terminalScopeInput,
     ],
   );
-  const splitPanelTerminalSideBySide = useCallback(() => {
-    splitPanelTerminal();
+  // The panel's split button stacks the new terminal under the visible ones.
+  const splitPanelTerminalStacked = useCallback(() => {
+    splitPanelTerminal("vertical");
   }, [splitPanelTerminal]);
+  // The tab bar reaches terminals of any tab, not only the one on screen.
+  const findTerminalSurfaceId = useCallback(
+    (terminalId: string) =>
+      rightPanelState.surfaces.find(
+        (surface) => surface.kind === "terminal" && surface.terminalIds.includes(terminalId),
+      )?.id ?? null,
+    [rightPanelState.surfaces],
+  );
   const activatePanelTerminal = useCallback(
     (terminalId: string) => {
-      if (!activeThreadRef || activeRightPanelSurface?.kind !== "terminal") return;
-      useRightPanelStore
-        .getState()
-        .activateTerminal(activeThreadRef, activeRightPanelSurface.id, terminalId);
+      const surfaceId = findTerminalSurfaceId(terminalId);
+      if (!activeThreadRef || !surfaceId) return;
+      useRightPanelStore.getState().activateTerminal(activeThreadRef, surfaceId, terminalId);
       setTerminalFocusRequestId((value) => value + 1);
     },
-    [activeRightPanelSurface, activeThreadRef],
+    [activeThreadRef, findTerminalSurfaceId],
   );
   const closePanelTerminal = useCallback(
     (terminalId: string) => {
-      if (
-        !hasTerminalWriteAccess() ||
-        !activeThreadRef ||
-        activeRightPanelSurface?.kind !== "terminal"
-      )
-        return;
+      const surfaceId = findTerminalSurfaceId(terminalId);
+      if (!hasTerminalWriteAccess() || !activeThreadRef || !surfaceId) return;
       const fallbackExitWrite = () =>
         writeTerminal({
           environmentId: activeThreadRef.environmentId,
@@ -5404,28 +5396,26 @@ export default function ChatView(props: ChatViewProps) {
         }
       })();
       forgetTerminalLaunch(terminalId);
-      useRightPanelStore
-        .getState()
-        .closeTerminal(activeThreadRef, activeRightPanelSurface.id, terminalId);
+      useRightPanelStore.getState().closeTerminal(activeThreadRef, surfaceId, terminalId);
       setTerminalFocusRequestId((value) => value + 1);
     },
     [
       hasTerminalWriteAccess,
-      activeRightPanelSurface,
       activeThreadRef,
       closeTerminalMutation,
+      findTerminalSurfaceId,
       forgetTerminalLaunch,
       terminalScopeInput,
       writeTerminal,
     ],
   );
   const requestClosePanelTerminal = useCallback(
-    (terminalId: string) => {
+    (terminalId: string, anchor?: Element) => {
       if (!hasTerminalWriteAccess()) return;
       const runningLabels = runningTerminalIds.includes(terminalId)
         ? [activeTerminalLabelsById.get(terminalId) ?? getTerminalLabel(terminalId)]
         : [];
-      void confirmTerminalClose(runningLabels).then((confirmed) => {
+      void confirmTerminalClose(runningLabels, anchor).then((confirmed) => {
         if (confirmed && readEnvironmentScope(environmentId, AuthTerminalOperateScope)) {
           closePanelTerminal(terminalId);
         }
@@ -10569,10 +10559,9 @@ export default function ChatView(props: ChatViewProps) {
         onNewTerminal={addTerminalSurface}
         onActiveTerminalChange={activatePanelTerminal}
         onCloseTerminal={closePanelTerminal}
-        onSplitTerminal={splitPanelTerminalSideBySide}
-        splitShortcutLabel={splitTerminalShortcutLabel ?? undefined}
+        onSplitTerminal={splitPanelTerminalStacked}
+        splitShortcutLabel={splitTerminalVerticalShortcutLabel ?? undefined}
         newShortcutLabel={newTerminalShortcutLabel ?? undefined}
-        closeShortcutLabel={closeTerminalShortcutLabel ?? undefined}
         topBorder={!worldChatShown || shouldUsePlanSidebarSheet}
       />
     ) : renderedRightPanelSurface?.kind === "diff" ? (
@@ -11607,6 +11596,8 @@ export default function ChatView(props: ChatViewProps) {
             desktopByTabId={activePreviewState.desktopByTabId}
             previewRuntimeTabId={resolvePreviewRuntimeTabId}
             terminalLabelsById={activeTerminalLabelsById}
+            onActivateTerminal={activatePanelTerminal}
+            onCloseTerminal={requestClosePanelTerminal}
             onActivate={activateRightPanelSurface}
             onCloseSurface={closeRightPanelSurface}
             onRenameDevice={(surfaceId, title) => {
@@ -11674,6 +11665,8 @@ export default function ChatView(props: ChatViewProps) {
               desktopByTabId={activePreviewState.desktopByTabId}
               previewRuntimeTabId={resolvePreviewRuntimeTabId}
               terminalLabelsById={activeTerminalLabelsById}
+              onActivateTerminal={activatePanelTerminal}
+              onCloseTerminal={requestClosePanelTerminal}
               onActivate={activateRightPanelSurface}
               onCloseSurface={closeRightPanelSurface}
               onRenameDevice={(surfaceId, title) => {

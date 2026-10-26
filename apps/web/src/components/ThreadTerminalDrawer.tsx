@@ -10,7 +10,7 @@ import {
   type TerminalOutputUpdate,
   type TerminalSessionState,
 } from "@t3tools/client-runtime/state/terminal";
-import { Square, SquareSplitHorizontal, SquareSplitVertical, TerminalSquare } from "lucide-react";
+import { SquareSplitVertical } from "lucide-react";
 import {
   AuthPreviewOperateScope,
   AuthOrchestrationOperateScope,
@@ -33,7 +33,6 @@ import {
   useState,
 } from "react";
 import { Button } from "~/components/ui/button";
-import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { readTextFromClipboard, writeTextToClipboard } from "~/hooks/useCopyToClipboard";
@@ -64,7 +63,6 @@ import {
 } from "../keybindings";
 import { MAX_TERMINALS_PER_GROUP, type ThreadTerminalGroup } from "../types";
 import { readLocalApi } from "~/localApi";
-import { confirmTerminalClose } from "~/lib/terminalCloseConfirm";
 import { useClientSettings } from "../hooks/useSettings";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useAttachedTerminalSession } from "../state/terminalSessions";
@@ -1067,18 +1065,15 @@ interface ThreadTerminalDrawerProps {
   focusRequestId: number;
   onNewTerminal: () => void;
   newShortcutLabel?: string | undefined;
-  closeShortcutLabel?: string | undefined;
   onActiveTerminalChange: (terminalId: string) => void;
   onCloseTerminal: (terminalId: string) => void;
-  /** Adds a terminal beside the visible ones, from the button floating at the top right. */
+  /** Adds a terminal to the visible ones, from the button floating at the top right. */
   onSplitTerminal?: (() => void) | undefined;
   splitShortcutLabel?: string | undefined;
   onAddTerminalContext: (selection: TerminalContextSelection) => void;
   keybindings: ResolvedKeybindingsConfig;
   /** Prefer server-provided tab titles when present (e.g. active subprocess name). */
   terminalLabelsById?: ReadonlyMap<string, string>;
-  /** Terminals with a running subprocess; only these ask before closing. */
-  runningTerminalIds?: ReadonlySet<string>;
   /** Prefer per-session launch locations when the server already knows a terminal. */
   terminalLaunchLocationsById?: ReadonlyMap<string, TerminalLaunchLocation>;
   /** Off when the panel's tab bar already draws its own bottom border (the world's frame). */
@@ -1104,7 +1099,6 @@ export default function ThreadTerminalDrawer({
   focusRequestId,
   onNewTerminal,
   newShortcutLabel,
-  closeShortcutLabel,
   onActiveTerminalChange,
   onCloseTerminal,
   onSplitTerminal,
@@ -1112,7 +1106,6 @@ export default function ThreadTerminalDrawer({
   onAddTerminalContext,
   keybindings,
   terminalLabelsById,
-  runningTerminalIds,
   terminalLaunchLocationsById,
   topBorder = true,
 }: ThreadTerminalDrawerProps) {
@@ -1234,11 +1227,7 @@ export default function ThreadTerminalDrawer({
     (normalizedTerminalIds.length > 0 ? [resolvedActiveTerminalId] : []);
   const splitDirection =
     resolvedTerminalGroups[resolvedActiveGroupIndex]?.splitDirection ?? "horizontal";
-  const hasTerminalSidebar = normalizedTerminalIds.length > 1;
   const isSplitView = visibleTerminalIds.length > 1;
-  const showGroupHeaders =
-    resolvedTerminalGroups.length > 1 ||
-    resolvedTerminalGroups.some((terminalGroup) => terminalGroup.terminalIds.length > 1);
   const terminalLabelById = useMemo(() => {
     const next = new Map<string, string>();
     for (const terminalId of normalizedTerminalIds) {
@@ -1265,26 +1254,6 @@ export default function ThreadTerminalDrawer({
     if (!canOperateTerminal) return;
     onNewTerminal();
   }, [canOperateTerminal, onNewTerminal]);
-  const confirmCloseTerminal = useCallback(
-    (terminalId: string, anchor: Element) => {
-      if (!canOperateTerminal) return;
-      const runningLabels = runningTerminalIds?.has(terminalId)
-        ? [terminalLabelById.get(terminalId) ?? getTerminalLabel(terminalId)]
-        : [];
-      void confirmTerminalClose(runningLabels, anchor).then((confirmed) => {
-        if (confirmed && readEnvironmentScope(threadRef.environmentId, AuthTerminalOperateScope)) {
-          onCloseTerminal(terminalId);
-        }
-      });
-    },
-    [
-      canOperateTerminal,
-      onCloseTerminal,
-      runningTerminalIds,
-      terminalLabelById,
-      threadRef.environmentId,
-    ],
-  );
 
   useEffect(() => {
     if (!visible) return;
@@ -1339,12 +1308,7 @@ export default function ThreadTerminalDrawer({
       )}
     >
       <div className="min-h-0 w-full flex-1">
-        <div
-          className={cn(
-            "flex h-full min-h-0 bg-(--terminal-background)",
-            hasTerminalSidebar && "gap-1.5",
-          )}
-        >
+        <div className="flex h-full min-h-0 bg-(--terminal-background)">
           <div className="relative min-w-0 flex-1">
             {onSplitTerminal ? (
               <div className="absolute top-1.5 right-1.5 z-10">
@@ -1352,15 +1316,15 @@ export default function ThreadTerminalDrawer({
                   <TooltipTrigger
                     render={
                       <Button
-                        aria-label="Split terminal"
-                        size="icon-xs"
-                        variant="ghost-muted"
+                        size="xs"
+                        variant="outline"
                         disabled={!canOperateTerminal || splitLimitReached}
                         onClick={onSplitTerminal}
                       />
                     }
                   >
-                    <SquareSplitHorizontal className="size-3.5" />
+                    <SquareSplitVertical className="size-3.5" />
+                    Split
                   </TooltipTrigger>
                   <TooltipPopup>{splitActionLabel}</TooltipPopup>
                 </Tooltip>
@@ -1455,96 +1419,6 @@ export default function ThreadTerminalDrawer({
               </div>
             )}
           </div>
-
-          {hasTerminalSidebar && (
-            <aside className="flex w-36 min-w-36 flex-col border border-border/70 bg-muted/10">
-              <div className="min-h-0 flex-1 overflow-y-auto px-1 py-1">
-                {resolvedTerminalGroups.map((terminalGroup) => {
-                  const isGroupActive =
-                    terminalGroup.terminalIds.includes(resolvedActiveTerminalId);
-                  const groupActiveTerminalId = isGroupActive
-                    ? resolvedActiveTerminalId
-                    : (terminalGroup.terminalIds[0] ?? resolvedActiveTerminalId);
-                  const terminalCount = terminalGroup.terminalIds.length;
-                  const isSplitGroup = terminalCount > 1;
-                  const groupLabel = !isSplitGroup
-                    ? "Single"
-                    : terminalGroup.splitDirection === "vertical"
-                      ? "Stacked"
-                      : "Side by side";
-                  const GroupIcon = !isSplitGroup
-                    ? Square
-                    : terminalGroup.splitDirection === "vertical"
-                      ? SquareSplitVertical
-                      : SquareSplitHorizontal;
-
-                  return (
-                    <div key={terminalGroup.id} className="pb-0.5">
-                      {showGroupHeaders && (
-                        <button
-                          type="button"
-                          className={`flex h-[22px] w-full cursor-pointer items-center gap-1 rounded px-1.5 text-2xs ${
-                            isGroupActive
-                              ? "bg-accent/50 text-foreground"
-                              : "text-muted-foreground hover:bg-accent/40 hover:text-foreground"
-                          }`}
-                          onClick={() => onActiveTerminalChange(groupActiveTerminalId)}
-                        >
-                          <GroupIcon className="size-3 shrink-0" />
-                          <span className="min-w-0 flex-1 truncate text-left">{groupLabel}</span>
-                          <span className="text-muted-foreground/70 text-3xs tabular-nums">
-                            {terminalCount}
-                          </span>
-                        </button>
-                      )}
-
-                      <div className="flex flex-col gap-0.5">
-                        {terminalGroup.terminalIds.map((terminalId) => {
-                          const isActive = terminalId === resolvedActiveTerminalId;
-                          const terminalLabel = terminalLabelById.get(terminalId) ?? "Terminal";
-                          const closeTerminalLabel = `Close ${terminalLabel}${
-                            isActive && closeShortcutLabel ? ` (${closeShortcutLabel})` : ""
-                          }`;
-                          return (
-                            <div
-                              key={terminalId}
-                              className={cn(
-                                "group/tab flex h-6 w-full items-center gap-0.5 rounded-md pr-2 pl-1.5 text-xs",
-                                isActive
-                                  ? "bg-accent text-foreground"
-                                  : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-                              )}
-                            >
-                              {canOperateTerminal ? (
-                                <PanelTabCloseButton
-                                  label={closeTerminalLabel}
-                                  onClick={(event) =>
-                                    confirmCloseTerminal(terminalId, event.currentTarget)
-                                  }
-                                  tooltip={closeTerminalLabel}
-                                >
-                                  <TerminalSquare className="size-3 shrink-0" />
-                                </PanelTabCloseButton>
-                              ) : (
-                                <TerminalSquare className="size-3 shrink-0" />
-                              )}
-                              <button
-                                type="button"
-                                className="flex min-w-0 flex-1 cursor-pointer items-center gap-1 text-left"
-                                onClick={() => onActiveTerminalChange(terminalId)}
-                              >
-                                <span className="truncate">{terminalLabel}</span>
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </aside>
-          )}
         </div>
       </div>
     </aside>
