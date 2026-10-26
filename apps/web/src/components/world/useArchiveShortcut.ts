@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 
+import { isConfirmDialogActive, requestConfirmDialog } from "../../confirmDialog";
 import { formatShortcutLabel } from "../../keybindings";
 
 // Option+A on a Mac, Alt+A elsewhere.
@@ -33,4 +34,20 @@ export function useArchiveShortcut(archive: () => Promise<void>, enabled = true)
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [enabled]);
+}
+
+/**
+ * Asks before archiving, in a popover beside `anchor` (the archive button, also for the
+ * shortcut). A second shortcut press while it is open is ignored rather than queued.
+ */
+export async function confirmArchive(anchor: Element | null): Promise<boolean> {
+  if (isConfirmDialogActive()) return false;
+  return (
+    (await requestConfirmDialog(
+      "Archive this thread?\nYou can restore it from Settings → Archived.",
+      { anchor },
+    )) ??
+    // No themed host is mounted; fall back to the native prompt rather than archiving unasked.
+    window.confirm("Archive this thread?")
+  );
 }

@@ -5,7 +5,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { ArchiveIcon, RefreshCwIcon } from "lucide-react";
-import { lazy, memo, Suspense, useState } from "react";
+import { lazy, memo, Suspense, useRef, useState } from "react";
 
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { cn } from "../../lib/utils";
@@ -19,7 +19,7 @@ import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { HuePicker } from "./HuePicker";
-import { ARCHIVE_SHORTCUT, useArchiveShortcut } from "./useArchiveShortcut";
+import { ARCHIVE_SHORTCUT, confirmArchive, useArchiveShortcut } from "./useArchiveShortcut";
 import { useWorldLook, useWorldLookStore } from "./worldLookStore";
 import { useWorldModeStore } from "./worldModeStore";
 
@@ -51,11 +51,13 @@ export const WorldArchiveButton = memo(function WorldArchiveButton({
   const { archiveThread } = useThreadActions();
   const archiveChatAgent = useWorldModeStore((state) => state.archiveChatAgent);
   const [archiving, setArchiving] = useState(false);
+  const archiveButton = useRef<HTMLButtonElement>(null);
 
   // Archive, not delete: it can be undone from the toast or Settings → Archived. The world's
   // own archive plays the agent's exit and reports its own failures. Either way the chat closes.
   const archive = async () => {
     if (chat === null || archiving) return;
+    if (!(await confirmArchive(archiveButton.current))) return;
     setArchiving(true);
     if (archiveChatAgent !== null) {
       await archiveChatAgent();
@@ -84,6 +86,7 @@ export const WorldArchiveButton = memo(function WorldArchiveButton({
       <TooltipTrigger
         render={
           <Button
+            ref={archiveButton}
             variant="ghost"
             size="icon-sm"
             aria-label="Archive this thread"

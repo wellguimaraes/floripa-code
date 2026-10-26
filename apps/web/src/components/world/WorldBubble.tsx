@@ -32,7 +32,7 @@ import type { CharacterFacts } from "./engine/facts";
 import { HuePicker } from "./HuePicker";
 import { type FamilyShades as Shades, palette } from "./scene/palette";
 import { useBubbleAttachments } from "./useBubbleAttachments";
-import { ARCHIVE_SHORTCUT, useArchiveShortcut } from "./useArchiveShortcut";
+import { ARCHIVE_SHORTCUT, confirmArchive, useArchiveShortcut } from "./useArchiveShortcut";
 import type { QueuedSend } from "./lastExchange";
 import { LatestTurn } from "./LatestTurn";
 import { RollingSwap } from "./RollingSwap";
@@ -95,6 +95,7 @@ export function WorldBubble(props: {
   // The exchange opens scrolled to its end, where the latest words are, and follows the agent's
   // work as it grows unless you scrolled up to read.
   const exchange = useRef<HTMLDivElement>(null);
+  const archiveButton = useRef<HTMLButtonElement>(null);
   const exchangeContent = useRef<HTMLDivElement>(null);
   const followingEnd = useRef(true);
   // Scrolled away from the top: the reply is passing under your pinned message.
@@ -254,6 +255,7 @@ export function WorldBubble(props: {
   // Archive, not delete: it can be undone from the toast or Settings → Archived.
   const archive = async () => {
     if (state.phase === "archiving") return;
+    if (!(await confirmArchive(archiveButton.current))) return;
     setState({ phase: "archiving" });
     const result = await archiveThread(facts.ref);
     if (result._tag === "Failure") {
@@ -366,6 +368,7 @@ export function WorldBubble(props: {
               <TooltipTrigger
                 render={
                   <Button
+                    ref={archiveButton}
                     variant="ghost"
                     size="icon-xs"
                     aria-label="Archive this thread"
