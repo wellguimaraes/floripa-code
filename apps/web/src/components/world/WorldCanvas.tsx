@@ -740,6 +740,8 @@ export default function WorldCanvas(props: {
                     })}`
                   : "Snooze idle alarm",
                 icon: "bell-off",
+                // Nothing to snooze until the alarm goes off; a snoozed one stays open to unsnooze.
+                disabled: !snoozed && !idleAlarmed.has(key),
                 separatorBefore: true,
                 children: [
                   ...IDLE_SNOOZE_OPTIONS.map((option) => ({
