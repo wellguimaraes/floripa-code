@@ -310,7 +310,6 @@ import {
   MessageCircleIcon,
   PaperclipIcon,
   ChevronDownIcon,
-  ChevronRightIcon,
   DownloadIcon,
   GitBranchIcon,
   TargetIcon,
@@ -585,6 +584,7 @@ import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { Button, InlineButton } from "./ui/button";
 import { Kbd } from "./ui/kbd";
+import { Spinner } from "./ui/spinner";
 import {
   AlertDialog,
   AlertDialogClose,
@@ -7153,14 +7153,9 @@ export default function ChatView(props: ChatViewProps) {
       id: `background-work:${activeThread.id}`,
       variant: "default",
       priority: "activity",
-      // A dev server can run for hours after the agent is done, so only work
-      // that will wake the agent pulses.
-      // The wrapper holds the dim opacity because the pulse animates opacity.
       icon: (
         <span className="flex opacity-40" aria-hidden="true">
-          <ChevronRightIcon
-            className={cn("size-3", presentation.waiting && "animate-status-pulse")}
-          />
+          <Spinner size="xs" />
         </span>
       ),
       title: presentation.title,

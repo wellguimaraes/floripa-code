@@ -1,5 +1,5 @@
 import { Canvas, events, type ThreeEvent, useFrame, useThree } from "@react-three/fiber";
-import { PlusIcon } from "lucide-react";
+import { PlusIcon, SquareTerminalIcon } from "lucide-react";
 import { scopedProjectKey, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import type { ScopedThreadRef } from "@t3tools/contracts";
@@ -1646,8 +1646,19 @@ function CharacterTag(props: {
           : "bg-popover/80 text-popover-foreground/90",
       )}
     >
-      <span className={cn("truncate", chatting ? "px-2.5 py-1" : "px-1.5 py-0.5")}>
-        {facts.title || "Untitled thread"}
+      <span
+        className={cn(
+          "flex min-w-0 items-center",
+          chatting ? "gap-1.5 px-2.5 py-1" : "gap-1 px-1.5 py-0.5",
+        )}
+      >
+        {facts.backgroundTask ? (
+          <SquareTerminalIcon
+            aria-label="Running a background command"
+            className={cn("shrink-0 opacity-70", chatting ? "size-3.5" : "size-2.5")}
+          />
+        ) : null}
+        <span className="truncate">{facts.title || "Untitled thread"}</span>
       </span>
       {elapsed !== "" ? (
         // Red for a reply in the last 5 minutes, amber within the hour, green within 12 hours, gray after.

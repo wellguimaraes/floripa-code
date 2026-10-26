@@ -134,6 +134,10 @@ describe("resolveIntent", () => {
     const [island] = islandWorlds;
     const waiting = { status: "waiting" as const, backgroundTask: true };
     expect(resolveIntent(character(waiting), island!)).toMatchObject({ go: "mine", do: "wait" });
+    // A finished run that left a dev server up stays at the pile too.
+    expect(
+      resolveIntent(character({ status: "ready", backgroundTask: true }), island!),
+    ).toMatchObject({ go: "mine", do: "wait" });
     expect(island!.activities.wait?.pose).toBe("crossArms");
     expect(resolveIntent(character({ ...waiting, hasWorkingKids: true }), island!)).toMatchObject({
       go: "mine",

@@ -61,7 +61,8 @@ function isBusy(facts: CharacterFacts): boolean {
     facts.status === "working" ||
     facts.status === "approval" ||
     facts.status === "input" ||
-    (facts.status === "waiting" && (facts.hasWorkingKids || facts.backgroundTask))
+    (facts.status === "waiting" && facts.hasWorkingKids) ||
+    ((facts.status === "ready" || facts.status === "waiting") && facts.backgroundTask)
   );
 }
 
