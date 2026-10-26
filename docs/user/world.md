@@ -5,9 +5,9 @@ island, named on a sign in the project's colour, with the project's icon
 before the name, and grouped the same way as projects in the sidebar. An
 island with no recent threads on it stays, drawn in dark shades of the sea,
 until new work lands there. After the name, the sign
-counts the project's local branches (other than the default one), its
-worktrees, and the open pull requests from those branches, so branches and
-worktrees you no longer need are easy to spot. The counts update about once a
+counts the project's local branches (other than the default one) and the open
+pull requests from those branches, so branches you no longer need are easy to
+spot. The counts update about once a
 minute. Click the branch count to list the branches, with the worktree each is
 checked out in, its last commit, and whether that worktree has uncommitted
 changes. Delete removes a branch along with its worktree; it asks for a second

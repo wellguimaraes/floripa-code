@@ -60,21 +60,26 @@ const PULL_REQUEST_ICON =
 /** Lucide's git-branch glyph, on its 24px grid. */
 const BRANCH_ICON =
   "M15 6a9 9 0 0 0-9 9V3M21 6a3 3 0 1 1-6 0a3 3 0 1 1 6 0M9 18a3 3 0 1 1-6 0a3 3 0 1 1 6 0";
-/** Lucide's folder-git-2 glyph, on its 24px grid. */
-const WORKTREE_ICON =
-  "M18 19a5 5 0 0 1-5-5v8M9 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v5M15 12a2 2 0 1 1-4 0a2 2 0 1 1 4 0M22 19a2 2 0 1 1-4 0a2 2 0 1 1 4 0";
+/** Lucide's settings glyph, on its 24px grid. */
+const SETTINGS_ICON =
+  "M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915M15 12a3 3 0 1 1-6 0a3 3 0 1 1 6 0";
+/** The dot counting a badge's stale branches. */
+const STALE_DOT = "#dc2626";
 
 interface Badge {
   readonly icon: string;
   readonly count: number;
+  /** How many of them went stale; a red dot on the badge counts them. */
+  readonly stale: number;
 }
 
 /**
  * The island's name board, painted in the project's colour on a wooden frame,
  * standing at the definition's sign slot. The project's icon leads the name;
  * after it, counts of the
- * island's local branches (the default one aside), its worktrees, and the open
- * PRs from those branches, so stale branches and worktrees are easy to spot.
+ * island's local branches (the default one aside) and the open PRs from
+ * those branches, so stale branches are easy to spot,
+ * then a button for the island's preferences.
  */
 export function Sign(props: {
   readonly slot: WorldSlot;
@@ -84,16 +89,16 @@ export function Sign(props: {
   readonly color: string;
   readonly branches: number;
   readonly pullRequests: number;
-  readonly worktrees: number;
-  /** Clicking the branch or worktree count, at this point on screen, e.g. to list them. */
-  readonly onListClick: (
-    list: "branches" | "worktrees",
-    point: { readonly x: number; readonly y: number },
-  ) => void;
+  /** How many branches went stale (see `IslandPrefs.staleDays`). */
+  readonly staleBranches: number;
+  /** Clicking the branch count, at this point on screen, e.g. to list the branches. */
+  readonly onListClick: (point: { readonly x: number; readonly y: number }) => void;
   /** Clicking the project's icon, at this point on screen, e.g. to change it. */
   readonly onIconClick: (point: { readonly x: number; readonly y: number }) => void;
   /** Right-clicking the project's icon, for every way to change it. */
   readonly onIconMenu: (point: { readonly x: number; readonly y: number }) => void;
+  /** Clicking the preferences button. */
+  readonly onPrefsClick: () => void;
   /** The sign's root, for `signCorners`. */
   readonly ref: Ref<Group>;
 }) {
@@ -104,10 +109,11 @@ export function Sign(props: {
     color,
     branches,
     pullRequests,
-    worktrees,
+    staleBranches,
     onListClick,
     onIconClick,
     onIconMenu,
+    onPrefsClick,
     ref,
   } = props;
   // The icon sits on a white tile, so lucide glyphs take the dark ink whatever the board's colour.
@@ -117,21 +123,21 @@ export function Sign(props: {
   const board = useMemo(
     () =>
       signBoard(text, color, icon, [
-        { icon: BRANCH_ICON, count: branches },
-        { icon: WORKTREE_ICON, count: worktrees },
-        { icon: PULL_REQUEST_ICON, count: pullRequests },
+        { icon: BRANCH_ICON, count: branches, stale: staleBranches },
+        { icon: PULL_REQUEST_ICON, count: pullRequests, stale: 0 },
       ]),
-    [text, color, icon, branches, pullRequests, worktrees],
+    [text, color, icon, branches, pullRequests, staleBranches],
   );
   useEffect(() => () => board.texture.dispose(), [board]);
-  // The icon and the branch and worktree counts take clicks; the rest of the board doesn't.
+  // The icon, the branch count and the preferences button take clicks; the rest
+  // of the board doesn't.
   const target = (event: ThreeEvent<PointerEvent | MouseEvent>) => {
     const x = (event.uv?.x ?? -1) * board.pixelWidth;
     const within = (span: { readonly left: number; readonly right: number } | undefined) =>
       span !== undefined && x >= span.left && x <= span.right;
     if (within(board.icon)) return "icon";
-    if (within(board.badges[0])) return "branches";
-    if (within(board.badges[1])) return "worktrees";
+    if (within(board.badges[0])) return "list";
+    if (within(board.prefs)) return "prefs";
     return null;
   };
   const width = board.width;
@@ -179,7 +185,8 @@ export function Sign(props: {
             event.stopPropagation();
             const point = { x: event.nativeEvent.clientX, y: event.nativeEvent.clientY };
             if (clicked === "icon") onIconClick(point);
-            else onListClick(clicked, point);
+            else if (clicked === "prefs") onPrefsClick();
+            else onListClick(point);
           }}
           onContextMenu={(event) => {
             if (target(event) !== "icon") return;
@@ -249,6 +256,7 @@ function signBoard(
   readonly pixelWidth: number;
   readonly icon: { readonly left: number; readonly right: number };
   readonly badges: ReadonlyArray<{ readonly left: number; readonly right: number }>;
+  readonly prefs: { readonly left: number; readonly right: number };
 } {
   const padding = 70;
   const measure = document.createElement("canvas").getContext("2d")!;
@@ -266,11 +274,12 @@ function signBoard(
   const widths = badges.map(
     (badge) => badgePadding * 2 + iconSize + 20 + measure.measureText(String(badge.count)).width,
   );
-  const badgesWidth =
-    widths.reduce((sum, width) => sum + width, 0) + betweenBadges * (badges.length - 1);
-  const badgeSpace = badges.length === 0 ? 0 : badgesWidth + badgeGap;
-  // The icon's tile is as tall as a badge pill, and square.
+  // The icon's tile is as tall as a badge pill, and square; so is the preferences button.
   const pillHeight = iconSize + badgePadding * 1.4;
+  // The badges, then the preferences button.
+  const badgesWidth =
+    widths.reduce((sum, width) => sum + width, 0) + betweenBadges * badges.length + pillHeight;
+  const badgeSpace = badgesWidth + badgeGap;
   const iconSpace = pillHeight + badgeGap;
   let size = 150;
   measure.font = font(size);
@@ -389,9 +398,41 @@ function signBoard(
       left + badgePadding + iconSize + 20,
       middle + badgeFontSize * 0.06,
     );
+    if (badge.stale > 0) {
+      // On the pill's top right corner, ringed in white so it shows on a red board too.
+      const radius = 38;
+      const x = left + badgeWidth - radius * 0.6;
+      const y = tileTop + radius * 0.3;
+      context.fillStyle = STALE_DOT;
+      context.strokeStyle = "#ffffff";
+      context.lineWidth = 8;
+      context.beginPath();
+      context.arc(x, y, radius, 0, Math.PI * 2);
+      context.fill();
+      context.stroke();
+      context.fillStyle = "#ffffff";
+      context.font = font(52);
+      context.textAlign = "center";
+      context.fillText(badge.stale > 99 ? "99+" : String(badge.stale), x, y + 3);
+    }
     left += badgeWidth + betweenBadges;
   });
   context.globalAlpha = 1;
+  // The preferences button: a round tile with a gear.
+  const prefs = { left, right: left + pillHeight };
+  context.fillStyle = pillFill;
+  context.beginPath();
+  context.roundRect(left, tileTop, pillHeight, pillHeight, pillHeight / 2);
+  context.fill();
+  context.save();
+  context.translate(left + (pillHeight - iconSize) / 2, middle - iconSize / 2);
+  context.scale(iconSize / 24, iconSize / 24);
+  context.strokeStyle = ink;
+  context.lineWidth = 1.8;
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  context.stroke(new Path2D(SETTINGS_ICON));
+  context.restore();
 
   const texture = new CanvasTexture(canvas);
   texture.colorSpace = SRGBColorSpace;
@@ -402,6 +443,7 @@ function signBoard(
     pixelWidth: canvas.width,
     icon: { left: padding, right: padding + pillHeight },
     badges: spans,
+    prefs,
   };
 }
 

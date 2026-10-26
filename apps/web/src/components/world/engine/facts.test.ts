@@ -2,7 +2,7 @@ import { ProjectId, ProviderInstanceId, RunId, ThreadId } from "@t3tools/contrac
 import { describe, expect, it } from "vite-plus/test";
 
 import { makeThreadFixture, type ThreadFixtureOverrides } from "../../../test-fixtures";
-import { buildCharacterFacts } from "./facts";
+import { ageReplies, buildCharacterFacts, islandIdleSeconds } from "./facts";
 
 const running = {
   status: "running" as const,
@@ -155,5 +155,27 @@ describe("buildCharacterFacts", () => {
       2,
     );
     expect(facts.map((f) => f.ref.threadId)).toEqual(["new", "mid"]);
+  });
+});
+
+describe("islandIdleSeconds", () => {
+  const now = Date.parse("2026-01-01T01:00:00.000Z");
+  const aged = (threads: ReturnType<typeof thread>[]) => ageReplies(build(threads), now);
+
+  it("counts from the island's latest reply", () => {
+    const facts = aged([
+      thread("old", { updatedAt: "2026-01-01T00:00:00.000Z" }),
+      thread("recent", { updatedAt: "2026-01-01T00:50:00.000Z" }),
+    ]);
+    expect(islandIdleSeconds(facts)).toBe(600);
+  });
+
+  it("is not idle while anyone works, or with nobody there", () => {
+    const facts = aged([
+      thread("old", { updatedAt: "2026-01-01T00:00:00.000Z" }),
+      thread("busy", { runtime: running }),
+    ]);
+    expect(islandIdleSeconds(facts)).toBeNull();
+    expect(islandIdleSeconds([])).toBeNull();
   });
 });

@@ -32,24 +32,3 @@ export function countIslandPullRequests(
   }
   return counts;
 }
-
-/**
- * How many worktrees each island has, the main one in its projects' own folder included.
- * Checkouts of one repository list the same worktrees, so each path counts once.
- */
-export function countIslandWorktrees(
-  checkouts: ReadonlyArray<{
-    readonly island: string;
-    readonly worktreePaths: ReadonlyArray<string | null>;
-  }>,
-): ReadonlyMap<string, number> {
-  const paths = new Map<string, Set<string>>();
-  for (const checkout of checkouts) {
-    const found = paths.get(checkout.island) ?? new Set<string>();
-    for (const path of checkout.worktreePaths) {
-      if (path !== null) found.add(path);
-    }
-    paths.set(checkout.island, found);
-  }
-  return new Map([...paths].map(([island, found]) => [island, found.size]));
-}

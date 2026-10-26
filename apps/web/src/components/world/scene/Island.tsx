@@ -1,5 +1,5 @@
 import { useFrame, useThree } from "@react-three/fiber";
-import { Suspense, useContext, useEffect, useMemo, useRef } from "react";
+import { Suspense, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   BufferGeometry,
   Color,
@@ -109,11 +109,16 @@ function rippleShore(definition: WorldDefinition): {
 export function Island(props: {
   readonly definition: WorldDefinition;
   readonly furniture: ReadonlyArray<FurnitureSpot>;
-  readonly ripple: boolean;
+  /** Rings spreading round the shore: plain while someone waits on you, wavy while idle. */
+  readonly ripple: "plain" | "wavy" | null;
   /** The open chat's island: its shallows reach wider, so it stands out. */
   readonly wide: boolean;
 }) {
   const { definition, furniture, ripple, wide } = props;
+  // A ripple that stops fades out first, so the last one stays up until it has.
+  const [lastRipple, setLastRipple] = useState(ripple);
+  if (ripple !== null && ripple !== lastRipple) setLastRipple(ripple);
+  const shownRipple = ripple ?? lastRipple;
   const faded = useContext(FadedContext);
   const { light } = useContext(TimeOfDayContext);
   const shore = useMemo(() => {
@@ -130,7 +135,16 @@ export function Island(props: {
   const ground = groundHeight(definition);
   return (
     <group>
-      {ripple ? <Ripple center={shore.center} radius={shore.radius} edge={shore.edge} /> : null}
+      {shownRipple !== null ? (
+        <Ripple
+          center={shore.center}
+          radius={shore.radius}
+          edge={shore.edge}
+          wavy={shownRipple === "wavy"}
+          leaving={ripple === null}
+          onGone={() => setLastRipple(null)}
+        />
+      ) : null}
       {definition.terrain.map((patch) => {
         const top = TERRAIN_TOP[patch.kind];
         return patch.shape === "disc" ? (

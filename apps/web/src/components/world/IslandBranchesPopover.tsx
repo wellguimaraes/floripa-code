@@ -12,12 +12,11 @@ import {
   ArrowUpIcon,
   FileDiffIcon,
   FolderGit2Icon,
-  GitBranchIcon,
   GitCommitHorizontalIcon,
   PanelRightIcon,
   Trash2Icon,
 } from "lucide-react";
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -28,11 +27,12 @@ import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { PrStatusTooltipContent, prStatusIndicator } from "../ThreadStatusIndicators";
 import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTitle } from "../ui/popover";
+import { RefreshIcon } from "../ui/refresh-icon";
 import { Separator } from "../ui/separator";
 import { Spinner } from "../ui/spinner";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { type BranchTarget, branchRefsAtom } from "./useIslandSignStats";
+import { type BranchTarget, branchRefsAtom, isStale } from "./useIslandSignStats";
 
 const HatPortrait = lazy(() =>
   import("./scene/CharacterPortrait").then((module) => ({ default: module.HatPortrait })),
@@ -42,22 +42,32 @@ const isGitCommandError = Schema.is(GitCommandError);
 
 /** How long a Delete button waits for its confirming second click. */
 const CONFIRM_MS = 4_000;
+/**
+ * How often an open popover reads its branches again. Just the local refs: a worktree's full
+ * status fetches the remote and looks its PR up, so only the refresh button does.
+ */
+const POLL_MS = 5_000;
 
 /**
- * Rows whose delete is still running. Kept outside the popover, since a delete outlives it, so
- * a reopened popover shows one still going.
+ * Where a branch's delete is at: still running, or done but not yet gone from the listed refs,
+ * both of which hide its row; or refused as unmerged, which brings it back to delete anyway.
+ * Kept outside the popover, since a delete outlives it.
  */
-const deletingRowsAtom = Atom.make<ReadonlySet<string>>(new Set<string>()).pipe(
+type RowState = "deleting" | "deleted" | "unmerged";
+
+const rowStatesAtom = Atom.make<ReadonlyMap<string, RowState>>(new Map<string, RowState>()).pipe(
   Atom.keepAlive,
-  Atom.withLabel("world:island-deleting-rows"),
+  Atom.withLabel("world:island-branch-row-states"),
 );
 
-function setRowDeleting(key: string, deleting: boolean): void {
-  const next = new Set(appAtomRegistry.get(deletingRowsAtom));
-  if (deleting) next.add(key);
-  else next.delete(key);
-  appAtomRegistry.set(deletingRowsAtom, next);
+function setRowState(key: string, state: RowState | null): void {
+  const next = new Map(appAtomRegistry.get(rowStatesAtom));
+  if (state === null) next.delete(key);
+  else next.set(key, state);
+  appAtomRegistry.set(rowStatesAtom, next);
 }
+
+const isHidden = (state: RowState | undefined) => state === "deleting" || state === "deleted";
 
 interface BranchRow {
   readonly key: string;
@@ -73,8 +83,6 @@ interface BranchRow {
   readonly lastCommitAt: string | null;
 }
 
-type IslandList = "branches" | "worktrees";
-
 /** A worktree whose surfaces open on their own, from its latest thread or a new idle one. */
 export interface WorktreeSurfacesTarget {
   readonly environmentId: EnvironmentId;
@@ -85,9 +93,12 @@ export interface WorktreeSurfacesTarget {
   readonly inProjectFolder: boolean;
 }
 
+/** The prefix of every row key from a target's repository. */
+const repositoryKey = (target: BranchTarget) =>
+  `${target.environmentId}\u0000${target.roots.at(-1) ?? target.cwd}\u0000`;
+
 /**
- * An island's local branches, the default one first and the rest most recently committed first,
- * and its worktrees whatever branch they're on, the main one in its projects' own folders first.
+ * An island's local branches, the default one first and the rest most recently committed first.
  * Checkouts of one repository list the same branches, so each appears once.
  */
 const islandBranchesAtom = Atom.family((key: string) =>
@@ -95,15 +106,16 @@ const islandBranchesAtom = Atom.family((key: string) =>
     const targets = JSON.parse(key) as ReadonlyArray<BranchTarget>;
     const projectFolders = new Set(targets.flatMap((target) => target.roots));
     const branches = new Map<string, BranchRow>();
-    const worktrees = new Map<string, BranchRow>();
     let loading = false;
     for (const target of targets) {
       const result = get(branchRefsAtom(target));
       if (AsyncResult.isInitial(result)) loading = true;
-      const repository = target.roots.at(-1) ?? target.cwd;
       for (const ref of Option.getOrNull(AsyncResult.value(result))?.refs ?? []) {
         if (ref.isRemote === true) continue;
-        const row = {
+        const branchKey = `${repositoryKey(target)}${ref.name}`;
+        if (branches.has(branchKey)) continue;
+        branches.set(branchKey, {
+          key: branchKey,
           environmentId: target.environmentId,
           cwd: target.cwd,
           name: ref.name,
@@ -111,24 +123,15 @@ const islandBranchesAtom = Atom.family((key: string) =>
           inProjectFolder: ref.worktreePath !== null && projectFolders.has(ref.worktreePath),
           isDefault: ref.isDefault,
           lastCommitAt: ref.lastCommitAt ?? null,
-        };
-        const branchKey = `${target.environmentId}\u0000${repository}\u0000${ref.name}`;
-        if (!branches.has(branchKey)) {
-          branches.set(branchKey, { key: branchKey, ...row });
-        }
-        if (ref.worktreePath === null) continue;
-        const worktreeKey = `${target.environmentId}\u0000${ref.worktreePath}`;
-        if (!worktrees.has(worktreeKey)) worktrees.set(worktreeKey, { key: worktreeKey, ...row });
+        });
       }
     }
-    const byLastCommit = (a: BranchRow, b: BranchRow) =>
-      (b.lastCommitAt ?? "").localeCompare(a.lastCommitAt ?? "") || a.name.localeCompare(b.name);
     return {
-      branches: [...branches.values()].toSorted(
-        (a, b) => Number(b.isDefault) - Number(a.isDefault) || byLastCommit(a, b),
-      ),
-      worktrees: [...worktrees.values()].toSorted(
-        (a, b) => Number(b.inProjectFolder) - Number(a.inProjectFolder) || byLastCommit(a, b),
+      rows: [...branches.values()].toSorted(
+        (a, b) =>
+          Number(b.isDefault) - Number(a.isDefault) ||
+          (b.lastCommitAt ?? "").localeCompare(a.lastCommitAt ?? "") ||
+          a.name.localeCompare(b.name),
       ),
       loading,
     };
@@ -136,35 +139,87 @@ const islandBranchesAtom = Atom.family((key: string) =>
 );
 
 /**
- * Lists an island's local branches or its worktrees, with when each was last committed to and
- * whether its worktree has uncommitted changes, in a popover at the sign where it was asked for.
- * Each branch has a button that deletes it, worktree and all; each worktree one that removes the
- * worktree and keeps its branch. Both ask for a second click, and deleting a branch asks again
- * if it isn't merged.
+ * Lists an island's local branches, with when each was last committed to and the worktree it's
+ * checked out in, if any, and whether that has uncommitted changes, in a popover at the sign
+ * where it was asked for. Each branch has a button that deletes it, worktree and all, after a
+ * second click, and asks again if it isn't merged. A deleted branch leaves the list at once,
+ * while its worktree is removed, and comes back if that fails.
  */
 export function IslandBranchesPopover(props: {
-  readonly list: IslandList;
   /** Where on screen the sign was clicked; the popover opens there. */
   readonly point: { readonly x: number; readonly y: number };
   readonly targets: ReadonlyArray<BranchTarget>;
+  /** Days without a commit after which a row reads as stale; null for never. */
+  readonly staleDays: number | null;
   /** Shows just that worktree's surfaces, its chat collapsed. */
   readonly onOpenSurfaces: (worktree: WorktreeSurfacesTarget) => void;
   /** The hat a worktree's agents wear in the world; null when none work there. */
   readonly hatOf: (worktreePath: string) => number | null;
   readonly onClose: () => void;
 }) {
-  const { list, point, targets, onClose } = props;
+  const { point, targets, staleDays, onClose } = props;
   const { onOpenSurfaces, hatOf } = props;
   const anchor = useMemo(
     () => ({ getBoundingClientRect: () => new DOMRect(point.x, point.y, 0, 0) }),
     [point.x, point.y],
   );
-  const lists = useAtomValue(islandBranchesAtom(JSON.stringify(targets)));
-  const rows = lists[list];
-  const loading = lists.loading;
+  const { rows: listed, loading } = useAtomValue(islandBranchesAtom(JSON.stringify(targets)));
+  const rowStates = useAtomValue(rowStatesAtom);
+  const rows = listed.filter((row) => !isHidden(rowStates.get(row.key)));
+  // Forgets a deleted branch once its repository's refs no longer list it, so one made again
+  // under its name shows.
+  useEffect(() => {
+    if (loading) return;
+    const repositories = targets.map(repositoryKey);
+    const present = new Set(listed.map((row) => row.key));
+    for (const [key, state] of rowStates) {
+      if (state !== "deleted" || present.has(key)) continue;
+      if (repositories.some((repository) => key.startsWith(repository))) setRowState(key, null);
+    }
+  }, [targets, listed, loading, rowStates]);
   // Focus lands on the popup itself, so no row action shows a focus ring on open; Tab still
   // reaches them.
   const popupRef = useRef<HTMLDivElement>(null);
+  // When the rows were last read, which staleness is judged against.
+  const [now, setNow] = useState(Date.now);
+  const refreshStatus = useAtomCommand(vcsEnvironment.refreshStatus, { reportFailure: false });
+  const [refreshing, setRefreshing] = useState(false);
+
+  const refreshRefs = () => {
+    for (const target of targets) appAtomRegistry.refresh(branchRefsAtom(target));
+  };
+  const pollRefs = useEffectEvent(() => {
+    if (document.hidden) return;
+    refreshRefs();
+    setNow(Date.now());
+  });
+  useEffect(() => {
+    const timer = window.setInterval(pollRefs, POLL_MS);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const refreshAll = async () => {
+    refreshRefs();
+    // Each listed worktree's status, which also fetches its remote and looks its PR up again.
+    const checkouts = new Map(
+      rows.flatMap(({ environmentId, worktreePath }) =>
+        worktreePath === null
+          ? []
+          : [
+              [
+                `${environmentId}\u0000${worktreePath}`,
+                { environmentId, cwd: worktreePath },
+              ] as const,
+            ],
+      ),
+    );
+    setRefreshing(true);
+    await Promise.all(
+      [...checkouts.values()].map(({ environmentId, cwd }) =>
+        refreshStatus({ environmentId, input: { cwd } }),
+      ),
+    ).finally(() => setRefreshing(false));
+  };
 
   return (
     <Popover
@@ -181,30 +236,45 @@ export function IslandBranchesPopover(props: {
         sideOffset={8}
         width="lg"
       >
-        <div className="pb-4">
-          <PopoverTitle>{list === "branches" ? "Local Branches" : "Worktrees"}</PopoverTitle>
+        <div className="flex items-center justify-between gap-2 pb-4">
+          <PopoverTitle>Local Branches</PopoverTitle>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <span className="-my-1 shrink-0">
+                  <Button
+                    type="button"
+                    variant="ghost-muted"
+                    size="icon-xs"
+                    aria-label={refreshing ? "Refreshing" : "Refresh"}
+                    disabled={refreshing}
+                    onClick={() => void refreshAll()}
+                  >
+                    <RefreshIcon refreshing={refreshing} />
+                  </Button>
+                </span>
+              }
+            />
+            <TooltipPopup>{refreshing ? "Refreshing…" : "Refresh"}</TooltipPopup>
+          </Tooltip>
         </div>
         <Separator className="-mx-4 data-[orientation=horizontal]:w-auto" />
         {rows.length === 0 ? (
           <p className="flex items-center gap-2 pt-3 text-sm text-muted-foreground">
             {loading ? <Spinner size="sm" tone="muted" /> : null}
-            {list === "branches"
-              ? loading
-                ? "Loading branches…"
-                : "No branches."
-              : loading
-                ? "Loading worktrees…"
-                : "No worktrees."}
+            {loading ? "Loading branches…" : "No branches."}
           </p>
         ) : (
           <ul className="-mx-2 -mb-2 flex flex-col pt-2">
             {rows.map((row) => (
               <BranchItem
                 key={row.key}
-                list={list}
                 row={row}
+                // As the sign counts them: the default branch never goes stale.
+                staleDays={row.isDefault ? null : staleDays}
+                now={now}
                 surfaces={
-                  list === "worktrees" && row.worktreePath !== null
+                  row.worktreePath !== null
                     ? {
                         environmentId: row.environmentId,
                         cwd: row.cwd,
@@ -215,9 +285,7 @@ export function IslandBranchesPopover(props: {
                     : null
                 }
                 hat={
-                  list === "worktrees" && row.worktreePath !== null && !row.inProjectFolder
-                    ? hatOf(row.worktreePath)
-                    : null
+                  row.worktreePath !== null && !row.inProjectFolder ? hatOf(row.worktreePath) : null
                 }
                 onOpenSurfaces={(worktree) => {
                   onOpenSurfaces(worktree);
@@ -232,21 +300,22 @@ export function IslandBranchesPopover(props: {
   );
 }
 
-type ConfirmStep = "idle" | "confirm" | "unmerged";
-type DeleteStep = ConfirmStep | "deleting";
+type DeleteStep = "idle" | "confirm" | "unmerged";
 
 function BranchItem({
-  list,
   row,
+  staleDays,
+  now,
   surfaces,
   hat,
   onOpenSurfaces,
 }: {
-  readonly list: IslandList;
   readonly row: BranchRow;
-  /** Worktree rows only: the hat its agents wear in the world, null when none work there. */
+  readonly staleDays: number | null;
+  readonly now: number;
+  /** The hat its worktree's agents wear in the world, null when none work there. */
   readonly hat: number | null;
-  /** Worktree rows only: the worktree whose surfaces its button opens. */
+  /** The branch's worktree, whose surfaces its button opens; null without one. */
   readonly surfaces: WorktreeSurfacesTarget | null;
   readonly onOpenSurfaces: (worktree: WorktreeSurfacesTarget) => void;
 }) {
@@ -266,70 +335,76 @@ function BranchItem({
   const ahead = status.data?.hasUpstream === true ? status.data.aheadCount : 0;
   const behind = status.data?.hasUpstream === true ? status.data.behindCount : 0;
   const workingTree = status.data?.workingTree;
-  const command = list === "branches" ? vcsEnvironment.deleteRef : vcsEnvironment.removeWorktree;
-  const allowed = useAtomValue(command.permissionAtom(row.environmentId));
+  const allowed = useAtomValue(vcsEnvironment.deleteRef.permissionAtom(row.environmentId));
   const deleteRef = useAtomCommand(vcsEnvironment.deleteRef, { reportFailure: false });
-  const removeWorktree = useAtomCommand(vcsEnvironment.removeWorktree, { reportFailure: false });
-  // In the worktree list, the row is the worktree and its button removes just that.
-  const worktree = list === "worktrees" ? row.worktreePath : null;
-  // Every row goes by its branch, its folder in the details, save the main worktree, which
-  // goes by that name and shows its branch instead.
-  const mainWorktree = worktree !== null && row.inProjectFolder;
-  const [confirmStep, setStep] = useState<ConfirmStep>("idle");
-  const step: DeleteStep = useAtomValue(deletingRowsAtom).has(row.key) ? "deleting" : confirmStep;
+  const [confirming, setConfirming] = useState(false);
+  const step: DeleteStep =
+    useAtomValue(rowStatesAtom).get(row.key) === "unmerged"
+      ? "unmerged"
+      : confirming
+        ? "confirm"
+        : "idle";
 
   // A confirming click only counts for a moment; after that the button goes back to Delete.
   useEffect(() => {
-    if (step !== "confirm" && step !== "unmerged") return;
-    const timer = window.setTimeout(() => setStep("idle"), CONFIRM_MS);
+    if (step === "idle") return;
+    const timer = window.setTimeout(() => {
+      setConfirming(false);
+      if (step === "unmerged") setRowState(row.key, null);
+    }, CONFIRM_MS);
     return () => window.clearTimeout(timer);
-  }, [step]);
+  }, [step, row.key]);
 
+  // Runs on after the row hides, so it leaves the outcome in `rowStatesAtom`.
   const remove = async (force: boolean) => {
-    setStep("idle");
-    setRowDeleting(row.key, true);
-    const result = await (
-      worktree !== null
-        ? // Removing a worktree throws its uncommitted changes away, like deleting its branch.
-          removeWorktree({
-            environmentId: row.environmentId,
-            input: { cwd: row.cwd, path: worktree, force: true },
-          })
-        : deleteRef({
-            environmentId: row.environmentId,
-            input: { cwd: row.cwd, refName: row.name, ...(force ? { force: true } : {}) },
-          })
-    ).finally(() => setRowDeleting(row.key, false));
-    if (result._tag === "Success" || isAtomCommandInterrupted(result)) {
-      setStep("idle");
+    setConfirming(false);
+    setRowState(row.key, "deleting");
+    // The server removes the branch's worktree first, uncommitted changes and all.
+    const result = await deleteRef({
+      environmentId: row.environmentId,
+      input: { cwd: row.cwd, refName: row.name, ...(force ? { force: true } : {}) },
+    });
+    if (result._tag === "Success") {
+      setRowState(row.key, "deleted");
+      return;
+    }
+    if (isAtomCommandInterrupted(result)) {
+      setRowState(row.key, null);
       return;
     }
     const failure = squashAtomCommandFailure(result);
     if (isGitCommandError(failure) && failure.reason === "branch_not_fully_merged") {
-      setStep("unmerged");
+      setRowState(row.key, "unmerged");
       return;
     }
-    setStep("idle");
+    setRowState(row.key, null);
     toastManager.add({
       type: "error",
-      title:
-        worktree !== null
-          ? `Could not remove ${lastSegment(worktree)}`
-          : `Could not delete ${row.name}`,
+      title: `Could not delete ${row.name}`,
       description: failure instanceof Error ? failure.message : undefined,
     });
   };
 
-  const blockedReason =
-    worktree === null && row.isDefault
-      ? "The default branch can't be deleted"
-      : row.inProjectFolder
-        ? worktree !== null
-          ? "The main worktree can't be removed"
-          : "Checked out in the project folder"
-        : !allowed
-          ? "You don't have permission to change this repository"
-          : null;
+  const blockedReason = row.isDefault
+    ? "The default branch can't be deleted"
+    : row.inProjectFolder
+      ? "Checked out in the project folder"
+      : !allowed
+        ? "You don't have permission to change this repository"
+        : null;
+
+  const stale =
+    staleDays !== null && row.lastCommitAt !== null && isStale(row.lastCommitAt, staleDays, now);
+  const lastCommit =
+    row.lastCommitAt === null ? null : (
+      <span
+        className={cn("flex shrink-0 items-center gap-1", stale && "text-destructive-foreground")}
+        aria-label={stale ? "Last commit, stale" : "Last commit"}
+      >
+        <GitCommitHorizontalIcon className="size-3.5" />
+        {formatRelativeTimeLabel(row.lastCommitAt)}
+      </span>
+    );
 
   return (
     <li className="flex items-center gap-3 rounded-md px-2 py-2 hover:bg-accent">
@@ -340,32 +415,17 @@ function BranchItem({
               <HatPortrait hat={hat} className="-my-0.5 size-5" />
             </Suspense>
           ) : null}
-          <span className="truncate">{mainWorktree ? "Main Worktree" : row.name}</span>
+          <span className="truncate">{row.name}</span>
         </p>
         <p className="flex min-w-0 items-center gap-3 text-xs text-muted-foreground">
-          {mainWorktree ? (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <span className="flex min-w-0 items-center gap-1">
-                    <GitBranchIcon className="size-3.5 shrink-0" />
-                    <span className="truncate">{row.name}</span>
-                  </span>
-                }
-              />
-              <TooltipPopup>{worktree}</TooltipPopup>
-            </Tooltip>
-          ) : null}
-          {row.worktreePath !== null && !mainWorktree ? (
+          {row.worktreePath !== null ? (
             <Tooltip>
               <TooltipTrigger
                 render={
                   <span className="flex min-w-0 items-center gap-1">
                     <FolderGit2Icon className="size-3.5 shrink-0" />
                     <span className="truncate">
-                      {row.inProjectFolder && worktree === null
-                        ? "Project folder"
-                        : lastSegment(row.worktreePath)}
+                      {row.inProjectFolder ? "Project folder" : lastSegment(row.worktreePath)}
                     </span>
                   </span>
                 }
@@ -373,12 +433,16 @@ function BranchItem({
               <TooltipPopup>{row.worktreePath}</TooltipPopup>
             </Tooltip>
           ) : null}
-          {row.lastCommitAt !== null ? (
-            <span className="flex shrink-0 items-center gap-1" aria-label="Last commit">
-              <GitCommitHorizontalIcon className="size-3.5" />
-              {formatRelativeTimeLabel(row.lastCommitAt)}
-            </span>
-          ) : null}
+          {lastCommit !== null && staleDays !== null && stale ? (
+            <Tooltip>
+              <TooltipTrigger render={lastCommit} />
+              <TooltipPopup>
+                Stale: no commits in over {staleDays} {staleDays === 1 ? "day" : "days"}
+              </TooltipPopup>
+            </Tooltip>
+          ) : (
+            lastCommit
+          )}
           {ahead > 0 || behind > 0 ? (
             <span
               className="flex shrink-0 items-center gap-1.5 tabular-nums"
@@ -444,13 +508,12 @@ function BranchItem({
       </div>
       {surfaces !== null ? <SurfacesButton onOpen={() => onOpenSurfaces(surfaces)} /> : null}
       <DeleteButton
-        verb={worktree !== null ? "Remove" : "Delete"}
+        hint={row.worktreePath !== null ? "Delete branch and worktree" : "Delete branch"}
         step={step}
         blockedReason={blockedReason}
         onClick={() => {
-          if (step === "idle") setStep("confirm");
-          else if (step === "confirm") void remove(false);
-          else if (step === "unmerged") void remove(true);
+          if (step === "idle") setConfirming(true);
+          else void remove(step === "unmerged");
         }}
       />
     </li>
@@ -458,38 +521,31 @@ function BranchItem({
 }
 
 function DeleteButton(props: {
-  readonly verb: "Delete" | "Remove";
+  /** What a click does, shown at rest. */
+  readonly hint: string;
   readonly step: DeleteStep;
   readonly blockedReason: string | null;
   readonly onClick: () => void;
 }) {
-  const { verb, step, blockedReason, onClick } = props;
+  const { step, blockedReason, onClick } = props;
   // At rest the button is just its icon; it spells out what a click does once it's armed.
   const label =
-    step === "deleting"
-      ? verb === "Delete"
-        ? "Deleting…"
-        : "Removing…"
-      : step === "confirm"
-        ? "Confirm"
-        : step === "unmerged"
-          ? "Not merged — delete anyway"
-          : null;
+    step === "confirm" ? "Confirm" : step === "unmerged" ? "Not merged — delete anyway" : null;
   const button = (
     <Button
       type="button"
-      variant={step === "confirm" || step === "unmerged" ? "destructive" : "outline"}
+      variant={step === "idle" ? "outline" : "destructive"}
       size={label === null ? "icon-xs" : "xs"}
       className="shrink-0"
-      aria-label={label ?? verb}
-      disabled={blockedReason !== null || step === "deleting"}
+      aria-label={label ?? props.hint}
+      disabled={blockedReason !== null}
       onClick={onClick}
     >
       <Trash2Icon />
       {label}
     </Button>
   );
-  const hint = blockedReason ?? (label === null ? verb : null);
+  const hint = blockedReason ?? (label === null ? props.hint : null);
   if (hint === null) return button;
   return (
     <Tooltip>

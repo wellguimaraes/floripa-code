@@ -66,6 +66,15 @@ function isBusy(facts: CharacterFacts): boolean {
   );
 }
 
+/**
+ * How long an island's agents have all sat idle: the age of its latest reply. Null while any
+ * of them is busy, or with nobody there.
+ */
+export function islandIdleSeconds(facts: ReadonlyArray<CharacterFacts>): number | null {
+  if (facts.length === 0 || facts.some(isBusy)) return null;
+  return Math.min(...facts.map((fact) => fact.replyAgeSeconds));
+}
+
 /** Fills in `replyAgeSeconds` as of `now`. */
 export function ageReplies(facts: ReadonlyArray<CharacterFacts>, now: number): CharacterFacts[] {
   return facts.map((fact) => ({

@@ -49,8 +49,13 @@ import {
   type WorldIsland,
 } from "./engine/archipelago";
 import { EMPTY_BEAT_GATE, gateBeats } from "./engine/beats";
-import { ageReplies, buildCharacterFacts, type CharacterFacts, isResting } from "./engine/facts";
-import { hashString } from "./engine/hash";
+import {
+  ageReplies,
+  buildCharacterFacts,
+  type CharacterFacts,
+  isResting,
+  islandIdleSeconds,
+} from "./engine/facts";
 import { islandObstacles } from "./engine/route";
 import type { SlotRequest } from "./engine/slots";
 import type { WorldCharacter } from "./engine/world";
@@ -72,6 +77,7 @@ import { NewAgentBubble } from "./NewAgentBubble";
 import { NewAgentProjectPicker } from "./NewAgentProjectPicker";
 import { useIslandSignStats } from "./useIslandSignStats";
 import { useWorldHueStore } from "./worldHueStore";
+import { islandPlate, islandStaleDays, useWorldIslandPrefsStore } from "./worldIslandPrefsStore";
 import { useWorldLookStore, type WorldLook } from "./worldLookStore";
 import { useWorldArrangementStore } from "./worldArrangementStore";
 import { useWorldManagerStore, WORLD_MANAGERS_AVAILABLE } from "./worldManagerStore";
@@ -83,6 +89,7 @@ import { ProjectVisibilityMenu } from "./ProjectVisibilityMenu";
 import { IslandBranchesPopover, type WorktreeSurfacesTarget } from "./IslandBranchesPopover";
 import { useCreateIdleWorldThread } from "./useStartWorldAgent";
 import { canChangeIslandIcon, IslandIconPicker, useSetIslandIcon } from "./IslandIconPicker";
+import { IslandPrefsDialog } from "./IslandPrefsDialog";
 import { useRemoveIsland } from "./useRemoveIsland";
 import { RestoreArchivedDialog } from "./RestoreArchivedDialog";
 import { layoutTags, type ScreenPoint } from "./scene/tagLayout";
@@ -235,7 +242,8 @@ export default function WorldCanvas(props: {
     () => new Map(visibleOrder.map((key) => [key, projectMembers.get(key) ?? []])),
     [visibleOrder, projectMembers],
   );
-  const signStats = useIslandSignStats(visibleMembers, projects);
+  const islandPrefs = useWorldIslandPrefsStore((state) => state.prefs);
+  const signStats = useIslandSignStats(visibleMembers, projects, islandPrefs);
   const missingProjects = useMissingProjects(projects);
   const arrangement = useWorldArrangementStore((state) => state.arrangement);
   const [memory] = useState(createArchipelagoMemory);
@@ -247,7 +255,13 @@ export default function WorldCanvas(props: {
   // more slowly while anyone rests, so resters change pose as their reply ages.
   const anyoneWorking = facts.some((f) => f.status === "working");
   const anyoneResting = facts.some(isResting);
-  const clock = useClock(anyoneWorking ? QUIET_CHECK_MS : anyoneResting ? REST_CHECK_MS : null);
+  // An idle alarm also needs the time, to notice when an island has sat idle long enough.
+  const anyIdleAlarm = Object.values(islandPrefs).some(
+    (prefs) => prefs.idleAlarmMinutes !== undefined,
+  );
+  const clock = useClock(
+    anyoneWorking ? QUIET_CHECK_MS : anyoneResting || anyIdleAlarm ? REST_CHECK_MS : null,
+  );
   const islands = useMemo(
     () =>
       memory.resolve({
@@ -295,7 +309,7 @@ export default function WorldCanvas(props: {
     // The chat header's colour picker finds its character's family by thread key.
     const families = new Map<string, { readonly island: WorldIsland; readonly seed: string }>();
     for (const island of islands) {
-      const plate = signPlate(island.key);
+      const plate = signPlate(islandPlate(island.key, islandPrefs[island.key]));
       for (const { facts: character } of island.characters) {
         families.set(character.key, { island, seed: character.lookSeed });
         looks.set(character.key, {
@@ -313,7 +327,7 @@ export default function WorldCanvas(props: {
       const family = families.get(threadKey);
       if (family !== undefined) recolorFamily(family.island, family.seed, hue);
     });
-  }, [islands, setLooks, recolorFamily]);
+  }, [islands, islandPrefs, setLooks, recolorFamily]);
   useEffect(() => () => setLooks(new Map(), null), [setLooks]);
   // Overlays above a hat sit higher, so the hat stays in view.
   const hatted = useMemo(
@@ -342,10 +356,30 @@ export default function WorldCanvas(props: {
       }),
     [islands],
   );
+  // When each snoozed island's idle alarm may go off again, by island key.
+  const [idleSnoozedUntil, setIdleSnoozedUntil] = useState<Readonly<Record<string, number>>>({});
+  // Islands idle for longer than their alarm allows, which ripple for you in wavy rings.
+  const idleAlarmed = useMemo(
+    () =>
+      new Set(
+        islands.flatMap((island) => {
+          const minutes = islandPrefs[island.key]?.idleAlarmMinutes;
+          if (minutes === undefined) return [];
+          const facts = island.characters.map((c) => c.facts);
+          const idle = islandIdleSeconds(facts);
+          if (idle === null) return [];
+          if (idle < minutes * 60 || clock < (idleSnoozedUntil[island.key] ?? 0)) return [];
+          return [island.key];
+        }),
+      ),
+    [islands, islandPrefs, idleSnoozedUntil, clock],
+  );
   const ambientFps = Math.max(
     0,
     ...islands.flatMap((island) => island.characters.map((c) => c.activity.ambientFps ?? 0)),
-    islands.some((island) => island.ripple) ? definition.archipelago.ripple.fps : 0,
+    islands.some((island) => island.ripple || idleAlarmed.has(island.key))
+      ? definition.archipelago.ripple.fps
+      : 0,
   );
 
   // The reply bubble belongs to one character at a time; clicking it again,
@@ -644,9 +678,10 @@ export default function WorldCanvas(props: {
   const [restoringOn, setRestoringOn] = useState<string | null>(null);
   const [listOn, setListOn] = useState<{
     readonly key: string;
-    readonly list: "branches" | "worktrees";
     readonly point: { readonly x: number; readonly y: number };
   } | null>(null);
+  // The island whose preferences are open.
+  const [prefsOn, setPrefsOn] = useState<string | null>(null);
   const [iconPicking, setIconPicking] = useState<{
     readonly key: string;
     readonly picker: "icon" | "file";
@@ -663,7 +698,7 @@ export default function WorldCanvas(props: {
         { id: "icon", label: "Choose icon…", disabled, separatorBefore: true },
         { id: "file", label: "Choose image file…", disabled },
       ],
-      point,
+      awayFromPointer(point),
     );
     if (clicked === "detect")
       void setIslandIcon(checkouts, { faviconPath: null, projectIcon: null });
@@ -687,34 +722,68 @@ export default function WorldCanvas(props: {
       islands
         .find((island) => island.key === key)
         ?.characters.filter((c) => isResting(c.facts) && !abducted.has(c.facts.key)) ?? [];
+    const snoozedUntil = idleSnoozedUntil[key] ?? 0;
+    const snoozed = snoozedUntil > Date.now();
     const clicked = await api.contextMenu.show(
       [
-        { id: "only", label: "Show only this island" },
-        { id: "hide", label: "Hide this island" },
-        { id: "zoom", label: "Zoom to this island", separatorBefore: true },
+        { id: "only", label: "Show only this island", icon: "eye" },
+        { id: "hide", label: "Hide this island", icon: "eye-off" },
+        { id: "zoom", label: "Zoom to this island", icon: "zoom-in" },
+        ...(islandPrefs[key]?.idleAlarmMinutes !== undefined
+          ? [
+              {
+                id: "snooze-idle",
+                label: snoozed
+                  ? `Idle alarm snoozed until ${new Date(snoozedUntil).toLocaleTimeString([], {
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}`
+                  : "Snooze idle alarm",
+                icon: "bell-off",
+                separatorBefore: true,
+                children: [
+                  ...IDLE_SNOOZE_OPTIONS.map((option) => ({
+                    id: `snooze-idle:${option.minutes}`,
+                    label: option.label,
+                  })),
+                  ...(snoozed
+                    ? [{ id: "unsnooze-idle", label: "Unsnooze", separatorBefore: true }]
+                    : []),
+                ],
+              },
+            ]
+          : []),
         {
           id: "archive-idle",
           label: `Archive ${idle.length} idle ${idle.length === 1 ? "agent" : "agents"}`,
+          icon: "archive",
           disabled: idle.length === 0,
           separatorBefore: true,
         },
-        { id: "restore-archived", label: "Restore archived agent…" },
+        { id: "restore-archived", label: "Restore archived agent…", icon: "archive-restore" },
+        { id: "prefs", label: "Island preferences…", icon: "settings", separatorBefore: true },
         // Hiding keeps the project; removing it drops the project and its threads.
         {
           id: "remove",
           label: "Remove project…",
+          icon: "trash",
           disabled: !canChangeIslandIcon(checkouts),
-          separatorBefore: true,
         },
       ],
-      point,
+      awayFromPointer(point),
     );
     if (clicked === "only") showOnlyIsland(key, projectOrder);
     else if (clicked === "remove")
       void removeIsland(checkouts, projectTitles.get(key) ?? "Project");
     else if (clicked === "hide") hideIsland(key);
     else if (clicked === "zoom") setZoomTo({ key });
-    else if (clicked === "archive-idle") void archiveAll(idle);
+    else if (clicked === "prefs") setPrefsOn(key);
+    else if (clicked?.startsWith("snooze-idle:")) {
+      const minutes = Number(clicked.slice("snooze-idle:".length));
+      setIdleSnoozedUntil((snoozed) => ({ ...snoozed, [key]: Date.now() + minutes * 60_000 }));
+    } else if (clicked === "unsnooze-idle") {
+      setIdleSnoozedUntil(({ [key]: _, ...rest }) => rest);
+    } else if (clicked === "archive-idle") void archiveAll(idle);
     else if (clicked === "restore-archived") setRestoringOn(key);
   };
 
@@ -784,7 +853,7 @@ export default function WorldCanvas(props: {
           { id: "stop", label: `Stop (${running})`, disabled: running === 0 },
           { id: "archive", label: `Archive (${group.length})` },
         ],
-        point,
+        awayFromPointer(point),
       );
       if (clicked === "stop") void stopAll(group);
       else if (clicked === "archive") void archiveAll(group);
@@ -812,7 +881,7 @@ export default function WorldCanvas(props: {
         },
         { id: "archive", label: "Archive" },
       ],
-      point,
+      awayFromPointer(point),
     );
     if (clicked === "open") openChat(character);
     else if (clicked === "stop") void stopAll([character]);
@@ -1189,7 +1258,7 @@ export default function WorldCanvas(props: {
             // Everyone there archived: once the saucer has left, the island stays
             // washed out until new work lands.
             const faded = island.characters.length === 0 && !leaving.has(island.key);
-            const plate = palette.plates[hashString(island.key) % palette.plates.length]!;
+            const plate = islandPlate(island.key, islandPrefs[island.key]);
             return (
               <FadedContext key={island.key} value={faded}>
                 <group
@@ -1211,7 +1280,7 @@ export default function WorldCanvas(props: {
                   <Island
                     definition={island.definition}
                     furniture={buildFurniture(island.definition, island.characters)}
-                    ripple={island.ripple}
+                    ripple={island.ripple ? "plain" : idleAlarmed.has(island.key) ? "wavy" : null}
                     wide={island.key === chatIsland}
                   />
                   {/* The sign names the project, so it keeps its colours on an empty island. */}
@@ -1223,13 +1292,19 @@ export default function WorldCanvas(props: {
                       color={plate}
                       branches={signStats.get(island.key)?.branches ?? 0}
                       pullRequests={signStats.get(island.key)?.pullRequests ?? 0}
-                      worktrees={signStats.get(island.key)?.worktrees ?? 0}
-                      onListClick={(list, point) => {
+                      staleBranches={signStats.get(island.key)?.staleBranches ?? 0}
+                      onListClick={(point) => {
                         // The sign is on the canvas, so it is not a press outside the bubbles.
                         setBubbleKey(null);
                         dropUntypedNewAgent();
                         closeManager();
-                        setListOn({ key: island.key, list, point });
+                        setListOn({ key: island.key, point });
+                      }}
+                      onPrefsClick={() => {
+                        setBubbleKey(null);
+                        dropUntypedNewAgent();
+                        closeManager();
+                        setPrefsOn(island.key);
                       }}
                       onIconClick={(point) => openIconPicker(island.key, point)}
                       onIconMenu={(point) => void showIconMenu(island.key, point)}
@@ -1489,7 +1564,7 @@ export default function WorldCanvas(props: {
         islands={islands.map((island) => ({
           key: island.key,
           title: projectTitles.get(island.key) ?? "Project",
-          color: palette.plates[hashString(island.key) % palette.plates.length]!,
+          color: islandPlate(island.key, islandPrefs[island.key]),
           freePiles: freePiles(island, definition).length,
         }))}
         // The agent in focus (its bubble, else its open chat) picks its own island first.
@@ -1505,7 +1580,7 @@ export default function WorldCanvas(props: {
         <RestoreArchivedDialog
           title={projectTitles.get(restoringOn) ?? "this island"}
           project={projectRecords.get(restoringOn) ?? null}
-          color={palette.plates[hashString(restoringOn) % palette.plates.length]!}
+          color={islandPlate(restoringOn, islandPrefs[restoringOn])}
           projectRefs={projectMembers.get(restoringOn) ?? []}
           onClose={() => setRestoringOn(null)}
         />
@@ -1519,11 +1594,19 @@ export default function WorldCanvas(props: {
           onClose={() => setIconPicking(null)}
         />
       ) : null}
+      {prefsOn !== null ? (
+        <IslandPrefsDialog
+          islandKey={prefsOn}
+          title={projectTitles.get(prefsOn) ?? "Project"}
+          checkouts={projectCheckouts.get(prefsOn) ?? []}
+          onClose={() => setPrefsOn(null)}
+        />
+      ) : null}
       {listOn !== null ? (
         <IslandBranchesPopover
-          list={listOn.list}
           point={listOn.point}
           targets={signStats.get(listOn.key)?.targets ?? []}
+          staleDays={islandStaleDays(islandPrefs[listOn.key])}
           onOpenSurfaces={(worktree) => void openWorktreeSurfaces(listOn.key, worktree)}
           hatOf={(path) =>
             islands.find((island) => island.key === listOn.key)?.hats.get(path) ?? null
@@ -1540,7 +1623,7 @@ export default function WorldCanvas(props: {
                 projects={projectOrder.map((key) => ({
                   key,
                   title: projectTitles.get(key) ?? "Project",
-                  color: palette.plates[hashString(key) % palette.plates.length]!,
+                  color: islandPlate(key, islandPrefs[key]),
                 }))}
               />
             </>,
@@ -1688,8 +1771,7 @@ function hitsCharacter(event: ThreeEvent<MouseEvent>): boolean {
 
 const FOLLOW_HEIGHT = 1.6;
 /** An island sign's colours, for UI naming the island. */
-function signPlate(islandKey: string) {
-  const background = palette.plates[hashString(islandKey) % palette.plates.length]!;
+function signPlate(background: string) {
   return { background, text: signTextColor(background) };
 }
 /**
@@ -1711,6 +1793,20 @@ const MANAGER_CALL_MS = 3000;
 const NO_HATS: ReadonlySet<string> = new Set();
 /** Extra height over a hatted head: the tallest hats rise about this far. */
 const HAT_LIFT = 0.35;
+/** How long the island menu can snooze an idle alarm for. */
+/** How far the world's menus open from the pointer, down and right, so they don't sit under it. */
+const MENU_OFFSET = 8;
+
+function awayFromPointer(point: { readonly x: number; readonly y: number }) {
+  return { x: point.x + MENU_OFFSET, y: point.y + MENU_OFFSET };
+}
+
+const IDLE_SNOOZE_OPTIONS = [
+  { minutes: 15, label: "For 15 minutes" },
+  { minutes: 60, label: "For 1 hour" },
+  { minutes: 4 * 60, label: "For 4 hours" },
+  { minutes: 24 * 60, label: "For 1 day" },
+] as const;
 /** Room between a balloon's top and the overlay above it. */
 const BALLOON_CLEARANCE_PX = 4;
 const SPOT_MIN_SPACING_PX = 34;
