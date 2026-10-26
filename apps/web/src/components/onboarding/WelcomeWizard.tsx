@@ -28,6 +28,7 @@ import {
   CheckIcon,
   ChevronRightIcon,
   CloudIcon,
+  InfoIcon,
   LinkIcon,
   MonitorIcon,
   TerminalIcon,
@@ -756,6 +757,10 @@ function AgentsStep({
   readonly onContinue: () => void;
 }) {
   const { environments } = useEnvironments();
+  const serverConfigs = useServerConfigs();
+  const setsUpMac = environmentIds.some(
+    (environmentId) => serverConfigs.get(environmentId)?.environment.platform.os === "darwin",
+  );
   return (
     <StepShell
       title="Connect your agents"
@@ -775,6 +780,19 @@ function AgentsStep({
           ))}
         </div>
       </ScrollArea>
+      {setsUpMac ? (
+        // Agents are child processes, so macOS asks for their file access in our name.
+        <div className="mt-5">
+          <Alert variant="info">
+            <InfoIcon aria-hidden />
+            <AlertDescription>
+              macOS may ask to let Floripa Code access folders such as Documents or Music. Agents
+              run inside Floripa Code, so their file requests appear under its name. Allow what your
+              projects need. It is safe to deny the rest.
+            </AlertDescription>
+          </Alert>
+        </div>
+      ) : null}
       <div className="mt-6 flex justify-end">
         <Button autoFocus onClick={onContinue}>
           Continue
