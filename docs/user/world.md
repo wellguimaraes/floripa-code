@@ -121,7 +121,10 @@ portrait to pick another. Paste, drop, or use the paperclip to attach images or 
 A new thread starts in that project
 with your text and files as its first message, using the project's default model
 and permissions, and the new agent mines that pile. A closed chat stays closed; an open one switches to the new agent. The colour is
-remembered in this browser, and so is where it worked.
+remembered in this browser, and so is where it worked. Closing the bubble
+before the agent starts keeps what you typed as that island's draft. The next
+new agent there asks where it works again, then opens with the draft selected:
+type to replace it, or click to edit it. Attached files are not kept.
 
 `mod+n` does the same from the keyboard. It asks which island, with one big
 button per island in its sign's colour; use the arrow keys and `Enter`, or click.

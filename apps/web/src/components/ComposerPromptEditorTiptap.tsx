@@ -115,6 +115,8 @@ export interface ComposerPromptEditorHandle {
   focus: () => void;
   focusAt: (cursor: number) => void;
   focusAtEnd: () => void;
+  /** Focuses with all the text selected. */
+  selectAll: () => void;
   readSelectionRange: () => { start: number; end: number };
   requestCitationComment: (request: ComposerCitationCommentRequest) => void;
   readSnapshot: () => {
@@ -1684,6 +1686,11 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
                 snapshotRef.current.value.length,
               ),
         );
+      },
+      selectAll: () => {
+        if (!editor) return;
+        editor.view.focus();
+        editor.commands.selectAll();
       },
       readSelectionRange: () => {
         readSnapshot();

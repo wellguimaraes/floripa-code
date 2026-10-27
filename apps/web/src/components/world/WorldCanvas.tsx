@@ -81,6 +81,7 @@ import { SIGN_TOP, Sign, signCorners, signTextColor } from "./scene/Sign";
 import { ManagerBubble, type ManagerStatus } from "./ManagerBubble";
 import { MissingFolderPill, useMissingProjects } from "./MissingFolderPill";
 import { NewAgentBubble } from "./NewAgentBubble";
+import { useNewAgentDraftStore } from "./newAgentDraftStore";
 import { NewAgentProjectPicker } from "./NewAgentProjectPicker";
 import { useIslandSignStats } from "./useIslandSignStats";
 import { useWorldHueStore } from "./worldHueStore";
@@ -429,9 +430,9 @@ export default function WorldCanvas(props: {
       switchChat(character.facts);
       return;
     }
-    // Opening a character's bubble drops a new-agent bubble nothing was typed into.
+    // Opening a character's bubble closes a new-agent bubble, which keeps its task as a draft.
     // Clicking it again leaves the bubble open.
-    if (bubbleKey !== key) dropUntypedNewAgent();
+    if (bubbleKey !== key) setNewAgent(null);
     closeManager();
     setBubbleKey(key);
   };
@@ -467,7 +468,7 @@ export default function WorldCanvas(props: {
   const toggleManager = (islandKey: string) => {
     setBubbleKey(null);
     setPicked(new Set());
-    dropUntypedNewAgent();
+    setNewAgent(null);
     if (manager?.islandKey === islandKey && manager.open) closeManager();
     else setManager({ islandKey, open: true });
   };
@@ -947,14 +948,14 @@ export default function WorldCanvas(props: {
     }
   };
   const pressedAt = useRef<{ x: number; y: number } | null>(null);
-  // A click on the sea or an island's ground closes the bubble; the end of a pan does not.
+  // A click on the sea or an island's ground closes the bubbles; the end of a pan does not.
   const clickGround = (event: MouseEvent) => {
     const start = pressedAt.current;
     if (start === null) return;
     if (Math.hypot(event.clientX - start.x, event.clientY - start.y) <= 4) {
       setBubbleKey(null);
       setPicked(new Set());
-      dropUntypedNewAgent();
+      setNewAgent(null);
       closeManager();
     }
   };
@@ -1003,11 +1004,10 @@ export default function WorldCanvas(props: {
     readonly slotIndex: number;
     readonly position: Vec3;
   } | null>(null);
-  const newAgentDraft = useRef("");
-  // Closing loses only an empty draft; one with a typed task stays until closed.
-  const dropUntypedNewAgent = () => {
-    if (newAgentDraft.current.trim() === "") setNewAgent(null);
-  };
+  // The island's draft, left by a bubble closed before its agent started.
+  const newAgentDraft = useNewAgentDraftStore((state) =>
+    newAgent === null ? null : (state.drafts[newAgent.islandKey] ?? null),
+  );
   // None while a saucer is over the island: the buttons draw above the canvas, saucer included.
   const hoveredLeaving = hoveredIsland !== null && leaving.has(hoveredIsland);
   const newAgentSpots = useMemo(() => {
@@ -1033,7 +1033,6 @@ export default function WorldCanvas(props: {
     const pile = island === undefined ? undefined : freePiles(island, definition)[0];
     if (pile === undefined) return;
     setBubbleKey(null);
-    newAgentDraft.current = "";
     setNewAgent({ islandKey: key, ...pile });
     setReveal({ islandKey: key, position: pile.position });
   };
@@ -1177,8 +1176,8 @@ export default function WorldCanvas(props: {
     document.addEventListener("pointerdown", closeOutside, true);
     return () => document.removeEventListener("pointerdown", closeOutside, true);
   }, [bubbleOpen]);
-  // Same for the new-agent bubble, unless a task was typed into it. Presses on
-  // the canvas go through clickGround, so dragging the map keeps it open.
+  // Same for the new-agent bubble, which leaves a typed task as the island's draft.
+  // Presses on the canvas go through clickGround, so dragging the map keeps it open.
   const newAgentOpen = newAgent !== null;
   useEffect(() => {
     if (!newAgentOpen) return;
@@ -1187,11 +1186,11 @@ export default function WorldCanvas(props: {
       if (target === null || newAgentRef.current?.contains(target)) return;
       if (target instanceof Element && target.closest(PORTALED_LAYERS)) return;
       if (containerRef.current?.querySelector("canvas")?.contains(target)) return;
-      if (newAgentDraft.current.trim() === "") setNewAgent(null);
+      setNewAgent(null);
     };
     document.addEventListener("pointerdown", closeOutside, true);
     return () => document.removeEventListener("pointerdown", closeOutside, true);
-  }, [newAgentOpen]);
+  }, [newAgentOpen, setNewAgent]);
 
   // And the manager's, which keeps a question it is waiting on (see closeManager).
   const managerOpen = manager?.open === true;
@@ -1303,12 +1302,14 @@ export default function WorldCanvas(props: {
           />
           <AmbientTicker fps={ambientFps} />
           {/* Far wider than any archipelago, so the water never ends on screen. */}
-          {/* Islands and characters stop their right-clicks, so only open water reaches here. */}
+          {/* Islands and characters stop their clicks, so only open water reaches here. */}
+          {/* Its handlers make it a hit, so it takes the clicks onPointerMissed would get. */}
           <mesh
             geometry={geometry.plane}
             rotation-x={-Math.PI / 2}
             position-y={-0.25}
             scale={4000}
+            onClick={(event) => clickGround(event.nativeEvent)}
             onContextMenu={(event) => {
               event.stopPropagation();
               event.nativeEvent.preventDefault();
@@ -1329,7 +1330,10 @@ export default function WorldCanvas(props: {
                   position={island.offset as [number, number, number]}
                   // A prop or limb in front of a character is hit first; the character still wins.
                   onClick={(event) => {
-                    if (!hitsCharacter(event)) clickGround(event.nativeEvent);
+                    if (hitsCharacter(event)) return;
+                    // Stopped, so the sea under the island doesn't take it too.
+                    event.stopPropagation();
+                    clickGround(event.nativeEvent);
                   }}
                   onContextMenu={(event) => {
                     if (hitsCharacter(event)) return;
@@ -1359,13 +1363,13 @@ export default function WorldCanvas(props: {
                       onListClick={(point) => {
                         // The sign is on the canvas, so it is not a press outside the bubbles.
                         setBubbleKey(null);
-                        dropUntypedNewAgent();
+                        setNewAgent(null);
                         closeManager();
                         setListOn({ key: island.key, point });
                       }}
                       onPrefsClick={() => {
                         setBubbleKey(null);
-                        dropUntypedNewAgent();
+                        setNewAgent(null);
                         closeManager();
                         setPrefsOn(island.key);
                       }}
@@ -1494,7 +1498,6 @@ export default function WorldCanvas(props: {
           onClick={() => {
             setBubbleKey(null);
             closeManager();
-            newAgentDraft.current = "";
             setNewAgent({
               islandKey: spot.islandKey,
               slotIndex: spot.slotIndex,
@@ -1530,9 +1533,12 @@ export default function WorldCanvas(props: {
               key={`${newAgent.islandKey}#${newAgent.slotIndex}`}
               islandName={projectTitles.get(newAgent.islandKey) ?? "this island"}
               project={projectRefs.get(newAgent.islandKey)!}
+              draft={newAgentDraft}
               onClose={() => setNewAgent(null)}
-              onTextChange={(text) => {
-                newAgentDraft.current = text;
+              onLeave={(draft) => {
+                const { keep, drop } = useNewAgentDraftStore.getState();
+                if (draft.text.trim() === "") drop(newAgent.islandKey);
+                else keep(newAgent.islandKey, draft);
               }}
               suggestedHue={suggestHue(
                 islands.find((island) => island.key === newAgent.islandKey) ?? { hues: new Map() },
@@ -1541,6 +1547,7 @@ export default function WorldCanvas(props: {
               island={islands.find((island) => island.key === newAgent.islandKey) ?? null}
               onStarted={(thread) => {
                 const { islandKey, slotIndex } = newAgent;
+                useNewAgentDraftStore.getState().drop(islandKey);
                 chooseHue(thread.ref.threadId, thread.hue);
                 const island = islands.find((i) => i.key === islandKey);
                 if (island !== undefined) arrive(island, slotIndex, thread);

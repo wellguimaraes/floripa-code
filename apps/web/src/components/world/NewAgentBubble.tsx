@@ -3,7 +3,7 @@ import type { ProviderInstanceId, ScopedProjectRef, ScopedThreadRef } from "@t3t
 import { createModelSelection } from "@t3tools/shared/model";
 import { Select as SelectPrimitive } from "@base-ui/react/select";
 import { XIcon } from "lucide-react";
-import { lazy, Suspense, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
@@ -25,6 +25,7 @@ import { Select, SelectItem, SelectPopup, SelectValue } from "../ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { BubbleComposer } from "./BubbleComposer";
 import { HuePicker } from "./HuePicker";
+import type { NewAgentDraft } from "./newAgentDraftStore";
 import {
   NewAgentWorkspacePicker,
   type PickableWorkspace,
@@ -55,6 +56,8 @@ const workspaceValue = (workspace: WorldAgentWorkspace) =>
  * The model, its traits, permissions and plan mode use the chat's own pickers;
  * a picked model becomes the default for new chats once the agent starts.
  * The text box, files, voice and send live in BubbleComposer, shared by both bubbles.
+ * Closed before the agent starts, it leaves its task as the island's draft: the next
+ * bubble there asks where again, then opens on that text, selected. Files are not kept.
  */
 export function NewAgentBubble(props: {
   readonly islandName: string;
@@ -63,8 +66,11 @@ export function NewAgentBubble(props: {
   readonly suggestedHue: number;
   /** The island as the world draws it, for its worktree hats and agents; null while it has none. */
   readonly island: WorldIsland | null;
+  /** The island's draft, left by a bubble closed before its agent started. */
+  readonly draft: NewAgentDraft | null;
   readonly onClose: () => void;
-  readonly onTextChange: (text: string) => void;
+  /** Gone without starting an agent, with what it held. */
+  readonly onLeave: (draft: NewAgentDraft) => void;
   /** The thread exists and its first turn is starting. */
   readonly onStarted: (thread: {
     readonly key: string;
@@ -72,16 +78,16 @@ export function NewAgentBubble(props: {
     readonly hue: number;
   }) => void;
 }) {
-  const { islandName, project, suggestedHue, island, onClose, onTextChange, onStarted } = props;
-  const [hue, setHue] = useState(suggestedHue);
+  const { islandName, project, suggestedHue, island, draft, onClose, onLeave, onStarted } = props;
+  const [hue, setHue] = useState(draft?.hue ?? suggestedHue);
   const startAgent = useStartWorldAgent();
-  const [text, setText] = useState("");
+  const [text, setText] = useState(draft?.text ?? "");
   const workspaces = useWorldAgentWorkspaces(project);
   const { environmentId, projectId } = project;
   const projectRefs = useMemo(() => [{ environmentId, projectId }], [environmentId, projectId]);
   const projectThreads = useThreadShellsForProjectRefs(projectRefs);
   // Null until picked: the project's default applies.
-  const [workspace, setWorkspace] = useState<WorldAgentWorkspace | null>(null);
+  const [workspace, setWorkspace] = useState<WorldAgentWorkspace | null>(draft?.workspace ?? null);
   // The first step, in a repo: where the agent works.
   const [pickingWorkspace, setPickingWorkspace] = useState(true);
   // Subagents follow their parent, so only top-level agents count.
@@ -127,7 +133,7 @@ export function NewAgentBubble(props: {
   const settings = useEnvironmentSettings(project.environmentId);
   const defaultSetup = useWorldAgentSetup(project);
   // Picks layered over the defaults, so defaults that land later still fill the rest.
-  const [picked, setPicked] = useState<Partial<WorldAgentSetup>>({});
+  const [picked, setPicked] = useState<Partial<WorldAgentSetup>>(draft?.picked ?? {});
   const setup = defaultSetup === null ? null : { ...defaultSetup, ...picked };
   const providerEntries = sortProviderInstanceEntries(
     applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings),
@@ -190,10 +196,12 @@ export function NewAgentBubble(props: {
           ? { phase: "idle" }
           : current,
     );
-  const changeText = (next: string) => {
-    setText(next);
-    onTextChange(next);
-  };
+  // However it closes, an agent that never started leaves its task behind.
+  const started = useRef(false);
+  const leave = useEffectEvent(() => {
+    if (!started.current) onLeave({ text, workspace, hue, picked });
+  });
+  useEffect(() => () => leave(), []);
 
   const start = async () => {
     if (state.phase === "starting" || attachments.preparing || empty) return;
@@ -212,6 +220,7 @@ export function NewAgentBubble(props: {
       if (picked.modelSelection !== undefined)
         useComposerDraftStore.getState().setStickyModelSelection(picked.modelSelection);
       const ref = { environmentId: project.environmentId, threadId };
+      started.current = true;
       onStarted({ key: scopedThreadKey(ref), ref, hue });
     } catch (error) {
       setState({
@@ -247,7 +256,9 @@ export function NewAgentBubble(props: {
       environmentId={project.environmentId}
       attachments={attachments}
       text={text}
-      onTextChange={changeText}
+      onTextChange={setText}
+      // A draft comes back whole, so typing replaces it and a click keeps it.
+      selectOnOpen={draft !== null && draft.text !== ""}
       onSubmit={() => void start()}
       onClose={onClose}
       placeholder="What should it work on?"
@@ -336,7 +347,7 @@ export function NewAgentBubble(props: {
               models={providerEntry.models}
               model={setup.modelSelection.model}
               prompt={text}
-              onPromptChange={changeText}
+              onPromptChange={setText}
               modelOptions={setup.modelSelection.options ?? []}
               planModeEnabled={settings.planModeEnabled}
               size="sm"

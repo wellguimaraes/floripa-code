@@ -98,6 +98,8 @@ export function BubbleComposer(props: {
   readonly submitBlocked?: boolean;
   /** Start listening at once and send what was said: a voice command. */
   readonly listenOnOpen?: boolean;
+  /** Open with the text selected, so typing replaces it. Off unless set. */
+  readonly selectOnOpen?: boolean;
   readonly header: ReactNode;
   /** Slimmer for the manager bubble; wider for the new-agent bubble, so its pickers fit one line. */
   readonly width?: "narrow" | "wide";
@@ -125,11 +127,13 @@ export function BubbleComposer(props: {
     onTextChange(next);
     setCursor(nextCursor);
   };
-  // A kept draft picks up at its end. Not selected: it may be the chat panel's draft too,
-  // and one keystroke would replace it.
+  // A kept draft picks up at its end. Not selected unless asked: it may be the chat
+  // panel's draft too, and one keystroke would replace it.
+  const selectOnOpen = props.selectOnOpen === true;
   useEffect(() => {
-    editor.current?.focusAtEnd();
-  }, []);
+    if (selectOnOpen) editor.current?.selectAll();
+    else editor.current?.focusAtEnd();
+  }, [selectOnOpen]);
   // A busy editor is disabled and drops focus; take it back once done, unless it moved on.
   const wasBusy = useRef(busy);
   useEffect(() => {
