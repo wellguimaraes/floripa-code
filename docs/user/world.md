@@ -107,7 +107,8 @@ button beside it lines the islands up vertically, in a grid, or horizontally.
 What you hide, how big each island is, and how you arrange the islands are
 remembered in this browser. In the desktop app, the
 **+** button at the top left opens a folder picker; the folder you choose
-becomes a new project with its own island.
+becomes a new project with its own island. Right-click open water to add an
+island or arrange the islands.
 
 To start an agent on an island, hover it and click the **+** over an empty rock
 pile. In a git project, the bubble first asks where it works, with one row each

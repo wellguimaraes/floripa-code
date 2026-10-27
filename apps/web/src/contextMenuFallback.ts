@@ -102,6 +102,12 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
     { tag: "line", attrs: { x1: "10", x2: "8", y1: "3", y2: "21" } },
     { tag: "line", attrs: { x1: "16", x2: "14", y1: "3", y2: "21" } },
   ],
+  "layout-grid": [
+    { tag: "rect", attrs: { width: "7", height: "7", x: "3", y: "3", rx: "1" } },
+    { tag: "rect", attrs: { width: "7", height: "7", x: "14", y: "3", rx: "1" } },
+    { tag: "rect", attrs: { width: "7", height: "7", x: "14", y: "14", rx: "1" } },
+    { tag: "rect", attrs: { width: "7", height: "7", x: "3", y: "14", rx: "1" } },
+  ],
   "mail-open": [
     {
       tag: "path",
@@ -153,6 +159,10 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
         d: "M9 9v1.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h11",
       },
     },
+  ],
+  plus: [
+    { tag: "path", attrs: { d: "M5 12h14" } },
+    { tag: "path", attrs: { d: "M12 5v14" } },
   ],
   "refresh-cw": [
     { tag: "path", attrs: { d: "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" } },

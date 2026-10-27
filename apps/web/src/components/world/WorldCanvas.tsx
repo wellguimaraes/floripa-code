@@ -90,8 +90,8 @@ import { useWorldArrangementStore } from "./worldArrangementStore";
 import { useWorldManagerStore, WORLD_MANAGERS_AVAILABLE } from "./worldManagerStore";
 import { useWorldModeStore } from "./worldModeStore";
 import { useWorldVisibilityStore } from "./worldVisibilityStore";
-import { AddProjectButton } from "./AddProjectButton";
-import { IslandArrangementMenu } from "./IslandArrangementMenu";
+import { AddProjectButton, useAddProject } from "./AddProjectButton";
+import { ARRANGEMENTS, IslandArrangementMenu } from "./IslandArrangementMenu";
 import { ProjectVisibilityMenu } from "./ProjectVisibilityMenu";
 import { IslandBranchesPopover, type WorktreeSurfacesTarget } from "./IslandBranchesPopover";
 import { useCreateIdleWorldThread } from "./useStartWorldAgent";
@@ -253,6 +253,7 @@ export default function WorldCanvas(props: {
   const signStats = useIslandSignStats(visibleMembers, projects);
   const missingProjects = useMissingProjects(projects);
   const arrangement = useWorldArrangementStore((state) => state.arrangement);
+  const setArrangement = useWorldArrangementStore((state) => state.setArrangement);
   const [memory] = useState(createArchipelagoMemory);
   // Piles picked for agents started from them, by the thread they will become.
   const [requested, setRequested] = useState<ReadonlyMap<string, SlotRequest>>(new Map());
@@ -790,6 +791,43 @@ export default function WorldCanvas(props: {
     else if (clicked === "restore-archived") setRestoringOn(key);
   };
 
+  const addProject = useAddProject(islandOf);
+  const showOceanMenu = async (point: { x: number; y: number }) => {
+    const api = readLocalApi();
+    if (api === undefined) return;
+    const clicked = await api.contextMenu.show(
+      [
+        ...(addProject.available
+          ? [
+              {
+                id: "add-island",
+                label: "Add new island (project)…",
+                icon: "plus",
+                disabled: addProject.picking,
+              },
+            ]
+          : []),
+        {
+          id: "arrange",
+          label: "Arrange islands",
+          icon: "layout-grid",
+          children: ARRANGEMENTS.map((option) => ({
+            id: `arrange:${option.value}`,
+            label: option.label,
+            checked: option.value === arrangement,
+          })),
+        },
+      ],
+      awayFromPointer(point),
+    );
+    if (clicked === "add-island") void addProject.addProject();
+    else if (clicked?.startsWith("arrange:")) {
+      const value = clicked.slice("arrange:".length);
+      const option = ARRANGEMENTS.find((candidate) => candidate.value === value);
+      if (option !== undefined) setArrangement(option.value);
+    }
+  };
+
   const interruptTurn = useOrchestrationCommand(threadEnvironment.interruptTurn, {
     reportFailure: false,
   });
@@ -1265,7 +1303,18 @@ export default function WorldCanvas(props: {
           />
           <AmbientTicker fps={ambientFps} />
           {/* Far wider than any archipelago, so the water never ends on screen. */}
-          <mesh geometry={geometry.plane} rotation-x={-Math.PI / 2} position-y={-0.25} scale={4000}>
+          {/* Islands and characters stop their right-clicks, so only open water reaches here. */}
+          <mesh
+            geometry={geometry.plane}
+            rotation-x={-Math.PI / 2}
+            position-y={-0.25}
+            scale={4000}
+            onContextMenu={(event) => {
+              event.stopPropagation();
+              event.nativeEvent.preventDefault();
+              void showOceanMenu({ x: event.nativeEvent.clientX, y: event.nativeEvent.clientY });
+            }}
+          >
             <meshLambertMaterial color={palette.water} />
           </mesh>
           <WhaleSightings islands={islandSpots} config={definition.archipelago.whales} />

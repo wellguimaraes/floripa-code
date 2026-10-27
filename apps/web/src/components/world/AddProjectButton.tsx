@@ -20,26 +20,25 @@ import { toastManager } from "../ui/toast";
 import { useWorldVisibilityStore } from "./worldVisibilityStore";
 
 /**
- * Top bar button that adds a project to the world. It opens the system folder
- * picker and makes a project of the chosen folder, which then shows up as a new
- * island. Only the desktop app has a folder picker, so the browser shows nothing.
- * Picking a project that is already there brings its island back if it was hidden.
+ * Adds a project to the world. It opens the system folder picker and makes a project of the
+ * chosen folder, which then shows up as a new island. Only the desktop app has a folder
+ * picker, so `available` is false in the browser. Picking a project that is already there
+ * brings its island back if it was hidden.
  */
-export function AddProjectButton(props: {
+export function useAddProject(
   /** The island each project stands on, by scoped project key. */
-  readonly islandOf: ReadonlyMap<string, string>;
-}) {
+  islandOf: ReadonlyMap<string, string>,
+) {
   const environmentId = usePrimaryEnvironmentId();
   const projects = useProjects();
   const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
   const [picking, setPicking] = useState(false);
-
-  if (typeof window === "undefined" || window.desktopBridge === undefined) return null;
-  if (environmentId === null) return null;
+  const available =
+    typeof window !== "undefined" && window.desktopBridge !== undefined && environmentId !== null;
 
   const addProject = async () => {
     const api = readLocalApi();
-    if (!api) return;
+    if (!api || environmentId === null) return;
     setPicking(true);
     let cwd: string | null;
     try {
@@ -56,7 +55,7 @@ export function AddProjectButton(props: {
       cwd,
     );
     if (existing) {
-      const island = props.islandOf.get(
+      const island = islandOf.get(
         scopedProjectKey(scopeProjectRef(existing.environmentId, existing.id)),
       );
       const visibility = useWorldVisibilityStore.getState();
@@ -90,6 +89,17 @@ export function AddProjectButton(props: {
       });
     }
   };
+
+  return { available, picking, addProject };
+}
+
+/** Top bar button that adds a project to the world; see `useAddProject`. */
+export function AddProjectButton(props: {
+  /** The island each project stands on, by scoped project key. */
+  readonly islandOf: ReadonlyMap<string, string>;
+}) {
+  const { available, picking, addProject } = useAddProject(props.islandOf);
+  if (!available) return null;
 
   return (
     <Button

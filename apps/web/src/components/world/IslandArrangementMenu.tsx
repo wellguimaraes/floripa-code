@@ -12,7 +12,7 @@ import {
 import type { IslandArrangement } from "./engine/archipelago";
 import { useWorldArrangementStore } from "./worldArrangementStore";
 
-const ARRANGEMENTS: ReadonlyArray<{
+export const ARRANGEMENTS: ReadonlyArray<{
   readonly value: IslandArrangement;
   readonly label: string;
   readonly icon: LucideIcon;
