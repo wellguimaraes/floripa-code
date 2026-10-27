@@ -510,3 +510,44 @@ it.effect.each([
     expect(dispatched).toEqual(settles ? ["thread.settle"] : []);
   }),
 );
+
+it.effect("archiveWorktreeThreads archives every active thread in the worktree", () =>
+  Effect.gen(function* () {
+    const inWorktree = ThreadId.make("thread:thread-management:worktree-a");
+    const failing = ThreadId.make("thread:thread-management:worktree-b");
+    const elsewhere = ThreadId.make("thread:thread-management:elsewhere");
+    const archived: Array<ThreadId> = [];
+    const layerTest = ThreadManagementService.layer.pipe(
+      Layer.provide(
+        Layer.mock(Orchestrator.OrchestratorV2)({
+          getShellSnapshot: () =>
+            Effect.succeed({
+              threads: [
+                { id: failing, worktreePath: "/worktrees/feature/" },
+                { id: elsewhere, worktreePath: "/worktrees/other" },
+                { id: inWorktree, worktreePath: "/worktrees/feature" },
+              ],
+            } as never),
+          dispatch: (command) =>
+            command.type === "thread.archive" && command.threadId === failing
+              ? Effect.die("archive refused")
+              : Effect.sync(() => {
+                  if (command.type === "thread.archive") archived.push(command.threadId);
+                  return { sequence: 1, storedEvents: [] } as never;
+                }),
+        }),
+      ),
+    );
+    const service = yield* ThreadManagementService.ThreadManagementService.pipe(
+      Effect.provide(layerTest),
+    );
+
+    yield* service.archiveWorktreeThreads({
+      worktreePath: "/worktrees/feature",
+      commandId: CommandId.make("command:thread-management:worktree-removed"),
+    });
+
+    // One refused archive does not keep the rest of the worktree's agents active.
+    expect(archived).toEqual([inWorktree]);
+  }),
+);

@@ -365,6 +365,16 @@ export interface ThreadManagementServiceShape {
     input: ThreadManagementInterruptInput,
   ) => Effect.Effect<ThreadManagementInterruptResult, ThreadManagementFailure>;
   /**
+   * Archives every active thread bound to a worktree that was just removed, so
+   * no agent is left working in a checkout that is gone. Archive command IDs
+   * derive from `commandId`. A thread that cannot be archived is logged and
+   * skipped; the worktree is already gone either way.
+   */
+  readonly archiveWorktreeThreads: (input: {
+    readonly worktreePath: string;
+    readonly commandId: CommandId;
+  }) => Effect.Effect<void>;
+  /**
    * Sends `thread.stop` to every delegated task under a thread, depth first. Their command IDs
    * derive from `commandId`, so a retry repeats nothing that already stopped. A task that
    * cannot be stopped does not keep the others running: all are tried, then it fails.
@@ -438,6 +448,8 @@ function latestSteerableRun(
 }
 
 const SETTLE_AFTER_RUN_WAIT_MS = 24 * 60 * 60 * 1_000;
+
+const trimTrailingSeparators = (path: string) => path.replace(/(?<=.)[\\/]+$/, "");
 
 const make = Effect.gen(function* () {
   const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -794,6 +806,31 @@ const make = Effect.gen(function* () {
     return { sequence: result.sequence };
   });
 
+  const archiveWorktreeThreads: ThreadManagementServiceShape["archiveWorktreeThreads"] = Effect.fn(
+    "orchestrationV2.threadManagement.archiveWorktreeThreads",
+  )(
+    function* (input) {
+      const worktreePath = trimTrailingSeparators(input.worktreePath);
+      const snapshot = yield* orchestrator.getShellSnapshot({ location: "active" });
+      const threads = snapshot.threads.filter(
+        (thread) =>
+          thread.worktreePath !== null &&
+          trimTrailingSeparators(thread.worktreePath) === worktreePath,
+      );
+      yield* Effect.forEach(
+        threads,
+        (thread) =>
+          dispatch({
+            type: "thread.archive",
+            commandId: CommandId.make(`${input.commandId}:archive:${thread.id}`),
+            threadId: thread.id,
+          }).pipe(Effect.ignoreCause({ log: true })),
+        { discard: true },
+      );
+    },
+    Effect.ignoreCause({ log: true }),
+  );
+
   const interruptThread: ThreadManagementServiceShape["interruptThread"] = (input) =>
     Effect.gen(function* () {
       const target = yield* getProjectThreadRecords(input, ["runs", "providerTurns"]);
@@ -918,6 +955,7 @@ const make = Effect.gen(function* () {
     settleAfterRun,
     settleThread,
     interruptThread,
+    archiveWorktreeThreads,
     stopDelegatedTasks,
     getThreadEventSequence: orchestrator.getThreadEventSequence,
     recoverDelegatedTask: orchestrator.recoverDelegatedTask,

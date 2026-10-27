@@ -415,9 +415,11 @@ export class GitVcsDriver extends Context.Service<
     /**
      * Deletes a local branch, removing the worktree it's checked out in first. Without `force`,
      * a branch that isn't fully merged fails with `branch_not_fully_merged` before anything is
-     * touched, as `git branch -d` would.
+     * touched, as `git branch -d` would. Reports the worktree it removed, if any.
      */
-    readonly deleteRef: (input: VcsDeleteRefInput) => Effect.Effect<void, GitCommandError>;
+    readonly deleteRef: (
+      input: VcsDeleteRefInput,
+    ) => Effect.Effect<{ readonly removedWorktreePath: string | null }, GitCommandError>;
     readonly renameBranch: (
       input: GitRenameBranchInput,
     ) => Effect.Effect<GitRenameBranchResult, GitCommandError>;

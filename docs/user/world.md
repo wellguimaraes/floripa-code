@@ -10,8 +10,9 @@ pull requests from those branches, so branches you no longer need are easy to
 spot. The counts update about once a
 minute. Click the branch count to list the branches, with the worktree each is
 checked out in, its last commit, and whether that worktree has uncommitted
-changes. Delete removes a branch along with its worktree; it asks for a second
-click, and once more if the branch isn't merged. Click the icon to choose a new
+changes. Delete removes a branch along with its worktree and archives the agents
+that worked there; it asks for a second click, and once more if the branch isn't
+merged. Click the icon to choose a new
 one, as in Settings. Right-click it for **Detect automatically**, which drops any
 icon you chose and looks through the project's files again, and **Choose image
 file…**.

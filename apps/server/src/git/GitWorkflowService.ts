@@ -114,7 +114,9 @@ export class GitWorkflowService extends Context.Service<
       input: GitVcsDriver.GitDeleteLocalBranchInput,
     ) => Effect.Effect<void, GitCommandError>;
     /** See `GitVcsDriver.deleteRef`. */
-    readonly deleteRef: (input: VcsDeleteRefInput) => Effect.Effect<void, GitCommandError>;
+    readonly deleteRef: (
+      input: VcsDeleteRefInput,
+    ) => Effect.Effect<{ readonly removedWorktreePath: string | null }, GitCommandError>;
     readonly createRef: (
       input: VcsCreateRefInput,
     ) => Effect.Effect<VcsCreateRefResult, GitCommandError>;

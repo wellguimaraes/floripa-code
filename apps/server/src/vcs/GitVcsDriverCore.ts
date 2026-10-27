@@ -4056,6 +4056,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         refName: input.refName,
         ...(input.force === undefined ? {} : { force: input.force }),
       });
+      return { removedWorktreePath: worktreePath };
     },
   );
 

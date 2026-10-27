@@ -1740,6 +1740,15 @@ const layerWsRpc = (
           };
         });
 
+      // A removed worktree takes its agents with it: they are archived, not left
+      // pointing at a checkout that is gone.
+      const archiveWorktreeThreads = (worktreePath: string) =>
+        serverCommandId("worktree-removed").pipe(
+          Effect.flatMap((commandId) =>
+            threadManagement.archiveWorktreeThreads({ worktreePath, commandId }),
+          ),
+        );
+
       const refreshGitStatus = (cwd: string) =>
         vcsStatusBroadcaster
           .refreshStatus(cwd)
@@ -2876,9 +2885,20 @@ const layerWsRpc = (
         [WS_METHODS.vcsCreateWorktree]: (input) =>
           gitWorkflow.createWorktree(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
         [WS_METHODS.vcsRemoveWorktree]: (input) =>
-          gitWorkflow.removeWorktree(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+          gitWorkflow.removeWorktree(input).pipe(
+            Effect.tap(() => archiveWorktreeThreads(input.path)),
+            Effect.tap(() => refreshGitStatus(input.cwd)),
+          ),
         [WS_METHODS.vcsDeleteRef]: (input) =>
-          gitWorkflow.deleteRef(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+          gitWorkflow.deleteRef(input).pipe(
+            Effect.tap(({ removedWorktreePath }) =>
+              removedWorktreePath === null
+                ? Effect.void
+                : archiveWorktreeThreads(removedWorktreePath),
+            ),
+            Effect.tap(() => refreshGitStatus(input.cwd)),
+            Effect.asVoid,
+          ),
         [WS_METHODS.vcsCreateRef]: (input) =>
           gitWorkflow.createRef(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
         [WS_METHODS.vcsSwitchRef]: (input) =>

@@ -22,6 +22,7 @@ import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useEnvironmentQuery } from "../../state/query";
 import { vcsEnvironment } from "../../state/vcs";
+import { refreshArchivedThreadsForEnvironment } from "../../lib/archivedThreadsState";
 import { cn } from "../../lib/utils";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { PrStatusTooltipContent, prStatusIndicator } from "../ThreadStatusIndicators";
@@ -386,6 +387,8 @@ function BranchItem({
     });
     if (result._tag === "Success") {
       setRowState(row.key, "deleted");
+      // The server archives the agents that worked in the removed worktree.
+      if (row.worktreePath !== null) refreshArchivedThreadsForEnvironment(row.environmentId);
       return;
     }
     if (isAtomCommandInterrupted(result)) {
