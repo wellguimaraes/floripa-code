@@ -60,7 +60,14 @@ import { islandObstacles } from "./engine/route";
 import type { SlotRequest } from "./engine/slots";
 import type { WorldCharacter } from "./engine/world";
 import { type AbductedFigure, Abduction } from "./scene/Abduction";
-import { BALLOON_NAME, BALLOON_PX, Character, HITBOX_NAME, WALKING_FLAG } from "./scene/Character";
+import {
+  BALLOON_NAME,
+  BALLOON_PX,
+  Character,
+  HITBOX_NAME,
+  WALK_DESTINATION,
+  WALKING_FLAG,
+} from "./scene/Character";
 import { geometry } from "./scene/geometries";
 import { HAT_COUNT } from "./scene/Hat";
 import { Island, LAGOON_REACH, WIDE_LAGOON_REACH, type FurnitureSpot } from "./scene/Island";
@@ -390,12 +397,6 @@ export default function WorldCanvas(props: {
       ? null
       : (islands.flatMap((island) => island.characters).find((c) => c.facts.key === bubbleKey) ??
         null);
-  // A character's bubble closes as it sets off from finished work. Other walks keep it open,
-  // waiting where it was until the character arrives.
-  const closeBubbleOf = useCallback(
-    (key: string) => setBubbleKey((current) => (current === key ? null : current)),
-    [],
-  );
   const bubbleIsland =
     bubble === null ? undefined : islands.find((island) => island.key === bubble.facts.projectKey);
   // Characters cmd-clicked together, e.g. to archive them in one go.
@@ -1370,7 +1371,6 @@ export default function WorldCanvas(props: {
                         onMenu={(target, point) => void showMenu(target, point)}
                         onRoot={registerRoot}
                         onHover={onHover}
-                        onWalkOffWork={closeBubbleOf}
                       />
                     ))}
                 </group>
@@ -1810,10 +1810,14 @@ const IDLE_SNOOZE_OPTIONS = [
 ] as const;
 /** Room between a balloon's top and the overlay above it. */
 const BALLOON_CLEARANCE_PX = 4;
+/** How long a held overlay takes to glide onto its character once the walk ends. */
+const GLIDE_MS = 320;
 const SPOT_MIN_SPACING_PX = 34;
 // Reused on every frame; trackers only touch them inside their frame callback.
 const followPoint = new Vector3();
 const balloonPoint = new Vector3();
+const destinationPoint = new Vector3();
+const projectedPoint = new Vector3();
 
 /**
  * Reports where characters are on screen, just above their heads (or their
@@ -1826,7 +1830,11 @@ function FollowTracker(props: {
   readonly keys: ReadonlyArray<string>;
   /** Characters wearing a hat, followed from higher up. */
   readonly hatted: ReadonlySet<string>;
-  /** Stay where a walk began, in the world, and catch up once the character arrives. */
+  /**
+   * Wait out a walk at a fixed spot in the world, then glide over once the character arrives.
+   * A walk up the screen glides to where it ends right away, so the character walks up under
+   * the overlay rather than into it; any other waits where it began.
+   */
   readonly holdWhileWalking?: boolean;
   /** Called once per drawn frame with every followed character's screen point. */
   readonly onMove: (points: ReadonlyArray<ScreenPoint>) => void;
@@ -1834,26 +1842,42 @@ function FollowTracker(props: {
   const { roots, keys, hatted, holdWhileWalking = false, onMove } = props;
   const invalidate = useThree((state) => state.invalidate);
   const held = useRef(new Map<string, Vector3>());
+  // Where each overlay was last put, and the glides from there to a new spot.
+  const shown = useRef(new Map<string, ScreenPoint>());
+  const glides = useRef(new Map<string, { readonly from: ScreenPoint; readonly at: number }>());
   const signature = keys.join("\u0000");
   useEffect(() => {
     if (signature !== "") invalidate();
   }, [signature, invalidate]);
+  const camera = useThree((state) => state.camera);
+  // Up the screen from the bottom, in the camera's -1 to 1.
+  const screenHeight = (point: Vector3) => projectedPoint.copy(point).project(camera).y;
   useFrame((state) => {
-    for (const key of held.current.keys()) if (!keys.includes(key)) held.current.delete(key);
+    for (const map of [held.current, shown.current, glides.current]) {
+      for (const key of map.keys()) if (!keys.includes(key)) map.delete(key);
+    }
     if (keys.length === 0) return;
     const points: ScreenPoint[] = [];
     for (const key of keys) {
       const root = roots.current.get(key);
       if (root === undefined) continue;
       const walking = holdWhileWalking && root.userData[WALKING_FLAG] === true;
-      const start = walking ? held.current.get(key) : undefined;
-      if (start !== undefined) followPoint.copy(start);
-      else {
-        root.getWorldPosition(followPoint);
-        followPoint.y += (FOLLOW_HEIGHT + (hatted.has(key) ? HAT_LIFT : 0)) * root.scale.y;
+      const wasWalking = held.current.has(key);
+      const lift = (FOLLOW_HEIGHT + (hatted.has(key) ? HAT_LIFT : 0)) * root.scale.y;
+      root.getWorldPosition(followPoint);
+      followPoint.y += lift;
+      if (walking && !wasWalking) {
+        const to = root.userData[WALK_DESTINATION] as Vec3 | undefined;
+        if (to !== undefined) {
+          root.parent?.localToWorld(destinationPoint.set(...to));
+          destinationPoint.y += lift;
+        }
+        const up = to !== undefined && screenHeight(destinationPoint) > screenHeight(followPoint);
+        held.current.set(key, (up ? destinationPoint : followPoint).clone());
       }
-      if (walking) held.current.set(key, start ?? followPoint.clone());
-      else held.current.delete(key);
+      if (!walking) held.current.delete(key);
+      const hold = held.current.get(key);
+      if (hold !== undefined) followPoint.copy(hold);
       followPoint.project(state.camera);
       let y = ((1 - followPoint.y) / 2) * state.size.height;
       const balloon = walking ? undefined : root.getObjectByName(BALLOON_NAME);
@@ -1862,12 +1886,33 @@ function FollowTracker(props: {
         const top = ((1 - balloonPoint.y) / 2) * state.size.height - BALLOON_PX / 2;
         y = Math.min(y, top - BALLOON_CLEARANCE_PX);
       }
-      points.push({ key, x: ((followPoint.x + 1) / 2) * state.size.width, y });
+      let point: ScreenPoint = { key, x: ((followPoint.x + 1) / 2) * state.size.width, y };
+      // A walk starting or ending moves the spot; glide there from where the overlay is.
+      const from = shown.current.get(key);
+      if (walking !== wasWalking && from !== undefined && !reducedMotion()) {
+        glides.current.set(key, { from, at: performance.now() });
+      }
+      const glide = glides.current.get(key);
+      if (glide !== undefined) {
+        const t = Math.min(1, (performance.now() - glide.at) / GLIDE_MS);
+        const ease = 1 - (1 - t) ** 3;
+        point = {
+          key,
+          x: glide.from.x + (point.x - glide.from.x) * ease,
+          y: glide.from.y + (point.y - glide.from.y) * ease,
+        };
+        if (t < 1) state.invalidate();
+        else glides.current.delete(key);
+      }
+      shown.current.set(key, point);
+      points.push(point);
     }
     onMove(points);
   });
   return null;
 }
+
+const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /** Like FollowTracker, for fixed points in the world (e.g. empty rock piles). */
 function PointTracker(props: {

@@ -41,6 +41,19 @@ export const BALLOON_NAME = "balloon";
 export const HITBOX_NAME = "character-hitbox";
 /** Set on a character's root while it walks, so overlays can wait for it to arrive. */
 export const WALKING_FLAG = "walking";
+/**
+ * Set on a character's root as a walk is planned: where it ends, in its parent's space, so
+ * overlays can go ahead.
+ */
+export const WALK_DESTINATION = "walkDestination";
+function startWalk(root: Group | null, route: ReadonlyArray<Vec3>, ground: Ground): void {
+  if (root === null) return;
+  const end = route.at(-1);
+  root.userData[WALKING_FLAG] = end !== undefined;
+  root.userData[WALK_DESTINATION] =
+    end === undefined ? undefined : [end[0], end[1] + ground(end[0], end[2]), end[2]];
+}
+
 /** On-screen length of the string between the raised hand and the balloon. */
 const STRING_PX = 30;
 /** Where the hand is before the model loads, in the character's own units. */
@@ -83,8 +96,6 @@ export function Character(props: {
   readonly onRoot: (key: string, root: Group | null) => void;
   /** Screen point to anchor a label at, or null when the pointer leaves. */
   readonly onHover: (character: WorldCharacter, point: { x: number; y: number } | null) => void;
-  /** Called as the character sets off because it stopped working, so its bubble can close first. */
-  readonly onWalkOffWork: (key: string) => void;
 }) {
   const {
     character,
@@ -98,7 +109,6 @@ export function Character(props: {
     selected,
     onRoot,
     onHover,
-    onWalkOffWork,
   } = props;
   const { onSelect, onOpen, onPick, onMenu } = props;
   const { facts, placement, activity, intent } = character;
@@ -143,8 +153,6 @@ export function Character(props: {
   });
   const lastPlacement = useRef<Placement | null>(null);
   const lastSurface = useRef(surface);
-  // The status as of the last commit, so a move can tell whether a finished turn caused it.
-  const lastStatus = useRef(facts.status);
   useEffect(() => {
     onRoot(facts.key, root.current);
     return () => onRoot(facts.key, null);
@@ -164,7 +172,7 @@ export function Character(props: {
         current.route.push(...planRoute({ from, to, obstacles }));
         from = to;
       }
-      if (root.current !== null) root.current.userData[WALKING_FLAG] = current.route.length > 0;
+      startWalk(root.current, current.route, ground);
       invalidate();
       return;
     }
@@ -189,20 +197,9 @@ export function Character(props: {
       current.route.push(...planRoute({ from, to, obstacles }));
       from = to;
     }
-    if (root.current !== null) root.current.userData[WALKING_FLAG] = current.route.length > 0;
-    if (
-      current.route.length > 0 &&
-      lastStatus.current === "working" &&
-      facts.status !== "working"
-    ) {
-      onWalkOffWork(facts.key);
-    }
+    startWalk(root.current, current.route, ground);
     invalidate();
-  }, [placement, startAt, surface, obstacles, invalidate, onWalkOffWork, facts.key, facts.status]);
-  // Runs after the move above, which reads the status from before this commit.
-  useEffect(() => {
-    lastStatus.current = facts.status;
-  }, [facts.status]);
+  }, [placement, startAt, surface, obstacles, ground, invalidate]);
 
   const speed = movement.walkSpeed * (facts.kid ? movement.kidSpeedScale : 1);
   useFrame((state, frameDelta) => {
