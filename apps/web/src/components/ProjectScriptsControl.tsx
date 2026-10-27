@@ -13,7 +13,16 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { projectScriptMenuLabel } from "@t3tools/shared/projectScripts";
-import { ChevronDownIcon, DownloadIcon, PlusIcon, SettingsIcon, WrenchIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  CirclePlayIcon,
+  DownloadIcon,
+  PlayIcon,
+  PlusIcon,
+  SettingsIcon,
+  SquarePlayIcon,
+  WrenchIcon,
+} from "lucide-react";
 import React, { useCallback, useMemo, useState } from "react";
 
 import { commandForProjectScript, primaryProjectScript } from "~/projectScripts";
@@ -45,7 +54,19 @@ import {
   MenuSubTrigger,
   MenuSubPopup,
 } from "./ui/menu";
+import {
+  Command,
+  CommandGroup,
+  CommandGroupLabel,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandShortcut,
+} from "./ui/command";
+import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
+import { usePackageScripts } from "~/hooks/usePackageScripts";
+import type { PackageScript } from "~/packageScripts";
 import { cn } from "~/lib/utils";
 import {
   THREAD_DETAILS_PANEL_CHEVRON_CLASS,
@@ -61,7 +82,8 @@ const NO_FILE_SCRIPTS: ReadonlyArray<T3ProjectFileScript> = [];
 
 interface ProjectScriptsControlProps {
   displayMode?: "toolbar" | "panel";
-  presentation?: "toolbar" | "menu";
+  /** `icon` is a single play button opening every action, as the world's chat frame shows it. */
+  presentation?: "toolbar" | "menu" | "icon";
   onRequestMenuClose?: () => void;
   environmentId: EnvironmentId;
   scripts: ReadonlyArray<ProjectScript>;
@@ -75,6 +97,9 @@ interface ProjectScriptsControlProps {
     input: NewProjectScriptInput,
   ) => Promise<ProjectScriptActionResult>;
   onDeleteScript: (scriptId: string) => Promise<ProjectScriptActionResult>;
+  /** The `icon` popover also lists the scripts the manifests at this directory declare. */
+  packageScriptsCwd?: string | null;
+  onRunPackageScript?: ((script: PackageScript) => void) | undefined;
 }
 
 export default function ProjectScriptsControl({
@@ -89,6 +114,8 @@ export default function ProjectScriptsControl({
   onAddScript,
   onUpdateScript,
   onDeleteScript,
+  packageScriptsCwd = null,
+  onRunPackageScript,
 }: ProjectScriptsControlProps) {
   const isPanel = displayMode === "panel";
   const ActionGroup = isPanel ? "div" : Group;
@@ -105,6 +132,11 @@ export default function ProjectScriptsControl({
     setActionsMenuOpen({ presentation, scripts: false, imports: false });
   }
   const [editorRequest, setEditorRequest] = useState<ProjectScriptEditorRequest | null>(null);
+  // Read only while the popover shows them.
+  const packageScripts = usePackageScripts(
+    environmentId,
+    presentation === "icon" && actionsMenuOpen.scripts ? packageScriptsCwd : null,
+  );
 
   const primaryScript = useMemo(() => {
     if (preferredScriptId) {
@@ -252,7 +284,23 @@ export default function ProjectScriptsControl({
 
   return (
     <>
-      {presentation === "menu" ? (
+      {presentation === "icon" ? (
+        <ProjectActionsPopover
+          open={actionsMenuOpen.scripts}
+          onOpenChange={(open) =>
+            setActionsMenuOpen({ presentation, scripts: open, imports: false })
+          }
+          keybindings={keybindings}
+          scripts={scripts}
+          importableScripts={importableScripts}
+          packageScripts={onRunPackageScript ? packageScripts : []}
+          onRunScript={onRunScript}
+          onRunPackageScript={(script) => onRunPackageScript?.(script)}
+          onEditScript={openEditDialog}
+          onImportScript={(fileScript) => void importFileScript(fileScript)}
+          onAddScript={openAddDialog}
+        />
+      ) : presentation === "menu" ? (
         <>
           {primaryScript && (
             <MenuItem
@@ -478,5 +526,190 @@ export default function ProjectScriptsControl({
         onClose={() => setEditorRequest(null)}
       />
     </>
+  );
+}
+
+/**
+ * The project's actions, its t3.json imports, and its manifests' scripts in one searchable list
+ * behind a play button. Arrow keys move through every row; Enter runs the highlighted one.
+ */
+/**
+ * The project's commands, its t3.json imports, and its manifests' scripts in one searchable list.
+ * Arrow keys move through every row; Enter runs the highlighted one. Without the edit, import,
+ * and add handlers it only runs.
+ */
+export function ProjectActionsList(props: {
+  /** Closes whatever holds the list; each row calls it before acting. */
+  onDone: () => void;
+  keybindings: ResolvedKeybindingsConfig;
+  scripts: ReadonlyArray<ProjectScript>;
+  importableScripts: ReadonlyArray<T3ProjectFileScript>;
+  packageScripts: ReadonlyArray<PackageScript>;
+  onRunScript: ((script: ProjectScript) => void) | undefined;
+  onRunPackageScript: (script: PackageScript) => void;
+  onEditScript?: ((script: ProjectScript) => void) | undefined;
+  onImportScript?: ((script: T3ProjectFileScript) => void) | undefined;
+  onAddScript?: (() => void) | undefined;
+}) {
+  const { onEditScript, onImportScript, onAddScript } = props;
+  const [query, setQuery] = useState("");
+  const search = query.trim().toLocaleLowerCase();
+  const matches = (...fields: ReadonlyArray<string>) =>
+    search === "" || fields.some((field) => field.toLocaleLowerCase().includes(search));
+  const scripts = props.scripts.filter((script) => matches(script.name, script.command));
+  const imports = onImportScript
+    ? props.importableScripts.filter((script) => matches(script.name, script.command))
+    : [];
+  const packageGroups = new Map<string, PackageScript[]>();
+  for (const script of props.packageScripts) {
+    if (!matches(script.name, script.command)) continue;
+    packageGroups.set(script.runner, [...(packageGroups.get(script.runner) ?? []), script]);
+  }
+  // Each row closes the list before acting, so a dialog it opens takes focus.
+  const act = (run: () => void) => () => {
+    props.onDone();
+    run();
+  };
+  return (
+    <Command mode="none" value={query} onValueChange={setQuery} aria-label="Project actions">
+      <div className="flex items-center border-border border-b pe-2">
+        <div className="min-w-0 flex-1">
+          <CommandInput placeholder="Search actions and scripts..." />
+        </div>
+        {onAddScript ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Add action"
+                  onClick={act(onAddScript)}
+                />
+              }
+            >
+              <PlusIcon className="size-4" />
+            </TooltipTrigger>
+            <TooltipPopup side="bottom">Add action</TooltipPopup>
+          </Tooltip>
+        ) : null}
+      </div>
+      {scripts.length === 0 && imports.length === 0 && packageGroups.size === 0 ? (
+        <p className="px-4 pt-2 pb-5 text-center text-muted-foreground text-sm">
+          {search === "" ? "No actions or scripts yet." : "No matches."}
+        </p>
+      ) : null}
+      {/* Square, so the scroll area does not inherit the popup's rounded corners. */}
+      <div className="grid max-h-96 grid-rows-[minmax(0,1fr)] rounded-none">
+        <CommandList>
+          {scripts.length > 0 ? (
+            <CommandGroup>
+              <CommandGroupLabel>Custom commands</CommandGroupLabel>
+              {scripts.map((script) => {
+                const shortcutLabel = shortcutLabelForCommand(
+                  props.keybindings,
+                  commandForProjectScript(script.id),
+                );
+                return (
+                  <CommandItem
+                    key={script.id}
+                    value={`action:${script.id}`}
+                    className="group"
+                    disabled={!props.onRunScript}
+                    onClick={act(() => props.onRunScript?.(script))}
+                  >
+                    <CirclePlayIcon className="size-4 shrink-0" />
+                    <span className="min-w-0 flex-1 truncate">
+                      {projectScriptMenuLabel(script)}
+                    </span>
+                    {shortcutLabel ? (
+                      <CommandShortcut className={cn(onEditScript && "group-hover:hidden")}>
+                        {shortcutLabel}
+                      </CommandShortcut>
+                    ) : null}
+                    {onEditScript ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        className="hidden size-6 group-hover:flex"
+                        aria-label={`Edit ${script.name}`}
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          act(() => onEditScript(script))();
+                        }}
+                      >
+                        <SettingsIcon className="size-3.5" />
+                      </Button>
+                    ) : null}
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          ) : null}
+          {imports.length > 0 ? (
+            <CommandGroup>
+              <CommandGroupLabel>From t3.json</CommandGroupLabel>
+              {imports.map((script) => (
+                <CommandItem
+                  key={`${script.name} ${script.command}`}
+                  value={`import:${script.name}:${script.command}`}
+                  onClick={act(() => onImportScript?.(script))}
+                >
+                  <ScriptIcon icon={script.icon ?? "play"} className="size-4 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">{script.name}</span>
+                  <DownloadIcon className="size-3.5 text-muted-foreground" aria-label="Import" />
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          ) : null}
+          {[...packageGroups].map(([runner, runnerScripts]) => (
+            <CommandGroup key={runner}>
+              <CommandGroupLabel>{runner}</CommandGroupLabel>
+              {runnerScripts.map((script) => (
+                <CommandItem
+                  key={script.id}
+                  value={`package:${script.id}`}
+                  onClick={act(() => props.onRunPackageScript(script))}
+                >
+                  <SquarePlayIcon className="size-4 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 truncate">{script.name}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          ))}
+        </CommandList>
+      </div>
+    </Command>
+  );
+}
+
+function ProjectActionsPopover(
+  props: Omit<React.ComponentProps<typeof ProjectActionsList>, "onDone"> & {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+  },
+) {
+  const { open, onOpenChange, ...listProps } = props;
+  return (
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <PopoverTrigger
+              render={<Button variant="ghost" size="icon-sm" aria-label="Project actions" />}
+            />
+          }
+        >
+          <PlayIcon className="size-4" />
+        </TooltipTrigger>
+        <TooltipPopup side="bottom">Actions</TooltipPopup>
+      </Tooltip>
+      <PopoverPopup align="end" padding="none" className="w-80">
+        <ProjectActionsList {...listProps} onDone={() => onOpenChange(false)} />
+      </PopoverPopup>
+    </Popover>
   );
 }

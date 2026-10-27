@@ -90,6 +90,7 @@ const SF_SYMBOLS: Readonly<Record<string, string>> = {
   plus: "plus",
   "refresh-cw": "arrow.clockwise",
   settings: "gearshape",
+  "square-play": "play.rectangle",
   timer: "timer",
   trash: "trash",
   "zoom-in": "plus.magnifyingglass",

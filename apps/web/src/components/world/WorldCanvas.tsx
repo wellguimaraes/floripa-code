@@ -98,6 +98,7 @@ import { useCreateIdleWorldThread } from "./useStartWorldAgent";
 import { canChangeIslandIcon, IslandIconPicker, useSetIslandIcon } from "./IslandIconPicker";
 import { IslandPrefsDialog } from "./IslandPrefsDialog";
 import { useRemoveIsland } from "./useRemoveIsland";
+import { IslandRunScriptDialog } from "./IslandRunScriptDialog";
 import { RestoreArchivedDialog } from "./RestoreArchivedDialog";
 import { layoutTags, type ScreenPoint } from "./scene/tagLayout";
 import { isStoppable, WorldBubble } from "./WorldBubble";
@@ -716,6 +717,8 @@ export default function WorldCanvas(props: {
     setIconPicking({ key, picker: "icon" });
   };
   const removeIsland = useRemoveIsland();
+  // The agent an island's "Run script" runs in; its chat opens only once a script runs.
+  const [scriptAgent, setScriptAgent] = useState<ScopedThreadRef | null>(null);
   const showIslandMenu = async (key: string, point: { x: number; y: number }) => {
     const api = readLocalApi();
     if (api === undefined) return;
@@ -726,11 +729,23 @@ export default function WorldCanvas(props: {
         ?.characters.filter((c) => isResting(c.facts) && !abducted.has(c.facts.key)) ?? [];
     const snoozedUntil = idleSnoozedUntil[key] ?? 0;
     const snoozed = snoozedUntil > Date.now();
+    // Scripts run in an agent's terminal: the latest in the main checkout, else the latest here.
+    const agents = (islands.find((island) => island.key === key)?.characters ?? [])
+      .filter((c) => !c.facts.kid && !abducted.has(c.facts.key))
+      .toSorted((a, b) => b.facts.lastReplyAt.localeCompare(a.facts.lastReplyAt));
+    const scriptAgent = agents.find((c) => c.facts.worktreePath === null) ?? agents[0];
     const clicked = await api.contextMenu.show(
       [
         { id: "only", label: "Show only this island", icon: "eye" },
         { id: "hide", label: "Hide this island", icon: "eye-off" },
         { id: "zoom", label: "Zoom to this island", icon: "zoom-in" },
+        {
+          id: "run-script",
+          label: "Run script…",
+          icon: "square-play",
+          disabled: scriptAgent === undefined,
+          separatorBefore: true,
+        },
         ...(islandPrefs[key]?.idleAlarmMinutes !== undefined
           ? [
               {
@@ -777,6 +792,8 @@ export default function WorldCanvas(props: {
       awayFromPointer(point),
     );
     if (clicked === "only") showOnlyIsland(key, projectOrder);
+    else if (clicked === "run-script" && scriptAgent !== undefined)
+      setScriptAgent(scriptAgent.facts.ref);
     else if (clicked === "remove")
       void removeIsland(checkouts, projectTitles.get(key) ?? "Project");
     else if (clicked === "hide") hideIsland(key);
@@ -1643,6 +1660,14 @@ export default function WorldCanvas(props: {
         }
         onPick={startOnIsland}
         onClose={() => setPickingProject(false)}
+      />
+      <IslandRunScriptDialog
+        agentRef={scriptAgent}
+        onClose={() => setScriptAgent(null)}
+        onRun={(ref) => {
+          setBubbleKey(null);
+          switchChat({ key: scopedThreadKey(ref), ref });
+        }}
       />
       {restoringOn !== null ? (
         <RestoreArchivedDialog

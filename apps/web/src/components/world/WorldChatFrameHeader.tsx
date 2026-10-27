@@ -3,7 +3,10 @@ import type { ScopedThreadRef } from "@t3tools/contracts";
 import { MessagesSquareIcon } from "lucide-react";
 import type { ReactNode, Ref } from "react";
 
+import { useThreadWorktreeScope } from "~/worktreeScope";
+
 import { WorktreeSwitcher } from "../chat/WorktreeSwitcher";
+import GitActionsControl from "../GitActionsControl";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -11,8 +14,8 @@ import { useWorldModeStore } from "./worldModeStore";
 
 /**
  * The world chat frame's top row, above both the chat and the worktree's surfaces: the chat
- * toggle, then the project's icon beside the worktree that owns the surfaces. The icon flies the
- * map to the project's island.
+ * toggle, then the project's icon beside the worktree that owns the surfaces and its Changes
+ * totals. The icon flies the map to the project's island.
  */
 export function WorldChatFrameHeader(props: {
   readonly ref?: Ref<HTMLElement>;
@@ -26,10 +29,11 @@ export function WorldChatFrameHeader(props: {
   const threadKey = scopedThreadKey(props.threadRef);
   const focusIslandOf = useWorldModeStore((state) => state.focusIslandOf);
   const toggleLabel = props.chatCollapsed ? "Show chat" : "Hide chat";
+  const scope = useThreadWorktreeScope(props.threadRef);
   return (
     <header
       ref={props.ref}
-      className="relative flex h-16 shrink-0 items-center border-border border-b px-3"
+      className="relative flex h-12 shrink-0 items-center border-border border-b px-3"
       data-world-chat-frame-header
     >
       <Tooltip>
@@ -69,11 +73,23 @@ export function WorldChatFrameHeader(props: {
             </TooltipPopup>
           </Tooltip>
         ) : null}
-        <WorktreeSwitcher
-          threadRef={props.threadRef}
-          variant="title"
-          className="pointer-events-auto max-w-full"
-        />
+        {/* Baseline-aligned: the mono totals are smaller than the name. */}
+        <div className="flex min-w-0 items-baseline gap-2">
+          <WorktreeSwitcher
+            threadRef={props.threadRef}
+            variant="title"
+            className="pointer-events-auto min-w-0"
+          />
+          {scope ? (
+            <div className="pointer-events-auto flex shrink-0">
+              <GitActionsControl
+                presentation="diffStat"
+                gitCwd={scope.worktreePath ?? scope.workspaceRoot}
+                activeThreadRef={props.threadRef}
+              />
+            </div>
+          ) : null}
+        </div>
       </div>
       <div className="ml-auto flex items-center">{props.trailing}</div>
     </header>

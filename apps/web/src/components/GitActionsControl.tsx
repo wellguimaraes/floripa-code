@@ -1,3 +1,4 @@
+import { DiffStatLabel, hasNonZeroStat } from "./chat/DiffStatLabel";
 import { ThreadDetailsControl } from "./chat/ThreadDetailsControl";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -38,6 +39,7 @@ import {
   CloudUploadIcon,
   GitBranchPlusIcon,
   GitCommitIcon,
+  GitPullRequestCreateIcon,
   InfoIcon,
   LockIcon,
   GlobeIcon,
@@ -127,7 +129,8 @@ import { sourceControlClients } from "@t3tools/client-runtime/source-control-cli
 import { useOpenLink } from "~/browser/useOpenLink";
 
 interface GitActionsControlProps {
-  presentation?: "toolbar" | "menu";
+  /** `diffStat` is the branch's Changes totals, opening a menu to commit, push, or open a PR. */
+  presentation?: "toolbar" | "menu" | "diffStat";
   gitCwd: string | null;
   activeThreadRef: ScopedThreadRef | null;
   draftId?: DraftId;
@@ -1690,9 +1693,70 @@ export default function GitActionsControl({
 
   if (!gitCwd) return null;
 
+  const branchChanges = gitStatusForActions?.branchChanges;
+  const hasWorkingTreeChanges = gitStatusForActions?.hasWorkingTreeChanges ?? false;
+  const canReachRemote =
+    gitStatusForActions?.refName != null && (gitStatusForActions.hasUpstream || hasPrimaryRemote);
+
   return (
     <>
-      {presentation === "menu" ? (
+      {presentation === "diffStat" ? (
+        branchChanges &&
+        hasNonZeroStat({
+          additions: branchChanges.insertions,
+          deletions: branchChanges.deletions,
+        }) ? (
+          <Menu
+            onOpenChange={(open) => {
+              if (open) requestVcsStatusRefresh(refreshVcsStatus, activeEnvironmentId, gitCwd);
+            }}
+          >
+            <MenuTrigger
+              disabled={!canWriteSourceControl || isGitActionRunning}
+              render={
+                <button
+                  type="button"
+                  aria-label="Git actions"
+                  className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-sm text-xs hover:opacity-80 disabled:cursor-default disabled:hover:opacity-100"
+                />
+              }
+            >
+              <DiffStatLabel
+                additions={branchChanges.insertions}
+                deletions={branchChanges.deletions}
+                layout="inline"
+              />
+              {isGitActionRunning ? <Spinner size="sm" aria-hidden /> : null}
+            </MenuTrigger>
+            <MenuPopup align="center" side="bottom" sideOffset={6}>
+              <MenuItem
+                disabled={!hasWorkingTreeChanges}
+                onClick={() => void runGitActionWithToast({ action: "commit" })}
+              >
+                <GitCommitIcon />
+                <MenuItemLabel>Commit</MenuItemLabel>
+              </MenuItem>
+              <MenuItem
+                disabled={
+                  !canReachRemote ||
+                  (!hasWorkingTreeChanges && (gitStatusForActions?.aheadCount ?? 0) === 0)
+                }
+                onClick={() => void runGitActionWithToast({ action: "commit_push" })}
+              >
+                <CloudUploadIcon />
+                <MenuItemLabel>Commit and push</MenuItemLabel>
+              </MenuItem>
+              <MenuItem
+                disabled={!canReachRemote}
+                onClick={() => void runGitActionWithToast({ action: "commit_push_pr" })}
+              >
+                <GitPullRequestCreateIcon />
+                <MenuItemLabel>Create {changeRequestTerminology.shortLabel}</MenuItemLabel>
+              </MenuItem>
+            </MenuPopup>
+          </Menu>
+        ) : null
+      ) : presentation === "menu" ? (
         !isRepo ? (
           <MenuItem
             density={presentation === "menu" ? "touch" : "default"}

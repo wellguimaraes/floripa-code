@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import type { ProjectScript } from "@t3tools/contracts";
 
 import { resolveStorage } from "../../lib/storage";
 
@@ -24,6 +25,17 @@ interface WorldModeState {
   readonly chatFocusRequest: { readonly threadKey: string } | null;
   readonly focusChatOf: (threadKey: string) => void;
   readonly clearChatFocusRequest: () => void;
+  /**
+   * A script an island's "Run script" picked, waiting for its agent's chat to open and run it in
+   * that agent's terminal. `remember` makes a saved command the project's one-click action.
+   */
+  readonly scriptRun: {
+    readonly threadKey: string;
+    readonly script: ProjectScript;
+    readonly remember: boolean;
+  } | null;
+  readonly requestScriptRun: (threadKey: string, script: ProjectScript, remember: boolean) => void;
+  readonly clearScriptRun: () => void;
   readonly setSidebarWasOpen: (open: boolean | null) => void;
   readonly setShown: (shown: boolean) => void;
 }
@@ -43,6 +55,10 @@ export const useWorldModeStore = create<WorldModeState>()(
       chatFocusRequest: null,
       focusChatOf: (threadKey) => set({ chatFocusRequest: { threadKey } }),
       clearChatFocusRequest: () => set({ chatFocusRequest: null }),
+      scriptRun: null,
+      requestScriptRun: (threadKey, script, remember) =>
+        set({ scriptRun: { threadKey, script, remember } }),
+      clearScriptRun: () => set({ scriptRun: null }),
       setSidebarWasOpen: (sidebarWasOpen) => set({ sidebarWasOpen }),
       setShown: (shown) => set({ shown }),
     }),

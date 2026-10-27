@@ -19,7 +19,9 @@ import {
 import { useEnvironment } from "../../state/environments";
 import { ChevronDownIcon, FolderClosedIcon, SquareArrowOutUpRightIcon } from "lucide-react";
 
+import { Button } from "../ui/button";
 import { Group, GroupSeparator } from "../ui/group";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   Menu,
   MenuItem,
@@ -217,7 +219,8 @@ export const OpenInPicker = memo(function OpenInPicker({
   keybindings: ResolvedKeybindingsConfig;
   availableEditors: ReadonlyArray<EditorId>;
   openInCwd: string | null;
-  presentation?: "toolbar" | "menu";
+  /** `icon` is a single button listing the editors, as the world's chat frame shows it. */
+  presentation?: "toolbar" | "menu" | "icon";
   compact?: boolean;
   enableShortcut?: boolean;
   displayMode?: "toolbar" | "panel";
@@ -358,6 +361,33 @@ export const OpenInPicker = memo(function OpenInPicker({
       )}
     </>
   );
+  if (presentation === "icon") {
+    return (
+      <Menu open={menuOpen} onOpenChange={setMenuOpen}>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <MenuTrigger
+                disabled={isHostEditorDenied}
+                render={<Button variant="ghost" size="icon-sm" aria-label="Open with" />}
+              />
+            }
+          >
+            {primaryOption ? (
+              <primaryOption.Icon
+                aria-hidden="true"
+                className={cn("size-4", getOpenInIconClass(primaryOption.kind))}
+              />
+            ) : (
+              <SquareArrowOutUpRightIcon aria-hidden="true" className="size-4" />
+            )}
+          </TooltipTrigger>
+          <TooltipPopup side="bottom">Open with</TooltipPopup>
+        </Tooltip>
+        <MenuPopup align="end">{editorItems}</MenuPopup>
+      </Menu>
+    );
+  }
   if (presentation === "menu") {
     return (
       <>

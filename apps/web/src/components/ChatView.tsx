@@ -291,6 +291,8 @@ import { PullRequestsUnavailableState } from "./pullRequest/PullRequestsUnavaila
 import { RightPanelTabs, RightPanelTypeRail } from "./RightPanelTabs";
 import { WorktreeAgentRail } from "./chat/WorktreeAgentRail";
 import { WorldChatFrameHeader } from "./world/WorldChatFrameHeader";
+import { WorldFrameActions } from "./world/WorldFrameActions";
+import { packageScriptAsProjectScript } from "../packageScripts";
 import { useThreadWorktreeScope } from "../worktreeScope";
 import { LinkPullRequestDialogHost } from "./pullRequest/LinkPullRequestDialog";
 import { ThreadPullRequestsPanel } from "./pullRequest/ThreadPullRequestsPanel";
@@ -1506,7 +1508,10 @@ export default function ChatView(props: ChatViewProps) {
   >({});
   const [pendingUserInputQuestionIndexByRequestId, setPendingUserInputQuestionIndexByRequestId] =
     useState<Record<string, number>>({});
-  const shouldUsePlanSidebarSheet = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
+  // The world's chat frame sizes the surfaces itself, and keeps them inline at any window width.
+  const worldSurfacesSize = useContext(WorldSurfacesWidthContext);
+  const narrowViewport = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
+  const shouldUsePlanSidebarSheet = narrowViewport && worldSurfacesSize === null;
   const isMobileViewport = useMediaQuery("max-sm");
   const [workspaceLayoutElement, setWorkspaceLayoutElement] = useState<HTMLDivElement | null>(null);
   const threadPanelPopoverAnchorRef = useRef<HTMLElement | null>(null);
@@ -1793,8 +1798,6 @@ export default function ChatView(props: ChatViewProps) {
     container: workspaceLayoutElement,
     widthStorageKey: `floripacode:preview-panel-width:${activeThreadKey}`,
   });
-  // The world's chat frame sizes the surfaces itself.
-  const worldSurfacesSize = useContext(WorldSurfacesWidthContext);
   const activeThreadShell = useThreadShell(isServerThread ? activeThreadRef : null);
   const timelineThreadError =
     serverRuntime?.status === "failed" &&
@@ -4497,6 +4500,21 @@ export default function ChatView(props: ChatViewProps) {
   const supportsProjectSettingsOverrides =
     environmentById.get(environmentId)?.serverConfig?.environment.capabilities
       .projectSettingsOverrides === true;
+  // An island's "Run script" picked a script for this agent before its chat opened; run it here,
+  // in this agent's terminal, once the thread and project have loaded.
+  const pendingScriptRun = useWorldModeStore((state) =>
+    activeThreadRef !== null && state.scriptRun?.threadKey === scopedThreadKey(activeThreadRef)
+      ? state.scriptRun
+      : null,
+  );
+  useEffect(() => {
+    if (pendingScriptRun === null || !activeProject || !activeThread) return;
+    useWorldModeStore.getState().clearScriptRun();
+    void runProjectScript(pendingScriptRun.script, {
+      rememberAsLastInvoked: pendingScriptRun.remember,
+    });
+  }, [pendingScriptRun, activeProject, activeThread, runProjectScript]);
+
   const persistProjectScripts = useCallback(
     async (input: {
       projectId: ProjectId;
@@ -10865,10 +10883,24 @@ export default function ChatView(props: ChatViewProps) {
         chatCollapsed={rightPanelMaximized}
         onToggleChat={toggleChatCollapsed}
         trailing={
-          <PanelLayoutControls
-            {...panelToggleControlProps}
-            showTerminalControl={false}
-            showRightPanelControl={false}
+          <WorldFrameActions
+            environmentId={activeThread.environmentId}
+            cwd={gitCwd}
+            keybindings={keybindings}
+            availableEditors={availableEditors}
+            showOpenIn={showOpenInPicker}
+            scripts={threadDetailsPanelProps.activeProjectScripts ?? null}
+            preferredScriptId={threadDetailsPanelProps.preferredScriptId}
+            onRunScript={runProjectScript}
+            onAddScript={saveProjectScript}
+            onUpdateScript={updateProjectScript}
+            onDeleteScript={deleteProjectScript}
+            onRunPackageScript={(script) =>
+              // Not a saved command, so it never becomes the project's one-click action.
+              void runProjectScript(packageScriptAsProjectScript(script), {
+                rememberAsLastInvoked: false,
+              })
+            }
           />
         }
       />

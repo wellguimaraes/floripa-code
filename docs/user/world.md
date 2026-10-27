@@ -95,7 +95,9 @@ right-click one of them to stop or archive them all at once.
 Drag to pan the map and scroll to zoom. Double-click an island to zoom
 to it, or the sea to see every island. Right-click an island to show only that
 island, hide it, grow or shrink it, zoom to it, or archive every agent resting
-on its beach. **Restore archived agent…** lists the island's archived agents,
+on its beach. **Run script…** lists the project's commands and package scripts; the one you
+pick runs in the terminal of the island's latest agent in the main checkout (or its latest agent
+anywhere, if none works there), and that agent's chat opens to show it. **Restore archived agent…** lists the island's archived agents,
 newest first; click **Restore** on one to bring it back. Its search box matches words in titles
 and messages, and also matches by meaning, so a paraphrase or another language can find an
 agent. The first search downloads a local model (about 150 MB) and reads the island's archived

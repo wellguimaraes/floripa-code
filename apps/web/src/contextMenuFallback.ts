@@ -195,6 +195,15 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
     { tag: "path", attrs: { d: "M3 5a2 2 0 0 0 2 2h3" } },
     { tag: "path", attrs: { d: "M3 3v13a2 2 0 0 0 2 2h3" } },
   ],
+  "square-play": [
+    { tag: "rect", attrs: { width: "18", height: "18", x: "3", y: "3", rx: "2" } },
+    {
+      tag: "path",
+      attrs: {
+        d: "M9 9.003a1 1 0 0 1 1.517-.859l4.997 2.997a1 1 0 0 1 0 1.718l-4.997 2.997A1 1 0 0 1 9 14.996z",
+      },
+    },
+  ],
   "zoom-in": [
     { tag: "circle", attrs: { cx: "11", cy: "11", r: "8" } },
     { tag: "line", attrs: { x1: "21", x2: "16.65", y1: "21", y2: "16.65" } },
