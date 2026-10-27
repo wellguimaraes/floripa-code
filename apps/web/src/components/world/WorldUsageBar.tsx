@@ -269,11 +269,12 @@ function FittedUsagePill({
           }
         />
         <PopoverPopup side="bottom" align="end" sideOffset={8}>
-          <div className="flex w-[min(40rem,calc(100vw-3rem))] flex-col gap-3">
-            <div className="flex items-center justify-between gap-3 text-sm">
-              <span className="text-muted-foreground">Meters show</span>
+          <div className="flex w-max max-w-[min(28rem,calc(100vw-3rem))] flex-col gap-3">
+            {/* Bleeds past the popover's inline padding so its divider spans edge to edge. */}
+            <div className="-mx-(--viewport-inline-padding) flex items-center justify-between gap-3 border-b px-(--viewport-inline-padding) pb-4 text-sm">
+              <span className="text-base font-semibold text-foreground">Usage stats</span>
               <ToggleGroup
-                aria-label="Meters show"
+                aria-label="Usage stats"
                 value={[shows]}
                 onValueChange={(next) => {
                   const value = next[0];
@@ -288,6 +289,7 @@ function FittedUsagePill({
               selectedEnvironmentIds={null}
               hiddenProviders={hiddenProviders}
               now={now}
+              shows={shows}
             />
           </div>
         </PopoverPopup>
