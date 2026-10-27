@@ -57,6 +57,10 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
     { tag: "circle", attrs: { cx: "12", cy: "14", r: "8" } },
   ],
   "chevron-right": [{ tag: "path", attrs: { d: "m9 19 7-7-7-7" } }],
+  "circle-stop": [
+    { tag: "circle", attrs: { cx: "12", cy: "12", r: "10" } },
+    { tag: "rect", attrs: { x: "9", y: "9", width: "6", height: "6", rx: "1" } },
+  ],
   "circle-check": [
     { tag: "circle", attrs: { cx: "12", cy: "12", r: "10" } },
     { tag: "path", attrs: { d: "m9 12 2 2 4-4" } },
@@ -107,6 +111,14 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
     },
     { tag: "path", attrs: { d: "m22 10-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 10" } },
   ],
+  "message-square": [
+    {
+      tag: "path",
+      attrs: {
+        d: "M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z",
+      },
+    },
+  ],
   "message-square-plus": [
     {
       tag: "path",
@@ -116,6 +128,11 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
     },
     { tag: "path", attrs: { d: "M12 8v6" } },
     { tag: "path", attrs: { d: "M9 11h6" } },
+  ],
+  mic: [
+    { tag: "path", attrs: { d: "M12 19v3" } },
+    { tag: "path", attrs: { d: "M19 10v2a7 7 0 0 1-14 0v-2" } },
+    { tag: "rect", attrs: { x: "9", y: "2", width: "6", height: "13", rx: "3" } },
   ],
   pin: [
     { tag: "path", attrs: { d: "M12 17v5" } },

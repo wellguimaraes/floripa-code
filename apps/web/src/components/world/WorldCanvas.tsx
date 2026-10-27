@@ -853,8 +853,13 @@ export default function WorldCanvas(props: {
       const running = group.filter((c) => isStoppable(c.facts)).length;
       const clicked = await api.contextMenu.show(
         [
-          { id: "stop", label: `Stop (${running})`, disabled: running === 0 },
-          { id: "archive", label: `Archive (${group.length})` },
+          {
+            id: "stop",
+            label: `Stop (${running})`,
+            icon: "circle-stop",
+            disabled: running === 0,
+          },
+          { id: "archive", label: `Archive (${group.length})`, icon: "archive" },
         ],
         awayFromPointer(point),
       );
@@ -865,13 +870,19 @@ export default function WorldCanvas(props: {
     const regenerating = readThreadShell(character.facts.ref)?.titleRegeneration != null;
     const clicked = await api.contextMenu.show(
       [
-        { id: "open", label: "Open chat" },
-        { id: "voice", label: "Send voice command", disabled: !voiceInputSupported() },
+        { id: "open", label: "Open chat", icon: "message-square" },
+        {
+          id: "voice",
+          label: "Send voice command",
+          icon: "mic",
+          disabled: !voiceInputSupported(),
+        },
         ...(readEnvironmentSupportsTitleRegeneration(character.facts.ref.environmentId)
           ? [
               {
                 id: "regenerate-title",
                 label: regenerating ? "Regenerating…" : "Regenerate title",
+                icon: "refresh-cw",
                 disabled: regenerating,
               },
             ]
@@ -879,10 +890,11 @@ export default function WorldCanvas(props: {
         {
           id: "stop",
           label: "Stop",
+          icon: "circle-stop",
           disabled: !isStoppable(character.facts),
           separatorBefore: true,
         },
-        { id: "archive", label: "Archive" },
+        { id: "archive", label: "Archive", icon: "archive" },
       ],
       awayFromPointer(point),
     );
