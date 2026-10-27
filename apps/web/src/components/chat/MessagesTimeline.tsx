@@ -180,7 +180,9 @@ import {
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { HtmlRenderFrame } from "./HtmlRenderFrame";
 import { McpAppFrame } from "./McpAppFrame";
-import { ChangedFilesCard, ChangedFilesSummary } from "./ChangedFilesTree";
+import { ChangedFilesCard } from "./ChangedFilesTree";
+import { formatCompactDiffCount, hasNonZeroStat } from "./DiffStatLabel";
+import { summarizeTurnDiffStats } from "../../lib/turnDiffTree";
 import { useFileContextMenuHandler } from "../../fileContextMenu";
 import { useProject, useThreadShell } from "../../state/entities";
 import {
@@ -3343,11 +3345,37 @@ function CompactAssistantFooter({
   if (files.length === 0 && meta === "") return null;
   return (
     <div className="flex items-center gap-3 pt-2">
-      {files.length > 0 ? <ChangedFilesSummary files={files} /> : null}
+      {files.length > 0 ? <CompactChangedFilesSummary files={files} /> : null}
       {meta !== "" ? (
         <span className="ml-auto min-w-0 truncate text-muted-foreground text-xs">{meta}</span>
       ) : null}
     </div>
+  );
+}
+
+/** "5 files +15 -127", quiet enough to sit beside the reply's meta. */
+function CompactChangedFilesSummary({ files }: { files: TurnDiffSummary["files"] }) {
+  const stat = summarizeTurnDiffStats(files);
+  return (
+    <span className="flex shrink-0 items-center gap-2.5 text-muted-foreground text-xs tabular-nums">
+      <span>
+        {files.length} file{files.length === 1 ? "" : "s"}
+      </span>
+      {hasNonZeroStat(stat) ? (
+        <span
+          role="group"
+          aria-label={`${stat.additions} additions, ${stat.deletions} deletions`}
+          className="flex items-center gap-2.5"
+        >
+          <span aria-hidden="true" className="text-diff-addition">
+            +{formatCompactDiffCount(stat.additions)}
+          </span>
+          <span aria-hidden="true" className="text-diff-deletion">
+            -{formatCompactDiffCount(stat.deletions)}
+          </span>
+        </span>
+      ) : null}
+    </span>
   );
 }
 
@@ -4279,14 +4307,17 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
     "Working..."
   );
   return (
-    <div className="border-b border-border/60 pb-2 pt-1">
-      <div className="flex h-6 min-w-0 items-baseline gap-2 px-1 text-sm leading-relaxed text-muted-foreground tabular-nums">
-        <span
-          ref={shimmer ? observeVisibleAnimation : undefined}
-          className="relative shrink-0 overflow-hidden whitespace-nowrap"
-        >
-          {label}
-          {shimmer ? <ActivityShimmerOverlay>{label}</ActivityShimmerOverlay> : null}
+    <div className="pt-1">
+      <div className="flex h-6 min-w-0 items-center gap-2 tabular-nums">
+        {/* A blue pill, so the live turn reads apart from the settled work around it. */}
+        <span className="flex h-6 shrink-0 items-center rounded-full bg-info/8 px-2.5 text-info-foreground text-xs font-medium dark:bg-info/16">
+          <span
+            ref={shimmer ? observeVisibleAnimation : undefined}
+            className="relative overflow-hidden whitespace-nowrap"
+          >
+            {label}
+            {shimmer ? <ActivityShimmerOverlay>{label}</ActivityShimmerOverlay> : null}
+          </span>
         </span>
         {backgroundWorktreeSetup ? (
           <BackgroundWorktreeSetupChip snapshot={backgroundWorktreeSetup} />

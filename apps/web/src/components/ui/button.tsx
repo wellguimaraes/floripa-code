@@ -56,6 +56,9 @@ const buttonVariants = cva(
           "[--control-icon-color:currentColor] border-transparent text-muted-foreground data-pressed:bg-accent [:hover,[data-pressed]]:bg-accent [:hover,[data-pressed]]:text-destructive",
         glass:
           "surface-glass [--control-icon-color:var(--contrast-muted-foreground)] rounded-full border-border/60 text-foreground shadow-sm before:rounded-full [:hover,[data-pressed]]:border-border",
+        // Dark on light and light on dark: a floating control that stands out from any content.
+        inverted:
+          "[--control-icon-color:currentColor] rounded-full border-transparent bg-foreground text-background shadow-sm [:hover,[data-pressed]]:bg-foreground/85",
         link: "border-transparent underline-offset-4 [:hover,[data-pressed]]:underline",
         "media-close":
           "[--control-icon-color:currentColor] border-transparent bg-black/65 text-white shadow-sm ring-1 ring-white/20 [:hover,[data-pressed]]:bg-black/80 focus-visible:ring-white",

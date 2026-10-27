@@ -11131,7 +11131,7 @@ export default function ChatView(props: ChatViewProps) {
                       }}
                       className="pointer-events-auto"
                       size="xs"
-                      variant="glass"
+                      variant="inverted"
                     >
                       <ChevronDownIcon className="size-3.5" />
                       Scroll to end
@@ -11177,8 +11177,9 @@ export default function ChatView(props: ChatViewProps) {
                         </div>
                       </div>
                     ) : null}
+                    {/* Solid, so the reply scrolling behind it never runs through the hint. */}
                     {stopShortcutLabel || steerShortcutLabel ? (
-                      <p className="pointer-events-none absolute end-4 bottom-full flex items-center gap-1 pb-1.5 text-muted-foreground text-xs max-sm:hidden">
+                      <p className="pointer-events-none absolute end-4 bottom-full mb-1 flex items-center gap-1 rounded-full bg-background py-0.5 ps-2 pe-1 text-muted-foreground text-xs max-sm:hidden">
                         Press
                         {steerShortcutLabel ? (
                           <>
