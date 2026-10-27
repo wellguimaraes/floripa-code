@@ -590,16 +590,19 @@ const closeAction = (
 
 /**
  * After closing the surface at `index`, select its nearest neighbour of the
- * same type. With none left the panel keeps showing that type, empty.
+ * same type. With none left the panel moves on to the next type in the rail
+ * that has tabs, on that type's last tab, and collapses when no tab is left.
+ * Files never empties: it falls back to the checkout's tree.
  */
 const selectAfterRemoval = (
   current: ThreadRightPanelState,
   removed: RightPanelSurface,
   index: number,
   surfaces: RightPanelSurface[],
-): Pick<ThreadRightPanelState, "activeSurfaceId" | "activeType"> => {
+): Pick<ThreadRightPanelState, "isOpen" | "activeSurfaceId" | "activeType"> => {
   if (current.activeSurfaceId !== removed.id) {
     return {
+      isOpen: current.isOpen,
       activeSurfaceId: current.activeSurfaceId,
       ...(current.activeType ? { activeType: current.activeType } : {}),
     };
@@ -609,7 +612,31 @@ const selectAfterRemoval = (
     .map((surface, position) => ({ surface, position }))
     .filter(({ surface }) => rightPanelSurfaceType(surface.kind) === type);
   const fallback = sameType.find(({ position }) => position >= index) ?? sameType.at(-1) ?? null;
-  return { activeSurfaceId: fallback?.surface.id ?? null, activeType: type };
+  if (fallback !== null || type === "files") {
+    return {
+      isOpen: current.isOpen,
+      activeSurfaceId: fallback?.surface.id ?? null,
+      activeType: type,
+    };
+  }
+  const at = RIGHT_PANEL_SURFACE_TYPES.indexOf(type);
+  const nextType = [
+    ...RIGHT_PANEL_SURFACE_TYPES.slice(at + 1),
+    ...RIGHT_PANEL_SURFACE_TYPES.slice(0, at),
+  ].find((candidate) =>
+    surfaces.some((surface) => rightPanelSurfaceType(surface.kind) === candidate),
+  );
+  const remembered = nextType === undefined ? undefined : current.activeSurfaceIdByType?.[nextType];
+  const next =
+    surfaces.find((surface) => surface.id === remembered) ??
+    surfaces.find((surface) => rightPanelSurfaceType(surface.kind) === nextType);
+  return next === undefined
+    ? { isOpen: false, activeSurfaceId: null, activeType: type }
+    : {
+        isOpen: current.isOpen,
+        activeSurfaceId: next.id,
+        activeType: rightPanelSurfaceType(next.kind),
+      };
 };
 
 function normalizeRevealLine(line: number | undefined): number | null {
@@ -897,10 +924,6 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             const surfaces = current.surfaces.filter((surface) => surface.id !== surfaceId);
             return {
               ...current,
-              // The pull-request page has no type rail to show an empty type with.
-              ...(surfaces.length === 0 && isPullRequestsPanelKey(rightPanelKey(ref))
-                ? { isOpen: false }
-                : {}),
               surfaces,
               ...selectAfterRemoval(current, removed, index, surfaces),
             };

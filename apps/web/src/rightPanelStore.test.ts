@@ -992,15 +992,14 @@ describe("rightPanelStore", () => {
     });
   });
 
-  it("closing the final terminal pane keeps the panel open on an empty terminal type", () => {
+  it("closing the final terminal pane with no other tab collapses the panel", () => {
     useRightPanelStore.getState().openTerminal(refA, "term-1");
     useRightPanelStore.getState().closeTerminal(refA, "terminal:term-1", "term-1");
 
-    expect(panelState()).toMatchObject({ isOpen: true, activeSurfaceId: null, surfaces: [] });
-    expect(selectActiveRightPanelType(panelState())).toBe("terminal");
+    expect(panelState()).toMatchObject({ isOpen: false, activeSurfaceId: null, surfaces: [] });
   });
 
-  it("closing the active tab selects a neighbour of the same type, never another type", () => {
+  it("closing the active tab selects a neighbour of the same type, then the next type's", () => {
     const store = useRightPanelStore.getState();
     store.openTerminal(refA, "term-1");
     store.openBrowser(refA, "tab-a");
@@ -1016,18 +1015,33 @@ describe("rightPanelStore", () => {
     store.closeSurface(refA, "terminal:term-1");
     expect(panelState()).toMatchObject({
       isOpen: true,
-      activeSurfaceId: null,
+      activeSurfaceId: "browser:tab-a",
       surfaces: [{ id: "browser:tab-a" }],
     });
-    expect(selectActiveRightPanelType(panelState())).toBe("terminal");
+    expect(selectActiveRightPanelType(panelState())).toBe("preview");
   });
 
-  it("closing the final surface keeps the panel open on that type, empty", () => {
+  it("moves on to the next type with tabs in rail order, on that type's last tab", () => {
+    const store = useRightPanelStore.getState();
+    store.openTerminal(refA, "term-1");
+    store.openBrowser(refA, "tab-a");
+    store.openBrowser(refA, "tab-b");
+    store.activateSurface(refA, "browser:tab-a");
+    store.open(refA, "diff");
+
+    // Diff is last in the rail, so the next type wraps around to the terminal.
+    store.closeSurface(refA, "diff");
+    expect(panelState().activeSurfaceId).toBe("terminal:term-1");
+    // The browser comes back on the tab last selected there.
+    store.closeSurface(refA, "terminal:term-1");
+    expect(panelState()).toMatchObject({ isOpen: true, activeSurfaceId: "browser:tab-a" });
+  });
+
+  it("closing the final surface collapses the panel", () => {
     useRightPanelStore.getState().openTerminal(refA, "term-1");
     useRightPanelStore.getState().closeSurface(refA, "terminal:term-1");
 
-    expect(panelState()).toMatchObject({ isOpen: true, activeSurfaceId: null, surfaces: [] });
-    expect(selectActiveRightPanelType(panelState())).toBe("terminal");
+    expect(panelState()).toMatchObject({ isOpen: false, activeSurfaceId: null, surfaces: [] });
   });
 
   it("activateType restores the type's last tab or shows the type empty", () => {
