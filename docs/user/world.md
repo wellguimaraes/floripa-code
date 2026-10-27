@@ -105,7 +105,7 @@ agents once. Until that finishes, results show word matches only. **Remove proje
 project and deletes its threads after you confirm; hiding only takes the island off the map, and
 neither touches the files on disk. An island comes in three
 sizes: 8 rock piles and 9 beach spots, 12 and 14, or 16 and 18, plus 4 chairs on
-the pier. The island button at the top left counts the islands on the map. Click
+the pier. The island button at the top left counts the islands, or shows "4 of 6" when some are hidden. Click
 it to line the islands up vertically, in a grid, or horizontally, to show or hide
 a project's island, or to remove a project.
 What you hide, how big each island is, and how you arrange the islands are

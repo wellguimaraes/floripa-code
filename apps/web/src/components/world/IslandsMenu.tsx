@@ -7,6 +7,7 @@ import {
   Trash2Icon,
   type LucideIcon,
 } from "lucide-react";
+import { useState } from "react";
 
 import { cn } from "../../lib/utils";
 import { IslandIcon } from "../Icons";
@@ -48,20 +49,27 @@ export function IslandsMenu(props: {
   const arrangement = useWorldArrangementStore((state) => state.arrangement);
   const setArrangement = useWorldArrangementStore((state) => state.setArrangement);
   const shown = props.projects.filter((project) => !hidden[project.key]).length;
+  const total = props.projects.length;
+  const liveCount = shown === total ? `${shown}` : `${shown} of ${total}`;
+  // Held while the popover is open so toggling islands does not resize the trigger and
+  // shift the popover under the pointer. The rows inside show the live state.
+  const [count, setCount] = useState(liveCount);
+  if (!open && count !== liveCount) setCount(liveCount);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         render={<Button variant="glass" size="sm" />}
-        aria-label={`Islands, ${shown} of ${props.projects.length} shown`}
+        aria-label={`Islands, ${shown} of ${total} shown`}
         title="Islands"
       >
         <IslandIcon />
-        <span className="tabular-nums">{shown}</span>
+        <span className="tabular-nums">{count}</span>
       </PopoverTrigger>
-      <PopoverPopup align="start" sideOffset={8} padding="compact" width="sm">
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-2 px-2 py-1">
+      <PopoverPopup align="start" sideOffset={8} padding="none" width="sm">
+        <div className="flex flex-col">
+          {/* Rows below pad 6+6, so the title, dots, and toggle all sit 12px from the edges. */}
+          <div className="flex items-center gap-2 border-b p-3">
             <span className="flex-1 text-sm font-medium">Islands</span>
             <ToggleGroup
               aria-label="Arrange islands"
@@ -83,7 +91,7 @@ export function IslandsMenu(props: {
               ))}
             </ToggleGroup>
           </div>
-          <ul className="flex max-h-80 flex-col overflow-y-auto">
+          <ul className="flex max-h-80 flex-col overflow-y-auto p-1.5">
             {props.projects.map((project) => {
               const visible = !hidden[project.key];
               return (
