@@ -8,8 +8,10 @@
 # Env:
 #   FLORIPACODE_DESKTOP_UPDATE_REPOSITORY  owner/repo for the release and the update feed
 #                                          (default: wellguimaraes/floripa-code)
-#   FLORIPACODE_DESKTOP_SIGNED=1           Developer ID sign + notarize. Needs CSC_LINK/CSC_NAME
-#                                          and APPLE_API_KEY, APPLE_API_KEY_ID, APPLE_API_ISSUER.
+#   FLORIPACODE_DESKTOP_SIGNED=1           Developer ID sign + notarize. Needs CSC_NAME, an unlocked
+#                                          CSC_KEYCHAIN holding the certificate, and APPLE_API_KEY,
+#                                          APPLE_API_KEY_ID, APPLE_API_ISSUER. Avoid CSC_LINK: on
+#                                          electron-builder 26 its p12 password reaches the build log.
 #
 # macOS only applies an update whose signature satisfies the running app's
 # designated requirement. Ad-hoc (unsigned) builds install and run, but cannot
