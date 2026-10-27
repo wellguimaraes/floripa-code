@@ -4,13 +4,12 @@ import type { EnvironmentProject } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentId, PullRequestListInput, ScopedProjectRef } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
-import { useEffect, useEffectEvent, useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useMemo } from "react";
 
 import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { type EnvironmentQueryTarget, usePullRequestList } from "../../state/pullRequests";
 import { vcsEnvironment } from "../../state/vcs";
 import { countIslandPullRequests } from "./islandPullRequests";
-import { type IslandPrefs, islandStaleDays } from "./worldIslandPrefsStore";
 
 /** Open PRs read per repository; local-branch PRs are recent, so the newest page is enough. */
 const PULL_REQUEST_LIMIT = 100;
@@ -32,8 +31,6 @@ export interface IslandSignStats {
   /** Local branches other than the default one. */
   readonly branches: number;
   readonly pullRequests: number;
-  /** Branches last committed to longer ago than the island's stale threshold. */
-  readonly staleBranches: number;
   /** The island's checkouts, whose branches the counts come from. */
   readonly targets: ReadonlyArray<BranchTarget>;
 }
@@ -48,31 +45,27 @@ export const branchRefsAtom = (target: BranchTarget) =>
 /**
  * Local branch names per island, across its checkouts and their worktrees. The default branch
  * counts but is left out of the names PRs are matched by: a fork's PR from its own `main` would
- * otherwise count as ours. Also when each branch, the default one aside, was last committed to.
+ * otherwise count as ours.
  */
 const localBranchesAtom = Atom.family((key: string) =>
   Atom.make((get) => {
     const targets = JSON.parse(key) as ReadonlyArray<BranchTarget>;
     const branches = new Map<string, Set<string>>();
     const branchCounts = new Map<string, Set<string>>();
-    const lastCommits = new Map<string, Map<string, string | null>>();
     for (const target of targets) {
       const refs = Option.getOrNull(AsyncResult.value(get(branchRefsAtom(target))))?.refs ?? [];
       const names = branches.get(target.island) ?? new Set<string>();
       const counted = branchCounts.get(target.island) ?? new Set<string>();
-      const commits = lastCommits.get(target.island) ?? new Map<string, string | null>();
       for (const ref of refs) {
         if (ref.isRemote === true) continue;
         counted.add(ref.name);
         if (ref.isDefault) continue;
         names.add(ref.name);
-        commits.set(ref.name, ref.lastCommitAt ?? null);
       }
       branches.set(target.island, names);
       branchCounts.set(target.island, counted);
-      lastCommits.set(target.island, commits);
     }
-    return { branches, branchCounts, lastCommits };
+    return { branches, branchCounts };
   }),
 );
 
@@ -80,7 +73,6 @@ const localBranchesAtom = Atom.family((key: string) =>
 export function useIslandSignStats(
   islands: ReadonlyMap<string, ReadonlyArray<ScopedProjectRef>>,
   projects: ReadonlyArray<EnvironmentProject>,
-  prefs: Readonly<Record<string, IslandPrefs>>,
 ): ReadonlyMap<string, IslandSignStats> {
   const { listTargets, branchKey } = useMemo(() => {
     const projectOf = new Map(
@@ -120,12 +112,9 @@ export function useIslandSignStats(
   }, [islands, projects]);
 
   const pullRequests = usePullRequestList(listTargets);
-  const { branches, branchCounts, lastCommits } = useAtomValue(localBranchesAtom(branchKey));
-  // When the counts were last read, which staleness is judged against.
-  const [now, setNow] = useState(Date.now);
+  const { branches, branchCounts } = useAtomValue(localBranchesAtom(branchKey));
   const refreshAll = useEffectEvent(() => {
     if (document.hidden) return;
-    setNow(Date.now());
     for (const target of JSON.parse(branchKey) as ReadonlyArray<BranchTarget>) {
       appAtomRegistry.refresh(branchRefsAtom(target));
     }
@@ -143,22 +132,16 @@ export function useIslandSignStats(
     );
     const targets = JSON.parse(branchKey) as ReadonlyArray<BranchTarget>;
     return new Map(
-      [...islands.keys()].map((island) => {
-        const staleDays = islandStaleDays(prefs[island]);
-        const commits = [...(lastCommits.get(island)?.values() ?? [])];
-        return [
-          island,
-          {
-            branches: branchCounts.get(island)?.size ?? 0,
-            pullRequests: pullRequestCounts.get(island) ?? 0,
-            staleBranches:
-              staleDays === null ? 0 : commits.filter((at) => isStale(at, staleDays, now)).length,
-            targets: targets.filter((target) => target.island === island),
-          },
-        ];
-      }),
+      [...islands.keys()].map((island) => [
+        island,
+        {
+          branches: branchCounts.get(island)?.size ?? 0,
+          pullRequests: pullRequestCounts.get(island) ?? 0,
+          targets: targets.filter((target) => target.island === island),
+        },
+      ]),
     );
-  }, [islands, pullRequests.data, branches, branchCounts, lastCommits, branchKey, prefs, now]);
+  }, [islands, pullRequests.data, branches, branchCounts, branchKey]);
 }
 
 /** Whether a branch last committed to at `lastCommitAt` is older than `staleDays`. */

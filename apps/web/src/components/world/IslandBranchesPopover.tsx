@@ -30,9 +30,11 @@ import { Popover, PopoverPopup, PopoverTitle } from "../ui/popover";
 import { RefreshIcon } from "../ui/refresh-icon";
 import { Separator } from "../ui/separator";
 import { Spinner } from "../ui/spinner";
+import { Switch } from "../ui/switch";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { type BranchTarget, branchRefsAtom, isStale } from "./useIslandSignStats";
+import { useWorldIslandPrefsStore } from "./worldIslandPrefsStore";
 
 const HatPortrait = lazy(() =>
   import("./scene/CharacterPortrait").then((module) => ({ default: module.HatPortrait })),
@@ -141,9 +143,10 @@ const islandBranchesAtom = Atom.family((key: string) =>
 /**
  * Lists an island's local branches, with when each was last committed to and the worktree it's
  * checked out in, if any, and whether that has uncommitted changes, in a popover at the sign
- * where it was asked for. Each branch has a button that deletes it, worktree and all, after a
- * second click, and asks again if it isn't merged. A deleted branch leaves the list at once,
- * while its worktree is removed, and comes back if that fails.
+ * where it was asked for. Stale branches stay out unless the header's switch lets them in; the
+ * default branch never goes stale. Each branch has a button that deletes it, worktree and all,
+ * after a second click, and asks again if it isn't merged. A deleted branch leaves the list at
+ * once, while its worktree is removed, and comes back if that fails.
  */
 export function IslandBranchesPopover(props: {
   /** Where on screen the sign was clicked; the popover opens there. */
@@ -165,7 +168,16 @@ export function IslandBranchesPopover(props: {
   );
   const { rows: listed, loading } = useAtomValue(islandBranchesAtom(JSON.stringify(targets)));
   const rowStates = useAtomValue(rowStatesAtom);
-  const rows = listed.filter((row) => !isHidden(rowStates.get(row.key)));
+  // When the rows were last read, which staleness is judged against.
+  const [now, setNow] = useState(Date.now);
+  const hideStale = useWorldIslandPrefsStore((state) => state.hideStaleBranches);
+  const setHideStale = useWorldIslandPrefsStore((state) => state.setHideStaleBranches);
+  const isRowStale = (row: BranchRow) =>
+    !row.isDefault && staleDays !== null && isStale(row.lastCommitAt, staleDays, now);
+  const rows = listed.filter(
+    (row) => !isHidden(rowStates.get(row.key)) && !(hideStale && isRowStale(row)),
+  );
+  const hiddenStale = hideStale ? listed.filter(isRowStale).length : 0;
   // Forgets a deleted branch once its repository's refs no longer list it, so one made again
   // under its name shows.
   useEffect(() => {
@@ -180,8 +192,6 @@ export function IslandBranchesPopover(props: {
   // Focus lands on the popup itself, so no row action shows a focus ring on open; Tab still
   // reaches them.
   const popupRef = useRef<HTMLDivElement>(null);
-  // When the rows were last read, which staleness is judged against.
-  const [now, setNow] = useState(Date.now);
   const refreshStatus = useAtomCommand(vcsEnvironment.refreshStatus, { reportFailure: false });
   const [refreshing, setRefreshing] = useState(false);
 
@@ -238,6 +248,12 @@ export function IslandBranchesPopover(props: {
       >
         <div className="flex items-center justify-between gap-2 pb-4">
           <PopoverTitle>Local Branches</PopoverTitle>
+          {staleDays !== null ? (
+            <label className="ml-auto flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+              Hide stale
+              <Switch size="sm" checked={hideStale} onCheckedChange={setHideStale} />
+            </label>
+          ) : null}
           <Tooltip>
             <TooltipTrigger
               render={
@@ -262,7 +278,11 @@ export function IslandBranchesPopover(props: {
         {rows.length === 0 ? (
           <p className="flex items-center gap-2 pt-3 text-sm text-muted-foreground">
             {loading ? <Spinner size="sm" tone="muted" /> : null}
-            {loading ? "Loading branches…" : "No branches."}
+            {loading
+              ? "Loading branches…"
+              : hiddenStale > 0
+                ? `No recent branches. ${hiddenStale} stale ${hiddenStale === 1 ? "branch is" : "branches are"} hidden.`
+                : "No branches."}
           </p>
         ) : (
           <ul className="-mx-2 -mb-2 flex flex-col pt-2">

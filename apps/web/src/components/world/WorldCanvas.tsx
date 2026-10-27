@@ -243,7 +243,7 @@ export default function WorldCanvas(props: {
     [visibleOrder, projectMembers],
   );
   const islandPrefs = useWorldIslandPrefsStore((state) => state.prefs);
-  const signStats = useIslandSignStats(visibleMembers, projects, islandPrefs);
+  const signStats = useIslandSignStats(visibleMembers, projects);
   const missingProjects = useMissingProjects(projects);
   const arrangement = useWorldArrangementStore((state) => state.arrangement);
   const [memory] = useState(createArchipelagoMemory);
@@ -1294,7 +1294,6 @@ export default function WorldCanvas(props: {
                       color={plate}
                       branches={signStats.get(island.key)?.branches ?? 0}
                       pullRequests={signStats.get(island.key)?.pullRequests ?? 0}
-                      staleBranches={signStats.get(island.key)?.staleBranches ?? 0}
                       onListClick={(point) => {
                         // The sign is on the canvas, so it is not a press outside the bubbles.
                         setBubbleKey(null);

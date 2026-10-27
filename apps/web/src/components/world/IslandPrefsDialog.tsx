@@ -199,8 +199,8 @@ export function IslandPrefsDialog(props: {
             </Select>
           </div>
           <p className="text-xs text-muted-foreground">
-            Stale branches get a red count on the sign. The idle alarm ripples the island once none
-            of its agents has worked for that long.
+            The branch list hides stale branches unless you switch that off. The idle alarm ripples
+            the island once none of its agents has worked for that long.
           </p>
         </DialogPanel>
       </DialogPopup>

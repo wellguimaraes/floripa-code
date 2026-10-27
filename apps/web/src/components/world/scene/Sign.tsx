@@ -63,14 +63,10 @@ const BRANCH_ICON =
 /** Lucide's settings glyph, on its 24px grid. */
 const SETTINGS_ICON =
   "M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915M15 12a3 3 0 1 1-6 0a3 3 0 1 1 6 0";
-/** The dot counting a badge's stale branches. */
-const STALE_DOT = "#dc2626";
 
 interface Badge {
   readonly icon: string;
   readonly count: number;
-  /** How many of them went stale; a red dot on the badge counts them. */
-  readonly stale: number;
 }
 
 /**
@@ -78,8 +74,7 @@ interface Badge {
  * standing at the definition's sign slot. The project's icon leads the name;
  * after it, counts of the
  * island's local branches (the default one aside) and the open PRs from
- * those branches, so stale branches are easy to spot,
- * then a button for the island's preferences.
+ * those branches, then a button for the island's preferences.
  */
 export function Sign(props: {
   readonly slot: WorldSlot;
@@ -89,8 +84,6 @@ export function Sign(props: {
   readonly color: string;
   readonly branches: number;
   readonly pullRequests: number;
-  /** How many branches went stale (see `IslandPrefs.staleDays`). */
-  readonly staleBranches: number;
   /** Clicking the branch count, at this point on screen, e.g. to list the branches. */
   readonly onListClick: (point: { readonly x: number; readonly y: number }) => void;
   /** Clicking the project's icon, at this point on screen, e.g. to change it. */
@@ -109,7 +102,6 @@ export function Sign(props: {
     color,
     branches,
     pullRequests,
-    staleBranches,
     onListClick,
     onIconClick,
     onIconMenu,
@@ -123,10 +115,10 @@ export function Sign(props: {
   const board = useMemo(
     () =>
       signBoard(text, color, icon, [
-        { icon: BRANCH_ICON, count: branches, stale: staleBranches },
-        { icon: PULL_REQUEST_ICON, count: pullRequests, stale: 0 },
+        { icon: BRANCH_ICON, count: branches },
+        { icon: PULL_REQUEST_ICON, count: pullRequests },
       ]),
-    [text, color, icon, branches, pullRequests, staleBranches],
+    [text, color, icon, branches, pullRequests],
   );
   useEffect(() => () => board.texture.dispose(), [board]);
   // The icon, the branch count and the preferences button take clicks; the rest
@@ -398,23 +390,6 @@ function signBoard(
       left + badgePadding + iconSize + 20,
       middle + badgeFontSize * 0.06,
     );
-    if (badge.stale > 0) {
-      // On the pill's top right corner, ringed in white so it shows on a red board too.
-      const radius = 38;
-      const x = left + badgeWidth - radius * 0.6;
-      const y = tileTop + radius * 0.3;
-      context.fillStyle = STALE_DOT;
-      context.strokeStyle = "#ffffff";
-      context.lineWidth = 8;
-      context.beginPath();
-      context.arc(x, y, radius, 0, Math.PI * 2);
-      context.fill();
-      context.stroke();
-      context.fillStyle = "#ffffff";
-      context.font = font(52);
-      context.textAlign = "center";
-      context.fillText(badge.stale > 99 ? "99+" : String(badge.stale), x, y + 3);
-    }
     left += badgeWidth + betweenBadges;
   });
   context.globalAlpha = 1;

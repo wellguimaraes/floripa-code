@@ -23,14 +23,22 @@ export type IslandPrefsPatch = { readonly [K in keyof IslandPrefs]?: IslandPrefs
 interface WorldIslandPrefsState {
   /** By the island's project group key. */
   readonly prefs: Readonly<Record<string, IslandPrefs>>;
+  /** Whether an island's branch list leaves out its stale branches. On for every island. */
+  readonly hideStaleBranches: boolean;
   readonly update: (key: string, patch: IslandPrefsPatch) => void;
+  readonly setHideStaleBranches: (hide: boolean) => void;
 }
 
-/** Each island's sign colour, stale threshold and idle alarm. Per viewer, so it lives in this browser only. */
+/**
+ * Each island's sign colour, stale threshold and idle alarm, and whether branch lists hide stale
+ * branches. Per viewer, so it lives in this browser only.
+ */
 export const useWorldIslandPrefsStore = create<WorldIslandPrefsState>()(
   persist(
     (set) => ({
       prefs: {},
+      hideStaleBranches: true,
+      setHideStaleBranches: (hide) => set({ hideStaleBranches: hide }),
       update: (key, patch) =>
         set((state) => {
           const merged: Record<string, unknown> = { ...state.prefs[key], ...patch };
@@ -48,7 +56,10 @@ export const useWorldIslandPrefsStore = create<WorldIslandPrefsState>()(
       storage: createJSONStorage(() =>
         resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
       ),
-      partialize: (state) => ({ prefs: state.prefs }),
+      partialize: (state) => ({
+        prefs: state.prefs,
+        hideStaleBranches: state.hideStaleBranches,
+      }),
     },
   ),
 );
