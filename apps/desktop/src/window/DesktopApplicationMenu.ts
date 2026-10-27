@@ -4,6 +4,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import type { DesktopUpdateState } from "@t3tools/contracts";
 import type * as Electron from "electron";
 
 import { makeComponentLogger } from "../app/DesktopObservability.ts";
@@ -85,8 +86,65 @@ const checkForUpdatesFromMenu = Effect.gen(function* () {
       detail: updateState.message ?? "An unknown error occurred. Please try again later.",
       buttons: ["OK"],
     });
+  } else if (updateState.status === "available") {
+    yield* offerUpdateDownload(updateState);
+  } else if (updateState.status === "downloaded") {
+    yield* offerUpdateInstall(updateState);
   }
 }).pipe(Effect.withSpan("desktop.menu.checkForUpdates"));
+
+/**
+ * Asks to download the update the menu check found. Views without the sidebar's update pill,
+ * such as the world, have no other way to start it.
+ */
+const offerUpdateDownload = Effect.fn("desktop.menu.offerUpdateDownload")(function* (
+  updateState: DesktopUpdateState,
+) {
+  const updates = yield* DesktopUpdates.DesktopUpdates;
+  const electronDialog = yield* ElectronDialog.ElectronDialog;
+  const { response } = yield* electronDialog.showMessageBox({
+    type: "info",
+    title: "Update available",
+    message: `Floripa Code ${updateState.availableVersion ?? "update"} is available.`,
+    detail: `You have ${updateState.currentVersion}. Download it now?`,
+    buttons: ["Download", "Later"],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  if (response !== 0) return;
+
+  const result = yield* updates.download;
+  if (result.completed) {
+    yield* offerUpdateInstall(result.state);
+  } else if (result.state.status === "error") {
+    yield* electronDialog.showMessageBox({
+      type: "warning",
+      title: "Update download failed",
+      message: "Could not download the update.",
+      detail: result.state.message ?? "An unknown error occurred. Please try again later.",
+      buttons: ["OK"],
+    });
+  }
+});
+
+const offerUpdateInstall = Effect.fn("desktop.menu.offerUpdateInstall")(function* (
+  updateState: DesktopUpdateState,
+) {
+  const updates = yield* DesktopUpdates.DesktopUpdates;
+  const electronDialog = yield* ElectronDialog.ElectronDialog;
+  const version = updateState.downloadedVersion ?? updateState.availableVersion;
+  const { response } = yield* electronDialog.showMessageBox({
+    type: "info",
+    title: "Update ready",
+    message: `Floripa Code ${version ?? "update"} is ready to install.`,
+    detail: "Restart now to install it? Any running tasks will be interrupted.",
+    buttons: ["Restart", "Later"],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  if (response !== 0) return;
+  yield* updates.install;
+});
 
 const handleCheckForUpdatesMenuClick = Effect.gen(function* () {
   const updates = yield* DesktopUpdates.DesktopUpdates;

@@ -13,6 +13,7 @@ import * as DesktopApplicationMenu from "./DesktopApplicationMenu.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
+import { createInitialDesktopUpdateState } from "../updates/updateMachine.ts";
 import * as DesktopWindow from "./DesktopWindow.ts";
 
 const environmentInput = {
@@ -49,14 +50,14 @@ const layerElectronApp = Layer.succeed(ElectronApp.ElectronApp, {
   on: () => Effect.void,
 } satisfies ElectronApp.ElectronApp["Service"]);
 
-const layerElectronDialog = Layer.succeed(ElectronDialog.ElectronDialog, {
+const electronDialogService = {
   pickFolder: () => Effect.succeedNone,
   pickFiles: () => Effect.succeed([]),
   showMessageBox: () => Effect.succeed({ response: 0, checkboxChecked: false }),
   showErrorBox: () => Effect.void,
-} satisfies ElectronDialog.ElectronDialog["Service"]);
+} satisfies ElectronDialog.ElectronDialog["Service"];
 
-const layerDesktopUpdates = Layer.succeed(DesktopUpdates.DesktopUpdates, {
+const desktopUpdatesService = {
   getState: Effect.die("unexpected getState"),
   isActionActive: Effect.succeed(false),
   isInstallActive: Effect.succeed(false),
@@ -69,12 +70,12 @@ const layerDesktopUpdates = Layer.succeed(DesktopUpdates.DesktopUpdates, {
   download: Effect.die("unexpected download"),
   install: Effect.die("unexpected install"),
   installPrepared: () => Effect.die("unexpected installPrepared"),
-} satisfies DesktopUpdates.DesktopUpdates["Service"]);
+} satisfies DesktopUpdates.DesktopUpdates["Service"];
 
 const layerDesktopWindow = (selectedAction: Deferred.Deferred<string>) =>
   Layer.succeed(DesktopWindow.DesktopWindow, {
     createMain: Effect.die("unexpected createMain"),
-    ensureMain: Effect.die("unexpected ensureMain"),
+    ensureMain: Effect.succeed({} as Electron.BrowserWindow),
     revealOrCreateMain: Effect.die("unexpected revealOrCreateMain"),
     activate: Effect.void,
     createMainIfBackendReady: Effect.void,
@@ -106,6 +107,8 @@ const configureMenu = (
   selectedAction: Deferred.Deferred<string>,
   applicationMenuTemplate: Deferred.Deferred<readonly Electron.MenuItemConstructorOptions[]>,
   environment: Partial<DesktopEnvironment.MakeDesktopEnvironmentInput> = {},
+  updates: Partial<DesktopUpdates.DesktopUpdates["Service"]> = {},
+  dialog: Partial<ElectronDialog.ElectronDialog["Service"]> = {},
 ) =>
   Effect.gen(function* () {
     const menu = yield* DesktopApplicationMenu.DesktopApplicationMenu;
@@ -115,8 +118,12 @@ const configureMenu = (
       DesktopApplicationMenu.layer.pipe(
         Layer.provideMerge(layerElectronMenu(applicationMenuTemplate)),
         Layer.provideMerge(layerDesktopWindow(selectedAction)),
-        Layer.provideMerge(layerDesktopUpdates),
-        Layer.provideMerge(layerElectronDialog),
+        Layer.provideMerge(
+          Layer.succeed(DesktopUpdates.DesktopUpdates, { ...desktopUpdatesService, ...updates }),
+        ),
+        Layer.provideMerge(
+          Layer.succeed(ElectronDialog.ElectronDialog, { ...electronDialogService, ...dialog }),
+        ),
         Layer.provideMerge(layerElectronApp),
         Layer.provideMerge(
           DesktopEnvironment.layer({ ...environmentInput, ...environment }).pipe(
@@ -158,6 +165,65 @@ describe("DesktopApplicationMenu", () => {
         applicationMenu.submenu.find((item) => item.role === "quit")?.label,
         "Quit Floripa Code (Nightly)",
       );
+    }),
+  );
+
+  it.effect("offers to download and install an update the menu check finds", () =>
+    Effect.gen(function* () {
+      const selectedAction = yield* Deferred.make<string>();
+      const applicationMenuTemplate =
+        yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
+      const installed = yield* Deferred.make<void>();
+      const dialogTitles: string[] = [];
+      const baseState = {
+        ...createInitialDesktopUpdateState(
+          "1.2.3",
+          { hostArch: "arm64", appArch: "arm64", runningUnderArm64Translation: false },
+          "latest",
+        ),
+        enabled: true,
+        availableVersion: "1.2.4",
+      };
+
+      yield* configureMenu(
+        selectedAction,
+        applicationMenuTemplate,
+        { platform: "darwin" },
+        {
+          check: () =>
+            Effect.succeed({ checked: true, state: { ...baseState, status: "available" } }),
+          download: Effect.succeed({
+            accepted: true,
+            completed: true,
+            state: { ...baseState, status: "downloaded", downloadedVersion: "1.2.4" },
+          }),
+          install: Deferred.succeed(installed, undefined).pipe(
+            Effect.as({ accepted: true, completed: true, state: baseState }),
+          ),
+        },
+        {
+          showMessageBox: (options) => {
+            dialogTitles.push(options.title ?? "");
+            return Effect.succeed({ response: 0, checkboxChecked: false });
+          },
+        },
+      );
+
+      const template = yield* Deferred.await(applicationMenuTemplate);
+      const applicationMenu = template[0];
+      if (!Array.isArray(applicationMenu?.submenu)) {
+        throw new Error("Expected application menu submenu to be an array.");
+      }
+      const checkItem = applicationMenu.submenu.find(
+        (item) => item.label === "Check for Updates...",
+      );
+      if (typeof checkItem?.click !== "function") {
+        throw new Error("Expected Check for Updates menu item to have a click handler.");
+      }
+
+      checkItem.click({} as Electron.MenuItem, {} as Electron.BrowserWindow, {} as KeyboardEvent);
+      yield* Deferred.await(installed);
+      assert.deepStrictEqual(dialogTitles, ["Update available", "Update ready"]);
     }),
   );
 

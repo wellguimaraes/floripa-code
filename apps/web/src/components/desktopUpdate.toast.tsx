@@ -1,11 +1,15 @@
 import type { DesktopBridge, DesktopUpdateState } from "@t3tools/contracts";
 import { ArrowRightIcon } from "lucide-react";
 
+import { ensureLocalApi } from "../localApi";
 import {
+  getDesktopUpdateActionError,
   getDesktopUpdateDownloadedVersion,
+  getDesktopUpdateInstallConfirmationMessage,
   getDesktopUpdateReleaseUrl,
+  shouldToastDesktopUpdateActionResult,
 } from "./desktopUpdate.logic";
-import { toastManager } from "./ui/toast";
+import { stackedThreadToast, toastManager } from "./ui/toast";
 
 type DesktopUpdateShell = Pick<DesktopBridge, "openExternal">;
 
@@ -61,4 +65,55 @@ export function showDesktopUpdateDownloadedToast(
       </>
     ),
   });
+}
+
+function toastUpdateError(title: string, description: string): void {
+  toastManager.add(stackedThreadToast({ type: "error", title, description }));
+}
+
+/** Downloads the available update, toasting when it lands or fails. */
+export async function downloadDesktopUpdate(bridge: DesktopBridge): Promise<void> {
+  try {
+    const result = await bridge.downloadUpdate();
+    if (result.completed) showDesktopUpdateDownloadedToast(bridge, result.state);
+    if (!shouldToastDesktopUpdateActionResult(result)) return;
+    const actionError = getDesktopUpdateActionError(result);
+    if (actionError) toastUpdateError("Could not download update", actionError);
+  } catch (error) {
+    toastUpdateError(
+      "Could not start update download",
+      error instanceof Error ? error.message : "An unexpected error occurred.",
+    );
+  }
+}
+
+/** Asks before restarting, since installing interrupts running tasks, then installs. */
+export async function confirmAndInstallDesktopUpdate(
+  bridge: DesktopBridge,
+  state: DesktopUpdateState,
+): Promise<void> {
+  let confirmed = false;
+  try {
+    confirmed = await ensureLocalApi().dialogs.confirm(
+      getDesktopUpdateInstallConfirmationMessage(state),
+    );
+  } catch (error) {
+    toastUpdateError(
+      "Could not confirm update",
+      error instanceof Error ? error.message : "Update confirmation failed.",
+    );
+    return;
+  }
+  if (!confirmed) return;
+  try {
+    const result = await bridge.installUpdate();
+    if (!shouldToastDesktopUpdateActionResult(result)) return;
+    const actionError = getDesktopUpdateActionError(result);
+    if (actionError) toastUpdateError("Could not install update", actionError);
+  } catch (error) {
+    toastUpdateError(
+      "Could not install update",
+      error instanceof Error ? error.message : "An unexpected error occurred.",
+    );
+  }
 }

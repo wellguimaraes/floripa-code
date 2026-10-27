@@ -36,6 +36,7 @@ import { ManagerToggle } from "./ManagerToggle";
 import { SkyControls } from "./SkyControls";
 import { WORLD_MANAGERS_AVAILABLE } from "./worldManagerStore";
 import { WorldNavigation, WorldSettingsButton } from "./WorldNavigation";
+import { WorldUpdateButton } from "./WorldUpdateButton";
 import { WorldUsageBar } from "./WorldUsageBar";
 import { islandWorlds } from "./definitions/island";
 import { palette } from "./scene/palette";
@@ -309,7 +310,8 @@ export function WorldLayout({
         </div>
         <WorldUsageBar />
         {/* Pinned right even when there is no usage to show. */}
-        <div className="pointer-events-auto ml-auto shrink-0">
+        <div className="pointer-events-auto ml-auto flex shrink-0 items-center gap-2">
+          <WorldUpdateButton />
           <WorldSettingsButton />
         </div>
       </div>

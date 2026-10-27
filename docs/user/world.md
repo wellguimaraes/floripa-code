@@ -57,7 +57,9 @@ beach, an agent and its subagents sit next to each other.
 
 The world is where your threads live: it fills the window, with no sidebar. Use
 the search button at the top left, or the command palette, to find a thread,
-project or page, and the gear at the top right for Settings. Settings opens over the
+project or page, and the gear at the top right for Settings. In the desktop app, an
+**Update** button shows beside the gear when a new version is out; click it to
+download, then again to restart. Settings opens over the
 map, and closing it with `Esc` puts you back where you were. On a phone or a narrow
 window, threads show in the regular list instead, where the map would not fit.
 
