@@ -16,7 +16,11 @@ import {
 
 import { isElectron } from "../../env";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
-import { RESIZABLE_WIDTH_PROPERTY, useResizableWidth } from "../../hooks/useResizableWidth";
+import {
+  RESIZABLE_WIDTH_PROPERTY,
+  type ResizeFollower,
+  useResizableWidth,
+} from "../../hooks/useResizableWidth";
 import { cn } from "../../lib/utils";
 import { usePanelAnimationSettings, usePanelPresence } from "../../panelAnimations";
 import { selectThreadRightPanelState, useRightPanelStore } from "../../rightPanelStore";
@@ -37,7 +41,7 @@ import { WorldUsageBar } from "./WorldUsageBar";
 import { islandWorlds } from "./definitions/island";
 import { palette } from "./scene/palette";
 import { useWorldModeStore } from "./worldModeStore";
-import { WorldSurfacesWidthContext } from "./worldSurfacesWidth";
+import { scaleSurfacesWidth, WorldSurfacesWidthContext } from "./worldSurfacesWidth";
 
 // three.js and the scene load only when someone opens the world.
 const WorldCanvas = lazy(() => import("./WorldCanvas"));
@@ -61,7 +65,13 @@ function readFrameMaxWidth(): number {
  * A width in the floating frame, dragged and remembered in this browser. `reserved` is
  * room the frame keeps for whatever shows beside it.
  */
-function useFrameWidth(storageKey: string, defaultWidth: number, minWidth: number, reserved = 0) {
+function useFrameWidth(
+  storageKey: string,
+  defaultWidth: number,
+  minWidth: number,
+  reserved = 0,
+  follow?: (width: number) => ResizeFollower | null,
+) {
   const [frameMaxWidth, setFrameMaxWidth] = useState(readFrameMaxWidth);
   useEffect(() => {
     const onResize = () => setFrameMaxWidth(readFrameMaxWidth());
@@ -74,6 +84,7 @@ function useFrameWidth(storageKey: string, defaultWidth: number, minWidth: numbe
     minWidth,
     maxWidth: Math.max(minWidth, frameMaxWidth - reserved),
     edge: "left",
+    follow,
   });
 }
 
@@ -143,19 +154,63 @@ export function WorldLayout({
   );
   // The frame remembers the surfaces' width and the chat and surfaces together, so collapsing
   // either side leaves the other as wide as it was. The edge drag writes straight to the frame:
-  // with the chat shown it moves the chat's side, with the chat collapsed the surfaces'. The
-  // divider between them trades width within the frame.
+  // with both sides shown it scales them together until the chat reaches its minimum, then
+  // shrinks the surfaces; with only one shown it moves that one. The divider between them
+  // trades width within the frame, down to the chat's minimum.
   const chatShown = !(surfaces.isOpen && surfaces.maximized);
+  const surfacesHostRef = useRef<HTMLDivElement>(null);
+  const bothSidesShown = chatShown && surfaces.isOpen;
   const surfacesWidth = useFrameWidth(
     "floripacode:world-surfaces-width:v2",
     SURFACES_DEFAULT_WIDTH,
     SURFACES_MIN_WIDTH,
     chatShown ? CHAT_MIN_WIDTH : 0,
+    // The divider stops where the chat reaches its minimum. With the chat collapsed the surfaces
+    // keep their own width, so the frame's edge drags them along.
+    bothSidesShown
+      ? () => ({ maxWidth: chatAndSurfacesWidth.width - CHAT_MIN_WIDTH })
+      : chatShown
+        ? undefined
+        : followWithSurfaces(false),
   );
+  // Drags the surfaces along with the frame's edge, scaled with the chat or matching the frame.
+  function followWithSurfaces(scale: boolean) {
+    return (startWidth: number): ResizeFollower | null => {
+      const host = surfacesHostRef.current;
+      if (host === null) return null;
+      const start = { frame: startWidth, surfaces: surfacesWidth.width };
+      let width = start.surfaces;
+      // The surfaces animate their width when they open; a live drag must not.
+      host.style.setProperty("transition-property", "none");
+      return {
+        ...(scale ? { minWidth: CHAT_MIN_WIDTH + SURFACES_MIN_WIDTH } : {}),
+        resize(frameWidth) {
+          width = scale
+            ? scaleSurfacesWidth(frameWidth, start, {
+                chat: CHAT_MIN_WIDTH,
+                surfaces: SURFACES_MIN_WIDTH,
+              })
+            : frameWidth;
+          host.style.setProperty(RESIZABLE_WIDTH_PROPERTY, `${width}px`);
+        },
+        finish() {
+          host.style.removeProperty("transition-property");
+          // Matching the frame, the surfaces' own drag commits this width.
+          if (scale) surfacesWidth.setWidth(width);
+        },
+        cancel() {
+          host.style.removeProperty("transition-property");
+          host.style.setProperty(RESIZABLE_WIDTH_PROPERTY, `${start.surfaces}px`);
+        },
+      };
+    };
+  }
   const chatAndSurfacesWidth = useFrameWidth(
     "floripacode:world-chat-and-surfaces-width:v1",
     CHAT_DEFAULT_WIDTH + SURFACES_DEFAULT_WIDTH,
     CHAT_MIN_WIDTH + surfacesWidth.width,
+    0,
+    bothSidesShown ? followWithSurfaces(true) : undefined,
   );
   const frameWidth = chatShown ? chatAndSurfacesWidth : surfacesWidth;
   // Closed surfaces leave only their rail beside the chat.
@@ -321,7 +376,7 @@ export function WorldLayout({
                 } as CSSProperties
               }
             >
-              <WorldSurfacesWidthContext value={surfacesWidth}>
+              <WorldSurfacesWidthContext value={{ ...surfacesWidth, hostRef: surfacesHostRef }}>
                 <ThreadRouteView target={heldTarget} container="bare" />
               </WorldSurfacesWidthContext>
             </div>

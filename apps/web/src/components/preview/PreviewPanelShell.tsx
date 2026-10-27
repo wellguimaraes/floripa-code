@@ -78,7 +78,7 @@ function PreviewPanelShellFrame(
   const open = props.open ?? true;
   const maximized = props.maximized ?? false;
   const localHostRef = useRef<HTMLDivElement | null>(null);
-  const hostRef = props.hostRef ?? localHostRef;
+  const hostRef = props.hostRef ?? props.inlineSize.hostRef ?? localHostRef;
   const { width, handlers } = props.inlineSize;
   // Derive suppression before the layout commits so the browser never creates
   // a width transition for resize changes.

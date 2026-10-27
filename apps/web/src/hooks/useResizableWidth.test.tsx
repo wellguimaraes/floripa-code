@@ -2,7 +2,11 @@ import { act, useLayoutEffect, type PointerEvent } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { RESIZABLE_WIDTH_PROPERTY, useResizableWidth } from "./useResizableWidth";
+import {
+  RESIZABLE_WIDTH_PROPERTY,
+  type ResizeFollower,
+  useResizableWidth,
+} from "./useResizableWidth";
 
 let renderer: ReactTestRenderer;
 let result: ReturnType<typeof useResizableWidth>;
@@ -52,10 +56,12 @@ function Panel({
   edge = "left",
   maxWidth = 800,
   storageKey = "test-panel-width",
+  follow,
 }: {
   edge?: "left" | "right";
   maxWidth?: number;
   storageKey?: string;
+  follow?: (width: number) => ResizeFollower | null;
 }) {
   const resize = useResizableWidth({
     storageKey,
@@ -63,6 +69,7 @@ function Panel({
     minWidth: 200,
     maxWidth,
     edge,
+    follow,
   });
   useLayoutEffect(() => {
     result = resize;
@@ -219,6 +226,63 @@ describe("panel resize cleanup", () => {
     expect(setItem).toHaveBeenCalledExactlyOnceWith("test-panel-width", "450");
     expect(style.cursor).toBe("");
     expect(captured).toBe(false);
+  });
+});
+
+describe("panel resize followers", () => {
+  function follower() {
+    const resized: number[] = [];
+    const ended: string[] = [];
+    let startWidth: number | undefined;
+    const follow = (width: number): ResizeFollower => {
+      startWidth = width;
+      return {
+        minWidth: 100,
+        resize: (next) => resized.push(next),
+        finish: () => ended.push("finish"),
+        cancel: () => ended.push("cancel"),
+      };
+    };
+    return { follow, resized, ended, startWidth: () => startWidth };
+  }
+
+  it("lets the follower lower the floor and finishes it with the drag", async () => {
+    const tracked = follower();
+    await act(() => renderer.update(<Panel follow={tracked.follow} />));
+    await act(() => {
+      result.handlers.onPointerDown(pointer());
+      result.handlers.onPointerMove(pointer(300));
+    });
+    await act(() => frame?.(0));
+    expect(tracked.startWidth()).toBe(400);
+    expect(hostStyle.get(RESIZABLE_WIDTH_PROPERTY)).toBe("200px");
+    await act(() => result.handlers.onPointerUp(pointer(500)));
+    expect(tracked.resized).toEqual([200, 100]);
+    expect(tracked.ended).toEqual(["finish"]);
+    expect(setItem).toHaveBeenCalledExactlyOnceWith("test-panel-width", "100");
+  });
+
+  it("lets the follower lower the ceiling", async () => {
+    await act(() => renderer.update(<Panel follow={() => ({ maxWidth: 500 })} />));
+    await act(() => {
+      result.handlers.onPointerDown(pointer());
+      result.handlers.onPointerUp(pointer(-200));
+    });
+    expect(result.width).toBe(500);
+    expect(setItem).toHaveBeenCalledExactlyOnceWith("test-panel-width", "500");
+  });
+
+  it("cancels the follower when the drag is abandoned", async () => {
+    const tracked = follower();
+    await act(() => renderer.update(<Panel follow={tracked.follow} />));
+    await act(() => {
+      result.handlers.onPointerDown(pointer());
+      result.handlers.onPointerMove(pointer(50));
+    });
+    await act(() => frame?.(0));
+    await act(() => renderer.unmount());
+    expect(tracked.ended).toEqual(["cancel"]);
+    expect(setItem).not.toHaveBeenCalled();
   });
 });
 

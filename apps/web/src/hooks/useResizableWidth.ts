@@ -30,6 +30,18 @@ export interface UseResizableWidthOptions {
    *   - "right" → panel grows rightward (left-anchored panels)
    */
   readonly edge: "left" | "right";
+  /** Starts something that resizes along with a drag from `width`, such as a panel inside the host. */
+  readonly follow?: ((width: number) => ResizeFollower | null) | undefined;
+}
+
+/** Follows a drag live, before the width commits. */
+export interface ResizeFollower {
+  /** The host's bounds during this drag, in place of `minWidth` and `maxWidth`. */
+  readonly minWidth?: number;
+  readonly maxWidth?: number;
+  readonly resize?: (width: number) => void;
+  readonly finish?: () => void;
+  readonly cancel?: () => void;
 }
 
 export interface ResizableWidthHandlers {
@@ -55,13 +67,15 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
   /** The width the user chose, before `maxWidth` clamps it. */
   readonly requestedWidth: number;
   readonly handlers: ResizableWidthHandlers;
+  /** Commits and remembers a width set from outside a drag. */
+  readonly setWidth: (width: number) => void;
 } {
-  const { storageKey, defaultWidth, minWidth, maxWidth, edge } = options;
+  const { storageKey, defaultWidth, minWidth, maxWidth, edge, follow } = options;
 
   const clamp = useCallback(
-    (value: number): number => {
+    (value: number, floor = minWidth, ceiling = maxWidth): number => {
       if (!Number.isFinite(value)) return defaultWidth;
-      return Math.max(minWidth, Math.min(maxWidth, value));
+      return Math.max(floor, Math.min(ceiling, value));
     },
     [defaultWidth, maxWidth, minWidth],
   );
@@ -84,38 +98,53 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
   }
 
   const clampedWidth = clamp(widthState.width);
-  const latestOptions = useRef({ clamp, storageKey, width: clampedWidth });
+  const latestOptions = useRef({ clamp, width: clampedWidth });
   useLayoutEffect(() => {
-    latestOptions.current = { clamp, storageKey, width: clampedWidth };
-  }, [clamp, clampedWidth, storageKey]);
+    latestOptions.current = { clamp, width: clampedWidth };
+  }, [clamp, clampedWidth]);
+
+  const setWidth = useCallback(
+    (width: number) => {
+      setWidthState({ storageKey, width });
+      try {
+        setLocalStorageItem(storageKey, width, WidthSchema);
+      } catch (error) {
+        console.error("Could not persist panel width.", error);
+      }
+    },
+    [storageKey],
+  );
 
   const { refresh, ...handlers } = useResizeDrag<HTMLElement>((event) => {
     const host = event.currentTarget.parentElement;
     // A collapsible host animates width; live drag writes must not. The host
     // renders its own transition-duration, so override a property it leaves alone.
     host?.style.setProperty("transition-property", "none");
+    const follower = follow?.(clampedWidth) ?? null;
     return {
       width: clampedWidth,
       edge,
       resize(value) {
-        const nextWidth = latestOptions.current.clamp(value);
+        const nextWidth = latestOptions.current.clamp(
+          value,
+          follower?.minWidth,
+          follower?.maxWidth,
+        );
         host?.style.setProperty(RESIZABLE_WIDTH_PROPERTY, `${nextWidth}px`);
+        follower?.resize?.(nextWidth);
         return nextWidth;
       },
+      // Commit once at drag-end to avoid 60Hz localStorage writes.
       finish(finalWidth) {
-        setWidthState({ storageKey, width: finalWidth });
-        // Commit once at drag-end to avoid 60Hz localStorage writes.
-        try {
-          setLocalStorageItem(latestOptions.current.storageKey, finalWidth, WidthSchema);
-        } catch (error) {
-          console.error("Could not persist panel width.", error);
-        }
+        setWidth(finalWidth);
+        follower?.finish?.();
       },
       cleanup(committed) {
         host?.style.removeProperty("transition-property");
         // React skips the write when the rendered width did not change.
         if (!committed) {
           host?.style.setProperty(RESIZABLE_WIDTH_PROPERTY, `${latestOptions.current.width}px`);
+          follower?.cancel?.();
         }
       },
     };
@@ -125,5 +154,5 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
   // rewrites the committed width, so re-apply the live pointer position.
   useLayoutEffect(refresh, [clamp, clampedWidth, refresh]);
 
-  return { width: clampedWidth, requestedWidth: widthState.width, handlers };
+  return { width: clampedWidth, requestedWidth: widthState.width, handlers, setWidth };
 }

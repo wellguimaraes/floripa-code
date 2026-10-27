@@ -6,6 +6,8 @@ import { observeResize } from "../lib/observeResize";
 export interface PreviewPanelInlineSize {
   readonly width: number;
   readonly handlers: ResizableWidthHandlers;
+  /** Receives the panel's element, for an owner that resizes it live from elsewhere. */
+  readonly hostRef?: RefObject<HTMLDivElement | null>;
 }
 
 const PREVIEW_PANEL_WIDTH_STORAGE_KEY = "floripacode:preview-panel-width";
