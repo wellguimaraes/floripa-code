@@ -5445,14 +5445,6 @@ export default function ChatView(props: ChatViewProps) {
     },
     [activeThreadRef, diffOpen, onDiffPanelOpen],
   );
-  const toggleRightPanel = useCallback(() => {
-    if (!activeThreadRef) return;
-    if (rightPanelOpen) {
-      closePreviewPanel();
-      return;
-    }
-    useRightPanelStore.getState().toggleVisibility(activeThreadRef);
-  }, [activeThreadRef, closePreviewPanel, rightPanelOpen]);
   const activateRightPanelType = useCallback(
     (type: RightPanelSurfaceType) => {
       if (!activeThreadRef) return;
@@ -5467,7 +5459,7 @@ export default function ChatView(props: ChatViewProps) {
         closePreviewPanel();
         return;
       }
-      // Terminal and Browser start their first tab rather than showing an empty type.
+      // Terminal, Browser and Device start their first tab rather than showing an empty type.
       const hasTypeSurface = current.surfaces.some(
         (surface) => rightPanelSurfaceType(surface.kind) === type,
       );
@@ -5477,6 +5469,10 @@ export default function ChatView(props: ChatViewProps) {
       }
       if (type === "preview" && !hasTypeSurface && browserAvailable && canOperatePreview) {
         createBrowserSurface();
+        return;
+      }
+      if (type === "device" && !hasTypeSurface) {
+        addDeviceSurface();
         return;
       }
       // Diff is one view with no tabs, so picking its type opens it.
@@ -5491,6 +5487,7 @@ export default function ChatView(props: ChatViewProps) {
     [
       activateRightPanelSurface,
       activeThreadRef,
+      addDeviceSurface,
       addTerminalSurface,
       browserAvailable,
       canOperatePreview,
@@ -5501,6 +5498,24 @@ export default function ChatView(props: ChatViewProps) {
       isServerThread,
     ],
   );
+  const toggleRightPanel = useCallback(() => {
+    if (!activeThreadRef) return;
+    if (rightPanelOpen) {
+      closePreviewPanel();
+      return;
+    }
+    const current = selectThreadRightPanelState(
+      useRightPanelStore.getState().byPanelKey,
+      activeThreadRef,
+    );
+    // Reopening onto a type with no tabs left picks that type again, so it starts its first tab.
+    const emptyType = current.activeSurfaceId === null ? current.activeType : undefined;
+    if (emptyType) {
+      activateRightPanelType(emptyType);
+      return;
+    }
+    useRightPanelStore.getState().toggleVisibility(activeThreadRef);
+  }, [activateRightPanelType, activeThreadRef, closePreviewPanel, rightPanelOpen]);
   // Hides the Terminal type when it shows beside the chat; otherwise shows and
   // focuses it, starting the checkout's first terminal when it has none.
   const toggleTerminalVisibility = useCallback(() => {
