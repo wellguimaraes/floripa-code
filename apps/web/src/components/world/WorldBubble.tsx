@@ -18,7 +18,6 @@ import {
   useThreadShell,
 } from "../../state/entities";
 import { threadEnvironment } from "../../state/threads";
-import { useAtomCommand } from "../../state/use-atom-command";
 import { useTheme } from "../../hooks/useTheme";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { Button } from "../ui/button";
@@ -27,13 +26,13 @@ import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "../chat/composerPromptHistory";
 import { ClampedUserMessage, type UserMessageChipState } from "../chat/MessagesTimeline";
+import { QueuedRunsControl } from "../chat/QueuedRunsControl";
 import { BubbleComposer } from "./BubbleComposer";
 import type { CharacterFacts } from "./engine/facts";
 import { HuePicker } from "./HuePicker";
 import { type FamilyShades as Shades, palette } from "./scene/palette";
 import { useBubbleAttachments } from "./useBubbleAttachments";
 import { ARCHIVE_SHORTCUT, confirmArchive, useArchiveShortcut } from "./useArchiveShortcut";
-import type { QueuedSend } from "./lastExchange";
 import { LatestTurn } from "./LatestTurn";
 import { RollingSwap } from "./RollingSwap";
 import { useLastExchange } from "./useLastExchange";
@@ -97,8 +96,9 @@ export function WorldBubble(props: {
   const exchange = useRef<HTMLDivElement>(null);
   const archiveButton = useRef<HTMLButtonElement>(null);
   const exchangeContent = useRef<HTMLDivElement>(null);
+  const pinnedMessage = useRef<HTMLDivElement>(null);
   const followingEnd = useRef(true);
-  // Scrolled away from the top: the reply is passing under your pinned message.
+  // Your message is stuck to the top: the reply is passing under it.
   const [exchangeScrolled, setExchangeScrolled] = useState(false);
   const { resolvedTheme } = useTheme();
   // Both messages render as the chat does, chips and skills included.
@@ -411,46 +411,26 @@ export function WorldBubble(props: {
             </Button>
           </div>
           {/* The last exchange as the chat shows it: yours in a bubble on the right, then everything
-              the agent did after it. Capped in height: the turn scrolls under your message, which
-              stays pinned on top. Ruled off below, edge to edge, like the header; gone while empty. */}
+              the agent did after it, with a few earlier exchanges above that load further as you
+              scroll up. Capped in height: the turn scrolls under your message, which stays pinned on
+              top. Ruled off below, edge to edge, like the header; gone while empty. */}
           <div
             ref={exchange}
             onScroll={(event) => {
               const element = event.currentTarget;
-              setExchangeScrolled(element.scrollTop > 0);
+              // Earlier exchanges sit above your message: it sticks once they scroll out of view.
+              const above = pinnedMessage.current?.previousElementSibling ?? null;
+              setExchangeScrolled(
+                above === null
+                  ? element.scrollTop > 0
+                  : above.getBoundingClientRect().bottom < element.getBoundingClientRect().top,
+              );
               followingEnd.current =
                 element.scrollHeight - element.scrollTop - element.clientHeight < 4;
             }}
             className="-mx-2.5 mt-1 max-h-80 overflow-y-auto border-b border-border px-2.5 pb-2.5 text-bubble has-[>[data-exchange]:empty]:hidden"
           >
             <div ref={exchangeContent} data-exchange className="flex min-w-0 flex-col gap-2">
-              {lastSent !== null ? (
-                // Covers the turn scrolling under it, which fades out beneath it.
-                <div className="sticky top-0 z-10 flex flex-col items-end gap-0.5 bg-popover">
-                  {/* A fractional scroll offset can leak a row of the turn above the pin; this caps it. */}
-                  <div className="pointer-events-none absolute inset-x-0 bottom-full h-1 bg-popover" />
-                  {exchangeScrolled ? (
-                    <div className="pointer-events-none absolute inset-x-0 top-full h-10 bg-linear-to-b from-popover to-transparent" />
-                  ) : null}
-                  <div
-                    className="max-w-[85%] rounded-lg bg-message px-3 py-2 break-words text-message-foreground"
-                    aria-label="Your last message"
-                  >
-                    <RollingSwap swapKey={lastSent.id}>
-                      {lastSent.text === ATTACHMENT_ONLY_BOOTSTRAP_PROMPT ? (
-                        <span className="line-clamp-2">
-                          {`${lastSent.attachments.length} ${lastSent.attachments.length === 1 ? "attachment" : "attachments"}`}
-                        </span>
-                      ) : (
-                        <ClampedUserMessage message={lastSent} chips={chips} />
-                      )}
-                    </RollingSwap>
-                  </div>
-                  {lastSent.queued !== null ? (
-                    <QueuedSendActions threadRef={facts.ref} queued={lastSent.queued} />
-                  ) : null}
-                </div>
-              ) : null}
               <LatestTurn
                 threadRef={facts.ref}
                 sentMessageId={lastSent?.id ?? null}
@@ -461,8 +441,46 @@ export function WorldBubble(props: {
                 skills={skills}
                 providers={providers ?? EMPTY_PROVIDERS}
                 onOpenFullChat={expand}
+                scrollRef={exchange}
+                pinned={
+                  lastSent !== null ? (
+                    // Covers the turn scrolling under it, which fades out beneath it.
+                    <div
+                      ref={pinnedMessage}
+                      className="sticky top-0 z-10 flex flex-col items-end gap-0.5 bg-popover"
+                    >
+                      {/* A fractional scroll offset can leak a row of the turn above the pin; this caps it. */}
+                      <div className="pointer-events-none absolute inset-x-0 bottom-full h-1 bg-popover" />
+                      {exchangeScrolled ? (
+                        <div className="pointer-events-none absolute inset-x-0 top-full h-10 bg-linear-to-b from-popover to-transparent" />
+                      ) : null}
+                      <div
+                        className="max-w-[85%] rounded-lg bg-message px-3 py-2 break-words text-message-foreground"
+                        aria-label="Your last message"
+                      >
+                        <RollingSwap swapKey={lastSent.id}>
+                          {lastSent.text === ATTACHMENT_ONLY_BOOTSTRAP_PROMPT ? (
+                            <span className="line-clamp-2">
+                              {`${lastSent.attachments.length} ${lastSent.attachments.length === 1 ? "attachment" : "attachments"}`}
+                            </span>
+                          ) : (
+                            <ClampedUserMessage message={lastSent} chips={chips} />
+                          )}
+                        </RollingSwap>
+                      </div>
+                    </div>
+                  ) : null
+                }
               />
             </div>
+          </div>
+          {/* Messages waiting behind the agent's current run, above the text box as in the chat. */}
+          <div className="mt-2 empty:hidden">
+            <QueuedRunsControl
+              environmentId={facts.ref.environmentId}
+              threadId={facts.ref.threadId}
+              placement="floating"
+            />
           </div>
         </>
       }
@@ -479,60 +497,5 @@ function FamilyShades({ shades }: { readonly shades: Shades | undefined }) {
         <span key={shade} className="flex-1" style={{ backgroundColor: shade }} />
       ))}
     </span>
-  );
-}
-
-/** Under a message that waits for the agent's current run: steer it in now, or take it back. */
-function QueuedSendActions({
-  threadRef,
-  queued,
-}: {
-  readonly threadRef: CharacterFacts["ref"];
-  readonly queued: QueuedSend;
-}) {
-  const promote = useAtomCommand(threadEnvironment.promoteQueuedRun);
-  const cancel = useAtomCommand(threadEnvironment.cancelQueuedRun);
-  const [busy, setBusy] = useState(false);
-  const act = async (command: () => Promise<unknown>) => {
-    setBusy(true);
-    try {
-      await command();
-    } finally {
-      setBusy(false);
-    }
-  };
-  const { environmentId, threadId } = threadRef;
-  const steerTargetRunId = queued.steerTargetRunId;
-  return (
-    <div className="flex items-center gap-0.5 text-muted-foreground">
-      <span className="px-1">Queued</span>
-      {steerTargetRunId !== null ? (
-        <Button
-          variant="ghost"
-          size="xs"
-          disabled={busy}
-          onClick={() =>
-            void act(() =>
-              promote({
-                environmentId,
-                input: { threadId, queuedRunId: queued.runId, targetRunId: steerTargetRunId },
-              }),
-            )
-          }
-        >
-          Steer
-        </Button>
-      ) : null}
-      <Button
-        variant="ghost"
-        size="xs"
-        disabled={busy}
-        onClick={() =>
-          void act(() => cancel({ environmentId, input: { threadId, runId: queued.runId } }))
-        }
-      >
-        Cancel
-      </Button>
-    </div>
   );
 }

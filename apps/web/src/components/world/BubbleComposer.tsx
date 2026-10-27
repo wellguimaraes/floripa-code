@@ -445,7 +445,7 @@ export function BubbleComposer(props: {
         }
         onClick={() => onSubmit(text)}
       >
-        <SendHorizontalIcon />
+        {busy ? <LoaderIcon className="animate-spin" /> : <SendHorizontalIcon />}
       </Button>
     </>
   );

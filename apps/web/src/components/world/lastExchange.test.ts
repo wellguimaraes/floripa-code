@@ -14,7 +14,7 @@ describe("lastExchange", () => {
       messages,
     }) as unknown as OrchestrationV2ThreadProjection;
 
-  it("marks a queued message and skips one cancelled before it ran", () => {
+  it("skips a queued message and one cancelled before it ran", () => {
     const exchange = lastExchange(
       projection(
         [
@@ -31,18 +31,16 @@ describe("lastExchange", () => {
         [sent("first"), sent("queued"), sent("taken-back")],
       ),
     );
-    expect(exchange.sent?.id).toBe("queued");
-    // No running provider turn to steer into, so only cancelling is offered.
-    expect(exchange.sent?.queued).toEqual({ runId: "run-2", steerTargetRunId: null });
+    expect(exchange.sent?.id).toBe("first");
   });
 
-  it("leaves a message that already ran unqueued", () => {
+  it("pins a message that already ran", () => {
     const exchange = lastExchange(
       projection(
         [{ id: "run-1", status: "completed", userMessageId: "first", startedAt: "t", ordinal: 1 }],
         [sent("first")],
       ),
     );
-    expect(exchange.sent).toMatchObject({ id: "first", queued: null });
+    expect(exchange.sent?.id).toBe("first");
   });
 });

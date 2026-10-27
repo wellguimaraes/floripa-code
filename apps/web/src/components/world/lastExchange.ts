@@ -4,15 +4,7 @@ import type {
   MessageId,
   OrchestrationMessageContext,
   OrchestrationV2ThreadProjection,
-  RunId,
 } from "@t3tools/contracts";
-
-/** A sent message still waiting behind the agent's current run. */
-export interface QueuedSend {
-  readonly runId: RunId;
-  /** The running run it can steer into instead; null when the provider can't steer now. */
-  readonly steerTargetRunId: RunId | null;
-}
 
 export interface SentMessage {
   readonly id: MessageId;
@@ -20,29 +12,29 @@ export interface SentMessage {
   /** The chips' records, for rendering them inline as the chat does. */
   readonly context: OrchestrationMessageContext | undefined;
   readonly attachments: ReadonlyArray<ChatAttachment>;
-  readonly queued: QueuedSend | null;
 }
 
 export interface LastExchange {
-  /** The last message you wrote, not one an agent or the system posted for you. */
+  /**
+   * The last message you wrote that the agent took up, not one an agent or the system posted
+   * for you. Queued messages wait in the queue above the text box instead.
+   */
   readonly sent: SentMessage | null;
 }
 
 export function lastExchange(projection: OrchestrationV2ThreadProjection): LastExchange {
   const { messages } = projection;
-  // A queued message cancelled before it ran was taken back; the one before it shows instead.
-  const withdrawn = new Set(
-    projection.runs
+  // Still queued, or cancelled before it ran and so taken back: the one before it shows instead.
+  const notTakenUp = new Set([
+    ...projection.runs
       .filter((run) => run.status === "cancelled" && run.startedAt === null)
       .map((run) => run.userMessageId),
-  );
-  const sentIndex = messages.findLastIndex(
+    ...deriveThreadQueueWorkflowState(projection).queuedRuns.map(({ messageId }) => messageId),
+  ]);
+  const sentMessage = messages.findLast(
     (candidate) =>
-      candidate.role === "user" && candidate.createdBy === "user" && !withdrawn.has(candidate.id),
+      candidate.role === "user" && candidate.createdBy === "user" && !notTakenUp.has(candidate.id),
   );
-  const sentMessage = sentIndex === -1 ? undefined : messages[sentIndex];
-  const queue = deriveThreadQueueWorkflowState(projection);
-  const queuedRun = queue.queuedRuns.find(({ messageId }) => messageId === sentMessage?.id)?.run;
   return {
     sent:
       sentMessage === undefined
@@ -52,16 +44,6 @@ export function lastExchange(projection: OrchestrationV2ThreadProjection): LastE
             text: sentMessage.text,
             context: sentMessage.context,
             attachments: sentMessage.attachments,
-            queued:
-              queuedRun === undefined
-                ? null
-                : {
-                    runId: queuedRun.id,
-                    steerTargetRunId:
-                      queue.canPromoteToSteer && queue.activeRun !== null
-                        ? queue.activeRun.id
-                        : null,
-                  },
           },
   };
 }

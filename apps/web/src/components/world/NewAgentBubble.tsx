@@ -258,9 +258,8 @@ export function NewAgentBubble(props: {
       error={state.phase === "error" ? state.message : null}
       onError={showError}
       busy={state.phase === "starting"}
-      busyStatus={
-        selectedWorkspace.kind === "new-worktree" ? "Preparing the new worktree…" : "Starting…"
-      }
+      // The send button spins; only a new worktree's slower setup gets a line.
+      busyStatus={selectedWorkspace.kind === "new-worktree" ? "Preparing the new worktree…" : null}
       header={
         // Ruled off below, edge to edge, like the other bubbles' headers.
         <div className="-mx-2.5 flex items-stretch gap-1.5 border-b border-border px-2.5 pb-3">
