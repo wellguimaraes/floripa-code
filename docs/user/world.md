@@ -57,7 +57,7 @@ beach, an agent and its subagents sit next to each other.
 
 The world is where your threads live: it fills the window, with no sidebar. Use
 the search button at the top left, or the command palette, to find a thread,
-project or page, and the gear beside it for Settings. Settings opens over the
+project or page, and the gear at the top right for Settings. Settings opens over the
 map, and closing it with `Esc` puts you back where you were. On a phone or a narrow
 window, threads show in the regular list instead, where the map would not fit.
 
@@ -101,9 +101,9 @@ agents once. Until that finishes, results show word matches only. **Remove proje
 project and deletes its threads after you confirm; hiding only takes the island off the map, and
 neither touches the files on disk. An island comes in three
 sizes: 8 rock piles and 9 beach spots, 12 and 14, or 16 and 18, plus 4 chairs on
-the pier. The eye button
-at the top left lists every project; click one to show or hide its island. The
-button beside it lines the islands up vertically, in a grid, or horizontally.
+the pier. The island button at the top left counts the islands on the map. Click
+it to line the islands up vertically, in a grid, or horizontally, to show or hide
+a project's island, or to remove a project.
 What you hide, how big each island is, and how you arrange the islands are
 remembered in this browser. In the desktop app, the
 **+** button at the top left opens a folder picker; the folder you choose
@@ -133,9 +133,11 @@ its first free pile. With only one island, it skips the question.
 
 The world shows the 30 most recently updated threads.
 
-The bar along the bottom shows how much subscription quota is left for each
-provider, pooled across your accounts as in **Usage → Limits**, with the time
-until the next reset hands quota back. Its gear switches the meters between quota
-left and quota used. Click the bar for the full breakdown. Providers
+The pill beside the Settings gear shows how much subscription quota is left
+for each provider, pooled across your accounts as in **Usage → Limits**, with the
+time until the next reset hands quota back. When the window is narrow it drops
+the reset times, then the percentages, then shortens labels to initials, and
+finally shows only a small stack of bars per provider. Click it for the full
+breakdown and to switch the meters between quota left and quota used. Providers
 hidden on the Usage page are hidden here too, and so are limits nothing has used
-yet. The bar shows only when some quota is in use.
+yet. The pill shows only when some quota is in use.

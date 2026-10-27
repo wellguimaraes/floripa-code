@@ -785,3 +785,22 @@ export const ComputerUseAppIcon: Icon = (props) => {
     </svg>
   );
 };
+
+/** A palm-tree island, line-drawn like Lucide's icons. */
+export const IslandIcon: Icon = (props) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    {...props}
+  >
+    <path d="M2 22C4 20.125 7.5 19 12 19C16.5 19 20 20.125 22 22" />
+    <path d="M13 7C13 4.24 10.54 2 7.5 2C4.46 2 2 4.24 2 7H4L5 6L6 7H10" />
+    <path d="M13 6.14C14.0126 5.39134 15.2407 4.99132 16.5 5C19.54 5 22 7.24 22 10H19L18 9L17 10H14" />
+    <path d="M5.89 8.71C3.74 10.86 3.59 14.18 5.54 16.14L9.78 11.89L10.48 11.19L11.19 10.48L13.31 8.36C11.36 6.4 8.04 6.56 5.89 8.71Z" />
+    <path d="M11 11.5C11.5 14 10.83 17 10 19H14C16 13.5 13.5 9 13 7" />
+  </svg>
+);

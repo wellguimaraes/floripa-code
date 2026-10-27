@@ -1062,6 +1062,103 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
       all: revert;
     }
   }
+
+  /* The Slider component: a thin, light track filled up to the thumb. `--slider-progress`
+     (0 to 1) places the fill; data-muted fades and desaturates the whole slider for a value set
+     automatically. */
+  .slider {
+    --slider-thumb: 0.875rem;
+    --slider-fill: color-mix(in srgb, var(--primary) 40%, transparent);
+    --slider-fill-position: calc(
+      var(--slider-progress) * (100% - var(--slider-thumb)) + var(--slider-thumb) / 2
+    );
+    appearance: none;
+    height: 1rem;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .slider[data-muted] {
+    opacity: 0.5;
+    filter: saturate(0.2);
+  }
+
+  .slider::-webkit-slider-runnable-track {
+    height: 0.1875rem;
+    border-radius: 9999px;
+    background: linear-gradient(
+      to right,
+      var(--slider-fill) 0 var(--slider-fill-position),
+      color-mix(in srgb, var(--contrast-muted-foreground) 10%, transparent)
+        var(--slider-fill-position) 100%
+    );
+  }
+
+  .slider::-moz-range-track {
+    height: 0.1875rem;
+    border-radius: 9999px;
+    background: color-mix(in srgb, var(--contrast-muted-foreground) 10%, transparent);
+  }
+
+  .slider::-moz-range-progress {
+    height: 0.1875rem;
+    border-radius: 9999px;
+    background: var(--slider-fill);
+  }
+
+  .slider::-webkit-slider-thumb {
+    appearance: none;
+    width: var(--slider-thumb);
+    height: var(--slider-thumb);
+    margin-top: calc((0.1875rem - var(--slider-thumb)) / 2);
+    border: none;
+    border-radius: 9999px;
+    background: var(--primary);
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--contrast-foreground) 20%, transparent);
+  }
+
+  .slider::-moz-range-thumb {
+    width: var(--slider-thumb);
+    height: var(--slider-thumb);
+    border: none;
+    border-radius: 9999px;
+    background: var(--primary);
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--contrast-foreground) 20%, transparent);
+  }
+
+  .slider:focus-visible {
+    outline: none;
+  }
+
+  .slider:focus-visible::-webkit-slider-thumb {
+    box-shadow:
+      0 0 0 2px var(--background),
+      0 0 0 4px var(--ring);
+  }
+
+  .slider:focus-visible::-moz-range-thumb {
+    box-shadow:
+      0 0 0 2px var(--background),
+      0 0 0 4px var(--ring);
+  }
+
+  @media (forced-colors: active) {
+    .slider {
+      appearance: auto;
+      accent-color: Highlight;
+    }
+
+    .slider::-webkit-slider-runnable-track,
+    .slider::-webkit-slider-thumb {
+      all: revert;
+    }
+
+    .slider::-moz-range-track,
+    .slider::-moz-range-progress,
+    .slider::-moz-range-thumb {
+      all: revert;
+    }
+  }
 }
 
 /* Safe-area inset utilities for surfaces that opt into edge-to-edge rendering.

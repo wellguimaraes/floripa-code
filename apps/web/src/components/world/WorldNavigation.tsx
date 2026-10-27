@@ -6,8 +6,8 @@ import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 /**
- * The world has no sidebar, so its top bar leads with the ways out of the map: the command
- * palette, which reaches every thread, project and page, and Settings.
+ * The world has no sidebar, so its top bar holds the ways out of the map: the command
+ * palette, which reaches every thread, project and page, leads it, and Settings ends it.
  */
 export function WorldNavigation() {
   return (
@@ -27,22 +27,28 @@ export function WorldNavigation() {
         </TooltipTrigger>
         <TooltipPopup side="bottom">Search threads, projects and commands</TooltipPopup>
       </Tooltip>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              aria-label="Settings"
-              // A link so the router preloads the settings chunks on hover.
-              render={<Link to="/settings/general" />}
-            />
-          }
-        >
-          <SettingsIcon className="size-4" />
-        </TooltipTrigger>
-        <TooltipPopup side="bottom">Settings</TooltipPopup>
-      </Tooltip>
     </div>
+  );
+}
+
+/** Settings, on its own at the right end of the world's top bar. */
+export function WorldSettingsButton() {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            variant="glass"
+            size="icon-sm"
+            aria-label="Settings"
+            // A link so the router preloads the settings chunks on hover.
+            render={<Link to="/settings/general" />}
+          />
+        }
+      >
+        <SettingsIcon className="size-4" />
+      </TooltipTrigger>
+      <TooltipPopup side="bottom">Settings</TooltipPopup>
+    </Tooltip>
   );
 }

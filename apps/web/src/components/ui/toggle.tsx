@@ -26,6 +26,9 @@ const toggleVariants = cva(
       variant: {
         default: "border-transparent",
         pill: "border-transparent rounded-full px-3 font-normal text-muted-foreground data-pressed:text-foreground",
+        // A pill that fills with the primary colour while on, for a mode worth noticing.
+        "pill-solid":
+          "border-transparent rounded-full px-3 font-normal text-muted-foreground data-pressed:bg-primary data-pressed:text-primary-foreground data-pressed:hover:bg-primary/90",
         ghost:
           "border-transparent text-foreground shadow-none [:disabled,:active,[data-pressed]]:shadow-none before:shadow-none data-pressed:bg-accent data-pressed:text-accent-foreground disabled:opacity-100 disabled:text-muted-foreground disabled:[&_svg]:opacity-100",
         outline:

@@ -33,10 +33,9 @@ import { Button } from "../ui/button";
 import { SidebarInset, useSidebar } from "../ui/sidebar";
 import { ContrastSlider } from "./ContrastSlider";
 import { ManagerToggle } from "./ManagerToggle";
+import { SkyControls } from "./SkyControls";
 import { WORLD_MANAGERS_AVAILABLE } from "./worldManagerStore";
-import { TimeSlider } from "./TimeSlider";
-import { WeatherToggle } from "./WeatherToggle";
-import { WorldNavigation } from "./WorldNavigation";
+import { WorldNavigation, WorldSettingsButton } from "./WorldNavigation";
 import { WorldUsageBar } from "./WorldUsageBar";
 import { islandWorlds } from "./definitions/island";
 import { palette } from "./scene/palette";
@@ -106,11 +105,7 @@ export function WorldLayout({
   const panelRef = useRef<HTMLDivElement>(null);
   const readPanel = useCallback(() => panelRef.current, []);
   const topBarRef = useRef<HTMLDivElement>(null);
-  const bottomBarRef = useRef<HTMLDivElement>(null);
-  const readBars = useCallback(
-    () => ({ top: topBarRef.current, bottom: bottomBarRef.current }),
-    [],
-  );
+  const readBars = useCallback(() => ({ top: topBarRef.current, bottom: null }), []);
   const [toolbar, setToolbar] = useState<HTMLDivElement | null>(null);
   // Only real threads open here. A draft (the new-thread creator) never does: the world
   // starts agents from its own bubble, so a draft route shows the world alone.
@@ -304,28 +299,18 @@ export function WorldLayout({
         // is kept for its toggle.
         style={{ paddingLeft: "var(--workspace-controls-left)" }}
       >
-        <div className="pointer-events-auto flex items-center gap-2">
+        <div className="pointer-events-auto flex shrink-0 items-center gap-2">
           <WorldNavigation />
           <ContrastSlider />
-          <TimeSlider />
-          <WeatherToggle />
+          <SkyControls />
           {WORLD_MANAGERS_AVAILABLE ? <ManagerToggle /> : null}
           <DevOnboardingButton variant="glass" />
           <div ref={setToolbar} className="flex items-center gap-2" />
         </div>
-      </div>
-      <div
-        ref={bottomBarRef}
-        className="pointer-events-none absolute bottom-3 left-3 z-10 flex"
-        // Stops short of the open chat, which also sits on the bottom edge.
-        style={{
-          right: !framePresent
-            ? "0.75rem"
-            : `calc(min(${frameWidth.width + frameOffset}px, 100% - 4rem) + 1.5rem)`,
-        }}
-      >
-        <div className="pointer-events-auto min-w-0">
-          <WorldUsageBar />
+        <WorldUsageBar />
+        {/* Pinned right even when there is no usage to show. */}
+        <div className="pointer-events-auto ml-auto shrink-0">
+          <WorldSettingsButton />
         </div>
       </div>
       {heldTarget !== null ? (

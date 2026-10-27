@@ -92,8 +92,7 @@ import { useWorldManagerStore, WORLD_MANAGERS_AVAILABLE } from "./worldManagerSt
 import { useWorldModeStore } from "./worldModeStore";
 import { useWorldVisibilityStore } from "./worldVisibilityStore";
 import { AddProjectButton, useAddProject } from "./AddProjectButton";
-import { ARRANGEMENTS, IslandArrangementMenu } from "./IslandArrangementMenu";
-import { ProjectVisibilityMenu } from "./ProjectVisibilityMenu";
+import { ARRANGEMENTS, IslandsMenu } from "./IslandsMenu";
 import { IslandBranchesPopover, type WorktreeSurfacesTarget } from "./IslandBranchesPopover";
 import { useCreateIdleWorldThread } from "./useStartWorldAgent";
 import { canChangeIslandIcon, IslandIconPicker, useSetIslandIcon } from "./IslandIconPicker";
@@ -1687,13 +1686,19 @@ export default function WorldCanvas(props: {
         ? createPortal(
             <>
               <AddProjectButton islandOf={islandOf} />
-              <IslandArrangementMenu />
-              <ProjectVisibilityMenu
+              <IslandsMenu
                 projects={projectOrder.map((key) => ({
                   key,
                   title: projectTitles.get(key) ?? "Project",
                   color: islandPlate(key, islandPrefs[key]),
+                  removable: canChangeIslandIcon(projectCheckouts.get(key) ?? []),
                 }))}
+                onRemove={(key) =>
+                  void removeIsland(
+                    projectCheckouts.get(key) ?? [],
+                    projectTitles.get(key) ?? "Project",
+                  )
+                }
               />
             </>,
             toolbar,
