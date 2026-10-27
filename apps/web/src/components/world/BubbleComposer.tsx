@@ -130,6 +130,14 @@ export function BubbleComposer(props: {
   useEffect(() => {
     editor.current?.focusAtEnd();
   }, []);
+  // A busy editor is disabled and drops focus; take it back once done, unless it moved on.
+  const wasBusy = useRef(busy);
+  useEffect(() => {
+    if (wasBusy.current && !busy && document.activeElement === document.body) {
+      editor.current?.focusAtEnd();
+    }
+    wasBusy.current = busy;
+  }, [busy]);
 
   const { resolvedTheme } = useTheme();
   const suggestionListId = useId();

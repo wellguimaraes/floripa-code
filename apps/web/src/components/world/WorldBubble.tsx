@@ -213,9 +213,9 @@ export function WorldBubble(props: {
       });
       return;
     }
-    // Sent: the bubble has done its job, and the shared draft is empty again.
+    // Sent: the bubble stays for the next message, and the shared draft is empty again.
     attachments.sent();
-    onClose();
+    setState({ phase: "idle" });
   };
 
   const stop = async () => {
