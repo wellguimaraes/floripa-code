@@ -98,26 +98,25 @@ export const ISLAND_SIZES = [8, 12, 16].map((piles) => ({ piles, restSpots: pile
 // Seat height of the loungers on the beach (see the `beachChair` prop).
 const LOUNGER_SEAT = 0.4;
 
-// The pier curves along the shore at the right end of the beach, from just up
+// The pier curves along the shore at the left end of the beach, from just up
 // the sand out over the shallows. Its seats line the outer edge, facing the
 // sea: agents sit on the edge, legs and rods over the water.
-const PIER_ANGLE = (-45 * Math.PI) / 180;
+const PIER_ANGLE = (91 * Math.PI) / 180;
 /** How far up the sand the pier starts, from the shore. */
 const PIER_LANDING = 1;
 /**
  * How far round the shore the pier reaches either side of `PIER_ANGLE`, in
- * degrees: up to the palms on its right, and short of the beach's first
- * towel on its left, the camera's side.
+ * degrees: up to the palm on its left, and short of the beach's last towel
+ * on its right.
  */
-const PIER_RIGHT = 9;
-const PIER_LEFT = 23;
+const PIER_RIGHT = 19;
+const PIER_LEFT = 9;
 /** Round the shore, in degrees, inside the pier's reach. */
-const PIER_SEATS = [-50, -42, -34, -26];
-/**
- * Out from the pier's inner edge: the deck is 1.8 wide (see the `pier`
- * prop), so a sitter's knees reach just past its outer edge.
- */
-const PIER_SEAT_OUT = 1.5;
+const PIER_SEATS = [96, 89, 82, 75];
+/** How far the pier's deck reaches out from the sand onto the water. */
+const PIER_WIDTH = 2.4;
+/** Out from the pier's inner edge, so a sitter's knees reach just past its outer edge. */
+const PIER_SEAT_OUT = PIER_WIDTH - 0.3;
 /** The top of the pier's deck. */
 const PIER_DECK = 0.02;
 
@@ -189,11 +188,12 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
           radius: pierRadius,
           left: (pierRadius * PIER_LEFT * Math.PI) / 180,
           right: (pierRadius * PIER_RIGHT * Math.PI) / 180,
+          width: PIER_WIDTH,
         },
       },
       // Street lamps for the night, clear of every spot, road, and walk at every
       // size: by the pier, off its deck, and round the shore, off the lawn.
-      prop("lamp", 6.9, -4),
+      prop("lamp", 1.9, 7.7),
       prop("lamp", -6.6, 5.4),
       prop("lamp", -8.7, -2.2),
       prop("lamp", -1.6, -6.6),
@@ -226,8 +226,9 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
         // left to right on screen (falling angles on the arcs).
         lineUp: true,
         // Towels with a lounger every third spot, spread across the front of the
-        // island: where the shore runs away from the camera they would hide each other.
-        slots: arc({ radius: 8.2 * scale, degrees: spread(-15, 95, size.restSpots) })
+        // island from the pier to the manager: where the shore runs further away
+        // from the camera they would hide each other.
+        slots: arc({ radius: 8.2 * scale, degrees: spread(-35, 61, size.restSpots) })
           .map((slot, index) =>
             index % 3 === 1 ? { ...slot, prop: "beachChair" as const, seat: LOUNGER_SEAT } : slot,
           )
@@ -247,8 +248,7 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
           degrees: [118, 132, 162, 174, 202, 215, 242, 254],
         }).map((slot) => ({ ...slot, fishing: true })),
       },
-      // The wide sand behind the beach, between the palms and the lawn, clear of
-      // the walk out to the pier.
+      // The wide sand behind the beach, between the palms and the lawn.
       dunes: {
         kind: "fixed",
         entry: "dunes-path",
@@ -356,8 +356,8 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
       wander: 3,
       // Turned a little off the camera so the board's depth shows.
       sign: { position: node(-5.4, -6.4), facing: Math.PI / 4 - 0.35 },
-      // On the sand between the pier's walk and the back palms, watching the
-      // miners, turned enough toward the camera to show his face.
+      // On the sand between the beach's right end and the back palms, watching
+      // the miners, turned enough toward the camera to show his face.
       manager: {
         position: node(7 * Math.cos((-55 * Math.PI) / 180), 7 * Math.sin((-55 * Math.PI) / 180)),
         facing: -0.45,

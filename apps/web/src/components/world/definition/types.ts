@@ -56,11 +56,13 @@ export interface WorldProp {
  * A pier curving along the shore, on the circle `radius` from the island's
  * middle, which lies straight behind the pier's position. It reaches `left`
  * and `right` units round that circle either side of it: right is local +x.
+ * Its deck runs `width` out from that circle, onto the water.
  */
 export interface PierArc {
   readonly radius: number;
   readonly left: number;
   readonly right: number;
+  readonly width: number;
 }
 
 /**

@@ -143,7 +143,7 @@ function layoutKeepouts(definition: WorldDefinition): Keepout[] {
 
 /** A pier as short straight stretches round its curve, down its middle. */
 function arcKeepouts(pier: WorldProp, arc: PierArc): Keepout[] {
-  const across = arc.radius + 0.9;
+  const across = arc.radius + arc.width / 2;
   const middle = [
     pier.position[0] - Math.sin(pier.facing) * arc.radius,
     pier.position[2] - Math.cos(pier.facing) * arc.radius,

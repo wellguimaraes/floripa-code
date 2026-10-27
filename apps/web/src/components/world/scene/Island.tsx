@@ -314,7 +314,13 @@ function islandShadows(
     ...furniture,
   ];
   const key = `${definition.seed ?? ""}|${casters
-    .map((prop) => `${prop.kind}:${prop.position.join(",")}:${prop.facing}:${prop.scale ?? 1}`)
+    .map(
+      (prop) =>
+        `${prop.kind}:${prop.position.join(",")}:${prop.facing}:${prop.scale ?? 1}` +
+        (prop.arc === undefined
+          ? ""
+          : `:${prop.arc.radius},${prop.arc.left},${prop.arc.right},${prop.arc.width}`),
+    )
     .join("|")}`;
   return castShadows(
     key,
@@ -402,7 +408,9 @@ function propParts(kind: PropKind, seed: number, arc?: PierArc): ReadonlyArray<M
       return mergedParts("beachChair", loungerParts);
     case "pier":
       if (arc === undefined) return [];
-      return mergedParts(`pier:${arc.radius}:${arc.left}:${arc.right}`, () => pierParts(arc));
+      return mergedParts(`pier:${arc.radius}:${arc.left}:${arc.right}:${arc.width}`, () =>
+        pierParts(arc),
+      );
     case "palm":
       return mergedParts(`palm:${seed % 70}`, () => palmParts(seed % 70));
     case "tree":
@@ -810,31 +818,28 @@ function loungerParts(): Part[] {
   ];
 }
 
-/** How far the pier reaches out from its arc's inner edge, onto the water. */
-const PIER_WIDTH = 1.8;
-
 /**
  * A plank deck curving round the shore (see `PierArc`), its top just above
  * the sand, planks laid out from the island's middle, on posts along its
  * outer edge, which stands over the water.
  */
 function pierParts(arc: PierArc): Part[] {
-  const { radius } = arc;
+  const { radius, width } = arc;
   // The island's middle, straight behind the pier.
   const middle = translate(0, 0, -radius);
-  const across = radius + PIER_WIDTH / 2;
+  const across = radius + width / 2;
   const from = -arc.left / radius;
   const to = arc.right / radius;
   const planks = Math.round(((to - from) * across) / 0.32);
   const step = (to - from) / planks;
   const pitch = step * across;
-  const outer = radius + PIER_WIDTH - 0.05;
+  const outer = radius + width - 0.05;
   const parts: Part[] = [];
   for (let index = 0; index < planks; index += 1) {
     const frame = chain(middle, rotateY(from + (index + 0.5) * step));
     parts.push(
       block(
-        [pitch - 0.04, 0.08, PIER_WIDTH],
+        [pitch - 0.04, 0.08, width],
         [0, -0.02, across],
         index % 2 === 0 ? palette.plank : palette.plankDark,
         frame,
