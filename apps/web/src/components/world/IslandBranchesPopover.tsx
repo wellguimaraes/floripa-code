@@ -10,20 +10,32 @@ import { AsyncResult, Atom } from "effect/reactivity";
 import {
   ArrowDownIcon,
   ArrowUpIcon,
+  DownloadIcon,
   FileDiffIcon,
   FolderGit2Icon,
   GitCommitHorizontalIcon,
   PanelRightIcon,
   Trash2Icon,
+  UploadIcon,
 } from "lucide-react";
-import { lazy, Suspense, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  type ReactNode,
+  Suspense,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useEnvironmentQuery } from "../../state/query";
 import { vcsEnvironment } from "../../state/vcs";
 import { refreshArchivedThreadsForEnvironment } from "../../lib/archivedThreadsState";
-import { cn } from "../../lib/utils";
+import { cn, randomUUID } from "../../lib/utils";
+import { useGitStackedAction, useVcsPullAction } from "../../state/sourceControlActions";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { PrStatusTooltipContent, prStatusIndicator } from "../ThreadStatusIndicators";
 import { Button } from "../ui/button";
@@ -529,16 +541,27 @@ function BranchItem({
           </p>
         ) : null}
       </div>
-      {surfaces !== null ? <SurfacesButton onOpen={() => onOpenSurfaces(surfaces)} /> : null}
-      <DeleteButton
-        hint={row.worktreePath !== null ? "Delete branch and worktree" : "Delete branch"}
-        step={step}
-        blockedReason={blockedReason}
-        onClick={() => {
-          if (step === "idle") setConfirming(true);
-          else void remove(step === "unmerged");
-        }}
-      />
+      <div className="flex shrink-0 items-center gap-1">
+        {row.worktreePath !== null && (behind > 0 || ahead > 0) ? (
+          <SyncButtons
+            environmentId={row.environmentId}
+            cwd={row.worktreePath}
+            branch={row.name}
+            pull={behind > 0}
+            push={ahead > 0}
+          />
+        ) : null}
+        {surfaces !== null ? <SurfacesButton onOpen={() => onOpenSurfaces(surfaces)} /> : null}
+        <DeleteButton
+          hint={row.worktreePath !== null ? "Delete branch and worktree" : "Delete branch"}
+          step={step}
+          blockedReason={blockedReason}
+          onClick={() => {
+            if (step === "idle") setConfirming(true);
+            else void remove(step === "unmerged");
+          }}
+        />
+      </div>
     </li>
   );
 }
@@ -574,6 +597,90 @@ function DeleteButton(props: {
     <Tooltip>
       <TooltipTrigger render={<span className="shrink-0">{button}</span>} />
       <TooltipPopup>{hint}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
+/** Pulls a worktree's branch when it's behind its upstream and pushes it when it's ahead. */
+function SyncButtons(props: {
+  readonly environmentId: EnvironmentId;
+  readonly cwd: string;
+  readonly branch: string;
+  readonly pull: boolean;
+  readonly push: boolean;
+}) {
+  const { environmentId, cwd, branch } = props;
+  const scope = useMemo(() => ({ environmentId, cwd }), [environmentId, cwd]);
+  const pullAction = useVcsPullAction(scope);
+  const stackedAction = useGitStackedAction(scope);
+  const [running, setRunning] = useState<"pull" | "push" | null>(null);
+
+  const run = async (kind: "pull" | "push") => {
+    setRunning(kind);
+    const result = await (
+      kind === "pull"
+        ? pullAction.run()
+        : stackedAction.run({ actionId: randomUUID(), action: "push" })
+    ).finally(() => setRunning(null));
+    if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
+    const failure = squashAtomCommandFailure(result);
+    toastManager.add({
+      type: "error",
+      title: `Could not ${kind} ${branch}`,
+      description: failure instanceof Error ? failure.message : undefined,
+    });
+  };
+
+  return (
+    <>
+      {props.pull ? (
+        <SyncButton
+          label="Pull"
+          icon={<DownloadIcon />}
+          running={running === "pull"}
+          disabled={running !== null || !pullAction.isAllowed}
+          onClick={() => void run("pull")}
+        />
+      ) : null}
+      {props.push ? (
+        <SyncButton
+          label="Push"
+          icon={<UploadIcon />}
+          running={running === "push"}
+          disabled={running !== null || !stackedAction.isAllowed}
+          onClick={() => void run("push")}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function SyncButton(props: {
+  readonly label: string;
+  readonly icon: ReactNode;
+  readonly running: boolean;
+  readonly disabled: boolean;
+  readonly onClick: () => void;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span className="shrink-0">
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-xs"
+              aria-label={props.label}
+              disabled={props.disabled}
+              onClick={props.onClick}
+            >
+              {props.running ? <Spinner size="sm" tone="muted" /> : props.icon}
+            </Button>
+          </span>
+        }
+      />
+      <TooltipPopup>{props.label}</TooltipPopup>
     </Tooltip>
   );
 }
