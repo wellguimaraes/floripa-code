@@ -35,8 +35,8 @@ function lastSegment(path: string): string {
 export const WorktreeSwitcher = memo(function WorktreeSwitcher(props: {
   readonly threadRef: ScopedThreadRef;
   /**
-   * `title` names the worktree alone, as the heading of the world's chat frame, and hides when
-   * the project has no worktree beyond its own folder.
+   * `title` names the worktree alone, without an icon, as the heading of the world's chat frame:
+   * the main worktree by its branch.
    */
   readonly variant?: "breadcrumb" | "title";
   readonly className?: string;
@@ -89,16 +89,9 @@ export const WorktreeSwitcher = memo(function WorktreeSwitcher(props: {
   const branch = current?.branch ?? null;
   const showBranch = branch !== null && branch !== name && !branch.endsWith(`/${name}`);
   const title = props.variant === "title";
-  // Worktree folders are often generated (e.g. `t3-8f432bc3`), so the heading names the branch.
-  const label = title && scope.worktreePath !== null && branch !== null ? branch : name;
-  // As a heading, the worktree only says something when the project works in more than one.
-  if (
-    title &&
-    scope.worktreePath === null &&
-    !entries.some((entry) => entry.scopeKey !== scope.scopeKey)
-  ) {
-    return null;
-  }
+  // Worktree folders are often generated (e.g. `t3-8f432bc3`), and "Main worktree" says little
+  // as a heading, so the heading names the branch.
+  const label = title && branch !== null ? branch : name;
   return (
     <Menu>
       <MenuTrigger
@@ -116,9 +109,7 @@ export const WorktreeSwitcher = memo(function WorktreeSwitcher(props: {
           />
         }
       >
-        <FolderGit2Icon
-          className={cn("shrink-0", title ? "size-3.5 text-muted-foreground" : "size-3")}
-        />
+        {title ? null : <FolderGit2Icon className="size-3 shrink-0" />}
         <span className="truncate">{label}</span>
         {showBranch && !title ? (
           <>

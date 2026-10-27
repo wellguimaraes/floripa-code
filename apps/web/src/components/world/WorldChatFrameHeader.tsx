@@ -4,17 +4,15 @@ import { MessagesSquareIcon } from "lucide-react";
 import type { ReactNode, Ref } from "react";
 
 import { WorktreeSwitcher } from "../chat/WorktreeSwitcher";
-import type { ProjectFaviconProject } from "../ProjectFavicon";
+import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { useWorldLook } from "./worldLookStore";
 import { useWorldModeStore } from "./worldModeStore";
-import { WorldProjectPill } from "./WorldProjectPill";
 
 /**
  * The world chat frame's top row, above both the chat and the worktree's surfaces: the chat
- * toggle, then the project's island sign over the worktree that owns the surfaces. The sign
- * flies the map to the project's island.
+ * toggle, then the project's icon beside the worktree that owns the surfaces. The icon flies the
+ * map to the project's island.
  */
 export function WorldChatFrameHeader(props: {
   readonly ref?: Ref<HTMLElement>;
@@ -26,7 +24,6 @@ export function WorldChatFrameHeader(props: {
   readonly trailing?: ReactNode;
 }) {
   const threadKey = scopedThreadKey(props.threadRef);
-  const worldLook = useWorldLook(threadKey);
   const focusIslandOf = useWorldModeStore((state) => state.focusIslandOf);
   const toggleLabel = props.chatCollapsed ? "Show chat" : "Hide chat";
   return (
@@ -51,26 +48,25 @@ export function WorldChatFrameHeader(props: {
         </TooltipTrigger>
         <TooltipPopup side="bottom">{toggleLabel}</TooltipPopup>
       </Tooltip>
-      <div className="pointer-events-none absolute inset-y-0 right-24 left-24 flex flex-col items-center justify-center gap-0.5">
-        {props.projectName ? (
+      <div className="pointer-events-none absolute inset-y-0 right-24 left-24 flex items-center justify-center gap-2">
+        {props.project ? (
           <Tooltip>
             <TooltipTrigger
               render={
                 <button
                   type="button"
-                  aria-label={`Show ${props.projectName} on the map`}
+                  aria-label={`Show ${props.projectName ?? "the project"} on the map`}
                   onClick={() => focusIslandOf(threadKey)}
-                  className="pointer-events-auto flex max-w-full cursor-pointer rounded-full focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  className="pointer-events-auto flex shrink-0 cursor-pointer rounded-sm bg-white focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                 />
               }
             >
-              <WorldProjectPill
-                project={props.project}
-                name={props.projectName}
-                plate={worldLook?.plate ?? null}
-              />
+              {/* A white tile keeps any icon legible on any background. */}
+              <ProjectFavicon project={props.project} className="size-6" />
             </TooltipTrigger>
-            <TooltipPopup side="bottom">Show {props.projectName} on the map</TooltipPopup>
+            <TooltipPopup side="bottom">
+              Show {props.projectName ?? "the project"} on the map
+            </TooltipPopup>
           </Tooltip>
         ) : null}
         <WorktreeSwitcher
