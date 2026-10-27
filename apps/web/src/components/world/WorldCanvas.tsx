@@ -2052,8 +2052,9 @@ function coveredOf(
   const bottomRect = bars.bottom?.getBoundingClientRect();
   return {
     top: topRect ? Math.max(0, topRect.bottom - canvas.top) : 0,
-    // The panel's close button sits just outside it, on the left.
-    right: panelRect ? canvas.right - (panelRect.left - PANEL_CLOSE_SPACE) : 0,
+    // The panel's close button sits just outside it, on the left. A hidden panel takes no room.
+    right:
+      panelRect && panelRect.width > 0 ? canvas.right - (panelRect.left - PANEL_CLOSE_SPACE) : 0,
     // An empty bar takes no room.
     bottom: bottomRect && bottomRect.height > 0 ? Math.max(0, canvas.bottom - bottomRect.top) : 0,
   };
@@ -2120,7 +2121,8 @@ function useBubblePlacement(
 /**
  * Pan and zoom only, like a strategy map. Redraws on change instead of every
  * frame. Frames the whole archipelago once, when the first islands appear;
- * after that the camera stays where the user puts it.
+ * after that the camera stays where the user puts it, never zoomed out past
+ * what shows every island.
  */
 function WorldControls({
   bounds,
@@ -2157,11 +2159,19 @@ function WorldControls({
   /** How the islands line up; a new one frames them all where they now stand. */
   readonly arrangement: IslandArrangement;
 }) {
-  const camera = useThree((state) => state.camera);
+  // The canvas is orthographic.
+  const camera = useThree((state) => state.camera) as OrthographicCamera;
   const element = useThree((state) => state.gl.domElement);
   const invalidate = useThree((state) => state.invalidate);
   const size = useThree((state) => state.size);
   const controlsRef = useRef<MapControls | null>(null);
+  // Camera moves the app makes glide; grabbing the map stops them.
+  const flight = useRef<{
+    readonly from: View;
+    readonly to: View;
+    readonly startedAt: number;
+  } | null>(null);
+  const gesturing = useRef(false);
   const fitted = useRef(false);
   const covered = useCallback(
     (): Covered => coveredOf(element.getBoundingClientRect(), panel(), bars()),
@@ -2176,13 +2186,71 @@ function WorldControls({
       }),
     [signs],
   );
-  const allSigns = useCallback(() => signsOf(islands.map((spot) => spot.key)), [islands, signsOf]);
-  // Camera moves the app makes glide; grabbing the map stops them.
-  const flight = useRef<{
-    readonly from: View;
-    readonly to: View;
-    readonly startedAt: number;
-  } | null>(null);
+  /**
+   * The view that frames the island with `key` in the visible canvas, or every
+   * island without one. Framing them all also sets the zoom floor.
+   */
+  const frame = useCallback(
+    (key?: string): View | null => {
+      const controls = controlsRef.current;
+      if (controls === null || bounds === null || size.width === 0) return null;
+      const picked =
+        key === undefined ? bounds : bounds.filter((_, index) => islands[index]?.key === key);
+      if (picked.length === 0) return null;
+      const view = frameView({
+        camera,
+        maxZoom: controls.maxZoom,
+        bounds: picked,
+        signs: signsOf(key === undefined ? islands.map((spot) => spot.key) : [key]),
+        viewport: size,
+        covered: covered(),
+      });
+      if (key === undefined) controls.minZoom = view.zoom;
+      return view;
+    },
+    [bounds, islands, camera, size, covered, signsOf],
+  );
+  const jump = useCallback(
+    (to: View) => {
+      const controls = controlsRef.current;
+      if (controls === null) return;
+      flight.current = null;
+      applyView(camera, controls, to);
+      invalidate();
+    },
+    [camera, invalidate],
+  );
+  const fly = useCallback(
+    (to: View | null) => {
+      const controls = controlsRef.current;
+      if (controls === null || to === null) return;
+      // Further out than every island needs frames them all instead.
+      const all = frame();
+      flight.current = {
+        from: currentView(camera, controls),
+        to: all !== null && to.zoom < all.zoom ? all : to,
+        startedAt: performance.now(),
+      };
+      invalidate();
+    },
+    [camera, invalidate, frame],
+  );
+
+  const onGestureStart = useEffectEvent(() => {
+    flight.current = null;
+    gesturing.current = true;
+    // The panel may have changed the visible canvas, and with it the floor.
+    frame();
+  });
+  // Let go on the zoom floor, the map glides to centre every island.
+  const onGestureEnd = useEffectEvent(() => {
+    gesturing.current = false;
+    const controls = controlsRef.current;
+    const all = frame();
+    if (controls !== null && all !== null && offFloor(currentView(camera, controls), all)) {
+      fly(all);
+    }
+  });
   useEffect(() => {
     const controls = new MapControls(camera, element);
     controls.enableRotate = false;
@@ -2207,69 +2275,93 @@ function WorldControls({
     controlsRef.current = controls;
     // Wrapped: invalidate's argument is a frame count, not the event.
     const redraw = () => invalidate();
-    const stopFlight = () => {
-      flight.current = null;
-    };
+    const start = () => onGestureStart();
+    const end = () => onGestureEnd();
     controls.addEventListener("change", redraw);
-    controls.addEventListener("start", stopFlight);
+    controls.addEventListener("start", start);
+    controls.addEventListener("end", end);
     redraw();
     return () => {
       controls.removeEventListener("change", redraw);
-      controls.removeEventListener("start", stopFlight);
+      controls.removeEventListener("start", start);
+      controls.removeEventListener("end", end);
       controls.dispose();
       controlsRef.current = null;
     };
   }, [camera, element, invalidate]);
-  useEffect(() => {
-    const controls = controlsRef.current;
-    if (controls === null || bounds === null || fitted.current) return;
-    if (!(camera instanceof OrthographicCamera) || size.width === 0) return;
-    fitted.current = true;
-    applyView(
-      camera,
-      controls,
-      frameView({
-        camera,
-        controls,
-        bounds,
-        signs: allSigns(),
-        viewport: size,
-        covered: covered(),
-      }),
-    );
-    invalidate();
-  }, [bounds, camera, invalidate, covered, allSigns, size]);
 
-  const fly = useCallback(
-    (to: View) => {
-      const controls = controlsRef.current;
-      if (controls === null) return;
-      flight.current = { from: currentView(camera, controls), to, startedAt: performance.now() };
-      invalidate();
-    },
-    [camera, invalidate],
-  );
   const framedArrangement = useRef(arrangement);
   useEffect(() => {
     if (framedArrangement.current === arrangement) return;
     framedArrangement.current = arrangement;
+    fly(frame());
+  }, [arrangement, fly, frame]);
+  // Frames every island when they first show; after that, only when the view
+  // ends up under the zoom floor, as when the canvas grows, the panel narrows
+  // or islands go.
+  const holdFloor = useEffectEvent(() => {
     const controls = controlsRef.current;
-    if (controls === null || bounds === null || !(camera instanceof OrthographicCamera)) return;
-    fly(
-      frameView({
-        camera,
-        controls,
-        bounds,
-        signs: allSigns(),
-        viewport: size,
-        covered: covered(),
-      }),
+    const all = frame();
+    if (controls === null || all === null || gesturing.current) return;
+    if (!fitted.current) {
+      fitted.current = true;
+      jump(all);
+      return;
+    }
+    if (!offFloor(currentView(camera, controls), all)) return;
+    const moving = flight.current;
+    if (moving === null) jump(all);
+    // A glide headed under the floor turns towards it; one headed in far enough lands fine.
+    else if (moving.to.zoom < all.zoom) fly(all);
+  });
+  // oxlint-disable-next-line react/exhaustive-effect-dependencies -- New islands or a resized canvas move the floor.
+  useEffect(() => holdFloor(), [frame]);
+  // Resizing the open panel zooms about what showed beside it, so the same
+  // stretch of map stays in view. Opening and closing it start or end at zero.
+  const panelWidth = useRef(0);
+  const keepShownBesidePanel = useEffectEvent(() => {
+    const controls = controlsRef.current;
+    const width = panel()?.getBoundingClientRect().width ?? 0;
+    const grown = panelWidth.current > 0 ? width - panelWidth.current : 0;
+    panelWidth.current = width;
+    if (controls === null || grown === 0 || gesturing.current || flight.current !== null) return;
+    // Measures the floor afresh: the panel's width moves it.
+    frame();
+    const hidden = covered();
+    const visible = Math.max(1, size.width - hidden.right);
+    const view = currentView(camera, controls);
+    const zoom = Math.min(
+      controls.maxZoom,
+      Math.max(controls.minZoom, (view.zoom * visible) / (visible + grown)),
     );
-  }, [arrangement, bounds, camera, fly, size, covered, allSigns]);
+    // Zooming keeps the middle of the canvas still; slide what was in the middle
+    // of the visible part back onto the middle of what is visible now.
+    const scale = zoom / view.zoom;
+    const middleX = size.width / 2;
+    const middleY = size.height / 2;
+    const shownY = (hidden.top + size.height - hidden.bottom) / 2;
+    const dx = visible / 2 - (middleX + ((visible + grown) / 2 - middleX) * scale);
+    const dy = shownY - (middleY + (shownY - middleY) * scale);
+    jump({
+      target: view.target.clone().add(targetShift(probeAt(camera, view), dx, dy, zoom)),
+      zoom,
+    });
+  });
+  // The panel and bars hide part of the canvas, so their size moves the floor too.
+  useEffect(() => {
+    const { top, bottom } = bars();
+    const elements = [panel(), top, bottom].filter((element) => element !== null);
+    return observeResize(elements, () => {
+      keepShownBesidePanel();
+      holdFloor();
+    });
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- The panel mounts with the first chat.
+  }, [panel, bars, focusKey]);
+
   useFrame((state) => {
     const controls = controlsRef.current;
     const moving = flight.current;
-    if (moving === null || controls === null || !(camera instanceof OrthographicCamera)) return;
+    if (moving === null || controls === null) return;
     const t = Math.min(1, (performance.now() - moving.startedAt) / FLIGHT_MS);
     const ease = t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2;
     applyView(camera, controls, {
@@ -2282,36 +2374,23 @@ function WorldControls({
   });
 
   // Double-click an island to frame it, or the sea to frame them all again.
-  useEffect(() => {
-    const controls = controlsRef.current;
-    if (controls === null || bounds === null || !(camera instanceof OrthographicCamera)) return;
+  const onDoubleClick = useEffectEvent((event: MouseEvent) => {
+    const rect = element.getBoundingClientRect();
     const raycaster = new Raycaster();
-    const pointer = new Vector2();
-    const hit = new Vector3();
-    const onDoubleClick = (event: MouseEvent) => {
-      const rect = element.getBoundingClientRect();
-      pointer.set(
-        ((event.clientX - rect.left) / rect.width) * 2 - 1,
-        -((event.clientY - rect.top) / rect.height) * 2 + 1,
-      );
-      castFromNearPlane(raycaster, pointer, camera);
-      const ground = raycaster.ray.intersectPlane(seaLevel, hit);
-      const index = ground === null ? -1 : islands.findIndex((island) => isOverIsland(hit, island));
-      const island = bounds[index];
-      fly(
-        frameView({
-          camera,
-          controls,
-          bounds: island === undefined ? bounds : [island],
-          signs: island === undefined ? allSigns() : signsOf([islands[index]!.key]),
-          viewport: size,
-          covered: covered(),
-        }),
-      );
-    };
-    element.addEventListener("dblclick", onDoubleClick);
-    return () => element.removeEventListener("dblclick", onDoubleClick);
-  }, [bounds, islands, camera, element, fly, covered, size, allSigns, signsOf]);
+    const pointer = new Vector2(
+      ((event.clientX - rect.left) / rect.width) * 2 - 1,
+      -((event.clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    castFromNearPlane(raycaster, pointer, camera);
+    const hit = raycaster.ray.intersectPlane(seaLevel, new Vector3());
+    const island = hit === null ? undefined : islands.find((spot) => isOverIsland(hit, spot));
+    fly(frame(island?.key));
+  });
+  useEffect(() => {
+    const listener = (event: MouseEvent) => onDoubleClick(event);
+    element.addEventListener("dblclick", listener);
+    return () => element.removeEventListener("dblclick", listener);
+  }, [element]);
 
   // Opening a chat waits for its panel to settle, then frames its character's
   // island beside it, but only when the panel hides part of the island or the
@@ -2333,16 +2412,17 @@ function WorldControls({
       keepInViewWait.current = afterPaint(() => {
         keepInViewWait.current = null;
         const controls = controlsRef.current;
-        if (controls === null || !(camera instanceof OrthographicCamera)) return;
-        const to = viewShowing({
-          camera,
-          view: currentView(camera, controls),
-          points,
-          viewport: size,
-          covered: covered(),
-          minZoom: controls.minZoom,
-        });
-        if (to !== null) fly(to);
+        if (controls === null) return;
+        fly(
+          viewShowing({
+            camera,
+            view: currentView(camera, controls),
+            points,
+            viewport: size,
+            covered: covered(),
+            minZoom: controls.minZoom,
+          }),
+        );
       });
     };
     return () => {
@@ -2360,7 +2440,6 @@ function WorldControls({
     const controls = controlsRef.current;
     const root = roots.current.get(key);
     if (controls === null || root === undefined || bounds === null) return;
-    if (!(camera instanceof OrthographicCamera)) return;
     root.getWorldPosition(focusPoint);
     const distances = islands.map((spot) =>
       Math.hypot(focusPoint.x - spot.x, focusPoint.z - spot.z),
@@ -2369,28 +2448,17 @@ function WorldControls({
     const island = bounds[nearest];
     const spot = islands[nearest];
     if (island === undefined || spot === undefined) return;
-    const hidden = covered();
     const head = focusPoint.clone().setY(focusPoint.y + FOLLOW_HEIGHT * root.scale.y);
-    const sign = signsOf([spot.key]);
-    const shore = shorePoints(spot, island.reach);
-    if (onScreen(camera, [focusPoint, head, ...shore, ...sign], size, hidden)) return;
+    const shown = [focusPoint, head, ...shorePoints(spot, island.reach), ...signsOf([spot.key])];
+    if (onScreen(camera, shown, size, covered())) return;
     // Switching chats keeps the view from before the first move.
     beforeChat.current ??= currentView(camera, controls);
-    fly(
-      frameView({
-        camera,
-        controls,
-        bounds: [island],
-        signs: sign,
-        viewport: size,
-        covered: hidden,
-      }),
-    );
+    fly(frame(spot.key));
   });
   const onFocus = useEffectEvent((key: string | null) => {
     stopWaiting();
     if (key === null) {
-      if (beforeChat.current !== null) fly(beforeChat.current);
+      fly(beforeChat.current);
       beforeChat.current = null;
       return;
     }
@@ -2417,31 +2485,15 @@ function WorldControls({
       }
     };
     const waitFrame = () => {
-      const frame = requestAnimationFrame(check);
-      waitForPanel.current = () => cancelAnimationFrame(frame);
+      const request = requestAnimationFrame(check);
+      waitForPanel.current = () => cancelAnimationFrame(request);
     };
     waitFrame();
   });
   useEffect(() => onFocus(focusKey), [focusKey]);
   useEffect(() => stopWaiting, [stopWaiting]);
 
-  const onZoomTo = useEffectEvent((key: string) => {
-    const controls = controlsRef.current;
-    const island = bounds?.[islands.findIndex((spot) => spot.key === key)];
-    if (controls === null || island === undefined || !(camera instanceof OrthographicCamera)) {
-      return;
-    }
-    fly(
-      frameView({
-        camera,
-        controls,
-        bounds: [island],
-        signs: signsOf([key]),
-        viewport: size,
-        covered: covered(),
-      }),
-    );
-  });
+  const onZoomTo = useEffectEvent((key: string) => fly(frame(key)));
   useEffect(() => {
     if (zoomTo !== null) onZoomTo(zoomTo.key);
   }, [zoomTo]);
@@ -2450,20 +2502,10 @@ function WorldControls({
   // room for the bubble; otherwise frames its island and slides the spot clear.
   const onReveal = useEffectEvent((islandKey: string, position: Vec3) => {
     const controls = controlsRef.current;
-    const island = bounds?.[islands.findIndex((spot) => spot.key === islandKey)];
-    if (controls === null || island === undefined || !(camera instanceof OrthographicCamera)) {
-      return;
-    }
+    const framed = frame(islandKey);
+    if (controls === null || framed === null) return;
     const hidden = covered();
     const point = new Vector3(...position);
-    const framed = frameView({
-      camera,
-      controls,
-      bounds: [island],
-      signs: signsOf([islandKey]),
-      viewport: size,
-      covered: hidden,
-    });
     const current = currentView(camera, controls);
     if (
       current.zoom >= framed.zoom * REVEAL_MIN_ZOOM &&
@@ -2478,6 +2520,15 @@ function WorldControls({
     if (reveal !== null) onReveal(reveal.islandKey, reveal.position);
   }, [reveal]);
   return null;
+}
+
+/** How close to the zoom floor counts as resting on it. */
+const FLOOR_SLACK = 1.001;
+
+/** True when `view` sits on or under the zoom floor without framing every island as `all` does. */
+function offFloor(view: View, all: View): boolean {
+  if (view.zoom > all.zoom * FLOOR_SLACK) return false;
+  return view.zoom < all.zoom || view.target.distanceTo(all.target) >= 0.01;
 }
 
 /** How far in, against framing its island, the map must be to start an agent there as is. */
@@ -2507,7 +2558,6 @@ function bubbleRoom(
   // Pixels the spot must move on screen: right and down are positive.
   const dx = x < half ? half - x : x > right ? right - x : 0;
   const dy = y < top ? top - y : y > bottom ? bottom - y : 0;
-  if (dx === 0 && dy === 0) return new Vector3();
   return targetShift(probe, dx, dy, view.zoom);
 }
 
@@ -2576,10 +2626,10 @@ function probeAt(camera: OrthographicCamera, view: View): OrthographicCamera {
 /** Where `point` shows on the canvas, in pixels from its top left corner. */
 function toScreen(
   point: Vector3,
-  probe: OrthographicCamera,
+  camera: OrthographicCamera,
   viewport: { readonly width: number; readonly height: number },
 ): { readonly x: number; readonly y: number } {
-  const projected = point.clone().project(probe);
+  const projected = point.clone().project(camera);
   return {
     x: ((projected.x + 1) / 2) * viewport.width,
     y: ((1 - projected.y) / 2) * viewport.height,
@@ -2612,7 +2662,6 @@ function sameRect(a: DOMRect, b: DOMRect): boolean {
   return a.left === b.left && a.top === b.top && a.width === b.width && a.height === b.height;
 }
 
-/** True when every point falls inside the part of the canvas the panel leaves visible. */
 /** Points around an island's shoreline at sea level, `reach` out into the shallows. */
 function shorePoints(spot: IslandSpot, reach: number): Vector3[] {
   const radius = spot.shoreRadius + reach;
@@ -2622,6 +2671,7 @@ function shorePoints(spot: IslandSpot, reach: number): Vector3[] {
   });
 }
 
+/** True when every point falls inside the part of the canvas the panel leaves visible. */
 function onScreen(
   camera: OrthographicCamera,
   points: ReadonlyArray<Vector3>,
@@ -2629,11 +2679,8 @@ function onScreen(
   covered: Covered,
 ): boolean {
   camera.updateMatrixWorld();
-  const projected = new Vector3();
   return points.every((point) => {
-    projected.copy(point).project(camera);
-    const x = ((projected.x + 1) / 2) * viewport.width;
-    const y = ((1 - projected.y) / 2) * viewport.height;
+    const { x, y } = toScreen(point, camera, viewport);
     return (
       x >= 0 &&
       x <= viewport.width - covered.right &&
@@ -2656,8 +2703,8 @@ interface View {
   readonly zoom: number;
 }
 
-function currentView(camera: Object3D & { zoom?: number }, controls: MapControls): View {
-  return { target: controls.target.clone(), zoom: camera.zoom ?? 1 };
+function currentView(camera: OrthographicCamera, controls: MapControls): View {
+  return { target: controls.target.clone(), zoom: camera.zoom };
 }
 
 function applyView(camera: OrthographicCamera, controls: MapControls, view: View) {
@@ -2671,25 +2718,22 @@ function applyView(camera: OrthographicCamera, controls: MapControls, view: View
 /** The view that fits `bounds` into the part of the canvas the panel and bars leave visible. */
 function frameView(input: {
   readonly camera: OrthographicCamera;
-  readonly controls: MapControls;
+  readonly maxZoom: number;
   readonly bounds: ReadonlyArray<Bounds>;
   /** Points that must show too, like the corners of the islands' signs. */
   readonly signs: ReadonlyArray<Vector3>;
   readonly viewport: { readonly width: number; readonly height: number };
   readonly covered: Covered;
 }): View {
-  const { controls, bounds, viewport } = input;
-  // Measured on a copy, so the real camera only moves when the view is applied.
-  const probe = input.camera.clone();
+  const { bounds, viewport } = input;
   // Keep a usable strip of world even when the panel covers most of the canvas.
   const coveredRight = Math.max(0, Math.min(input.covered.right, viewport.width - 320));
   const coveredTop = Math.max(0, Math.min(input.covered.top, viewport.height / 4));
   const coveredBottom = Math.max(0, Math.min(input.covered.bottom, viewport.height / 4));
   const first = bounds[0]!;
   const target = new Vector3((first.minX + first.maxX) / 2, 0, (first.minZ + first.maxZ) / 2);
-  probe.position.copy(target).add(CAMERA_OFFSET);
-  probe.lookAt(target);
-  probe.updateMatrixWorld();
+  // Measured on a copy, so the real camera only moves when the view is applied.
+  const probe = probeAt(input.camera, { target, zoom: 1 });
   // Measure every island on screen at zoom 1 (one unit per pixel). Islands are
   // round, so trace a ring inside each box rather than its corners, which
   // would stick out on every side of the tilted view. At sea level the ring
@@ -2699,6 +2743,13 @@ function frameView(input: {
   let bottom = Infinity;
   let top = -Infinity;
   const point = new Vector3();
+  const measure = () => {
+    point.applyMatrix4(probe.matrixWorldInverse);
+    left = Math.min(left, point.x);
+    right = Math.max(right, point.x);
+    bottom = Math.min(bottom, point.y);
+    top = Math.max(top, point.y);
+  };
   for (const island of bounds) {
     const centerX = (island.minX + island.maxX) / 2;
     const centerZ = (island.minZ + island.maxZ) / 2;
@@ -2710,55 +2761,31 @@ function frameView(input: {
         [-0.6, island.reach],
         [SIGN_TOP, 0],
       ] as const) {
-        point
-          .set(
-            centerX + Math.cos(angle) * (halfX + reach),
-            y,
-            centerZ + Math.sin(angle) * (halfZ + reach),
-          )
-          .applyMatrix4(probe.matrixWorldInverse);
-        left = Math.min(left, point.x);
-        right = Math.max(right, point.x);
-        bottom = Math.min(bottom, point.y);
-        top = Math.max(top, point.y);
+        point.set(
+          centerX + Math.cos(angle) * (halfX + reach),
+          y,
+          centerZ + Math.sin(angle) * (halfZ + reach),
+        );
+        measure();
       }
     }
   }
   for (const corner of input.signs) {
-    point.copy(corner).applyMatrix4(probe.matrixWorldInverse);
-    left = Math.min(left, point.x);
-    right = Math.max(right, point.x);
-    bottom = Math.min(bottom, point.y);
-    top = Math.max(top, point.y);
+    point.copy(corner);
+    measure();
   }
-  // Slide the view sideways onto the middle of that, then zoom to fit.
-  target.add(
-    new Vector3((left + right) / 2, (bottom + top) / 2, 0)
-      .transformDirection(probe.matrixWorld)
-      .multiplyScalar(Math.hypot((left + right) / 2, (bottom + top) / 2)),
-  );
   const margin = 1.15;
+  // Not held to a minimum: framing every island is what sets the zoom floor.
   const zoom = Math.min(
-    controls.maxZoom,
-    Math.max(
-      controls.minZoom,
-      Math.min(
-        (viewport.width - coveredRight) / ((right - left) * margin),
-        (viewport.height - coveredTop - coveredBottom) / ((top - bottom) * margin),
-      ),
-    ),
+    input.maxZoom,
+    (viewport.width - coveredRight) / ((right - left) * margin),
+    (viewport.height - coveredTop - coveredBottom) / ((top - bottom) * margin),
   );
-  // Centre the islands in the part of the canvas the panel and bars leave visible.
-  target.add(
-    new Vector3(coveredRight / 2, (coveredTop - coveredBottom) / 2, 0)
-      .transformDirection(probe.matrixWorld)
-      .multiplyScalar(Math.hypot(coveredRight / 2, (coveredTop - coveredBottom) / 2) / zoom),
-  );
-  // The screen-space shifts above also move the target up or down; slide it
-  // back along the line of sight onto sea level, where the camera aims.
-  const sight = new Vector3().copy(CAMERA_OFFSET).normalize();
-  target.addScaledVector(sight, -target.y / sight.y);
-  return { target, zoom };
+  // Slide what was measured onto the middle of the part of the canvas the
+  // panel and bars leave visible.
+  const dx = -((left + right) / 2) * zoom - coveredRight / 2;
+  const dy = ((bottom + top) / 2) * zoom + (coveredTop - coveredBottom) / 2;
+  return { target: target.add(targetShift(probe, dx, dy, zoom)), zoom };
 }
 
 /** The new-agent piles on an island nobody works at, with where their buttons sit in the world. */
