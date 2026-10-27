@@ -1,4 +1,5 @@
 import { deriveThreadQueueWorkflowState } from "@t3tools/client-runtime/state/thread-workflows";
+import type * as DateTime from "effect/DateTime";
 import type {
   ChatAttachment,
   MessageId,
@@ -12,6 +13,7 @@ export interface SentMessage {
   /** The chips' records, for rendering them inline as the chat does. */
   readonly context: OrchestrationMessageContext | undefined;
   readonly attachments: ReadonlyArray<ChatAttachment>;
+  readonly createdAt: DateTime.Utc;
 }
 
 export interface LastExchange {
@@ -44,6 +46,7 @@ export function lastExchange(projection: OrchestrationV2ThreadProjection): LastE
             text: sentMessage.text,
             context: sentMessage.context,
             attachments: sentMessage.attachments,
+            createdAt: sentMessage.createdAt,
           },
   };
 }

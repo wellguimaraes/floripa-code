@@ -2753,18 +2753,6 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         .map((record) => record.contextId),
     [resolvedContext.records],
   );
-  const contextClipboardFragment =
-    resolvedContext.records.length === 0
-      ? null
-      : encodeComposerContextFragment({
-          version: 1,
-          source: {
-            environmentId: ctx.activeThreadEnvironmentId,
-            ...(ctx.threadRef ? { threadId: ctx.threadRef.threadId } : {}),
-            messageId: row.message.id,
-          },
-          records: resolvedContext.records,
-        });
   // Chips inside the selection copy as their links (data-markdown-copy); the structured
   // fragment rides beside so a paste into a draft brings the payloads along. Only records
   // for chips that are actually inside the selection travel, so copying prose next to an
@@ -3025,40 +3013,92 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           </span>
         </div>
       ) : null}
-      <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
-        <div className="flex shrink-0 items-center gap-2">
-          <Tooltip>
-            <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
-              {formatDayAwareTimestamp(row.message.createdAt, ctx.timestampFormat)}
-            </TooltipTrigger>
-            <TooltipPopup>
-              {formatChatTimestampTooltip(row.message.createdAt, ctx.timestampFormat)}
-            </TooltipPopup>
-          </Tooltip>
-          <div className="flex items-center gap-0.5">
-            {typeof revertTurnCount === "number" && (
-              <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
-            )}
-            {resolvedContext.text && (
-              <MessageCopyButton
-                // Structured paste needs the canonical links to retain their positions.
-                text={
-                  contextClipboardFragment
-                    ? resolvedContext.text
-                    : replaceComposerContextReferences(
-                        resolvedContext.text,
-                        (reference) => reference.label,
-                      )
-                }
-                {...(contextClipboardFragment
-                  ? {
-                      extraFlavors: { [COMPOSER_CONTEXT_CLIPBOARD_MIME]: contextClipboardFragment },
-                    }
-                  : {})}
-                variant="ghost"
-              />
-            )}
-          </div>
+      <UserMessageActions
+        message={row.message}
+        environmentId={ctx.activeThreadEnvironmentId}
+        threadId={ctx.threadRef?.threadId}
+        timestampFormat={ctx.timestampFormat}
+        className="max-w-[80%]"
+      >
+        {typeof revertTurnCount === "number" && (
+          <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
+        )}
+      </UserMessageActions>
+    </div>
+  );
+}
+
+/**
+ * A sent message's hover row: when it went out, then its actions, ending in copy. The
+ * parent carries `group`; hovering it reveals the row. Shared by the chat and the
+ * world's agent bubble.
+ */
+export function UserMessageActions({
+  message,
+  environmentId,
+  threadId,
+  timestampFormat,
+  className,
+  children,
+}: {
+  message: Pick<ChatMessage, "id" | "text" | "context" | "createdAt">;
+  environmentId: EnvironmentId;
+  threadId: ThreadId | undefined;
+  timestampFormat: TimestampFormat;
+  className?: string;
+  /** Actions ahead of copy, such as the chat's rewind. */
+  children?: ReactNode;
+}) {
+  const resolvedContext = useMemo(() => resolveUserMessageContext(message), [message]);
+  const contextClipboardFragment =
+    resolvedContext.records.length === 0
+      ? null
+      : encodeComposerContextFragment({
+          version: 1,
+          source: {
+            environmentId,
+            ...(threadId ? { threadId } : {}),
+            messageId: message.id,
+          },
+          records: resolvedContext.records,
+        });
+  return (
+    <div
+      className={cn(
+        "flex w-full items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100",
+        className,
+      )}
+    >
+      <div className="flex shrink-0 items-center gap-2">
+        <Tooltip>
+          <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
+            {formatDayAwareTimestamp(message.createdAt, timestampFormat)}
+          </TooltipTrigger>
+          <TooltipPopup>
+            {formatChatTimestampTooltip(message.createdAt, timestampFormat)}
+          </TooltipPopup>
+        </Tooltip>
+        <div className="flex items-center gap-0.5">
+          {children}
+          {resolvedContext.text && (
+            <MessageCopyButton
+              // Structured paste needs the canonical links to retain their positions.
+              text={
+                contextClipboardFragment
+                  ? resolvedContext.text
+                  : replaceComposerContextReferences(
+                      resolvedContext.text,
+                      (reference) => reference.label,
+                    )
+              }
+              {...(contextClipboardFragment
+                ? {
+                    extraFlavors: { [COMPOSER_CONTEXT_CLIPBOARD_MIME]: contextClipboardFragment },
+                  }
+                : {})}
+              variant="ghost"
+            />
+          )}
         </div>
       </div>
     </div>

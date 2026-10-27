@@ -1,12 +1,15 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { resolveProviderSkillsForCwd } from "@t3tools/client-runtime/providerSkills";
+import { presentPendingBackgroundWork } from "@t3tools/client-runtime/state/thread-execution";
 import { fileBasename } from "@t3tools/shared/path";
 import type { ServerProvider } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import { ArchiveIcon, MessagesSquareIcon, RefreshCwIcon, SquareIcon, XIcon } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
+import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { formatShortcutLabel } from "../../keybindings";
 import { observeResize } from "../../lib/observeResize";
@@ -23,9 +26,15 @@ import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { Button } from "../ui/button";
 import { Kbd } from "../ui/kbd";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "../chat/composerPromptHistory";
-import { ClampedUserMessage, type UserMessageChipState } from "../chat/MessagesTimeline";
+import { ComposerBanner } from "../chat/ComposerBanner";
+import {
+  ClampedUserMessage,
+  type UserMessageChipState,
+  UserMessageActions,
+} from "../chat/MessagesTimeline";
 import { QueuedRunsControl } from "../chat/QueuedRunsControl";
 import { BubbleComposer } from "./BubbleComposer";
 import type { CharacterFacts } from "./engine/facts";
@@ -91,6 +100,22 @@ export function WorldBubble(props: {
     providers?.find((candidate) => candidate.instanceId === thread?.modelSelection.instanceId) ??
     null;
   const { sent: lastSent } = useLastExchange(facts.ref);
+  const timestampFormat = useEnvironmentSettings(
+    facts.ref.environmentId,
+    (settings) => settings.timestampFormat,
+  );
+  // An attachment-only message was sent with a stand-in prompt: there is no text of yours to copy.
+  const lastSentForActions = useMemo(
+    () =>
+      lastSent === null
+        ? null
+        : {
+            ...lastSent,
+            text: lastSent.text === ATTACHMENT_ONLY_BOOTSTRAP_PROMPT ? "" : lastSent.text,
+            createdAt: DateTime.formatIso(lastSent.createdAt),
+          },
+    [lastSent],
+  );
   // The exchange opens scrolled to its end, where the latest words are, and follows the agent's
   // work as it grows unless you scrolled up to read.
   const exchange = useRef<HTMLDivElement>(null);
@@ -140,6 +165,15 @@ export function WorldBubble(props: {
   const updateMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
+  // Work that outlives the turn (dev servers, watch loops, subagents), as the chat shows it once
+  // the turn settles.
+  const backgroundWork = useMemo(
+    () =>
+      facts.status === "working" || thread === null
+        ? null
+        : presentPendingBackgroundWork(thread.pendingBackgroundTasks),
+    [facts.status, thread],
+  );
   const regeneratingTitle = thread?.titleRegeneration != null;
   // Worktree folders are often generated (e.g. `t3-8f432bc3`), so a worktree goes by its branch.
   const worktreeLabel =
@@ -447,7 +481,7 @@ export function WorldBubble(props: {
                     // Covers the turn scrolling under it, which fades out beneath it.
                     <div
                       ref={pinnedMessage}
-                      className="sticky top-0 z-10 flex flex-col items-end gap-0.5 bg-popover"
+                      className="group sticky top-0 z-10 flex flex-col items-end gap-0.5 bg-popover"
                     >
                       {/* A fractional scroll offset can leak a row of the turn above the pin; this caps it. */}
                       <div className="pointer-events-none absolute inset-x-0 bottom-full h-1 bg-popover" />
@@ -468,6 +502,16 @@ export function WorldBubble(props: {
                           )}
                         </RollingSwap>
                       </div>
+                      {lastSentForActions !== null ? (
+                        <UserMessageActions
+                          message={lastSentForActions}
+                          environmentId={facts.ref.environmentId}
+                          threadId={facts.ref.threadId}
+                          timestampFormat={timestampFormat}
+                          // Faint rather than hidden, so the pin shows it has actions.
+                          className="max-w-[85%] opacity-50"
+                        />
+                      ) : null}
                     </div>
                   ) : null
                 }
@@ -482,6 +526,43 @@ export function WorldBubble(props: {
               placement="floating"
             />
           </div>
+          {backgroundWork !== null ? (
+            <ComposerBanner.Root
+              role="status"
+              placement="floating"
+              density="comfortable"
+              className="mt-2"
+            >
+              <ComposerBanner.Row>
+                <ComposerBanner.Icon>
+                  <span className="flex opacity-40" aria-hidden="true">
+                    <Spinner size="xs" />
+                  </span>
+                </ComposerBanner.Icon>
+                <ComposerBanner.Content className="whitespace-nowrap">
+                  <span className="min-w-0 truncate font-medium">{backgroundWork.title}</span>
+                  {/* A single item is already named in the title. */}
+                  {backgroundWork.items.length > 1 ? (
+                    <span className="min-w-0 truncate text-muted-foreground">
+                      {backgroundWork.items.map((item) => item.label).join(", ")}
+                    </span>
+                  ) : null}
+                </ComposerBanner.Content>
+                {isStoppable(facts) ? (
+                  <ComposerBanner.Actions>
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      disabled={state.phase === "stopping"}
+                      onClick={() => void stop()}
+                    >
+                      {state.phase === "stopping" ? "Stopping..." : "Stop"}
+                    </Button>
+                  </ComposerBanner.Actions>
+                ) : null}
+              </ComposerBanner.Row>
+            </ComposerBanner.Root>
+          ) : null}
         </>
       }
     />
