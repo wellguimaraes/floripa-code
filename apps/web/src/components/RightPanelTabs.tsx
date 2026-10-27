@@ -986,7 +986,10 @@ export function RightPanelTypeRail(
             onClick={() => props.onActivateType(type)}
             className={cn(
               "mx-1 flex h-9 cursor-pointer items-center justify-center gap-0.5 rounded-md text-muted-foreground transition-colors",
-              active ? "bg-accent text-foreground" : "hover:bg-accent/60 hover:text-foreground",
+              // Shaded like the active tab, so the type and its tab read as one selection.
+              active
+                ? "bg-foreground/10 text-foreground"
+                : "hover:bg-foreground/6 hover:text-foreground",
               !enabled && "cursor-default opacity-40 hover:bg-transparent",
             )}
           >
