@@ -7,6 +7,7 @@ import { useEnvironmentQuery } from "../state/query";
 import { vcsEnvironment } from "../state/vcs";
 import { BranchPicker, BranchPickerRefItem } from "./BranchPicker";
 import { resolveBranchTriggerLabel, sanitizeNewRefName } from "./BranchToolbar.logic";
+import { cn } from "../lib/utils";
 import { MiddleTruncate } from "./ui/middle-truncate";
 import { Button } from "./ui/button";
 import { ComboboxTrigger } from "./ui/combobox";
@@ -20,6 +21,7 @@ export function WorktreeBaseBranchPicker({
   startFromOrigin,
   onStartFromOriginChange,
   disabled = false,
+  size = "sm",
   id,
 }: {
   environmentId: EnvironmentId;
@@ -29,6 +31,7 @@ export function WorktreeBaseBranchPicker({
   startFromOrigin: boolean;
   onStartFromOriginChange: (checked: boolean) => void;
   disabled?: boolean;
+  size?: "sm" | "xs";
   id?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -114,12 +117,16 @@ export function WorktreeBaseBranchPicker({
       <ComboboxTrigger
         id={id}
         disabled={disabled || !cwd}
-        render={<Button variant="outline" size="sm" />}
+        render={<Button variant="outline" size={size} />}
         className="w-full justify-between "
       >
-        <GitBranchIcon className="size-3.5 shrink-0 text-muted-foreground" />
+        <GitBranchIcon
+          className={cn("shrink-0 text-muted-foreground", size === "sm" ? "size-3.5" : "size-3")}
+        />
         <MiddleTruncate value={label} className="flex-1 text-left" />
-        <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground" />
+        <ChevronDownIcon
+          className={cn("shrink-0 text-muted-foreground", size === "sm" ? "size-3.5" : "size-3")}
+        />
       </ComboboxTrigger>
     </BranchPicker>
   );

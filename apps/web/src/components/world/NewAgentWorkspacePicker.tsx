@@ -14,7 +14,7 @@ export interface PickableWorkspace {
   readonly value: string;
   readonly label: string;
   /** A second line, such as the branch the main worktree is on. */
-  readonly detail: string;
+  readonly detail: string | null;
   readonly workspace: WorldAgentWorkspace;
   /** The hat its agents wear in the world, if any work there. */
   readonly hat: number | null;
@@ -129,9 +129,11 @@ export function NewAgentWorkspacePicker(props: {
                 {item.agents}
               </Badge>
             ) : null}
-            <span className="max-w-1/2 shrink-0 truncate text-xs text-muted-foreground">
-              {item.detail}
-            </span>
+            {item.detail !== null ? (
+              <span className="max-w-1/2 shrink-0 truncate text-xs text-muted-foreground">
+                {item.detail}
+              </span>
+            ) : null}
           </button>
         ))}
       </div>

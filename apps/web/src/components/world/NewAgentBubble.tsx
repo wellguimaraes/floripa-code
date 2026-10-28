@@ -23,6 +23,7 @@ import { cn } from "../../lib/utils";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Select, SelectItem, SelectPopup, SelectValue } from "../ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { WorktreeBaseBranchPicker } from "../WorktreeBaseBranchPicker";
 import { BubbleComposer } from "./BubbleComposer";
 import { HuePicker } from "./HuePicker";
 import type { NewAgentDraft } from "./newAgentDraftStore";
@@ -52,7 +53,8 @@ const workspaceValue = (workspace: WorldAgentWorkspace) =>
  * first message of a new thread in that project, with any attached, dropped,
  * or pasted files, using the defaults a fresh draft would; an open chat switches to it.
  * In a repo it first asks where the agent works: the main worktree, a new worktree,
- * or another existing one, the most recently used first.
+ * or another existing one, the most recently used first. A new worktree's base branch
+ * is picked in the composer step, starting from the default branch.
  * The model, its traits, permissions and plan mode use the chat's own pickers;
  * a picked model becomes the default for new chats once the agent starts.
  * The text box, files, voice and send live in BubbleComposer, shared by both bubbles.
@@ -106,10 +108,8 @@ export function NewAgentBubble(props: {
     {
       value: "new-worktree",
       label: "New worktree",
-      detail:
-        workspaces.worktreeBaseBranch === null
-          ? "From the default branch"
-          : `From ${workspaces.worktreeBaseBranch}`,
+      // Its base is picked on the next step.
+      detail: null,
       workspace: { kind: "new-worktree" },
       hat: null,
       agents: 0,
@@ -311,6 +311,29 @@ export function NewAgentBubble(props: {
                   ))}
                 </SelectPopup>
               </Select>
+            ) : null}
+            {workspaces.isRepo && selectedWorkspace.kind === "new-worktree" ? (
+              <div className="mt-1 flex max-w-full min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                <span className="shrink-0">from</span>
+                <div className="max-w-56 min-w-0">
+                  <WorktreeBaseBranchPicker
+                    environmentId={project.environmentId}
+                    cwd={workspaceRoot}
+                    value={selectedWorkspace.baseBranch ?? workspaces.worktreeBaseBranch ?? ""}
+                    onValueChange={(baseBranch) =>
+                      setWorkspace({ ...selectedWorkspace, baseBranch })
+                    }
+                    startFromOrigin={
+                      selectedWorkspace.startFromOrigin ?? workspaces.worktreeStartFromOrigin
+                    }
+                    onStartFromOriginChange={(startFromOrigin) =>
+                      setWorkspace({ ...selectedWorkspace, startFromOrigin })
+                    }
+                    disabled={state.phase === "starting"}
+                    size="xs"
+                  />
+                </div>
+              </div>
             ) : null}
           </div>
           <Button variant="ghost" size="icon-xs" aria-label="Close" onClick={onClose}>

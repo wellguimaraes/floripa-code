@@ -119,7 +119,8 @@ pile. In a git project, the bubble first asks where it works, with one row each
 for the main worktree, a new worktree, and every worktree that already exists,
 the one an agent used most recently first. Use the up and down arrow keys and
 `Enter`, or click. It starts on the project's worktree setting. Your pick shows
-under the bubble's title; click it to change it. Type what the agent should do
+under the bubble's title; click it to change it. A new worktree starts from the
+default branch; pick another branch, or origin's copy, next to it. Type what the agent should do
 and press `Enter`. It starts on a colour nobody on that island wears; click its
 portrait to pick another. Paste, drop, or use the paperclip to attach images or files too.
 A new thread starts in that project

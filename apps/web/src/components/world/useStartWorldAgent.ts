@@ -48,7 +48,12 @@ import type { OutgoingMessage } from "./useBubbleAttachments";
 /** Where a new agent works: the project checkout, a new worktree, or an existing one. */
 export type WorldAgentWorkspace =
   | { readonly kind: "local" }
-  | { readonly kind: "new-worktree" }
+  | {
+      readonly kind: "new-worktree";
+      /** Picked over the project's default base branch and its start-from-origin setting. */
+      readonly baseBranch?: string;
+      readonly startFromOrigin?: boolean;
+    }
   | { readonly kind: "worktree"; readonly path: string; readonly branch: string };
 
 function findProject(projectRef: ScopedProjectRef) {
@@ -212,19 +217,29 @@ export function useWorldAgentWorkspaces(projectRef: ScopedProjectRef) {
   const mainBranch = refs.data?.refs.find((ref) => ref.current)?.name ?? null;
   const worktreeBaseBranch = refs.data?.refs.find((ref) => ref.isDefault)?.name ?? mainBranch;
 
-  const worktreeByDefault = useProjectSettings(projectRef)?.defaultThreadEnvMode === "worktree";
+  const projectSettings = useProjectSettings(projectRef);
+  const worktreeByDefault = projectSettings?.defaultThreadEnvMode === "worktree";
+  const worktreeStartFromOrigin = projectSettings?.newWorktreesStartFromOrigin ?? false;
 
   const defaultWorkspace: WorldAgentWorkspace =
     isRepo && worktreeByDefault ? { kind: "new-worktree" } : { kind: "local" };
-  return { defaultWorkspace, worktrees, mainBranch, worktreeBaseBranch, isRepo };
+  return {
+    defaultWorkspace,
+    worktrees,
+    mainBranch,
+    worktreeBaseBranch,
+    worktreeStartFromOrigin,
+    isRepo,
+  };
 }
 
 /**
  * Starts a thread in a project straight away, without opening its draft. It
  * runs with the given setup, which useWorldAgentSetup seeds with what a fresh
  * draft would pick. It works in the given workspace, else the project's
- * local-or-worktree default. A new worktree starts from the given base branch,
- * which useWorldAgentWorkspaces finds like the branch picker does.
+ * local-or-worktree default. A new worktree starts from its own picked base
+ * branch, else the given one, which useWorldAgentWorkspaces finds like the
+ * branch picker does.
  */
 export function useStartWorldAgent() {
   const startTurn = useOrchestrationCommand(threadEnvironment.startTurn, { reportFailure: false });
@@ -259,7 +274,11 @@ export function useStartWorldAgent() {
         interactionMode: setup.interactionMode,
       });
 
-      const baseBranch = workspaceKind === "new-worktree" ? worktreeBaseBranch : null;
+      const picked = workspace?.kind === "new-worktree" ? workspace : null;
+      const baseBranch =
+        workspaceKind === "new-worktree" ? (picked?.baseBranch ?? worktreeBaseBranch) : null;
+      const startFromOrigin =
+        picked?.startFromOrigin ?? projectSettings.newWorktreesStartFromOrigin;
       if (workspaceKind === "new-worktree" && baseBranch === null)
         throw new Error("Could not find a branch to base the worktree on.");
 
@@ -304,9 +323,7 @@ export function useStartWorldAgent() {
                   prepareWorktree: {
                     projectCwd: project.workspaceRoot,
                     baseBranch,
-                    ...(projectSettings.newWorktreesStartFromOrigin
-                      ? { startFromOrigin: true }
-                      : {}),
+                    ...(startFromOrigin ? { startFromOrigin: true } : {}),
                   },
                   runSetupScript: true,
                 }
