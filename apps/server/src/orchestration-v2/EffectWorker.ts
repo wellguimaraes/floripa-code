@@ -500,6 +500,22 @@ export const layerExecutor: Layer.Layer<
                     }),
                 ),
               );
+          case "delegated-tasks.archive":
+            return threads
+              .archiveIdleDelegatedTasks({
+                threadId: effect.threadId,
+                commandId: effect.commandId,
+              })
+              .pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new OrchestrationEffectExecutionError({
+                      effectId: effect.id,
+                      effectType: effect.request.type,
+                      cause,
+                    }),
+                ),
+              );
         }
       },
     });

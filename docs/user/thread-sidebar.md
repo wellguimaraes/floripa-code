@@ -227,7 +227,8 @@ snooze limit stops by default. Providers without a reset time offer manual
 retry and the normal snooze choices.
 
 On web and desktop, use **Agents** to follow work delegated to subagents.
-Stop on a thread also stops the subagents it delegated to.
+Stop on a thread also stops the subagents it delegated to. Archiving a thread
+also archives its idle subagents; a subagent that is still working stays active.
 
 Subagent threads started by the agent can't take messages; message the parent
 thread instead. When such a subagent needs an approval or an answer, the parent

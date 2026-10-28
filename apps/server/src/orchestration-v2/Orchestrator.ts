@@ -3451,6 +3451,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           threadId: command.threadId,
           request: { type: "terminal.cleanup" },
         } satisfies PendingOrchestrationEffectV2,
+        {
+          id: `effect:${command.commandId}:delegated-tasks.archive`,
+          commandId: command.commandId,
+          threadId: command.threadId,
+          request: { type: "delegated-tasks.archive" },
+        } satisfies PendingOrchestrationEffectV2,
       ]);
     }
   });

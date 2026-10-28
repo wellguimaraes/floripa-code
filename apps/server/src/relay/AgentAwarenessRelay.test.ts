@@ -214,6 +214,7 @@ const makeTestRelay = Effect.fnUntraced(function* (
     interruptThread: unused,
     archiveWorktreeThreads: unused,
     stopDelegatedTasks: unused,
+    archiveIdleDelegatedTasks: unused,
     getThreadEventSequence: unused,
     recoverDelegatedTask: unused,
     delegatedTaskResultPending: unused,

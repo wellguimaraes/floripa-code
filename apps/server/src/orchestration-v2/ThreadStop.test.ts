@@ -511,6 +511,78 @@ it.effect("a delegated task that cannot be stopped fails the walk after its sibl
   }).pipe(Effect.provide(layerTest)),
 );
 
+it.effect("archiving a thread archives its idle delegated tasks and leaves busy ones", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const threads = yield* ThreadManagementService.ThreadManagementService;
+    const sql = yield* SqlClient.SqlClient;
+    const complete = (threadId: ThreadId) =>
+      Effect.gen(function* () {
+        const now = yield* DateTime.now;
+        for (const run of (yield* orchestrator.getThreadProjection(threadId)).runs) {
+          yield* projections.apply({
+            id: EventId.make(`event:archive:${run.id}:completed`),
+            type: "run.updated",
+            threadId,
+            runId: run.id,
+            occurredAt: now,
+            payload: { ...run, status: "completed", completedAt: now },
+          });
+        }
+      });
+    const archivedAt = (threadId: ThreadId) =>
+      orchestrator
+        .getThreadProjection(threadId)
+        .pipe(Effect.map((projection) => projection.thread.archivedAt !== null));
+
+    const parentThreadId = ThreadId.make("thread:archive-parent");
+    yield* createWatchingThread(parentThreadId, 20);
+    yield* send(parentThreadId, "work", "start_immediately");
+    const idleChildThreadId = yield* delegate(parentThreadId, "idle task");
+    const busyChildThreadId = yield* delegate(parentThreadId, "busy task");
+    const grandchildThreadId = yield* delegate(idleChildThreadId, "grandchild task");
+    yield* complete(grandchildThreadId);
+    yield* complete(idleChildThreadId);
+    yield* complete(parentThreadId);
+
+    const archiveCommandId = CommandId.make("archive-parent");
+    yield* orchestrator.dispatch({
+      type: "thread.archive",
+      commandId: archiveCommandId,
+      threadId: parentThreadId,
+    });
+    const effects = yield* sql<{ readonly effect_type: string }>`
+      SELECT effect_type FROM orchestration_v2_effect_outbox WHERE command_id = ${archiveCommandId}
+    `;
+    assert.include(
+      effects.map((row) => row.effect_type),
+      "delegated-tasks.archive",
+    );
+
+    // What the delegated-tasks.archive effect runs once the archive commits.
+    yield* threads.archiveIdleDelegatedTasks({
+      threadId: parentThreadId,
+      commandId: archiveCommandId,
+    });
+    assert.isTrue(yield* archivedAt(idleChildThreadId));
+    assert.isFalse(yield* archivedAt(busyChildThreadId));
+
+    // The child's own archive cascades the same way.
+    yield* threads.archiveIdleDelegatedTasks({
+      threadId: idleChildThreadId,
+      commandId: CommandId.make(`${archiveCommandId}:archive:${idleChildThreadId}`),
+    });
+    assert.isTrue(yield* archivedAt(grandchildThreadId));
+
+    // A retried effect archives nothing twice.
+    yield* threads.archiveIdleDelegatedTasks({
+      threadId: parentThreadId,
+      commandId: archiveCommandId,
+    });
+  }).pipe(Effect.provide(layerTest)),
+);
+
 it.effect("thread.stop on a finished thread refuses a late agent watch", () =>
   Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;

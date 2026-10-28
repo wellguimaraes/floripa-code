@@ -384,6 +384,15 @@ export interface ThreadManagementServiceShape {
     readonly commandId: CommandId;
     readonly reason?: string | undefined;
   }) => Effect.Effect<void, Orchestrator.OrchestratorV2Error>;
+  /**
+   * Archives the delegated tasks of an archived thread that have no live or queued run. A busy
+   * task stays active. Each archive cascades the same way to that task's own tasks. Command IDs
+   * derive from `commandId`; all tasks are tried, then the first failure fails the call.
+   */
+  readonly archiveIdleDelegatedTasks: (input: {
+    readonly threadId: ThreadId;
+    readonly commandId: CommandId;
+  }) => Effect.Effect<void, Orchestrator.OrchestratorV2Error>;
   readonly getThreadEventSequence: Orchestrator.OrchestratorV2["Service"]["getThreadEventSequence"];
   readonly recoverDelegatedTask: Orchestrator.OrchestratorV2["Service"]["recoverDelegatedTask"];
   readonly delegatedTaskResultPending: Orchestrator.OrchestratorV2["Service"]["delegatedTaskResultPending"];
@@ -904,6 +913,39 @@ const make = Effect.gen(function* () {
       if (failures[0] !== undefined) return yield* Effect.fail(failures[0]);
     });
 
+  const archiveIdleDelegatedTasks: ThreadManagementServiceShape["archiveIdleDelegatedTasks"] = (
+    input,
+  ) =>
+    Effect.gen(function* () {
+      const { subagents } = yield* orchestrator.getThreadRecords(input.threadId, ["subagents"]);
+      const failures: Array<Orchestrator.OrchestratorV2Error> = [];
+      for (const task of subagents) {
+        if (task.origin !== "app_owned" || task.childThreadId === null) continue;
+        const threadId = task.childThreadId;
+        yield* orchestrator.getThreadRecords(threadId, ["runs"]).pipe(
+          Effect.flatMap((child) =>
+            child.thread.archivedAt !== null ||
+            child.thread.deletedAt !== null ||
+            child.runs.some((run) => !isTerminalRunStatus(run.status))
+              ? Effect.void
+              : dispatch({
+                  type: "thread.archive",
+                  commandId: CommandId.make(`${input.commandId}:archive:${threadId}`),
+                  threadId,
+                }),
+          ),
+          Effect.catch((error) =>
+            Effect.logWarning("Unable to archive a delegated task", {
+              parentThreadId: input.threadId,
+              threadId,
+              error,
+            }).pipe(Effect.andThen(Effect.sync(() => failures.push(error)))),
+          ),
+        );
+      }
+      if (failures[0] !== undefined) return yield* Effect.fail(failures[0]);
+    });
+
   return ThreadManagementService.of({
     ensureLegacyTranscript,
     searchThreadStream: (input) =>
@@ -957,6 +999,7 @@ const make = Effect.gen(function* () {
     interruptThread,
     archiveWorktreeThreads,
     stopDelegatedTasks,
+    archiveIdleDelegatedTasks,
     getThreadEventSequence: orchestrator.getThreadEventSequence,
     recoverDelegatedTask: orchestrator.recoverDelegatedTask,
     delegatedTaskResultPending: orchestrator.delegatedTaskResultPending,
