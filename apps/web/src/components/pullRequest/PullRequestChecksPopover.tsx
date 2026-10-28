@@ -19,6 +19,7 @@ import { ScrollArea } from "../ui/scroll-area";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
+import { PullRequestChecksStatusLine } from "./PullRequestDetailLayout";
 import { groupPullRequestChecks } from "./pullRequestDetail.logic";
 import {
   PullRequestCheckStatusIcon,
@@ -138,6 +139,7 @@ export function PullRequestChecksPopover({
   reference,
   threadRef = null,
   variant = "icon",
+  label,
   className,
   render,
 }: {
@@ -150,6 +152,8 @@ export function PullRequestChecksPopover({
   /** Thread the popover sits beside; a listing row has none. */
   threadRef?: ScopedThreadRef | null;
   variant?: "icon" | "count";
+  /** Summary beside the icon, for the detail header; the whole line then opens the popup. */
+  label?: React.ReactNode;
   className?: string;
   render?: React.ReactElement;
 }) {
@@ -160,6 +164,16 @@ export function PullRequestChecksPopover({
     checks?.filter((check) => check.status === "failure" || check.status === "cancelled").length ??
     0;
   const summary = checks === undefined || stale ? null : summarizePullRequestChecks(checks);
+  // The rollup's dot also stands for checks awaiting approval, so the spinner waits for a check
+  // that is actually running.
+  const checksIcon =
+    !stale && runningCount > 0 ? (
+      <span className={cn("inline-flex", presentation.toneClassName)}>
+        <Spinner aria-hidden size="sm" />
+      </span>
+    ) : (
+      <presentation.Icon aria-hidden className={cn("size-3.5", presentation.toneClassName)} />
+    );
   return (
     <Popover>
       {/* A listing row is itself a button, so the trigger renders as a span: a nested button is
@@ -168,13 +182,21 @@ export function PullRequestChecksPopover({
       <PopoverTrigger
         nativeButton={variant === "count"}
         aria-label={
-          variant === "count"
+          variant === "count" || label !== undefined
             ? `Open checks: ${summary ?? presentation.label}`
             : `Checks: ${presentation.label}`
         }
         render={
           variant === "count" ? (
             (render ?? <Button variant="ghost" size="sm" className={className} />)
+          ) : label !== undefined ? (
+            <PullRequestChecksStatusLine
+              role="button"
+              tabIndex={0}
+              className={cn("flex-initial cursor-pointer text-muted-foreground", className)}
+              icon={checksIcon}
+              label={label}
+            />
           ) : (
             <span
               role="button"
@@ -185,15 +207,7 @@ export function PullRequestChecksPopover({
         }
         onClick={(event) => event.stopPropagation()}
       >
-        {/* The rollup's dot also stands for checks awaiting approval, so the spinner waits for a
-            check that is actually running. */}
-        {!stale && runningCount > 0 ? (
-          <span className={cn("inline-flex", presentation.toneClassName)}>
-            <Spinner aria-hidden size="sm" />
-          </span>
-        ) : (
-          <presentation.Icon aria-hidden className={cn("size-3.5", presentation.toneClassName)} />
-        )}
+        {checksIcon}
         {variant === "count" ? (
           <>
             {checks !== undefined && runningCount > 0 ? (

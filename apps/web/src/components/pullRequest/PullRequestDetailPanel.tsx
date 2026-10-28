@@ -2621,22 +2621,19 @@ export function PullRequestDetailPanel({
                         : "Approve workflows to run"}
                   </TooltipPopup>
                 </Tooltip>
+              ) : checksState !== null ? (
+                <PullRequestChecksPopover
+                  checks={detail.checks}
+                  stale={checksStale}
+                  checksState={checksState}
+                  threadRef={threadRef}
+                  label={checksSummary}
+                />
               ) : (
                 <PullRequestChecksStatusLine
                   className="text-muted-foreground"
                   aria-label={checksSummary ? `Checks: ${checksSummary}` : "Checks"}
-                  icon={
-                    checksState !== null ? (
-                      <PullRequestChecksPopover
-                        checks={detail.checks}
-                        stale={checksStale}
-                        checksState={checksState}
-                        threadRef={threadRef}
-                      />
-                    ) : (
-                      <CircleDotIcon aria-hidden className="size-3.5" />
-                    )
-                  }
+                  icon={<CircleDotIcon aria-hidden className="size-3.5" />}
                   label={checksSummary}
                 />
               )
