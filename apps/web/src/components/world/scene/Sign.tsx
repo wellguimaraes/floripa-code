@@ -95,6 +95,8 @@ export function Sign(props: {
   readonly pullRequests: number;
   /** Clicking the branch count, at this point on screen, e.g. to list the branches. */
   readonly onListClick: (point: { readonly x: number; readonly y: number }) => void;
+  /** Clicking the PR count, at this point on screen, e.g. to list the PRs. */
+  readonly onPullRequestsClick: (point: { readonly x: number; readonly y: number }) => void;
   /** Clicking the project's icon, at this point on screen, e.g. to change it. */
   readonly onIconClick: (point: { readonly x: number; readonly y: number }) => void;
   /** Right-clicking the project's icon, for every way to change it. */
@@ -112,6 +114,7 @@ export function Sign(props: {
     branches,
     pullRequests,
     onListClick,
+    onPullRequestsClick,
     onIconClick,
     onIconMenu,
     onPrefsClick,
@@ -130,14 +133,14 @@ export function Sign(props: {
     [text, color, icon, branches, pullRequests],
   );
   useEffect(() => () => board.texture.dispose(), [board]);
-  // The icon, the branch count and the preferences button take clicks; the rest
-  // of the board doesn't.
+  // The icon, both counts and the preferences button take clicks; the rest of the board doesn't.
   const target = (event: ThreeEvent<PointerEvent | MouseEvent>) => {
     const x = (event.uv?.x ?? -1) * board.pixelWidth;
     const within = (span: { readonly left: number; readonly right: number } | undefined) =>
       span !== undefined && x >= span.left && x <= span.right;
     if (within(board.icon)) return "icon";
     if (within(board.badges[0])) return "list";
+    if (within(board.badges[1])) return "pullRequests";
     if (within(board.prefs)) return "prefs";
     return null;
   };
@@ -187,6 +190,7 @@ export function Sign(props: {
             const point = { x: event.nativeEvent.clientX, y: event.nativeEvent.clientY };
             if (clicked === "icon") onIconClick(point);
             else if (clicked === "prefs") onPrefsClick();
+            else if (clicked === "pullRequests") onPullRequestsClick(point);
             else onListClick(point);
           }}
           onContextMenu={(event) => {

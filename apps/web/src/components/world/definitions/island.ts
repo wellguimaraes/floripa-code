@@ -296,7 +296,7 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
       // The run ended but a subagent it started is still at it: dig alongside it.
       { when: { status: "waiting", hasWorkingKids: true }, go: "mine", do: "mine" },
       // A long command still running in the background, such as a dev server, even after the
-      // agent is done: at the pile, arms crossed, waiting it out.
+      // agent is done: sitting up at the pile, waiting it out.
       { when: { status: ["ready", "waiting"], backgroundTask: true }, go: "mine", do: "wait" },
       // No new output for a while: keep swinging, slowly.
       { when: { status: "working", quiet: true }, go: "mine", do: "ponder" },
@@ -326,7 +326,7 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
       // A slow swing, so it needs frames, but fewer than full-speed mining.
       ponder: { pose: "ponder", ambientFps: 8 },
       idle: { pose: "stand" },
-      wait: { pose: "crossArms" },
+      wait: { pose: "sitUp" },
       celebrate: { pose: "wave", ambientFps: 12 },
       sit: { pose: "slump" },
       sleep: { pose: "lie" },

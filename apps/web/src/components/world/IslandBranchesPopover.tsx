@@ -59,7 +59,7 @@ const isGitCommandError = Schema.is(GitCommandError);
 const CONFIRM_MS = 4_000;
 /**
  * How often an open popover reads its branches again. Just the local refs: a worktree's full
- * status fetches the remote and looks its PR up, so only the refresh button does.
+ * status fetches the remote and looks its PR up, so only opening and the refresh button do.
  */
 const POLL_MS = 5_000;
 
@@ -243,6 +243,14 @@ export function IslandBranchesPopover(props: {
       ),
     ).finally(() => setRefreshing(false));
   };
+  // Opening refreshes everything once, after the first read lists the worktrees to refresh.
+  const refreshedOnOpen = useRef(false);
+  const refreshOnOpen = useEffectEvent(() => void refreshAll());
+  useEffect(() => {
+    if (loading || refreshedOnOpen.current) return;
+    refreshedOnOpen.current = true;
+    refreshOnOpen();
+  }, [loading]);
 
   return (
     <Popover

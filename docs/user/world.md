@@ -80,15 +80,12 @@ archive buttons as the bubble, and `Option`+`A` (`Alt`+`A`) archives from the ch
 with `Cmd`+`Escape` (`Ctrl`+`Escape`) or `Cmd`+`W` (`Ctrl`+`W`), and the map goes back to where it was.
 `Cmd`+`W` also closes Settings when it opens over the world.
 
-Right-click a character for **Open chat**, **Send voice command**,
+Right-click a character for **Open chat**,
 **Regenerate title**, **Stop**, **Archive**, **Archive others** and **Archive to the left**. The last two
 archive the other agents on that island, or only those left of it on screen. Stop ends the agent's current run, like the stop button in the
-chat; the reply bubble has the same button while the agent is busy. Archiving a busy agent, or one waiting on a question, stops its run first. A voice command opens the reply bubble already listening and sends
-what you say once you stop talking; the bubble's microphone fills the message
-box without sending. Click the microphone to listen until you pause, or hold it
-down to talk and let go to finish. Holding `⌘⇧` (`Ctrl+Shift` on Windows and
-Linux) while the bubble has focus does the same as holding the microphone. Press `Escape` while it listens to drop what you said and keep the bubble open. Voice needs speech recognition in the browser, so it may
-not be available everywhere. `mod`-click characters to select several; the
+chat; the reply bubble has the same button while the agent is busy. `Ctrl`+`C` stops it from the chat or
+the bubble too, unless you have text selected on Windows or Linux, where it copies. Archiving a busy agent, or one waiting on a question, stops its run first.
+`mod`-click characters to select several; the
 character whose bubble or chat is open joins the selection too. Then
 right-click one of them to stop or archive them all at once.
 
@@ -109,10 +106,11 @@ the pier. The island button at the top left counts the islands, or shows "4 of 6
 it to line the islands up vertically, in a grid, or horizontally, to show or hide
 a project's island, or to remove a project.
 What you hide, how big each island is, and how you arrange the islands are
-remembered in this browser. In the desktop app, the
-**+** button at the top left opens a folder picker; the folder you choose
-becomes a new project with its own island. Right-click open water to add an
-island or arrange the islands.
+remembered in this browser. The **+** button at the top left adds projects:
+**Browse…** (desktop app only) makes the folder you choose a
+new project with its own island, and **Import from other apps** brings in
+projects and conversations from Claude Code, Codex, and Orca. Right-click open
+water to add or import islands, or to arrange them.
 
 To start an agent on an island, hover it and click the **+** over an empty rock
 pile. In a git project, the bubble first asks where it works, with one row each

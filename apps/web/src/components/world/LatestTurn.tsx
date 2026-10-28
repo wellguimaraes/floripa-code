@@ -21,13 +21,14 @@ import {
   deriveTimelineActivity,
   type TimelineEntry,
 } from "../../session-logic";
+import type { ChatMessage } from "../../types";
 import { useThreadProjection, useThreadVisibleTurnItems } from "../../state/entities";
 import { ExpandedImageDialog } from "../chat/ExpandedImageDialog";
 import { expandedImageKey, type ExpandedImagePreview } from "../chat/ExpandedImagePreview";
 import { InlineTimelineRows, type UserMessageChipState } from "../chat/MessagesTimeline";
 
 const NO_RUNS: ReadonlyArray<never> = [];
-const NO_ENTRIES: ReadonlyArray<TimelineEntry> = [];
+const NO_EXCHANGES: ReadonlyArray<EarlierExchange> = [];
 // Exchanges shown above yours on open, and how many more each scroll to the top brings in.
 const FIRST_EARLIER_EXCHANGES = 2;
 const MORE_EARLIER_EXCHANGES = 3;
@@ -40,11 +41,18 @@ const NO_RUN_STATE = {
   runlessWorkStartedAt: null,
 };
 
+interface EarlierExchange {
+  /** The message that opened it; none for whatever came before the first one. */
+  readonly message: ChatMessage | null;
+  readonly entries: ReadonlyArray<TimelineEntry>;
+}
+
 /**
  * Your last exchange as the chat shows it: the agent's work, its words, and how
  * long it has been at it. Your message itself is rendered by the bubble and
  * placed between the turn and the exchanges before it, which load in further
- * as you scroll up.
+ * as you scroll up. Each exchange sits in its own box, so its message, pinned
+ * the same way, stays on top only while its reply passes under it.
  */
 export function LatestTurn(props: {
   readonly threadRef: ScopedThreadRef;
@@ -61,6 +69,8 @@ export function LatestTurn(props: {
   readonly onOpenFullChat: () => void;
   /** Your last message, as the bubble pins it. */
   readonly pinned: ReactNode;
+  /** An earlier exchange's message, pinned like your last one. */
+  readonly renderPin: (message: ChatMessage) => ReactNode;
   /** What scrolls the exchange: reaching its top brings in earlier exchanges. */
   readonly scrollRef: RefObject<HTMLDivElement | null>;
 }) {
@@ -80,15 +90,14 @@ export function LatestTurn(props: {
   });
   const [earlierExchanges, setEarlierExchanges] = useState(FIRST_EARLIER_EXCHANGES);
   // A message still queued has no entry yet: the turn running now, from the message before, shows.
-  const { earlierEntries, timelineEntries, hasMore } = useMemo(() => {
+  const { earlier, timelineEntries, hasMore } = useMemo(() => {
     const isUserMessage = (entry: TimelineEntry) =>
       entry.kind === "message" && entry.message.role === "user";
     const sentIndex = allEntries.findLastIndex(
       (entry) => entry.kind === "message" && entry.message.id === sentMessageId,
     );
     const start = sentIndex !== -1 ? sentIndex : allEntries.findLastIndex(isUserMessage);
-    if (start <= 0)
-      return { earlierEntries: NO_ENTRIES, timelineEntries: allEntries, hasMore: false };
+    if (start <= 0) return { earlier: NO_EXCHANGES, timelineEntries: allEntries, hasMore: false };
     let from = start;
     let found = 0;
     for (let index = start - 1; index >= 0 && found < earlierExchanges; index--) {
@@ -100,8 +109,19 @@ export function LatestTurn(props: {
     }
     // Fewer exchanges than asked for: whatever came before the first one shows too.
     if (found < earlierExchanges) from = 0;
+    const exchanges: Array<EarlierExchange & { entries: TimelineEntry[] }> = [];
+    for (const entry of allEntries.slice(from, start)) {
+      const current = exchanges.at(-1);
+      if (entry.kind === "message" && entry.message.role === "user") {
+        exchanges.push({ message: entry.message, entries: [entry] });
+      } else if (current !== undefined) {
+        current.entries.push(entry);
+      } else {
+        exchanges.push({ message: null, entries: [entry] });
+      }
+    }
     return {
-      earlierEntries: allEntries.slice(from, start),
+      earlier: exchanges,
       timelineEntries: allEntries.slice(start),
       hasMore: from > 0,
     };
@@ -169,32 +189,41 @@ export function LatestTurn(props: {
   };
   return (
     <>
-      {earlierEntries.length > 0 ? (
+      {earlier.length > 0 ? (
         <div className="flex min-w-0 flex-col gap-2">
-          <InlineTimelineRows
-            {...sharedRowProps}
-            timelineEntries={earlierEntries}
-            hiddenMessageId={null}
-            isWorking={false}
-            runlessWorkActive={false}
-            activeTurnInProgress={false}
-            activeTurnStartedAt={null}
-            awaitingUser={false}
-            latestRun={null}
-            runningRunId={null}
-          />
+          {earlier.map((exchange) => (
+            <div key={exchange.message?.id ?? "before"} className="flex min-w-0 flex-col gap-2">
+              {exchange.message !== null ? props.renderPin(exchange.message) : null}
+              <InlineTimelineRows
+                {...sharedRowProps}
+                timelineEntries={exchange.entries}
+                hiddenMessageId={exchange.message?.id ?? null}
+                isWorking={false}
+                runlessWorkActive={false}
+                activeTurnInProgress={false}
+                activeTurnStartedAt={null}
+                awaitingUser={false}
+                latestRun={null}
+                runningRunId={null}
+              />
+            </div>
+          ))}
         </div>
       ) : null}
-      {props.pinned}
-      {timelineEntries.length > 0 || activity.isWorking ? (
-        <InlineTimelineRows
-          {...sharedRowProps}
-          timelineEntries={timelineEntries}
-          hiddenMessageId={sentMessageId}
-          {...activity}
-          awaitingUser={props.awaitingUser}
-          latestRun={runState.activityRun}
-        />
+      {props.pinned !== null || timelineEntries.length > 0 || activity.isWorking ? (
+        <div className="flex min-w-0 flex-col gap-2">
+          {props.pinned}
+          {timelineEntries.length > 0 || activity.isWorking ? (
+            <InlineTimelineRows
+              {...sharedRowProps}
+              timelineEntries={timelineEntries}
+              hiddenMessageId={sentMessageId}
+              {...activity}
+              awaitingUser={props.awaitingUser}
+              latestRun={runState.activityRun}
+            />
+          ) : null}
+        </div>
       ) : null}
       {expandedImage !== null ? (
         <ExpandedImageDialog

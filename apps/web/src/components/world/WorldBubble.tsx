@@ -3,9 +3,16 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import { resolveProviderSkillsForCwd } from "@t3tools/client-runtime/providerSkills";
 import { presentPendingBackgroundWork } from "@t3tools/client-runtime/state/thread-execution";
 import { derivePendingThreadRequests } from "@t3tools/client-runtime/state/thread-requests";
-import type { ServerProvider } from "@t3tools/contracts";
+import type { ScopedThreadRef, ServerProvider, TimestampFormat } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
-import { ArchiveIcon, MessagesSquareIcon, RefreshCwIcon, SquareIcon, XIcon } from "lucide-react";
+import {
+  ArchiveIcon,
+  ChevronDownIcon,
+  MessagesSquareIcon,
+  RefreshCwIcon,
+  SquareIcon,
+  XIcon,
+} from "lucide-react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
@@ -22,6 +29,7 @@ import {
   useThreadShell,
 } from "../../state/entities";
 import { derivePendingApprovals, derivePendingUserInputs } from "../../session-logic";
+import type { ChatMessage } from "../../types";
 import { threadEnvironment } from "../../state/threads";
 import { useTheme } from "../../hooks/useTheme";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
@@ -30,6 +38,11 @@ import { Kbd } from "../ui/kbd";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import {
+  PrStatusTooltipContent,
+  prStatusIndicator,
+  useLinkedThreadPullRequest,
+} from "../ThreadStatusIndicators";
 import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "../chat/composerPromptHistory";
 import { ComposerBanner } from "../chat/ComposerBanner";
 import {
@@ -110,16 +123,9 @@ export function WorldBubble(props: {
     facts.ref.environmentId,
     (settings) => settings.timestampFormat,
   );
-  // An attachment-only message was sent with a stand-in prompt: there is no text of yours to copy.
-  const lastSentForActions = useMemo(
+  const lastSentForPin = useMemo(
     () =>
-      lastSent === null
-        ? null
-        : {
-            ...lastSent,
-            text: lastSent.text === ATTACHMENT_ONLY_BOOTSTRAP_PROMPT ? "" : lastSent.text,
-            createdAt: DateTime.formatIso(lastSent.createdAt),
-          },
+      lastSent === null ? null : { ...lastSent, createdAt: DateTime.formatIso(lastSent.createdAt) },
     [lastSent],
   );
   // The exchange opens scrolled to its end, where the latest words are, and follows the agent's
@@ -127,10 +133,9 @@ export function WorldBubble(props: {
   const exchange = useRef<HTMLDivElement>(null);
   const archiveButton = useRef<HTMLButtonElement>(null);
   const exchangeContent = useRef<HTMLDivElement>(null);
-  const pinnedMessage = useRef<HTMLDivElement>(null);
   const followingEnd = useRef(true);
-  // Your message is stuck to the top: the reply is passing under it.
-  const [exchangeScrolled, setExchangeScrolled] = useState(false);
+  // Scrolled up away from the latest words: offers a way back down.
+  const [awayFromEnd, setAwayFromEnd] = useState(false);
   const { resolvedTheme } = useTheme();
   // Both messages render as the chat does, chips and skills included.
   const cwd = thread?.worktreePath ?? project?.workspaceRoot ?? null;
@@ -182,6 +187,16 @@ export function WorldBubble(props: {
   );
   const regeneratingTitle = thread?.titleRegeneration != null;
   const worktree = thread === null ? null : worktreeLabel(thread);
+  // The thread's pull request, resolved as the sidebar does.
+  const pullRequest = useLinkedThreadPullRequest(
+    facts.ref.environmentId,
+    thread?.linkedPullRequest,
+    thread !== null,
+    thread?.pullRequests,
+    thread?.branchPullRequest,
+  );
+  const pr = pullRequest?.pr ?? null;
+  const prStatus = prStatusIndicator(pr, pullRequest?.sourceControlProvider);
   const [pickingHue, setPickingHue] = useState(false);
   // The thread's composer draft, shared with the chat panel: what you type in either shows in both.
   const draftTarget = useMemo(
@@ -372,6 +387,7 @@ export function WorldBubble(props: {
       busyStatus={
         state.phase === "sending" && attachments.attachments.length > 0 ? "Uploading…" : null
       }
+      {...(isStoppable(facts) ? { onStop: () => void stop() } : {})}
       notice={state.phase === "stopping" ? "Stopping…" : null}
       submitBlocked={
         thread === null ||
@@ -412,7 +428,31 @@ export function WorldBubble(props: {
                 {facts.title || "Untitled thread"}
               </p>
               {worktree !== null ? (
-                <p className="truncate text-muted-foreground text-xs">{worktree}</p>
+                <p className="flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs">
+                  <span className="truncate">{worktree}</span>
+                  {pr !== null && prStatus !== null ? (
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <a
+                            href={pr.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={cn(
+                              "flex shrink-0 items-center gap-1 tabular-nums hover:underline",
+                              prStatus.colorClass,
+                            )}
+                          >
+                            <prStatus.Icon className="size-3.5" />#{pr.number}
+                          </a>
+                        }
+                      />
+                      <TooltipPopup>
+                        <PrStatusTooltipContent status={prStatus} />
+                      </TooltipPopup>
+                    </Tooltip>
+                  ) : null}
+                </p>
               ) : null}
             </div>
             {readEnvironmentSupportsTitleRegeneration(facts.ref.environmentId) ? (
@@ -489,75 +529,78 @@ export function WorldBubble(props: {
               the agent did after it, with a few earlier exchanges above that load further as you
               scroll up. Capped in height: the turn scrolls under your message, which stays pinned on
               top. Ruled off below, edge to edge, like the header; gone while empty. */}
-          <div
-            ref={exchange}
-            onScroll={(event) => {
-              const element = event.currentTarget;
-              // Earlier exchanges sit above your message: it sticks once they scroll out of view.
-              const above = pinnedMessage.current?.previousElementSibling ?? null;
-              setExchangeScrolled(
-                above === null
-                  ? element.scrollTop > 0
-                  : above.getBoundingClientRect().bottom < element.getBoundingClientRect().top,
-              );
-              followingEnd.current =
-                element.scrollHeight - element.scrollTop - element.clientHeight < 4;
-            }}
-            className="-mx-2.5 mt-1 max-h-80 overflow-y-auto border-b border-border px-2.5 pb-2.5 text-bubble has-[>[data-exchange]:empty]:hidden"
-          >
-            <div ref={exchangeContent} data-exchange className="flex min-w-0 flex-col gap-2">
-              <LatestTurn
-                threadRef={facts.ref}
-                sentMessageId={lastSent?.id ?? null}
-                awaitingUser={facts.status === "approval" || facts.status === "input"}
-                cwd={cwd}
-                workspaceRoot={project?.workspaceRoot}
-                resolvedTheme={resolvedTheme}
-                skills={skills}
-                providers={providers ?? EMPTY_PROVIDERS}
-                onOpenFullChat={expand}
-                scrollRef={exchange}
-                pinned={
-                  lastSent !== null ? (
-                    // Covers the turn scrolling under it, which fades out beneath it.
-                    <div
-                      ref={pinnedMessage}
-                      className="group sticky top-0 z-10 flex flex-col items-end gap-0.5 bg-popover"
-                    >
-                      {/* A fractional scroll offset can leak a row of the turn above the pin; this caps it. */}
-                      <div className="pointer-events-none absolute inset-x-0 bottom-full h-1 bg-popover" />
-                      {exchangeScrolled ? (
-                        <div className="pointer-events-none absolute inset-x-0 top-full h-10 bg-linear-to-b from-popover to-transparent" />
-                      ) : null}
-                      <div
-                        className="max-w-[85%] rounded-lg bg-message px-3 py-2 break-words text-message-foreground"
-                        aria-label="Your last message"
-                      >
-                        <RollingSwap swapKey={lastSent.id}>
-                          {lastSent.text === ATTACHMENT_ONLY_BOOTSTRAP_PROMPT ? (
-                            <span className="line-clamp-2">
-                              {`${lastSent.attachments.length} ${lastSent.attachments.length === 1 ? "attachment" : "attachments"}`}
-                            </span>
-                          ) : (
-                            <ClampedUserMessage message={lastSent} chips={chips} />
-                          )}
-                        </RollingSwap>
-                      </div>
-                      {lastSentForActions !== null ? (
-                        <UserMessageActions
-                          message={lastSentForActions}
-                          environmentId={facts.ref.environmentId}
-                          threadId={facts.ref.threadId}
-                          timestampFormat={timestampFormat}
-                          // Faint rather than hidden, so the pin shows it has actions.
-                          className="max-w-[85%] opacity-50"
-                        />
-                      ) : null}
-                    </div>
-                  ) : null
-                }
-              />
+          <div className="relative">
+            <div
+              ref={exchange}
+              onScroll={(event) => {
+                const element = event.currentTarget;
+                // A pin heads its exchange's box: it sticks once that box starts above the top,
+                // and what scrolls under it fades. All reads before any writes, for one layout.
+                const top = element.getBoundingClientRect().top;
+                const pins = [...element.querySelectorAll<HTMLElement>("[data-exchange-pin]")];
+                const stuck = pins.map(
+                  (pin) => (pin.parentElement?.getBoundingClientRect().top ?? top) < top,
+                );
+                pins.forEach((pin, index) => pin.toggleAttribute("data-stuck", stuck[index]));
+                followingEnd.current =
+                  element.scrollHeight - element.scrollTop - element.clientHeight < 4;
+                setAwayFromEnd(!followingEnd.current);
+              }}
+              className="-mx-2.5 mt-1 max-h-80 overflow-y-auto border-b border-border px-2.5 pb-2.5 text-bubble has-[>[data-exchange]:empty]:hidden"
+            >
+              <div ref={exchangeContent} data-exchange className="flex min-w-0 flex-col gap-2">
+                <LatestTurn
+                  threadRef={facts.ref}
+                  sentMessageId={lastSent?.id ?? null}
+                  awaitingUser={facts.status === "approval" || facts.status === "input"}
+                  cwd={cwd}
+                  workspaceRoot={project?.workspaceRoot}
+                  resolvedTheme={resolvedTheme}
+                  skills={skills}
+                  providers={providers ?? EMPTY_PROVIDERS}
+                  onOpenFullChat={expand}
+                  scrollRef={exchange}
+                  pinned={
+                    lastSentForPin !== null ? (
+                      <ExchangePin
+                        message={lastSentForPin}
+                        chips={chips}
+                        threadRef={facts.ref}
+                        timestampFormat={timestampFormat}
+                      />
+                    ) : null
+                  }
+                  renderPin={(message) => (
+                    <ExchangePin
+                      message={message}
+                      chips={chips}
+                      threadRef={facts.ref}
+                      timestampFormat={timestampFormat}
+                    />
+                  )}
+                />
+              </div>
             </div>
+            {awayFromEnd ? (
+              <div className="pointer-events-none absolute inset-x-0 bottom-2.5 z-20 flex justify-center">
+                <Button
+                  aria-label="Scroll to end"
+                  onPointerDown={(event) => event.preventDefault()}
+                  onClick={() => {
+                    const element = exchange.current;
+                    if (element === null) return;
+                    followingEnd.current = true;
+                    element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
+                  }}
+                  className="pointer-events-auto"
+                  size="xs"
+                  variant="inverted"
+                >
+                  <ChevronDownIcon className="size-3.5" />
+                  Scroll to end
+                </Button>
+              </div>
+            ) : null}
           </div>
           {/* Messages waiting behind the agent's current run, above the text box as in the chat. */}
           <div className="mt-2 empty:hidden">
@@ -634,6 +677,58 @@ export function WorldBubble(props: {
 }
 
 /** A family's three shades side by side in a pill: head, body, legs. */
+/**
+ * An exchange's message, stuck to the top of its box: the reply scrolls under it and fades out
+ * beneath it once the box starts above the top.
+ */
+function ExchangePin(props: {
+  readonly message: Pick<ChatMessage, "id" | "text" | "context" | "attachments" | "createdAt">;
+  readonly chips: UserMessageChipState;
+  readonly threadRef: ScopedThreadRef;
+  readonly timestampFormat: TimestampFormat;
+}) {
+  const { message } = props;
+  // An attachment-only message was sent with a stand-in prompt: there is no text of yours to copy.
+  const attachmentOnly = message.text === ATTACHMENT_ONLY_BOOTSTRAP_PROMPT;
+  const attachmentCount = message.attachments?.length ?? 0;
+  const forActions = useMemo(
+    () => (attachmentOnly ? { ...message, text: "" } : message),
+    [attachmentOnly, message],
+  );
+  return (
+    <div
+      data-exchange-pin
+      className="group group/pin sticky top-0 z-10 flex flex-col items-end gap-0.5 bg-popover"
+    >
+      {/* A fractional scroll offset can leak a row of the turn above the pin; this caps it. */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-full h-1 bg-popover" />
+      <div className="pointer-events-none absolute inset-x-0 top-full hidden h-10 bg-linear-to-b from-popover to-transparent group-data-[stuck]/pin:block" />
+      <div
+        className="max-w-[85%] rounded-lg bg-message px-3 py-2 break-words text-message-foreground"
+        aria-label="Your message"
+      >
+        <RollingSwap swapKey={message.id}>
+          {attachmentOnly ? (
+            <span className="line-clamp-2">
+              {`${attachmentCount} ${attachmentCount === 1 ? "attachment" : "attachments"}`}
+            </span>
+          ) : (
+            <ClampedUserMessage message={message} chips={props.chips} />
+          )}
+        </RollingSwap>
+      </div>
+      <UserMessageActions
+        message={forActions}
+        environmentId={props.threadRef.environmentId}
+        threadId={props.threadRef.threadId}
+        timestampFormat={props.timestampFormat}
+        // Faint rather than hidden, so the pin shows it has actions.
+        className="max-w-[85%] opacity-50"
+      />
+    </div>
+  );
+}
+
 function FamilyShades({ shades }: { readonly shades: Shades | undefined }) {
   if (shades === undefined) return null;
   return (

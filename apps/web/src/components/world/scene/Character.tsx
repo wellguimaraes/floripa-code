@@ -84,8 +84,8 @@ export function Character(props: {
   readonly surface: (x: number, z: number) => TerrainKind | null;
   readonly movement: WorldMovement;
   readonly selected: boolean;
-  /** A plain click; `clicks` is 2 for the second click of a double-click. */
-  readonly onSelect: (character: WorldCharacter, clicks: number) => void;
+  /** A plain click. */
+  readonly onSelect: (character: WorldCharacter) => void;
   /** An option- or alt-click: straight to the character's chat. */
   readonly onOpen: (character: WorldCharacter) => void;
   /** A cmd- or ctrl-click: adds the character to the selection, or takes it out. */
@@ -275,10 +275,10 @@ export function Character(props: {
   const select = (event: ThreeEvent<MouseEvent>) => {
     if (event.delta > DRAG_CLICK_TOLERANCE_PX) return;
     event.stopPropagation();
-    const { altKey, metaKey, ctrlKey, detail } = event.nativeEvent;
+    const { altKey, metaKey, ctrlKey } = event.nativeEvent;
     if (altKey) onOpen(character);
     else if (metaKey || ctrlKey) onPick(character);
-    else onSelect(character, detail);
+    else onSelect(character);
   };
   const openMenu = (event: ThreeEvent<MouseEvent>) => {
     event.stopPropagation();
@@ -364,9 +364,7 @@ export function Character(props: {
               headItem={hat === null ? undefined : <Hat style={hat} />}
             />
           </Suspense>
-          {activity.pose === "mine" ||
-          activity.pose === "ponder" ||
-          activity.pose === "crossArms" ? (
+          {activity.pose === "mine" || activity.pose === "ponder" || activity.pose === "sitUp" ? (
             <NuggetPile count={facts.beat % (NUGGET_SPOTS.length + 1)} />
           ) : null}
           {placement.fishing === true ? (
@@ -666,7 +664,7 @@ function applyPose(pose: Pose | "walk", time: number, rig: PoseRig) {
   armRight.rotation.set(0, 0, 0);
   legLeft.rotation.set(0, 0, 0);
   legRight.rotation.set(0, 0, 0);
-  const seated = pose === "slump";
+  const seated = pose === "slump" || pose === "sitUp";
   if (seated) {
     legLeft.rotation.x = -Math.PI / 2;
     legRight.rotation.x = -Math.PI / 2;
@@ -704,12 +702,8 @@ function applyPose(pose: Pose | "walk", time: number, rig: PoseRig) {
       head.rotation.z = 0.2;
       head.rotation.x = -0.1;
       break;
-    case "crossArms":
-      // Arms folded over the chest, waiting on a long command.
-      armRight.rotation.x = -1.2;
-      armRight.rotation.z = -0.8;
-      armLeft.rotation.x = -1.1;
-      armLeft.rotation.z = 0.8;
+    case "sitUp":
+      // Sitting by the pile, head up: waiting on a long command, not resting.
       break;
     case "slump":
       head.rotation.x = 0.45;

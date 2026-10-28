@@ -9,7 +9,7 @@ export function ContrastSlider() {
   const setContrast = useWorldContrastStore((state) => state.setContrast);
 
   return (
-    <label className="surface-glass flex h-8 items-center gap-2 rounded-full border border-border/60 px-3 text-foreground shadow-sm">
+    <label className="surface-glass flex h-9 sm:h-8 items-center gap-2 rounded-full border border-border/60 px-3 text-foreground shadow-sm">
       <ContrastIcon className="size-4 text-muted-foreground" />
       <Slider
         min={0}

@@ -111,7 +111,7 @@ function UsagePill({
       aria-label="Subscription usage"
       {...props}
       className={cn(
-        "surface-glass flex h-8 w-max shrink-0 sm:h-7 cursor-pointer items-center gap-4 rounded-full",
+        "surface-glass flex h-9 w-max shrink-0 sm:h-8 cursor-pointer items-center gap-4 rounded-full",
         "border border-border/60 px-3 text-xs text-foreground shadow-sm",
         className,
       )}

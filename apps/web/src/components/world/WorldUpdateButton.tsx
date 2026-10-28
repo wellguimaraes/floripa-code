@@ -47,9 +47,7 @@ function WorldUpdateControl() {
 
   return (
     <Tooltip>
-      <TooltipTrigger
-        render={<Button variant="glass" size="sm" disabled={disabled} onClick={handleClick} />}
-      >
+      <TooltipTrigger render={<Button variant="glass" disabled={disabled} onClick={handleClick} />}>
         {action === "install" ? <RotateCwIcon /> : <DownloadIcon />}
         {label}
       </TooltipTrigger>

@@ -138,7 +138,7 @@ describe("resolveIntent", () => {
     expect(
       resolveIntent(character({ status: "ready", backgroundTask: true }), island!),
     ).toMatchObject({ go: "mine", do: "wait" });
-    expect(island!.activities.wait?.pose).toBe("crossArms");
+    expect(island!.activities.wait?.pose).toBe("sitUp");
     expect(resolveIntent(character({ ...waiting, hasWorkingKids: true }), island!)).toMatchObject({
       go: "mine",
       do: "mine",

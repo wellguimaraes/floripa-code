@@ -1,9 +1,18 @@
-import { FolderGit2Icon, FolderGitIcon, FolderIcon, UserIcon, XIcon } from "lucide-react";
+import {
+  ArrowDownIcon,
+  FolderGit2Icon,
+  FolderGitIcon,
+  FolderIcon,
+  UserIcon,
+  XIcon,
+} from "lucide-react";
 import { type KeyboardEvent, lazy, Suspense, useLayoutEffect, useRef, useState } from "react";
 
 import { cn } from "../../lib/utils";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import { Spinner } from "../ui/spinner";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { WorldAgentWorkspace } from "./useStartWorldAgent";
 
 const HatPortrait = lazy(() =>
@@ -13,8 +22,13 @@ const HatPortrait = lazy(() =>
 export interface PickableWorkspace {
   readonly value: string;
   readonly label: string;
-  /** A second line, such as the branch the main worktree is on. */
+  /** Muted text after the label, such as the branch the main worktree is on. */
   readonly detail: string | null;
+  /** How many commits the detail's branch trails origin by. */
+  readonly behind: number;
+  /** Pulls the detail's branch from origin; null when it can't be pulled from here. */
+  readonly sync: (() => void) | null;
+  readonly syncing: boolean;
   readonly workspace: WorldAgentWorkspace;
   /** The hat its agents wear in the world, if any work there. */
   readonly hat: number | null;
@@ -79,7 +93,7 @@ export function NewAgentWorkspacePicker(props: {
   return (
     <div
       tabIndex={-1}
-      className="flex w-140 flex-col gap-2.5 rounded-xl border border-border bg-popover p-2.5 text-popover-foreground shadow-lg outline-none"
+      className="flex w-127.5 flex-col gap-2.5 rounded-xl border border-border bg-popover p-2.5 text-popover-foreground shadow-lg outline-none"
       onKeyDown={onKeyDown}
     >
       <div className="flex items-start gap-2">
@@ -95,51 +109,98 @@ export function NewAgentWorkspacePicker(props: {
       </div>
       <div className="-m-1 flex max-h-72 flex-col gap-1.5 overflow-y-auto p-1">
         {workspaces.map((item) => (
-          <button
+          // The row picks from anywhere but its sync button: the pick button's overlay covers it.
+          <div
             key={item.value}
-            ref={(button) => {
-              if (button === null) buttons.current.delete(item.value);
-              else buttons.current.set(item.value, button);
-            }}
-            type="button"
-            tabIndex={item.value === active ? 0 : -1}
-            onClick={() => onPick(item.workspace)}
             className={cn(
-              "flex h-11 min-w-0 shrink-0 items-center gap-2.5 rounded-lg border border-border px-3 text-left",
-              "bg-muted/40 outline-none transition-colors hover:bg-accent",
+              "relative flex h-11 min-w-0 shrink-0 items-center gap-3 rounded-lg border border-border px-3",
+              "bg-muted/40 transition-colors hover:bg-accent",
               // Marks the arrow keys' place from the start, not only after a key press.
               item.value === active && "border-primary bg-accent ring-2 ring-primary/40",
             )}
           >
-            {item.hat === null ? (
-              <WorkspaceIcon workspace={item.workspace} className="size-4 shrink-0 opacity-70" />
-            ) : (
-              <Suspense fallback={<div className="-mx-0.5 size-5 shrink-0" />}>
-                <HatPortrait hat={item.hat} className="-mx-0.5 size-5" />
-              </Suspense>
-            )}
-            <span className="min-w-0 flex-1 truncate text-sm font-medium">{item.label}</span>
-            {item.agents > 0 ? (
-              <Badge
-                variant="secondary"
-                size="sm"
-                aria-label={`${item.agents} ${item.agents === 1 ? "agent" : "agents"} working here`}
-              >
-                <UserIcon />
-                {item.agents}
-              </Badge>
-            ) : null}
-            {item.detail !== null ? (
-              <span className="max-w-1/2 shrink-0 truncate text-xs text-muted-foreground">
-                {item.detail}
-              </span>
-            ) : null}
-          </button>
+            <button
+              ref={(button) => {
+                if (button === null) buttons.current.delete(item.value);
+                else buttons.current.set(item.value, button);
+              }}
+              type="button"
+              tabIndex={item.value === active ? 0 : -1}
+              onClick={() => onPick(item.workspace)}
+              className="flex min-w-0 flex-1 items-center gap-2.5 text-left outline-none after:absolute after:inset-0 after:rounded-lg"
+            >
+              {item.hat === null ? (
+                <WorkspaceIcon workspace={item.workspace} className="size-4 shrink-0 opacity-70" />
+              ) : (
+                <Suspense fallback={<div className="-mx-0.5 size-5 shrink-0" />}>
+                  <HatPortrait hat={item.hat} className="-mx-0.5 size-5" />
+                </Suspense>
+              )}
+              <span className="min-w-0 flex-1 truncate text-sm font-medium">{item.label}</span>
+              {item.agents > 0 ? (
+                <Badge
+                  variant="secondary"
+                  size="sm"
+                  aria-label={`${item.agents} ${item.agents === 1 ? "agent" : "agents"} working here`}
+                >
+                  <UserIcon />
+                  {item.agents}
+                </Badge>
+              ) : null}
+              {item.detail !== null ? (
+                <span className="max-w-1/2 shrink-0 truncate text-xs text-muted-foreground">
+                  {item.detail}
+                </span>
+              ) : null}
+            </button>
+            {item.behind > 0 ? <BehindOrigin item={item} /> : null}
+          </div>
         ))}
       </div>
       <span className="text-xs text-muted-foreground">
         Arrows to move · Enter to pick · Esc to close
       </span>
     </div>
+  );
+}
+
+/** "↓3": how far the row's branch trails origin, a button that pulls it when it can. */
+function BehindOrigin(props: { readonly item: PickableWorkspace }) {
+  const { behind, sync, syncing } = props.item;
+  const label = `${behind} ${behind === 1 ? "commit" : "commits"} behind origin`;
+  const content = (
+    <>
+      {syncing ? <Spinner size="xs" /> : <ArrowDownIcon aria-hidden className="size-3" />}
+      {behind}
+    </>
+  );
+  if (sync === null)
+    return (
+      <span
+        aria-label={label}
+        className="inline-flex shrink-0 items-center text-xs text-muted-foreground tabular-nums"
+      >
+        {content}
+      </span>
+    );
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            variant="outline-muted"
+            size="xs"
+            aria-label={`${label}. Pull`}
+            disabled={syncing}
+            // Over the row's pick overlay.
+            className="relative z-10"
+            onClick={sync}
+          />
+        }
+      >
+        {content}
+      </TooltipTrigger>
+      <TooltipPopup side="top">{syncing ? "Pulling…" : `${label}. Click to pull`}</TooltipPopup>
+    </Tooltip>
   );
 }

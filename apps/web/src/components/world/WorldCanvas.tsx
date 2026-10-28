@@ -3,7 +3,16 @@ import { PlusIcon, SquareTerminalIcon } from "lucide-react";
 import { scopedProjectKey, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import type { ScopedThreadRef } from "@t3tools/contracts";
-import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import {
   type Camera,
@@ -35,6 +44,7 @@ import {
   useThreadShells,
   waitForThreadShell,
 } from "../../state/entities";
+import { useRightPanelStore } from "../../rightPanelStore";
 import { useUiStateStore } from "../../uiStateStore";
 import { toastManager } from "../ui/toast";
 import type { Vec3, WorldDefinition } from "./definition/types";
@@ -93,7 +103,17 @@ import { useWorldModeStore } from "./worldModeStore";
 import { useWorldVisibilityStore } from "./worldVisibilityStore";
 import { AddProjectButton, useAddProject } from "./AddProjectButton";
 import { ARRANGEMENTS, IslandsMenu } from "./IslandsMenu";
+
+// The onboarding wizard module is heavy and only needed once the dialog opens.
+const ImportHistoryDialog = lazy(() =>
+  import("../onboarding/WelcomeWizard").then((module) => ({
+    default: module.ImportHistoryDialog,
+  })),
+);
 import { IslandBranchesPopover, type WorktreeSurfacesTarget } from "./IslandBranchesPopover";
+import { IslandPullRequestDialog } from "./IslandPullRequestDialog";
+import { IslandPullRequestsPopover } from "./IslandPullRequestsPopover";
+import type { IslandPullRequestAgent, IslandPullRequestRow } from "./islandPullRequests";
 import { useCreateIdleWorldThread } from "./useStartWorldAgent";
 import { canChangeIslandIcon, IslandIconPicker, useSetIslandIcon } from "./IslandIconPicker";
 import { IslandPrefsDialog } from "./IslandPrefsDialog";
@@ -102,7 +122,7 @@ import { IslandRunScriptDialog } from "./IslandRunScriptDialog";
 import { RestoreArchivedDialog } from "./RestoreArchivedDialog";
 import { layoutTags, type ScreenPoint } from "./scene/tagLayout";
 import { isStoppable, WorldBubble } from "./WorldBubble";
-import { voiceInputSupported } from "./useVoiceInput";
+import { VOICE_INPUT_ENABLED, voiceInputSupported } from "./useVoiceInput";
 
 /**
  * The 3D world. Renders on demand only: a still scene draws no frames.
@@ -469,24 +489,10 @@ export default function WorldCanvas(props: {
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   // The bubble opened by "Send voice command" starts listening right away.
   const [listenKey, setListenKey] = useState<string | null>(null);
-  const selectCharacter = (character: WorldCharacter, clicks: number) => {
+  const selectCharacter = (character: WorldCharacter) => {
     const { key } = character.facts;
     setPicked(new Set());
     setListenKey(null);
-    // The second click of a double-click trades the bubble for the chat, and the chat for
-    // the bubble.
-    if (clicks === 2 && bubbleKey === key) {
-      openChat(character);
-      return;
-    }
-    if (clicks === 2 && chatKey === key && !chatCollapsed) {
-      dropPendingChat();
-      setSwitchingTo(null);
-      closeManager();
-      setBubbleKey(key);
-      void onCollapse();
-      return;
-    }
     // With a chat shown, a click switches the chat to that character instead. A collapsed
     // chat stays collapsed: the click opens the bubble, whose expand button shows the chat.
     if (selectedKey !== null && !chatCollapsed) {
@@ -747,6 +753,40 @@ export default function WorldCanvas(props: {
     readonly key: string;
     readonly point: { readonly x: number; readonly y: number };
   } | null>(null);
+  const [pullRequestsOn, setPullRequestsOn] = useState<{
+    readonly key: string;
+    readonly point: { readonly x: number; readonly y: number };
+  } | null>(null);
+  // A PR no agent on its island works on, whose details show in a dialog.
+  const [pullRequestShown, setPullRequestShown] = useState<IslandPullRequestRow | null>(null);
+  // The agents on the island whose PRs are listed, its subagents aside.
+  const pullRequestAgents = useMemo((): ReadonlyArray<IslandPullRequestAgent> => {
+    if (pullRequestsOn === null) return [];
+    const keys = new Set(
+      islands
+        .find((island) => island.key === pullRequestsOn.key)
+        ?.characters.flatMap(({ facts }) => (facts.kid ? [] : [facts.key])),
+    );
+    return threads.filter((thread) =>
+      keys.has(scopedThreadKey({ environmentId: thread.environmentId, threadId: thread.id })),
+    );
+  }, [pullRequestsOn, islands, threads]);
+  // An agent's PR opens beside its chat; one nobody works on opens on its own.
+  const openIslandPullRequest = (row: IslandPullRequestRow) => {
+    if (row.agent === null) return setPullRequestShown(row);
+    const ref = { environmentId: row.agent.environmentId, threadId: row.agent.id };
+    useRightPanelStore.getState().openPullRequest(ref, {
+      projectId: row.projectId,
+      host: row.host,
+      repository: row.repository,
+      number: row.number,
+      url: row.url,
+    });
+    const key = scopedThreadKey(ref);
+    setBubbleKey(null);
+    useWorldModeStore.getState().focusChatOf(key);
+    switchChat({ key, ref });
+  };
   // The island whose preferences are open.
   const [prefsOn, setPrefsOn] = useState<string | null>(null);
   const [iconPicking, setIconPicking] = useState<{
@@ -873,6 +913,12 @@ export default function WorldCanvas(props: {
   };
 
   const addProject = useAddProject(islandOf);
+  const [importOpen, setImportOpen] = useState(false);
+  // Stable, since the import dialog keys its scans on this array.
+  const importEnvironmentIds = useMemo(
+    () => (addProject.environmentId === null ? [] : [addProject.environmentId]),
+    [addProject.environmentId],
+  );
   const showOceanMenu = async (point: { x: number; y: number }) => {
     const api = readLocalApi();
     if (api === undefined) return;
@@ -888,6 +934,9 @@ export default function WorldCanvas(props: {
               },
             ]
           : []),
+        ...(addProject.environmentId !== null
+          ? [{ id: "import-islands", label: "Import from other apps…" }]
+          : []),
         {
           id: "arrange",
           label: "Arrange islands",
@@ -902,6 +951,7 @@ export default function WorldCanvas(props: {
       awayFromPointer(point),
     );
     if (clicked === "add-island") void addProject.addProject();
+    else if (clicked === "import-islands") setImportOpen(true);
     else if (clicked?.startsWith("arrange:")) {
       const value = clicked.slice("arrange:".length);
       const option = ARRANGEMENTS.find((candidate) => candidate.value === value);
@@ -1000,12 +1050,16 @@ export default function WorldCanvas(props: {
     const clicked = await api.contextMenu.show(
       [
         { id: "open", label: "Open chat", icon: "message-square" },
-        {
-          id: "voice",
-          label: "Send voice command",
-          icon: "mic",
-          disabled: !voiceInputSupported(),
-        },
+        ...(VOICE_INPUT_ENABLED
+          ? [
+              {
+                id: "voice",
+                label: "Send voice command",
+                icon: "mic",
+                disabled: !voiceInputSupported(),
+              },
+            ]
+          : []),
         ...(readEnvironmentSupportsTitleRegeneration(character.facts.ref.environmentId)
           ? [
               {
@@ -1474,6 +1528,12 @@ export default function WorldCanvas(props: {
                         closeManager();
                         setListOn({ key: island.key, point });
                       }}
+                      onPullRequestsClick={(point) => {
+                        setBubbleKey(null);
+                        setNewAgent(null);
+                        closeManager();
+                        setPullRequestsOn({ key: island.key, point });
+                      }}
                       onPrefsClick={() => {
                         setBubbleKey(null);
                         setNewAgent(null);
@@ -1798,10 +1858,55 @@ export default function WorldCanvas(props: {
           onClose={() => setListOn(null)}
         />
       ) : null}
+      {pullRequestsOn !== null ? (
+        <IslandPullRequestsPopover
+          point={pullRequestsOn.point}
+          entries={signStats.get(pullRequestsOn.key)?.openPullRequests ?? []}
+          viewers={signStats.get(pullRequestsOn.key)?.viewers ?? {}}
+          localBranches={signStats.get(pullRequestsOn.key)?.localBranches ?? new Set()}
+          loading={signStats.get(pullRequestsOn.key)?.pullRequestsLoading ?? false}
+          agents={pullRequestAgents}
+          hatOf={(path) =>
+            islands.find((island) => island.key === pullRequestsOn.key)?.hats.get(path) ?? null
+          }
+          onSelect={openIslandPullRequest}
+          onClose={() => setPullRequestsOn(null)}
+        />
+      ) : null}
+      {pullRequestShown !== null ? (
+        <IslandPullRequestDialog
+          environmentId={pullRequestShown.environmentId}
+          reference={{
+            projectId: pullRequestShown.projectId,
+            host: pullRequestShown.host,
+            repository: pullRequestShown.repository,
+            number: pullRequestShown.number,
+          }}
+          listEntry={
+            [...signStats.values()]
+              .flatMap((stats) => stats.openPullRequests)
+              .find(
+                (entry) =>
+                  entry.host === pullRequestShown.host &&
+                  entry.repository === pullRequestShown.repository &&
+                  entry.number === pullRequestShown.number,
+              ) ?? null
+          }
+          onClose={() => setPullRequestShown(null)}
+        />
+      ) : null}
+      {importOpen && importEnvironmentIds.length > 0 ? (
+        <Suspense fallback={null}>
+          <ImportHistoryDialog
+            environmentIds={importEnvironmentIds}
+            onClose={() => setImportOpen(false)}
+          />
+        </Suspense>
+      ) : null}
       {toolbar !== null
         ? createPortal(
             <>
-              <AddProjectButton islandOf={islandOf} />
+              <AddProjectButton addProject={addProject} onImport={() => setImportOpen(true)} />
               <IslandsMenu
                 projects={projectOrder.map((key) => ({
                   key,
@@ -1869,7 +1974,7 @@ export default function WorldCanvas(props: {
               onClick={(event) => {
                 if (event.altKey) openChat(character);
                 else if (event.metaKey || event.ctrlKey) togglePicked(character);
-                else selectCharacter(character, event.detail);
+                else selectCharacter(character);
               }}
               onContextMenu={(event) => {
                 event.preventDefault();
@@ -2237,17 +2342,28 @@ function coveredOf(
   panel: HTMLElement | null,
   bars: { readonly top: HTMLElement | null; readonly bottom: HTMLElement | null },
 ): Covered {
-  const panelRect = panel?.getBoundingClientRect();
   const topRect = bars.top?.getBoundingClientRect();
   const bottomRect = bars.bottom?.getBoundingClientRect();
   return {
     top: topRect ? Math.max(0, topRect.bottom - canvas.top) : 0,
-    // The panel's close button sits just outside it, on the left. A hidden panel takes no room.
-    right:
-      panelRect && panelRect.width > 0 ? canvas.right - (panelRect.left - PANEL_CLOSE_SPACE) : 0,
+    right: panelCover(canvas, panel),
     // An empty bar takes no room.
     bottom: bottomRect && bottomRect.height > 0 ? Math.max(0, canvas.bottom - bottomRect.top) : 0,
   };
+}
+
+/**
+ * How much of the canvas the panel hides where it rests once its slide ends. Layout ignores the
+ * slide's translate, so the map and bubbles measure the room it leaves from the moment it opens
+ * or closes, not partway through. A panel closing (inert) or hidden takes no room.
+ */
+function panelCover(canvas: DOMRect, panel: HTMLElement | null): number {
+  if (panel === null || panel.inert || panel.offsetWidth === 0) return 0;
+  const parent = panel.offsetParent;
+  if (parent === null) return 0;
+  const left = parent.getBoundingClientRect().left + parent.clientLeft + panel.offsetLeft;
+  // The panel's close button sits just outside it, on the left.
+  return Math.max(0, canvas.right - (left - PANEL_CLOSE_SPACE));
 }
 
 /** The canvas's size, and how much of it the panel and the bars hide. */
@@ -2403,30 +2519,36 @@ function WorldControls({
     },
     [bounds, islands, camera, size, covered, signsOf],
   );
+  // A view on or under the zoom floor frames every island instead, centred, whatever moved it.
+  const onFloorCentred = useCallback(
+    (to: View): View => {
+      const all = frame();
+      return all !== null && to.zoom <= all.zoom * FLOOR_SLACK ? all : to;
+    },
+    [frame],
+  );
   const jump = useCallback(
     (to: View) => {
       const controls = controlsRef.current;
       if (controls === null) return;
       flight.current = null;
-      applyView(camera, controls, to);
+      applyView(camera, controls, onFloorCentred(to));
       invalidate();
     },
-    [camera, invalidate],
+    [camera, invalidate, onFloorCentred],
   );
   const fly = useCallback(
     (to: View | null) => {
       const controls = controlsRef.current;
       if (controls === null || to === null) return;
-      // Further out than every island needs frames them all instead.
-      const all = frame();
       flight.current = {
         from: currentView(camera, controls),
-        to: all !== null && to.zoom < all.zoom ? all : to,
+        to: onFloorCentred(to),
         startedAt: performance.now(),
       };
       invalidate();
     },
-    [camera, invalidate, frame],
+    [camera, invalidate, onFloorCentred],
   );
 
   const onGestureStart = useEffectEvent(() => {
@@ -2498,8 +2620,8 @@ function WorldControls({
   }, [layout]);
   // Frames every island when they first show; after that, only when the view
   // ends up under the zoom floor, as when the canvas grows, the panel narrows
-  // or islands go.
-  const holdFloor = useEffectEvent(() => {
+  // or islands go. Resizing follows at once; the panel opening or closing glides.
+  const holdFloor = useEffectEvent((glide = false) => {
     const controls = controlsRef.current;
     if (settling.current && fitted.current) return;
     const all = frame();
@@ -2511,9 +2633,10 @@ function WorldControls({
     }
     if (!offFloor(currentView(camera, controls), all)) return;
     const moving = flight.current;
-    if (moving === null) jump(all);
-    // A glide headed under the floor turns towards it; one headed in far enough lands fine.
-    else if (moving.to.zoom < all.zoom) fly(all);
+    if (moving === null) (glide ? fly : jump)(all);
+    // A glide headed onto the floor off centre, or under it, turns to centre it; one headed in
+    // far enough lands fine.
+    else if (offFloor(moving.to, all)) fly(all);
   });
   // oxlint-disable-next-line react/exhaustive-effect-dependencies -- New islands or a resized canvas move the floor.
   useEffect(() => holdFloor(), [frame]);
@@ -2548,14 +2671,22 @@ function WorldControls({
       zoom,
     });
   });
-  // The panel and bars hide part of the canvas, so their size moves the floor too.
+  // The panel and bars hide part of the canvas, so their size moves the floor too, and so
+  // does the panel opening or closing (turning inert), which happens before its slide.
   useEffect(() => {
     const { top, bottom } = bars();
-    const elements = [panel(), top, bottom].filter((element) => element !== null);
-    return observeResize(elements, () => {
+    const shownPanel = panel();
+    const elements = [shownPanel, top, bottom].filter((element) => element !== null);
+    const stopResize = observeResize(elements, () => {
       keepShownBesidePanel();
       holdFloor();
     });
+    const toggled = new MutationObserver(() => holdFloor(true));
+    if (shownPanel !== null) toggled.observe(shownPanel, { attributeFilter: ["inert"] });
+    return () => {
+      stopResize();
+      toggled.disconnect();
+    };
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- The panel mounts with the first chat.
   }, [panel, bars, focusKey]);
 
@@ -2614,15 +2745,13 @@ function WorldControls({
         keepInViewWait.current = null;
         const controls = controlsRef.current;
         if (controls === null) return;
-        const hidden = covered();
         fly(
           viewShowing({
             camera,
             view: currentView(camera, controls),
             points,
             viewport: size,
-            // A chat sliding out (inert) is about to uncover what it hides.
-            covered: panel()?.inert === true ? { ...hidden, right: 0 } : hidden,
+            covered: covered(),
             minZoom: controls.minZoom,
           }),
         );
@@ -2633,13 +2762,15 @@ function WorldControls({
       keepInViewWait.current?.();
       keepInViewWait.current = null;
     };
-  }, [camera, size, covered, panel, fly, keepInView]);
+  }, [camera, size, covered, fly, keepInView]);
   const waitForPanel = useRef<(() => void) | null>(null);
   const stopWaiting = useCallback(() => {
     waitForPanel.current?.();
     waitForPanel.current = null;
   }, []);
-  const frameFocus = useEffectEvent((key: string) => {
+  // Switching chats with the panel already open moves the map only for an agent not fully on
+  // screen; opening the first chat also wants its island in view.
+  const frameFocus = useEffectEvent((key: string, switching: boolean) => {
     const controls = controlsRef.current;
     const root = roots.current.get(key);
     if (controls === null || root === undefined || bounds === null) return;
@@ -2652,14 +2783,19 @@ function WorldControls({
     const spot = islands[nearest];
     if (island === undefined || spot === undefined) return;
     const head = focusPoint.clone().setY(focusPoint.y + FOLLOW_HEIGHT * root.scale.y);
-    const shown = [focusPoint, head, ...shorePoints(spot, island.reach), ...signsOf([spot.key])];
+    const shown = switching
+      ? [focusPoint, head]
+      : [focusPoint, head, ...shorePoints(spot, island.reach), ...signsOf([spot.key])];
     if (onScreen(camera, shown, size, covered())) return;
     // Switching chats keeps the view from before the first move.
     beforeChat.current ??= currentView(camera, controls);
     fly(frame(spot.key));
   });
+  const focusedBefore = useRef<string | null>(null);
   const onFocus = useEffectEvent((key: string | null) => {
     stopWaiting();
+    const switching = focusedBefore.current !== null;
+    focusedBefore.current = key;
     if (key === null) {
       fly(beforeChat.current);
       beforeChat.current = null;
@@ -2679,7 +2815,7 @@ function WorldControls({
       if (still >= PANEL_STILL_FRAMES || (rect !== null && frames >= PANEL_WAIT_FRAMES)) {
         waitForPanel.current = whenIdle(() => {
           waitForPanel.current = null;
-          frameFocus(key);
+          frameFocus(key, switching);
         }, PANEL_IDLE_WAIT_MS);
       } else if (frames < PANEL_WAIT_FRAMES) {
         waitFrame();

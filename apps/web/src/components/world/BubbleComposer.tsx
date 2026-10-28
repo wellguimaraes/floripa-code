@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId, ServerProvider } from "@t3tools/contracts";
 import { LoaderIcon, MicIcon, PaperclipIcon, SendHorizontalIcon, SquareIcon } from "lucide-react";
 import {
@@ -13,6 +14,8 @@ import {
 
 import { type ComposerSlashCommand, collapseExpandedComposerCursor } from "../../composer-logic";
 import { useTheme } from "../../hooks/useTheme";
+import { copiesSelection, resolveShortcutCommand } from "../../keybindings";
+import { primaryServerKeybindingsAtom } from "../../state/server";
 import { cn, isMacPlatform } from "../../lib/utils";
 import {
   collectInlineContextIds,
@@ -35,7 +38,7 @@ import {
 import { BubbleAttachmentList } from "./BubbleAttachmentList";
 import type { useBubbleAttachments } from "./useBubbleAttachments";
 import { type BubbleSlashCommand, useBubbleSuggestions } from "./useBubbleSuggestions";
-import { useVoiceInput, voiceInputSupported } from "./useVoiceInput";
+import { useVoiceInput, VOICE_INPUT_ENABLED, voiceInputSupported } from "./useVoiceInput";
 import { VoiceKeyDialog } from "./VoiceKeyDialog";
 
 /** The suggestion list's full height, and the gap it keeps from the window's edge. */
@@ -55,8 +58,8 @@ const MODIFIER_KEYS = new Set(["Meta", "Control", "Shift", "Alt"]);
 const endOf = (text: string) => collapseExpandedComposerCursor(text, text.length);
 
 /**
- * The parts every world bubble shares: the frame (Escape stops listening or closes, files drop
- * anywhere on it), the chat's text box with its `@` file, `/` command and `$`
+ * The parts every world bubble shares: the frame (Escape stops listening or closes, the stop
+ * shortcut stops the agent, files drop anywhere on it), the chat's text box with its `@` file, `/` command and `$`
  * skill suggestions, paste and Enter, staged files, the status
  * line, and the attach, voice and send buttons. A bubble adds its own header
  * and extras; change shared behaviour here so both bubbles keep it.
@@ -80,6 +83,8 @@ export function BubbleComposer(props: {
   /** Cmd/Ctrl+Enter: leave the bubble for the full chat, taking the text along. */
   readonly onExpand?: () => void;
   readonly onClose: () => void;
+  /** The stop shortcut (`thread.stop`, Ctrl+C by default): stops the agent's run. */
+  readonly onStop?: () => void;
   readonly placeholder: string;
   readonly inputLabel: string;
   readonly submitLabel: string;
@@ -114,6 +119,7 @@ export function BubbleComposer(props: {
   readonly toolbar?: ReactNode;
 }) {
   const { attachments, text, onTextChange, onSubmit, onError, error, busy } = props;
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const fileInput = useRef<HTMLInputElement>(null);
   const [dropping, setDropping] = useState(false);
   const latestText = useRef(text);
@@ -393,53 +399,55 @@ export function BubbleComposer(props: {
       >
         <PaperclipIcon />
       </Button>
-      <Button
-        variant={listening ? "destructive" : "ghost"}
-        size="icon-sm"
-        aria-label={
-          !voiceInputSupported()
-            ? "Voice input isn't available here"
-            : listening
-              ? "Stop listening"
-              : props.speakLabel
-        }
-        title={
-          listening
-            ? "Stop listening"
-            : `${props.speakLabel} (hold to talk, or hold ${talkKeysLabel})`
-        }
-        aria-pressed={listening}
-        disabled={!voiceInputSupported() || voice.phase === "transcribing" || busy}
-        onPointerDown={(event) => {
-          if (event.button !== 0) return;
-          if (listening) {
-            voice.stop();
-            return;
+      {VOICE_INPUT_ENABLED ? (
+        <Button
+          variant={listening ? "destructive" : "ghost"}
+          size="icon-sm"
+          aria-label={
+            !voiceInputSupported()
+              ? "Voice input isn't available here"
+              : listening
+                ? "Stop listening"
+                : props.speakLabel
           }
-          if (!canTalk()) return;
-          // Letting go outside the button still ends the take.
-          event.currentTarget.setPointerCapture(event.pointerId);
-          micPressedAt.current = performance.now();
-          setTalkHeld(true);
-          startListening(false, true);
-        }}
-        onPointerUp={releaseMic}
-        onPointerCancel={releaseMic}
-        onClick={(event) => {
-          // Pointers are handled on press; this is Enter or Space on the focused button.
-          if (event.detail !== 0) return;
-          if (listening) voice.stop();
-          else startListening(false);
-        }}
-      >
-        {voice.phase === "transcribing" ? (
-          <LoaderIcon className="animate-spin" />
-        ) : listening ? (
-          <SquareIcon className="fill-white text-white" />
-        ) : (
-          <MicIcon />
-        )}
-      </Button>
+          title={
+            listening
+              ? "Stop listening"
+              : `${props.speakLabel} (hold to talk, or hold ${talkKeysLabel})`
+          }
+          aria-pressed={listening}
+          disabled={!voiceInputSupported() || voice.phase === "transcribing" || busy}
+          onPointerDown={(event) => {
+            if (event.button !== 0) return;
+            if (listening) {
+              voice.stop();
+              return;
+            }
+            if (!canTalk()) return;
+            // Letting go outside the button still ends the take.
+            event.currentTarget.setPointerCapture(event.pointerId);
+            micPressedAt.current = performance.now();
+            setTalkHeld(true);
+            startListening(false, true);
+          }}
+          onPointerUp={releaseMic}
+          onPointerCancel={releaseMic}
+          onClick={(event) => {
+            // Pointers are handled on press; this is Enter or Space on the focused button.
+            if (event.detail !== 0) return;
+            if (listening) voice.stop();
+            else startListening(false);
+          }}
+        >
+          {voice.phase === "transcribing" ? (
+            <LoaderIcon className="animate-spin" />
+          ) : listening ? (
+            <SquareIcon className="fill-white text-white" />
+          ) : (
+            <MicIcon />
+          )}
+        </Button>
+      ) : null}
       <Button
         size="icon-sm"
         aria-label={props.submitLabel}
@@ -466,11 +474,22 @@ export function BubbleComposer(props: {
       className={cn(
         "flex w-108 flex-col gap-2 rounded-xl border border-border bg-popover p-2.5 outline-none",
         props.width === "narrow" && "w-96",
-        props.width === "wide" && "w-140",
+        props.width === "wide" && "w-127.5",
         "text-popover-foreground shadow-lg",
         dropping && "border-primary",
       )}
       onKeyDown={(event) => {
+        if (
+          props.onStop !== undefined &&
+          !event.nativeEvent.isComposing &&
+          resolveShortcutCommand(event.nativeEvent, keybindings) === "thread.stop" &&
+          !copiesSelection(event.nativeEvent)
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          if (!event.repeat) props.onStop();
+          return;
+        }
         if (event.key !== "Escape" || event.nativeEvent.isComposing) return;
         // The text editor (ProseMirror) prevents every Escape; its menus also stop the event,
         // so one that gets here from the editor was not used.

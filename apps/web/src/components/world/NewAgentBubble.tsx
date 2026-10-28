@@ -1,4 +1,8 @@
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
 import type { ProviderInstanceId, ScopedProjectRef, ScopedThreadRef } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { Select as SelectPrimitive } from "@base-ui/react/select";
@@ -6,6 +10,7 @@ import { TriangleAlertIcon, XIcon } from "lucide-react";
 import { lazy, Suspense, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
+import { useVcsPullAction } from "../../lib/sourceControlActions";
 import { useEnvironmentQuery } from "../../state/query";
 import { vcsEnvironment } from "../../state/vcs";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
@@ -24,6 +29,7 @@ import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Select, SelectItem, SelectPopup, SelectValue } from "../ui/select";
+import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { WorktreeBaseBranchPicker } from "../WorktreeBaseBranchPicker";
 import { BubbleComposer } from "./BubbleComposer";
@@ -49,6 +55,47 @@ const CharacterPortrait = lazy(() => import("./scene/CharacterPortrait"));
 
 const workspaceValue = (workspace: WorldAgentWorkspace) =>
   workspace.kind === "worktree" ? `worktree:${workspace.path}` : workspace.kind;
+
+/** A local branch as Git lists it, with how it compares with origin's copy as last fetched. */
+function useLocalBranch(
+  environmentId: ScopedProjectRef["environmentId"],
+  cwd: string | null,
+  branch: string | null,
+) {
+  const refs = useEnvironmentQuery(
+    cwd !== null && branch !== null
+      ? vcsEnvironment.listRefs({
+          environmentId,
+          input: { cwd, query: branch, limit: 10, includeOriginComparison: true },
+        })
+      : null,
+  );
+  return refs.data?.refs.find((ref) => ref.name === branch && ref.isRemote !== true);
+}
+
+/**
+ * Pulls the branch checked out at `cwd`, toasting a failure. `sync` is null when nothing is
+ * checked out there or this connection can't change source control.
+ */
+function useBranchPull(environmentId: ScopedProjectRef["environmentId"], cwd: string | null) {
+  const scope = useMemo(() => ({ environmentId, cwd }), [environmentId, cwd]);
+  const pull = useVcsPullAction(scope);
+  const sync = async () => {
+    const result = await pull.run();
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      const error = squashAtomCommandFailure(result);
+      toastManager.add({
+        type: "error",
+        title: "Pull failed",
+        description: error instanceof Error ? error.message : "An error occurred.",
+      });
+    }
+  };
+  return {
+    sync: cwd !== null && pull.isAllowed ? () => void sync() : null,
+    syncing: pull.isPending,
+  };
+}
 
 /**
  * Starts an agent from an empty spot on an island. Enter sends the text as the
@@ -98,11 +145,23 @@ export function NewAgentBubble(props: {
   const agentsIn = (worktreePath: string | null) =>
     island?.characters.filter(({ facts }) => !facts.kid && facts.worktreePath === worktreePath)
       .length ?? 0;
+  const workspaceRoot = useProject(project)?.workspaceRoot ?? null;
+  const mainRef = useLocalBranch(environmentId, workspaceRoot, workspaces.mainBranch);
+  const defaultBaseRef = useLocalBranch(
+    environmentId,
+    workspaceRoot,
+    workspaces.worktreeBaseBranch,
+  );
+  // Each pulls where its branch is checked out: the main worktree's in the project folder.
+  const mainPull = useBranchPull(environmentId, workspaceRoot);
+  const defaultBasePull = useBranchPull(environmentId, defaultBaseRef?.worktreePath ?? null);
   const workspaceItems: ReadonlyArray<PickableWorkspace> = [
     {
       value: "local",
       label: "Main worktree",
       detail: workspaces.mainBranch ?? "The project folder",
+      behind: mainRef?.originComparison?.behind ?? 0,
+      ...mainPull,
       workspace: { kind: "local" },
       hat: null,
       agents: agentsIn(null),
@@ -110,8 +169,11 @@ export function NewAgentBubble(props: {
     {
       value: "new-worktree",
       label: "New worktree",
-      // Its base is picked on the next step.
-      detail: null,
+      // Its base can be changed on the next step.
+      detail:
+        workspaces.worktreeBaseBranch === null ? null : `from ${workspaces.worktreeBaseBranch}`,
+      behind: defaultBaseRef?.originComparison?.behind ?? 0,
+      ...defaultBasePull,
       workspace: { kind: "new-worktree" },
       hat: null,
       agents: 0,
@@ -122,6 +184,9 @@ export function NewAgentBubble(props: {
         value: workspaceValue(item),
         label: worktree.branch,
         detail: worktree.path.split(/[\\/]/).findLast((part) => part !== "") ?? worktree.path,
+        behind: 0,
+        sync: null,
+        syncing: false,
         workspace: item,
         hat: island?.hats.get(worktree.path) ?? null,
         agents: agentsIn(worktree.path),
@@ -168,27 +233,14 @@ export function NewAgentBubble(props: {
         ]
       : []),
   ];
-  const projectRecord = useProject(project);
-  const workspaceRoot = projectRecord?.workspaceRoot ?? null;
   const baseBranch =
     selectedWorkspace.kind === "new-worktree"
       ? (selectedWorkspace.baseBranch ?? workspaces.worktreeBaseBranch)
       : null;
-  const baseRefs = useEnvironmentQuery(
-    workspaceRoot !== null && baseBranch !== null
-      ? vcsEnvironment.listRefs({
-          environmentId,
-          input: {
-            cwd: workspaceRoot,
-            query: baseBranch,
-            limit: 10,
-            includeOriginComparison: true,
-          },
-        })
-      : null,
-  );
-  const originComparison = baseRefs.data?.refs.find(
-    (ref) => ref.name === baseBranch && ref.isRemote !== true,
+  const originComparison = useLocalBranch(
+    environmentId,
+    workspaceRoot,
+    baseBranch,
   )?.originComparison;
   // A local base that only trails origin would start the agent on stale code, so it starts from
   // origin instead. One with commits of its own stays local: origin would drop them.

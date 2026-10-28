@@ -38,7 +38,7 @@ export function SkyControls() {
   const setWeatherAuto = useWorldWeatherStore((state) => state.setAuto);
 
   return (
-    <div className="surface-glass flex h-8 items-center gap-2 rounded-full border border-border/60 pr-1 pl-3 text-foreground shadow-sm">
+    <div className="surface-glass flex h-9 sm:h-8 items-center gap-2 rounded-full border border-border/60 pr-1 pl-3 text-foreground shadow-sm">
       <TimeIcon hour={hour} />
       <Slider
         min={0}

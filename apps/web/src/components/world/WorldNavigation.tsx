@@ -11,7 +11,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
  */
 export function WorldNavigation() {
   return (
-    <div className="surface-glass flex h-8 items-center gap-0.5 rounded-full border border-border/60 px-1 text-foreground shadow-sm">
+    <div className="surface-glass flex h-9 sm:h-8 items-center gap-0.5 rounded-full border border-border/60 px-1 text-foreground shadow-sm">
       <Tooltip>
         <TooltipTrigger
           render={
@@ -39,7 +39,7 @@ export function WorldSettingsButton() {
         render={
           <Button
             variant="glass"
-            size="icon-sm"
+            size="icon"
             aria-label="Settings"
             // A link so the router preloads the settings chunks on hover.
             render={<Link to="/settings/general" />}

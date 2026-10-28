@@ -25,13 +25,16 @@ interface WorldIslandPrefsState {
   readonly prefs: Readonly<Record<string, IslandPrefs>>;
   /** Whether an island's branch list leaves out its stale branches. On for every island. */
   readonly hideStaleBranches: boolean;
+  /** Whether an island's PR list keeps to the viewer's own and its local branches'. On for every island. */
+  readonly ownPullRequestsOnly: boolean;
   readonly update: (key: string, patch: IslandPrefsPatch) => void;
   readonly setHideStaleBranches: (hide: boolean) => void;
+  readonly setOwnPullRequestsOnly: (only: boolean) => void;
 }
 
 /**
- * Each island's sign colour, stale threshold and idle alarm, and whether branch lists hide stale
- * branches. Per viewer, so it lives in this browser only.
+ * Each island's sign colour, stale threshold and idle alarm, whether branch lists hide stale
+ * branches, and whether PR lists keep to the viewer's own. Per viewer, so it lives in this browser only.
  */
 export const useWorldIslandPrefsStore = create<WorldIslandPrefsState>()(
   persist(
@@ -39,6 +42,8 @@ export const useWorldIslandPrefsStore = create<WorldIslandPrefsState>()(
       prefs: {},
       hideStaleBranches: true,
       setHideStaleBranches: (hide) => set({ hideStaleBranches: hide }),
+      ownPullRequestsOnly: true,
+      setOwnPullRequestsOnly: (only) => set({ ownPullRequestsOnly: only }),
       update: (key, patch) =>
         set((state) => {
           const merged: Record<string, unknown> = { ...state.prefs[key], ...patch };
@@ -59,6 +64,7 @@ export const useWorldIslandPrefsStore = create<WorldIslandPrefsState>()(
       partialize: (state) => ({
         prefs: state.prefs,
         hideStaleBranches: state.hideStaleBranches,
+        ownPullRequestsOnly: state.ownPullRequestsOnly,
       }),
     },
   ),

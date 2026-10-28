@@ -9,7 +9,11 @@ import { useEffect, useEffectEvent, useMemo } from "react";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { type EnvironmentQueryTarget, usePullRequestList } from "../../state/pullRequests";
 import { vcsEnvironment } from "../../state/vcs";
-import { countIslandPullRequests } from "./islandPullRequests";
+import type {
+  EnvironmentPullRequestEntry,
+  PullRequestViewers,
+} from "../pullRequest/pullRequestList.logic";
+import { countIslandPullRequests, groupIslandPullRequests } from "./islandPullRequests";
 
 /** Open PRs read per repository; local-branch PRs are recent, so the newest page is enough. */
 const PULL_REQUEST_LIMIT = 100;
@@ -18,6 +22,9 @@ const PULL_REQUEST_LIMIT = 100;
  * from a terminal or on the host, and the world keeps these lists open the whole time.
  */
 const REFRESH_INTERVAL_MS = 60_000;
+
+const NO_VIEWERS: PullRequestViewers = {};
+const NO_BRANCHES: ReadonlySet<string> = new Set();
 
 export interface BranchTarget {
   readonly island: string;
@@ -31,6 +38,14 @@ export interface IslandSignStats {
   /** Local branches other than the default one. */
   readonly branches: number;
   readonly pullRequests: number;
+  /** Every open PR listed for the island's repository, from local branches or not. */
+  readonly openPullRequests: ReadonlyArray<EnvironmentPullRequestEntry>;
+  /** The signed-in account per host, for telling the viewer's own PRs apart. */
+  readonly viewers: PullRequestViewers;
+  /** The island's local branches, the default one aside. */
+  readonly localBranches: ReadonlySet<string>;
+  /** The open PRs haven't been read yet. */
+  readonly pullRequestsLoading: boolean;
   /** The island's checkouts, whose branches the counts come from. */
   readonly targets: ReadonlyArray<BranchTarget>;
 }
@@ -125,11 +140,10 @@ export function useIslandSignStats(
     return () => window.clearInterval(timer);
   }, []);
   return useMemo(() => {
-    const pullRequestCounts = countIslandPullRequests(
-      islands,
-      pullRequests.data?.entries ?? [],
-      branches,
-    );
+    const entries = pullRequests.data?.entries ?? [];
+    const pullRequestCounts = countIslandPullRequests(islands, entries, branches);
+    const openPullRequests = groupIslandPullRequests(islands, entries);
+    const pullRequestsLoading = pullRequests.data === null && pullRequests.isPending;
     const targets = JSON.parse(branchKey) as ReadonlyArray<BranchTarget>;
     return new Map(
       [...islands.keys()].map((island) => [
@@ -137,11 +151,15 @@ export function useIslandSignStats(
         {
           branches: branchCounts.get(island)?.size ?? 0,
           pullRequests: pullRequestCounts.get(island) ?? 0,
+          openPullRequests: openPullRequests.get(island) ?? [],
+          pullRequestsLoading,
+          viewers: pullRequests.data?.viewers ?? NO_VIEWERS,
+          localBranches: branches.get(island) ?? NO_BRANCHES,
           targets: targets.filter((target) => target.island === island),
         },
       ]),
     );
-  }, [islands, pullRequests.data, branches, branchCounts, branchKey]);
+  }, [islands, pullRequests.data, pullRequests.isPending, branches, branchCounts, branchKey]);
 }
 
 /** Whether a branch last committed to at `lastCommitAt` is older than `staleDays`. */

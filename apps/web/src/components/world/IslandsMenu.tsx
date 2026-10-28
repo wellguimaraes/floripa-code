@@ -59,7 +59,7 @@ export function IslandsMenu(props: {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
-        render={<Button variant="glass" size="sm" />}
+        render={<Button variant="glass" />}
         aria-label={`Islands, ${shown} of ${total} shown`}
         title="Islands"
       >
