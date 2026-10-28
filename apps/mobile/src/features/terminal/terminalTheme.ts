@@ -1,3 +1,5 @@
+import { findTerminalTheme } from "@t3tools/shared/terminalThemes";
+
 import {
   getMobileThemeColors,
   getMobileThemeVariables,
@@ -100,11 +102,25 @@ function getPierreTerminalTheme(scheme: TerminalAppearanceScheme): TerminalTheme
 export function getMobileTerminalTheme(
   themeId: MobileThemeId,
   scheme: TerminalAppearanceScheme,
+  terminalThemeId = "",
 ): TerminalTheme {
   const base = getPierreTerminalTheme(scheme);
   const paletteId = themeId === "material-you" ? "floripa-code" : themeId;
   const palette = getMobileThemeColors(paletteId, scheme);
   const colors = getMobileThemeVariables(paletteId, scheme);
+  const chosen = findTerminalTheme(terminalThemeId);
+  if (chosen) {
+    return {
+      background: chosen.background,
+      foreground: chosen.foreground,
+      // Ghostty schemes have no muted role; bright black is the dim text color.
+      mutedForeground: chosen.palette[8],
+      border: colors["--color-border"],
+      cursorForeground: chosen.cursor,
+      cursorBackground: chosen.background,
+      palette: chosen.palette,
+    };
+  }
   const background = themeColorToNativeColor(palette.terminalBackground);
   return {
     ...base,

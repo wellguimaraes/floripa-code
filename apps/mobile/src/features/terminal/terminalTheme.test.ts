@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import { TERMINAL_THEMES } from "@t3tools/shared/terminalThemes";
 import { BUILT_IN_THEMES, getThemeColorsForAppearance } from "@t3tools/shared/themePalettes";
 
 import { themeColorToNativeColor } from "../../lib/mobileTheme";
@@ -40,6 +41,24 @@ describe("getMobileTerminalTheme", () => {
     expect(terminal.background).toBe(themeColorToNativeColor(colors.terminalBackground));
     expect(terminal.foreground).toBe(themeColorToNativeColor(colors.terminalForeground));
     expect(terminal.cursorForeground).toBe(themeColorToNativeColor(colors.terminalCursor));
+  });
+});
+
+describe("getMobileTerminalTheme with a terminal theme", () => {
+  it("uses the chosen scheme even when the app's appearance differs", () => {
+    const nord = TERMINAL_THEMES.find((theme) => theme.id === "nord")!;
+    const terminal = getMobileTerminalTheme("ocean", "light", "nord");
+
+    expect(nord.appearance).toBe("dark");
+    expect(terminal.background).toBe(nord.background);
+    expect(terminal.foreground).toBe(nord.foreground);
+    expect(terminal.palette).toEqual(nord.palette);
+  });
+
+  it("falls back to the app theme for an unknown id", () => {
+    expect(getMobileTerminalTheme("ocean", "dark", "gone")).toEqual(
+      getMobileTerminalTheme("ocean", "dark"),
+    );
   });
 });
 

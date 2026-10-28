@@ -125,6 +125,7 @@ import {
   TYPOGRAPHY_ADVANCED_STORAGE_KEY,
 } from "../../appearanceFonts";
 import { CodeFontPreview, PromptFontPreview, TerminalFontPreview } from "./SettingsFontPreviews";
+import { TERMINAL_THEMES, type TerminalTheme } from "@t3tools/shared/terminalThemes";
 import { discoverInstalledFonts, FontFamilyPicker, useFontEnumeration } from "./FontFamilyPicker";
 import {
   NumberField,
@@ -133,7 +134,15 @@ import {
   NumberFieldIncrement,
   NumberFieldInput,
 } from "../ui/number-field";
-import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
+import {
+  Select,
+  SelectGroup,
+  SelectGroupLabel,
+  SelectItem,
+  SelectPopup,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
 import { Switch } from "../ui/switch";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -556,6 +565,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.diffColorScheme !== DEFAULT_UNIFIED_SETTINGS.diffColorScheme
         ? ["Diff colors"]
         : []),
+      ...(settings.terminalTheme !== DEFAULT_UNIFIED_SETTINGS.terminalTheme
+        ? ["Terminal colors"]
+        : []),
       ...(settings.chatWidth !== DEFAULT_UNIFIED_SETTINGS.chatWidth ? ["Chat width"] : []),
       ...(settings.panelAnimationDurationMs !== DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs
         ? ["Panel animations"]
@@ -687,6 +699,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.browserAutoShowFloatingPreview,
       settings.appearanceContrast,
       settings.diffColorScheme,
+      settings.terminalTheme,
       settings.chatWidth,
       settings.enableAgentBrowserAccess,
       settings.confirmQuit,
@@ -803,6 +816,7 @@ export function useSettingsRestore(onRestored?: () => void) {
     updateSettings({
       appearanceContrast: DEFAULT_UNIFIED_SETTINGS.appearanceContrast,
       diffColorScheme: DEFAULT_UNIFIED_SETTINGS.diffColorScheme,
+      terminalTheme: DEFAULT_UNIFIED_SETTINGS.terminalTheme,
       chatWidth: DEFAULT_UNIFIED_SETTINGS.chatWidth,
       timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
       notificationMode: DEFAULT_UNIFIED_SETTINGS.notificationMode,
@@ -1589,6 +1603,95 @@ function CodeFontRow({
   );
 }
 
+// The app theme's own terminal colors.
+const DEFAULT_TERMINAL_THEME_OPTION = "default";
+const TERMINAL_THEME_GROUPS = [
+  { appearance: "light", label: "Light" },
+  { appearance: "dark", label: "Dark" },
+] as const;
+
+/** The terminal preview with the terminal color theme picker right above it. */
+function TerminalPreviewWithColors({ family, size }: { family: string; size: number }) {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  const searchTargetRef = useSettingsSearchTarget<HTMLDivElement>(
+    searchableSetting("terminal-colors").id,
+  );
+  const selected = TERMINAL_THEMES.find((theme) => theme.id === settings.terminalTheme);
+  return (
+    <>
+      <div
+        ref={searchTargetRef}
+        id={searchableSetting("terminal-colors").id}
+        tabIndex={-1}
+        className="flex items-center justify-between gap-3 pt-3 pb-2"
+      >
+        <span className="text-sm text-muted-foreground">Terminal colors</span>
+        <Select
+          value={selected?.id ?? DEFAULT_TERMINAL_THEME_OPTION}
+          onValueChange={(value) =>
+            updateSettings({
+              terminalTheme: !value || value === DEFAULT_TERMINAL_THEME_OPTION ? "" : value,
+            })
+          }
+        >
+          <SelectTrigger size="sm" className="w-full sm:w-60" aria-label="Terminal colors">
+            <SelectValue>
+              <TerminalThemeOption name={selected?.name ?? "Default"} theme={selected} />
+            </SelectValue>
+          </SelectTrigger>
+          <SelectPopup align="end" alignItemWithTrigger={false}>
+            <SelectItem value={DEFAULT_TERMINAL_THEME_OPTION}>Default</SelectItem>
+            {TERMINAL_THEME_GROUPS.map((group) => (
+              <SelectGroup key={group.appearance}>
+                <SelectGroupLabel>{group.label}</SelectGroupLabel>
+                {TERMINAL_THEMES.filter((theme) => theme.appearance === group.appearance).map(
+                  (theme) => (
+                    <SelectItem key={theme.id} value={theme.id}>
+                      <TerminalThemeOption name={theme.name} theme={theme} />
+                    </SelectItem>
+                  ),
+                )}
+              </SelectGroup>
+            ))}
+          </SelectPopup>
+        </Select>
+      </div>
+      <TerminalFontPreview family={family} size={size} />
+    </>
+  );
+}
+
+/**
+ * A theme name with a pill of its red, green, yellow, and blue on its own
+ * background: enough of a palette to tell themes apart.
+ */
+function TerminalThemeOption({ name, theme }: { name: string; theme?: TerminalTheme | undefined }) {
+  return (
+    <span className="flex w-full items-center justify-between gap-4">
+      <span className="truncate">{name}</span>
+      {theme ? (
+        <span
+          aria-hidden="true"
+          className="flex shrink-0 gap-1 rounded-full border px-1.5 py-1"
+          style={{
+            backgroundColor: theme.background,
+            borderColor: `color-mix(in srgb, ${theme.foreground} 18%, ${theme.background})`,
+          }}
+        >
+          {[1, 2, 3, 4].map((index) => (
+            <span
+              key={index}
+              className="size-2 rounded-full"
+              style={{ backgroundColor: theme.palette[index] }}
+            />
+          ))}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 function TerminalFontRow() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
@@ -1617,7 +1720,7 @@ function TerminalFontRow() {
         onChange: (fontSizeTerminal) => updateSettings({ fontSizeTerminal }),
       }}
       preview={
-        <TerminalFontPreview
+        <TerminalPreviewWithColors
           family={resolveTerminalFontPreference({
             advanced: true,
             code: settings.fontFamilyCode,
@@ -1713,7 +1816,7 @@ function SimpleFontRows() {
         preview={
           <>
             <CodeFontPreview />
-            <TerminalFontPreview
+            <TerminalPreviewWithColors
               family={resolveTerminalFontPreference({
                 advanced: false,
                 code: settings.fontFamilyCode,

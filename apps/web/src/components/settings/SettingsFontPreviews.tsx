@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ComposerPromptEditor, type ComposerPromptEditorHandle } from "../ComposerPromptEditor";
 import { EMPTY_COMPOSER_CONTEXT_RECORDS } from "../composerContextPresentation";
 import { terminalThemeFromApp } from "../ThreadTerminalDrawer";
+import { useClientSettings } from "../../hooks/useSettings";
 import { useTheme } from "../../hooks/useTheme";
 import { DISCONNECTED_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
 import { resolveDiffThemeName, type DiffThemeName } from "../../lib/diffRendering";
@@ -184,6 +185,7 @@ export function TerminalFontPreview({ family, size }: { family: string; size: nu
   const surfaceRef = useRef<GhosttyTerminalSurface | null>(null);
   const fontRef = useRef({ family, size });
   const { theme, resolvedTheme } = useTheme();
+  const terminalTheme = useClientSettings((settings) => settings.terminalTheme);
 
   useEffect(() => {
     const current = fontRef.current;
@@ -199,7 +201,7 @@ export function TerminalFontPreview({ family, size }: { family: string; size: nu
     const surface = surfaceRef.current;
     if (!mount || !surface) return;
     surface.setTheme(terminalThemeFromApp(mount));
-  }, [theme, resolvedTheme]);
+  }, [theme, resolvedTheme, terminalTheme]);
 
   useEffect(() => {
     const mount = mountRef.current;

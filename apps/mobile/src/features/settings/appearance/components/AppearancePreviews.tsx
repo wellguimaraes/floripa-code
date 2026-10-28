@@ -43,11 +43,12 @@ export function TextAppearancePreview(props: { readonly fontSize: number }) {
 
 /**
  * Live terminal sample using the real terminal theme's text colors and font,
- * on the shared card background so it reads like the other previews.
+ * on the shared card background so it reads like the other previews. A chosen
+ * terminal theme brings its own background, since its colors assume it.
  */
 export function TerminalAppearancePreview(props: { readonly fontSize: number }) {
-  const { themeAppearance: scheme, themeId } = useAppearancePreferences();
-  const theme = getMobileTerminalTheme(themeId, scheme);
+  const { terminalThemeId, themeAppearance: scheme, themeId } = useAppearancePreferences();
+  const theme = getMobileTerminalTheme(themeId, scheme, terminalThemeId);
   const lineHeight = Math.round(props.fontSize * 1.6);
   const lineStyle = {
     fontFamily: "Menlo",
@@ -63,7 +64,10 @@ export function TerminalAppearancePreview(props: { readonly fontSize: number }) 
   ];
 
   return (
-    <View className="p-4">
+    <View
+      className="p-4"
+      style={terminalThemeId ? { backgroundColor: theme.background } : undefined}
+    >
       <Text style={span(theme.foreground)}>
         <Text style={span(theme.palette[2])}>→ </Text>
         <Text style={span(theme.palette[6])}>floripacode </Text>

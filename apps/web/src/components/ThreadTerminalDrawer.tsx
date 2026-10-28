@@ -48,6 +48,7 @@ import {
   type GhosttyTerminalSurfaceOptions,
 } from "~/terminal/ghostty/surface";
 import { type GhosttyColor, type GhosttyTheme } from "~/terminal/ghostty/core";
+import { TERMINAL_ANSI_VARIABLES } from "~/terminalColorTheme";
 import { useOpenInPreferredEditor } from "../editorPreferences";
 import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 import { isTerminalUrl } from "../terminal-links";
@@ -207,6 +208,13 @@ export function terminalThemeFromApp(mountElement?: HTMLElement | null): Ghostty
     "--terminal-selection-background",
     isDark ? "rgba(180, 203, 255, 0.25)" : "rgba(37, 63, 99, 0.2)",
   );
+  // Only a chosen terminal theme sets these; app themes keep Ghostty's palette.
+  const ansi = TERMINAL_ANSI_VARIABLES.map((variable) =>
+    themeStyles.getPropertyValue(variable).trim(),
+  );
+  const palette = ansi.every((value) => value.length > 0)
+    ? ansi.map((value) => parseTerminalColor(value, { r: 0, g: 0, b: 0 }))
+    : undefined;
   return {
     background: parseTerminalColor(
       terminalBackground,
@@ -220,6 +228,7 @@ export function terminalThemeFromApp(mountElement?: HTMLElement | null): Ghostty
       terminalCursor,
       isDark ? { r: 180, g: 203, b: 255 } : { r: 38, g: 56, b: 78 },
     ),
+    ...(palette ? { palette } : {}),
     selectionBackground: terminalSelection,
   };
 }
@@ -1317,7 +1326,7 @@ export default function ThreadTerminalDrawer({
                     render={
                       <Button
                         size="xs"
-                        variant="outline"
+                        variant="outline-muted"
                         disabled={!canOperateTerminal || splitLimitReached}
                         onClick={onSplitTerminal}
                       />

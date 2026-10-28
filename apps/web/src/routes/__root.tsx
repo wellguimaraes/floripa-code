@@ -56,6 +56,7 @@ import { isElectron } from "../env";
 import { cn } from "../lib/utils";
 import { applyAppearanceFontVariables } from "~/appearanceFonts";
 import { applyAppearanceContrast } from "~/appearanceContrast";
+import { applyTerminalColorTheme } from "~/terminalColorTheme";
 import { useClientSettings } from "../hooks/useSettings";
 import {
   deriveLogicalProjectKeyFromSettings,
@@ -285,6 +286,11 @@ function ContrastAppearanceSync() {
   useEffect(() => {
     applyAppearanceContrast(document.documentElement, appearanceContrast);
   }, [appearanceContrast]);
+
+  const terminalTheme = useClientSettings((settings) => settings.terminalTheme);
+  useEffect(() => {
+    applyTerminalColorTheme(document.documentElement, terminalTheme);
+  }, [terminalTheme]);
 
   return null;
 }

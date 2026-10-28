@@ -98,8 +98,8 @@ export function ComposerContextSheet(props: {
   const reviewColors = useReviewCommentColors();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
-  const { themeId, themeAppearance } = useAppearancePreferences();
-  const terminalTheme = getMobileTerminalTheme(themeId, themeAppearance);
+  const { terminalThemeId, themeId, themeAppearance } = useAppearancePreferences();
+  const terminalTheme = getMobileTerminalTheme(themeId, themeAppearance, terminalThemeId);
   const [headerHeight, setHeaderHeight] = useState(0);
   const [bodyHeight, setBodyHeight] = useState(0);
   const measuredHeight = headerHeight + bodyHeight;

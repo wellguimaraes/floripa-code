@@ -27,6 +27,10 @@
       "types": "./src/themePalettes.ts",
       "import": "./src/themePalettes.ts"
     },
+    "./terminalThemes": {
+      "types": "./src/terminalThemes.ts",
+      "import": "./src/terminalThemes.ts"
+    },
     "./themePreview": {
       "types": "./src/themePreview.ts",
       "import": "./src/themePreview.ts"

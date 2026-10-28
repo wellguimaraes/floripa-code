@@ -21,6 +21,15 @@ Android uses **Material You Layout** by default unless you have turned it off in
 It changes shapes, spacing, and controls independently
 of the selected theme.
 
+## Terminal colors
+
+By default the terminal uses the colors of your app theme. To use a classic terminal theme such as
+Catppuccin, Gruvbox, or Solarized, choose it under **Terminal colors** in **Settings → Appearance**.
+On mobile, pick it in the **Terminal** section of Appearance. Themes are grouped into light and
+dark, and you can pick either kind whatever the app's appearance, such as a dark terminal in a light
+app. A chosen theme stays the same when the app switches between light and dark mode; **Default**
+follows the app.
+
 ## Composer context
 
 Git-backed projects show branch and worktree controls below the composer while you create a thread.

@@ -294,6 +294,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["long lines code blocks tables diffs file previews"],
   },
   {
+    id: "terminal-colors",
+    title: "Terminal colors",
+    to: "/settings/appearance",
+    searchTerms: ["terminal theme palette ansi catppuccin dracula gruvbox nord solarized"],
+  },
+  {
     id: "composer-context",
     title: "Composer context",
     to: "/settings/appearance",

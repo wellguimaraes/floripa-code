@@ -81,8 +81,30 @@ export interface GhosttyTheme {
   readonly foreground: GhosttyColor;
   readonly background: GhosttyColor;
   readonly cursor: GhosttyColor;
+  /** The 16 ANSI colors. Omitted keeps Ghostty's built-in palette. */
+  readonly palette?: readonly GhosttyColor[];
   /** CSS color the renderer overlays on selected cells; not sent to Ghostty. */
   readonly selectionBackground?: string;
+}
+
+/**
+ * The 256-color table as packed RGB: the theme's 16 ANSI colors, then the
+ * standard xterm 6x6x6 cube and grayscale ramp that themes never override.
+ */
+export function ghosttyPaletteBytes(ansi: readonly GhosttyColor[]): Uint8Array {
+  const bytes = new Uint8Array(256 * 3);
+  const write = (index: number, r: number, g: number, b: number) => bytes.set([r, g, b], index * 3);
+  const level = (step: number) => (step === 0 ? 0 : 55 + step * 40);
+  for (let index = 16; index < 232; index += 1) {
+    const cube = index - 16;
+    write(index, level(Math.floor(cube / 36)), level(Math.floor(cube / 6) % 6), level(cube % 6));
+  }
+  for (let index = 232; index < 256; index += 1) {
+    const gray = 8 + (index - 232) * 10;
+    write(index, gray, gray, gray);
+  }
+  ansi.slice(0, 16).forEach((color, index) => write(index, color.r, color.g, color.b));
+  return bytes;
 }
 
 export interface GhosttyCell {
@@ -415,6 +437,20 @@ export class GhosttyTerminalCore {
       this.runtime.call("ghostty_terminal_set", this.terminal, option, color);
     }
     this.runtime.free(color, 3);
+    this.setPalette(theme.palette);
+  }
+
+  /** Ghostty takes the full 256-color table; a NULL pointer restores its default. */
+  private setPalette(ansi: readonly GhosttyColor[] | undefined): void {
+    if (!ansi) {
+      this.runtime.call("ghostty_terminal_set", this.terminal, 14, 0);
+      return;
+    }
+    const size = 256 * 3;
+    const palette = this.runtime.alloc(size);
+    this.runtime.bytes(palette, size).set(ghosttyPaletteBytes(ansi));
+    this.runtime.call("ghostty_terminal_set", this.terminal, 14, palette);
+    this.runtime.free(palette, size);
   }
 
   scroll(deltaRows: number): void {

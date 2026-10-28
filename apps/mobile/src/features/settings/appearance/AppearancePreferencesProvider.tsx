@@ -51,6 +51,8 @@ interface AppearancePreferencesContextValue {
   readonly themeIds: MobileThemeIds;
   readonly themeMode: MobileThemeMode;
   readonly themeAppearance: MobileThemeAppearance;
+  /** Chosen terminal theme id; empty follows the app theme's terminal colors. */
+  readonly terminalThemeId: string;
   readonly systemColorsAvailable: boolean;
   readonly systemColorsActive: boolean;
   readonly themeVariables: MobileThemeVariables;
@@ -71,6 +73,7 @@ interface AppearancePreferencesContextValue {
   /** Pass null to clear the override and follow the base font size. */
   readonly setCodeFontSize: (value: number | null) => void;
   readonly setCodeWordBreak: (value: boolean) => void;
+  readonly setTerminalThemeId: (value: string) => void;
 }
 
 const AppearancePreferencesContext = createContext<AppearancePreferencesContextValue | null>(null);
@@ -272,6 +275,14 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
     [updatePreferences],
   );
 
+  const terminalThemeId = storedPreferences?.terminalThemeId ?? "";
+  const setTerminalThemeId = useCallback(
+    (value: string) => {
+      updatePreferences({ terminalThemeId: value });
+    },
+    [updatePreferences],
+  );
+
   const value = useMemo(
     (): AppearancePreferencesContextValue => ({
       appearance,
@@ -279,6 +290,7 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
       themeIds,
       themeMode,
       themeAppearance,
+      terminalThemeId,
       systemColorsAvailable: isSystemColorsAvailable,
       systemColorsActive,
       themeVariables,
@@ -292,6 +304,7 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
       setTerminalFontSize,
       setCodeFontSize,
       setCodeWordBreak,
+      setTerminalThemeId,
     }),
     [
       appearance,
@@ -299,6 +312,7 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
       themeIds,
       themeMode,
       themeAppearance,
+      terminalThemeId,
       systemColorsActive,
       themeVariables,
       themeVariablesByAppearance,
@@ -311,6 +325,7 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
       setTerminalFontSize,
       setCodeFontSize,
       setCodeWordBreak,
+      setTerminalThemeId,
     ],
   );
 

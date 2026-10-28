@@ -111,6 +111,29 @@ describe("GhosttyTerminalCore snapshots", () => {
     vi.restoreAllMocks();
   });
 
+  it("paints ANSI colors from the theme palette and restores Ghostty's default", async () => {
+    const core = await createCore();
+    const themeRed = { r: 210, g: 15, b: 57 };
+    const palette = Array.from({ length: 16 }, (_, index) =>
+      index === 1 ? themeRed : { r: index, g: index, b: index },
+    );
+    const base = {
+      foreground: { r: 255, g: 255, b: 255 },
+      background: { r: 0, g: 0, b: 0 },
+      cursor: { r: 255, g: 255, b: 255 },
+    };
+    core.setTheme({ ...base, palette });
+    core.write("\x1b[31mR\x1b[38;5;196mC\x1b[0m");
+    const [ansi, cube] = core.snapshot().rowData[0]!.cells;
+    expect(ansi!.foreground).toEqual(themeRed);
+    // Indexes past 15 keep the standard xterm cube.
+    expect(cube!.foreground).toEqual({ r: 255, g: 0, b: 0 });
+
+    // Already-written cells pick up the change, not just new output.
+    core.setTheme(base);
+    expect(core.snapshot().rowData[0]!.cells[0]!.foreground).not.toEqual(themeRed);
+  });
+
   it("preserves styles, wide cells, and selection after shared memory grows", async () => {
     const core = await createCore();
     const runtime = await loadGhosttyRuntime();

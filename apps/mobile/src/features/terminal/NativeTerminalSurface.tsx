@@ -71,8 +71,8 @@ const FallbackTerminalSurface = memo(function FallbackTerminalSurface(
 ) {
   const fontSize = props.fontSize ?? MOBILE_TYPOGRAPHY.label.fontSize;
   const inputRef = useRef<TextInputInstance>(null);
-  const { themeAppearance, themeId } = useAppearancePreferences();
-  const theme = props.theme ?? getMobileTerminalTheme(themeId, themeAppearance);
+  const { terminalThemeId, themeAppearance, themeId } = useAppearancePreferences();
+  const theme = props.theme ?? getMobileTerminalTheme(themeId, themeAppearance, terminalThemeId);
   const statusLabel = props.readOnly
     ? "Viewing terminal output."
     : props.isRunning
@@ -191,8 +191,8 @@ export const TerminalSurface = memo(function TerminalSurface(props: TerminalSurf
 
 const ReadyTerminalSurface = memo(function ReadyTerminalSurface(props: ReadyTerminalSurfaceProps) {
   const fontSize = props.fontSize ?? MOBILE_TYPOGRAPHY.label.fontSize;
-  const { themeAppearance, themeId } = useAppearancePreferences();
-  const theme = props.theme ?? getMobileTerminalTheme(themeId, themeAppearance);
+  const { terminalThemeId, themeAppearance, themeId } = useAppearancePreferences();
+  const theme = props.theme ?? getMobileTerminalTheme(themeId, themeAppearance, terminalThemeId);
   const { onInput, onResize } = props;
   const NativeTerminalSurfaceView = resolveNativeTerminalSurfaceView();
   const hasNativeSurface = Boolean(NativeTerminalSurfaceView);
