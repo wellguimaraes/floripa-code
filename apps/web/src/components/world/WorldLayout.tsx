@@ -311,9 +311,11 @@ export function WorldLayout({
         <WorldUsageBar />
         {/* Pinned right even when there is no usage to show. */}
         <div className="pointer-events-auto ml-auto flex shrink-0 items-center gap-2">
-          <WorldUpdateButton />
           <WorldSettingsButton />
         </div>
+      </div>
+      <div className="absolute bottom-3 left-3 z-10">
+        <WorldUpdateButton />
       </div>
       {heldTarget !== null ? (
         <Activity mode={framePresent ? "visible" : "hidden"}>

@@ -238,6 +238,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --animate-status-ping: status-ping 2s infinite;
   --animate-world-roll-in: world-roll-in 280ms cubic-bezier(0.2, 0, 0, 1) both;
   --animate-world-roll-out: world-roll-out 280ms cubic-bezier(0.2, 0, 0, 1) both;
+  --animate-update-ripple: update-ripple 1s ease-out 3;
   --color-warning-foreground: var(--warning-foreground);
   --color-warning: var(--warning);
   --color-warning-surface: var(--warning-surface);
@@ -347,6 +348,15 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     100% {
       opacity: 0;
       scale: 2;
+    }
+  }
+  @keyframes update-ripple {
+    /* A ring that follows the pill's shape outward. Runs in short bursts, never idle. */
+    0% {
+      box-shadow: 0 0 0 0 rgb(255 255 255 / 60%);
+    }
+    100% {
+      box-shadow: 0 0 0 14px rgb(255 255 255 / 0%);
     }
   }
 }
