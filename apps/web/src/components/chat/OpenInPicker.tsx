@@ -362,30 +362,73 @@ export const OpenInPicker = memo(function OpenInPicker({
     </>
   );
   if (presentation === "icon") {
+    // The last-used editor opens in one click; the chevron lists the rest. Without one yet,
+    // the whole button is the list.
+    if (!primaryOption) {
+      return (
+        <Menu open={menuOpen} onOpenChange={setMenuOpen}>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <MenuTrigger
+                  disabled={isHostEditorDenied}
+                  render={<Button variant="ghost" size="icon-sm" aria-label="Open with" />}
+                />
+              }
+            >
+              <SquareArrowOutUpRightIcon aria-hidden="true" className="size-4" />
+            </TooltipTrigger>
+            <TooltipPopup side="bottom">Open with</TooltipPopup>
+          </Tooltip>
+          <MenuPopup align="end">{editorItems}</MenuPopup>
+        </Menu>
+      );
+    }
     return (
-      <Menu open={menuOpen} onOpenChange={setMenuOpen}>
+      <Group aria-label="Open in editor">
         <Tooltip>
           <TooltipTrigger
             render={
-              <MenuTrigger
-                disabled={isHostEditorDenied}
-                render={<Button variant="ghost" size="icon-sm" aria-label="Open with" />}
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Open in ${primaryOption.label}`}
+                disabled={!openInCwd || !canOpenEditor}
+                onClick={() => openInEditor(primaryOption.value)}
               />
             }
           >
-            {primaryOption ? (
-              <primaryOption.Icon
-                aria-hidden="true"
-                className={cn("size-4", getOpenInIconClass(primaryOption.kind))}
-              />
-            ) : (
-              <SquareArrowOutUpRightIcon aria-hidden="true" className="size-4" />
-            )}
+            <primaryOption.Icon
+              aria-hidden="true"
+              className={cn("size-4", getOpenInIconClass(primaryOption.kind))}
+            />
           </TooltipTrigger>
-          <TooltipPopup side="bottom">Open with</TooltipPopup>
+          <TooltipPopup side="bottom">Open in {primaryOption.label}</TooltipPopup>
         </Tooltip>
-        <MenuPopup align="end">{editorItems}</MenuPopup>
-      </Menu>
+        <Menu open={menuOpen} onOpenChange={setMenuOpen}>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <MenuTrigger
+                  disabled={isHostEditorDenied}
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="w-5 sm:w-5"
+                      aria-label="Open with"
+                    />
+                  }
+                />
+              }
+            >
+              <ChevronDownIcon aria-hidden="true" className="size-3.5" />
+            </TooltipTrigger>
+            <TooltipPopup side="bottom">Open with</TooltipPopup>
+          </Tooltip>
+          <MenuPopup align="end">{editorItems}</MenuPopup>
+        </Menu>
+      </Group>
     );
   }
   if (presentation === "menu") {
