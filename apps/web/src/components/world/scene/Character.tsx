@@ -278,8 +278,6 @@ export function Character(props: {
     const { altKey, metaKey, ctrlKey, detail } = event.nativeEvent;
     if (altKey) onOpen(character);
     else if (metaKey || ctrlKey) onPick(character);
-    // A question or approval needs an answer, so the click goes straight to the chat.
-    else if (intent.balloon !== undefined) onOpen(character);
     else onSelect(character, detail);
   };
   const openMenu = (event: ThreeEvent<MouseEvent>) => {

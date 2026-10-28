@@ -2,6 +2,7 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { resolveProviderSkillsForCwd } from "@t3tools/client-runtime/providerSkills";
 import { presentPendingBackgroundWork } from "@t3tools/client-runtime/state/thread-execution";
+import { derivePendingThreadRequests } from "@t3tools/client-runtime/state/thread-requests";
 import type { ServerProvider } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import { ArchiveIcon, MessagesSquareIcon, RefreshCwIcon, SquareIcon, XIcon } from "lucide-react";
@@ -17,8 +18,10 @@ import {
   readEnvironmentSupportsTitleRegeneration,
   useProject,
   useServerConfigs,
+  useThreadProjection,
   useThreadShell,
 } from "../../state/entities";
+import { derivePendingApprovals, derivePendingUserInputs } from "../../session-logic";
 import { threadEnvironment } from "../../state/threads";
 import { useTheme } from "../../hooks/useTheme";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
@@ -34,12 +37,15 @@ import {
   type UserMessageChipState,
   UserMessageActions,
 } from "../chat/MessagesTimeline";
+import { ComposerPendingUserInputPanel } from "../chat/ComposerPendingUserInputPanel";
 import { QueuedRunsControl } from "../chat/QueuedRunsControl";
+import { BubbleApproval } from "./BubbleApproval";
 import { BubbleComposer } from "./BubbleComposer";
 import type { CharacterFacts } from "./engine/facts";
 import { HuePicker } from "./HuePicker";
 import { type FamilyShades as Shades, palette } from "./scene/palette";
 import { useBubbleAttachments } from "./useBubbleAttachments";
+import { useBubbleQuestion } from "./useBubbleQuestion";
 import { ARCHIVE_SHORTCUT, confirmArchive, useArchiveShortcut } from "./useArchiveShortcut";
 import { LatestTurn } from "./LatestTurn";
 import { RollingSwap } from "./RollingSwap";
@@ -200,7 +206,32 @@ export function WorldBubble(props: {
           : current,
     );
 
+  // What the agent waits on you for, oldest first. An approval comes before a question, as in
+  // the chat.
+  const projection = useThreadProjection(facts.ref)?.projection ?? null;
+  const pending = useMemo(() => {
+    if (projection === null) return null;
+    const requests = derivePendingThreadRequests(projection);
+    return {
+      approvals: derivePendingApprovals(requests.approvals),
+      question: derivePendingUserInputs(requests.userInputs)[0] ?? null,
+    };
+  }, [projection]);
+  const approval = pending?.approvals[0] ?? null;
+  // The agent's open question takes the text box: what you send answers it. One that can no
+  // longer be answered stays on show, and the box sends messages again.
+  const question = useBubbleQuestion(
+    facts.ref,
+    approval === null ? (pending?.question ?? null) : null,
+    showError,
+  );
+  const asking = question.request !== null && question.answerable;
+
   const send = async (said: string) => {
+    if (asking) {
+      if (question.answer(said)) setText("");
+      return;
+    }
     const message = said.trim();
     const hasAttachments = attachments.attachments.length > 0;
     if (message === "" && !hasAttachments) return;
@@ -314,23 +345,39 @@ export function WorldBubble(props: {
       onSubmit={(said) => void send(said)}
       onExpand={expand}
       onClose={onClose}
-      placeholder="Message this agent"
-      inputLabel={`Message ${facts.title || "this agent"}`}
-      submitLabel="Send"
-      speakLabel="Speak a message"
+      placeholder={
+        !asking
+          ? "Message this agent"
+          : question.takesText
+            ? "Type your own answer"
+            : "Pick an answer above"
+      }
+      inputLabel={
+        asking ? `Answer ${facts.title || "this agent"}` : `Message ${facts.title || "this agent"}`
+      }
+      submitLabel={
+        !asking ? "Send" : question.progress?.isLastQuestion ? "Answer" : "Next question"
+      }
+      speakLabel={asking ? "Speak an answer" : "Speak a message"}
       hint={
         <>
-          <Kbd variant="outline">Enter</Kbd> to send
+          <Kbd variant="outline">Enter</Kbd> to {asking ? "answer" : "send"}
           <span className="mx-2">·</span>
           <Kbd variant="outline">{EXPAND_SHORTCUT}</Kbd> to open full chat
         </>
       }
       error={state.phase === "error" ? state.message : null}
       onError={showError}
-      busy={state.phase === "sending"}
-      busyStatus={attachments.attachments.length > 0 ? "Uploading…" : null}
+      busy={state.phase === "sending" || question.responding}
+      busyStatus={
+        state.phase === "sending" && attachments.attachments.length > 0 ? "Uploading…" : null
+      }
       notice={state.phase === "stopping" ? "Stopping…" : null}
-      submitBlocked={thread === null}
+      submitBlocked={
+        thread === null ||
+        (asking && !question.progress?.canAdvance && !(question.takesText && text.trim() !== ""))
+      }
+      submitReady={asking && question.progress?.canAdvance === true}
       listenOnOpen={listen}
       header={
         <>
@@ -520,6 +567,29 @@ export function WorldBubble(props: {
               placement="floating"
             />
           </div>
+          {approval !== null ? (
+            <BubbleApproval
+              key={approval.requestId}
+              threadRef={facts.ref}
+              approval={approval}
+              pendingCount={pending?.approvals.length ?? 1}
+              onError={showError}
+            />
+          ) : null}
+          {question.request !== null ? (
+            <ComposerBanner.Root placement="floating" className="mt-2">
+              <ComposerPendingUserInputPanel
+                pendingUserInputs={[question.request]}
+                disabled={!question.answerable}
+                respondingRequestIds={question.responding ? [question.request.requestId] : []}
+                answers={question.answers}
+                questionIndex={question.questionIndex}
+                onToggleOption={question.toggleOption}
+                onAdvance={question.advance}
+                onDismiss={question.dismiss}
+              />
+            </ComposerBanner.Root>
+          ) : null}
           {backgroundWork !== null ? (
             <ComposerBanner.Root
               role="status"

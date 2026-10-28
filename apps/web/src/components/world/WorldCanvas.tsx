@@ -1869,7 +1869,6 @@ export default function WorldCanvas(props: {
               onClick={(event) => {
                 if (event.altKey) openChat(character);
                 else if (event.metaKey || event.ctrlKey) togglePicked(character);
-                else if (character.intent.balloon !== undefined) openChat(character);
                 else selectCharacter(character, event.detail);
               }}
               onContextMenu={(event) => {
@@ -1965,12 +1964,13 @@ function signPlate(background: string) {
   return { background, text: signTextColor(background) };
 }
 /**
- * What the bubbles' selects, menus, popovers and dialogs portal out of them. A press there is
- * not outside the bubble. Modal menus (the reasoning picker) also cover the page with an inert
- * backdrop, so a press anywhere while one is open only closes the menu.
+ * What the bubbles' selects, comboboxes, menus, popovers and dialogs portal out of them. A press
+ * there is not outside the bubble. Modal menus (the reasoning picker) also cover the page with an
+ * inert backdrop, so a press anywhere while one is open only closes the menu.
  */
 const PORTALED_LAYERS = [
   '[data-slot="select-positioner"]',
+  '[data-slot="combobox-positioner"]',
   '[data-slot="menu-positioner"]',
   '[data-slot="popover-positioner"]',
   '[data-slot="dialog-viewport"]',
@@ -2518,12 +2518,12 @@ function WorldControls({
   // oxlint-disable-next-line react/exhaustive-effect-dependencies -- New islands or a resized canvas move the floor.
   useEffect(() => holdFloor(), [frame]);
   // Resizing the open panel zooms about what showed beside it, so the same
-  // stretch of map stays in view. Opening and closing it start or end at zero.
+  // stretch of map stays in view. Opening or closing it, from or to zero, moves nothing.
   const panelWidth = useRef(0);
   const keepShownBesidePanel = useEffectEvent(() => {
     const controls = controlsRef.current;
     const width = panel()?.getBoundingClientRect().width ?? 0;
-    const grown = panelWidth.current > 0 ? width - panelWidth.current : 0;
+    const grown = panelWidth.current > 0 && width > 0 ? width - panelWidth.current : 0;
     panelWidth.current = width;
     if (controls === null || grown === 0 || gesturing.current || flight.current !== null) return;
     // Measures the floor afresh: the panel's width moves it.
@@ -2614,13 +2614,15 @@ function WorldControls({
         keepInViewWait.current = null;
         const controls = controlsRef.current;
         if (controls === null) return;
+        const hidden = covered();
         fly(
           viewShowing({
             camera,
             view: currentView(camera, controls),
             points,
             viewport: size,
-            covered: covered(),
+            // A chat sliding out (inert) is about to uncover what it hides.
+            covered: panel()?.inert === true ? { ...hidden, right: 0 } : hidden,
             minZoom: controls.minZoom,
           }),
         );
@@ -2631,7 +2633,7 @@ function WorldControls({
       keepInViewWait.current?.();
       keepInViewWait.current = null;
     };
-  }, [camera, size, covered, fly, keepInView]);
+  }, [camera, size, covered, panel, fly, keepInView]);
   const waitForPanel = useRef<(() => void) | null>(null);
   const stopWaiting = useCallback(() => {
     waitForPanel.current?.();
@@ -2794,7 +2796,8 @@ function viewShowing(input: {
     (right - left) / Math.max(1, Math.max(...xs) - Math.min(...xs)),
     (bottom - top) / Math.max(1, Math.max(...ys) - Math.min(...ys)),
   );
-  const zoom = Math.max(input.minZoom, Math.min(view.zoom, view.zoom * fit));
+  // Only ever out, and never in to the floor: a view already past it stays as far out.
+  const zoom = Math.min(view.zoom, Math.max(input.minZoom, view.zoom * fit));
   const scale = zoom / view.zoom;
   const scaled = (values: ReadonlyArray<number>, middle: number) =>
     values.map((value) => middle + (value - middle) * scale);

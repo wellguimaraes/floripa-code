@@ -96,6 +96,8 @@ export function BubbleComposer(props: {
   readonly notice?: string | null;
   /** Something besides the text is missing, so sending can't happen yet. */
   readonly submitBlocked?: boolean;
+  /** Sending needs no text, such as an answer already picked above. */
+  readonly submitReady?: boolean;
   /** Start listening at once and send what was said: a voice command. */
   readonly listenOnOpen?: boolean;
   /** Open with the text selected, so typing replaces it. Off unless set. */
@@ -442,7 +444,9 @@ export function BubbleComposer(props: {
         size="icon-sm"
         aria-label={props.submitLabel}
         disabled={
-          (text.trim() === "" && attachments.attachments.length === 0) ||
+          (text.trim() === "" &&
+            attachments.attachments.length === 0 &&
+            props.submitReady !== true) ||
           attachments.preparing ||
           busy ||
           props.submitBlocked === true
