@@ -286,7 +286,6 @@ import { type TimestampFormat } from "@t3tools/contracts/settings";
 import {
   formatChatTimestampTooltip,
   formatDayAwareTimestamp,
-  formatRelativeTimeLabel,
   formatUpcomingTimestamp,
 } from "../../timestampFormat";
 import { FetchedToolOutput, V2ItemInspector } from "./V2ItemInspector";
@@ -2185,7 +2184,7 @@ export const ClampedUserMessage = memo(function ClampedUserMessage({
   const attachmentCount = message.attachments?.length ?? 0;
   return (
     <UserMessageChipCtx value={chips}>
-      <div inert className="line-clamp-2">
+      <div inert className="clamped-message line-clamp-2">
         {resolvedContext.text.trim().length > 0 ? (
           <UserMessageBody
             text={resolvedContext.text}
@@ -3324,6 +3323,8 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
             message={row.message}
             files={row.assistantTurnDiffSummary?.files ?? EMPTY_CHANGED_FILES}
             showMeta={row.showAssistantMeta}
+            showCopyButton={row.showAssistantCopyButton}
+            copyStreaming={row.assistantCopyStreaming}
           />
         ) : (
           <>
@@ -3351,15 +3352,19 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
 
 const EMPTY_CHANGED_FILES: TurnDiffSummary["files"] = [];
 
-/** A reply's footer in compact rows: what the turn changed, then the model that answered and when. */
+/** A reply's footer in compact rows: what the turn changed, then the model that answered, when, and copy. */
 function CompactAssistantFooter({
   message,
   files,
   showMeta,
+  showCopyButton,
+  copyStreaming,
 }: {
   message: ChatMessage;
   files: TurnDiffSummary["files"];
   showMeta: boolean;
+  showCopyButton: boolean;
+  copyStreaming: boolean;
 }) {
   const ctx = use(TimelineRowCtx);
   // The run's model, which may not be the thread's now.
@@ -3373,21 +3378,30 @@ function CompactAssistantFooter({
       : ctx.providerStatuses
           .find((provider) => provider.instanceId === model.instanceId)
           ?.models.find((option) => option.slug === model.model);
-  const meta =
-    showMeta && !message.streaming
-      ? [
-          modelOption !== undefined ? getTriggerDisplayModelName(modelOption) : model?.model,
-          formatRelativeTimeLabel(message.updatedAt),
-        ]
-          .filter((part) => part !== undefined && part !== "")
-          .join(" · ")
-      : "";
-  if (files.length === 0 && meta === "") return null;
+  const done = showMeta && !message.streaming;
+  const modelName =
+    modelOption !== undefined ? getTriggerDisplayModelName(modelOption) : model?.model;
+  if (files.length === 0 && !done) return null;
   return (
     <div className="flex items-center gap-3 pt-2">
       {files.length > 0 ? <CompactChangedFilesSummary files={files} /> : null}
-      {meta !== "" ? (
-        <span className="ml-auto min-w-0 truncate text-muted-foreground text-xs">{meta}</span>
+      {done ? (
+        <span className="ml-auto flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs tabular-nums">
+          {modelName ? <span className="min-w-0 truncate">{modelName} ·</span> : null}
+          <Tooltip>
+            <TooltipTrigger render={<span className="shrink-0" />}>
+              {formatDayAwareTimestamp(message.updatedAt, ctx.timestampFormat)}
+            </TooltipTrigger>
+            <TooltipPopup>
+              {formatChatTimestampTooltip(message.updatedAt, ctx.timestampFormat)}
+            </TooltipPopup>
+          </Tooltip>
+          <AssistantCopyButton
+            message={message}
+            showCopyButton={showCopyButton}
+            streaming={copyStreaming}
+          />
+        </span>
       ) : null}
     </div>
   );

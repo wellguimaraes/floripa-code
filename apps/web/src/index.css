@@ -1932,6 +1932,12 @@ code {
   color: var(--contrast-muted-foreground);
 }
 
+/* A two-line message preview reads as one run of text: headings keep the body's size. */
+.clamped-message :is(h1, h2, h3, h4, h5, h6) {
+  margin: 0;
+  font-size: inherit;
+}
+
 :is(.chat-markdown, .composer-tiptap) ul {
   /* Reset for nested uls under a widened ol. --list-gutter is an inherited
      custom property, so without this a task-list under a multi-digit ordered
