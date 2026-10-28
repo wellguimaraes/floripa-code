@@ -212,10 +212,12 @@ const make = Effect.gen(function* () {
       }
       return payload.value.importedTranscripts ?? [];
     });
-    const outcomes = scanner.recentThreads(project.workspaceRoot, completedSources);
+    const outcomes = scanner.recentThreads(project.workspaceRoot, completedSources, input.window);
     const importedThreadIds = new Set<ThreadId>();
     let importedCount = 0;
     let skippedCount = 0;
+    // Threads arrive newest first, so the ones past `activeLimit` are the oldest.
+    let activeCount = 0;
 
     yield* Stream.runForEach(outcomes, (outcome) =>
       Effect.gen(function* () {
@@ -230,6 +232,7 @@ const make = Effect.gen(function* () {
         if (outcome._tag === "AlreadyImported") {
           importedThreadIds.add(threadId);
           importedCount += 1;
+          activeCount += 1;
           return;
         }
         if (outcome._tag === "Duplicate") {
@@ -239,6 +242,8 @@ const make = Effect.gen(function* () {
           return;
         }
 
+        const archive =
+          !outcome.active && input.activeLimit !== undefined && activeCount >= input.activeLimit;
         const imported = yield* Effect.gen(function* () {
           const thread = outcome.thread;
           if (
@@ -300,7 +305,7 @@ const make = Effect.gen(function* () {
             forkedFrom: null,
             createdAt,
             updatedAt,
-            archivedAt: null,
+            archivedAt: archive ? updatedAt : null,
             ...(outcome.active
               ? { settledOverride: "active", settledAt: null, unsettledAt: updatedAt }
               : { settledOverride: "settled", settledAt: updatedAt, unsettledAt: null }),
@@ -377,7 +382,7 @@ const make = Effect.gen(function* () {
             ],
           });
           yield* runtimes.recordImportedTranscript({ threadId, source });
-          if (input.retitle === true) {
+          if (input.retitle === true && !archive) {
             // The title worker runs after this commits and keeps the imported
             // title if generation fails.
             yield* orchestrator
@@ -409,6 +414,7 @@ const make = Effect.gen(function* () {
         if (imported) {
           importedThreadIds.add(threadId);
           importedCount += 1;
+          if (!archive) activeCount += 1;
         } else {
           skippedCount += 1;
         }

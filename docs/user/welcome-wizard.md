@@ -47,21 +47,29 @@ terminal metadata while the terminal process can use them.
 
 ## Import your projects
 
-Floripa Code finds directories that Claude Code or Codex has used. Git repositories
-are listed first, newest activity on top. When the remote is on GitHub, the
-group shows the repository as `owner/name`. Clones with the same remote share
-one group. Directories that are not git repositories sit under "Other folders".
+Floripa Code finds directories that Claude Code or Codex has used and lists
+them by the agent that ran there. Git repositories are listed newest activity
+first. When the remote is on GitHub, the row shows the repository as
+`owner/name`. Clones with the same remote share one group. Directories that are
+not git repositories are listed together under "Other folders".
 
 The default selection includes git repositories active within the last 30 days
-with at least three conversations. Use the checkboxes, or "Select all" and
-"Select none", to change the selection. Codex scratch directories under
-`Documents/Codex` and anything under `Downloads` are not offered.
+with at least three conversations. Use the checkboxes to change the selection;
+the checkbox beside a section's name selects or clears the whole section. Codex
+scratch directories under `Documents/Codex` and anything under `Downloads` are
+not offered.
 
 A large or malformed history can reach the scan limit. Floripa Code keeps the
 projects it found and warns when projects or conversations may be missing.
 
 Imported projects include Codex and Claude conversations active within the last
-30 days. You can continue those conversations in Floripa Code.
+30 days. Use "Threads from" to choose 7, 14, or 30 days, or all time; the
+thread counts follow your choice. You can continue those conversations in
+Floripa Code.
+
+Each project keeps its 8 most recent conversations active, enough to fill its
+island's beach. Older ones import archived; restore any of them from the
+archive when you need it. Conversations Orca still has open always stay active.
 
 Conversations that ran in a linked git worktree, such as one created by Orca,
 belong to the repository's project. They stay bound to their worktree and

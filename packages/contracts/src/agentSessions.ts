@@ -6,6 +6,21 @@ import { ProviderInstanceId } from "./providerInstance.ts";
 export const AgentSessionSource = Schema.Literals(["claudeAgent", "codex"]);
 export type AgentSessionSource = typeof AgentSessionSource.Type;
 
+/** How far back an import reaches for threads, by each thread's last activity. */
+export const AgentSessionImportWindow = Schema.Literals(["7d", "14d", "30d", "all"]);
+export type AgentSessionImportWindow = typeof AgentSessionImportWindow.Type;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const IMPORT_WINDOW_DAYS = { "7d": 7, "14d": 14, "30d": 30 } as const;
+
+/** Oldest last-activity time an import window accepts, or null for no limit. */
+export function agentSessionImportCutoffMs(
+  window: AgentSessionImportWindow,
+  nowMs: number,
+): number | null {
+  return window === "all" ? null : nowMs - IMPORT_WINDOW_DAYS[window] * DAY_MS;
+}
+
 /** File identity saved with an imported session so bounded retries can skip unchanged history. */
 export const AgentSessionImportSource = Schema.Struct({
   provider: AgentSessionSource,
@@ -51,6 +66,13 @@ export const AgentSessionProjectCandidate = Schema.Struct({
   sources: Schema.Array(AgentSessionSource),
   threadCount: NonNegativeInt,
   lastActiveAt: Schema.NullOr(IsoDateTime),
+  /**
+   * Threads active within each bounded import window; `threadCount` covers
+   * `all`. Missing on servers that import a fixed 30 days.
+   */
+  recentThreadCounts: Schema.optionalKey(
+    Schema.Struct({ "7d": NonNegativeInt, "14d": NonNegativeInt, "30d": NonNegativeInt }),
+  ),
   alreadyImported: Schema.Boolean,
   /**
    * `null` when the directory is not the root of a git repository. Missing on
@@ -77,6 +99,17 @@ export const AgentSessionImportInput = Schema.Struct({
    * ignore it.
    */
   retitle: Schema.optional(Schema.Boolean),
+  /**
+   * Which threads to import by last activity. Defaults to `30d`. Servers
+   * without the `agentSessionImportWindow` capability always use `30d`.
+   */
+  window: Schema.optional(AgentSessionImportWindow),
+  /**
+   * Keep at most this many of the newest threads unarchived, counting ones
+   * imported before; older new ones import archived. Threads Orca still has
+   * open always stay. Older servers ignore it and archive none.
+   */
+  activeLimit: Schema.optional(NonNegativeInt),
 });
 export type AgentSessionImportInput = typeof AgentSessionImportInput.Type;
 

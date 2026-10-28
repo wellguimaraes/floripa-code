@@ -1,5 +1,10 @@
 import { findProjectByPath } from "@t3tools/client-runtime/state/projects";
-import type { AgentSessionProjectCandidate, EnvironmentId, ProjectId } from "@t3tools/contracts";
+import type {
+  AgentSessionImportWindow,
+  AgentSessionProjectCandidate,
+  EnvironmentId,
+  ProjectId,
+} from "@t3tools/contracts";
 
 const RECENT_PROJECT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 /** One or two threads in a directory is usually a one-off question, not a project. */
@@ -52,7 +57,7 @@ function latestActivity(left: string | null, right: string | null): string | nul
  * share a group keyed by their normalized origin URL. Repositories without an
  * origin get a group each, as do candidates from servers that do not report
  * git identity. Directories that are not git repositories are returned
- * separately so the UI can fold them away by default. Groups sort by most
+ * separately so the UI can list them after the repositories. Groups sort by most
  * recent activity, newest first.
  */
 export function groupOnboardingProjects<
@@ -99,6 +104,60 @@ export function groupOnboardingProjects<
   });
 
   return { repositories, other };
+}
+
+/** Threads an import with `window` would bring in. Servers without per-window counts report the total. */
+export function threadCountInWindow(
+  candidate: Pick<AgentSessionProjectCandidate, "threadCount" | "recentThreadCounts">,
+  window: AgentSessionImportWindow,
+): number {
+  if (window === "all") return candidate.threadCount;
+  return candidate.recentThreadCounts?.[window] ?? candidate.threadCount;
+}
+
+const SOURCE_LABELS = { claudeAgent: "Claude Code", codex: "Codex" } as const;
+const SOURCE_ORDER = Object.keys(SOURCE_LABELS) as ReadonlyArray<keyof typeof SOURCE_LABELS>;
+
+/**
+ * Split scan candidates into one section per agent that ran in them. A
+ * directory used by both agents gets its own combined section, so each
+ * candidate appears exactly once. Sections follow `SOURCE_ORDER`, single
+ * agents before the combination. Folders that are not git repositories go to
+ * a last "Other folders" section whatever their agent. Candidate order is
+ * preserved.
+ */
+export function groupOnboardingProjectsBySource<
+  T extends Pick<AgentSessionProjectCandidate, "sources" | "git">,
+>(candidates: ReadonlyArray<T>) {
+  const sections = new Map<
+    string,
+    { key: string; label: string; rank: number; candidates: Array<T> }
+  >();
+  const other: Array<T> = [];
+  for (const candidate of candidates) {
+    if (candidate.git === null) {
+      other.push(candidate);
+      continue;
+    }
+    const sources = SOURCE_ORDER.filter((source) => candidate.sources.includes(source));
+    const key = sources.join("+");
+    const existing = sections.get(key);
+    if (existing !== undefined) {
+      existing.candidates.push(candidate);
+      continue;
+    }
+    sections.set(key, {
+      key,
+      label: sources.map((source) => SOURCE_LABELS[source]).join(" and "),
+      // Single agents first, in source order, then combinations.
+      rank: sources.length * SOURCE_ORDER.length + SOURCE_ORDER.indexOf(sources[0]!),
+      candidates: [candidate],
+    });
+  }
+  const sorted = [...sections.values()].sort((left, right) => left.rank - right.rank);
+  return other.length === 0
+    ? sorted
+    : [...sorted, { key: "other", label: "Other folders", rank: Infinity, candidates: other }];
 }
 
 /** Use the server's project match before the client snapshot, which can lag behind the scan. */

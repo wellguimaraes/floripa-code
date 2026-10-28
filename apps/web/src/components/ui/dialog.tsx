@@ -9,6 +9,7 @@ import {
   DIALOG_MEDIA_BACKDROP_CLASS,
   DIALOG_MEDIA_POPUP_CLASS,
   DIALOG_MOBILE_SHEET_CLASS,
+  DIALOG_OCEAN_BACKDROP_CLASS,
   DIALOG_POPUP_CLASS,
 } from "~/components/ui/dialog-styles";
 import { ScrollArea } from "~/components/ui/scroll-area";
@@ -29,12 +30,16 @@ function DialogBackdrop({
   className,
   variant = "default",
   ...props
-}: DialogPrimitive.Backdrop.Props & { variant?: "default" | "media" }) {
+}: DialogPrimitive.Backdrop.Props & { variant?: "default" | "media" | "ocean" }) {
   return (
     <DialogPrimitive.Backdrop
       forceRender
       className={cn(
-        variant === "media" ? DIALOG_MEDIA_BACKDROP_CLASS : DIALOG_BACKDROP_CLASS,
+        variant === "media"
+          ? DIALOG_MEDIA_BACKDROP_CLASS
+          : variant === "ocean"
+            ? DIALOG_OCEAN_BACKDROP_CLASS
+            : DIALOG_BACKDROP_CLASS,
         className,
       )}
       data-slot="dialog-backdrop"
@@ -62,16 +67,22 @@ function DialogPopup({
   showCloseButton = true,
   bottomStickOnMobile = true,
   variant = "default",
+  backdrop,
   ...props
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean;
   bottomStickOnMobile?: boolean;
   variant?: "default" | "media";
+  /** Overrides the backdrop that `variant` picks; `ocean` covers the app with the world's sea. */
+  backdrop?: "ocean";
 }) {
   return (
     <DialogPortal>
       {/* Media opens from inside other overlays (a composer chip, a popover), so it sits above them. */}
-      <DialogBackdrop className={variant === "media" ? "z-[60]" : undefined} variant={variant} />
+      <DialogBackdrop
+        className={variant === "media" ? "z-[60]" : undefined}
+        variant={backdrop ?? variant}
+      />
       <DialogViewport
         className={cn(
           bottomStickOnMobile && "max-sm:grid-rows-[1fr_auto] max-sm:p-0 max-sm:pt-12",

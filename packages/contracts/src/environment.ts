@@ -164,6 +164,9 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   threadTitleRegeneration: Schema.optionalKey(Schema.Boolean),
   /** Server understands `retitle` on agent session import. */
   agentSessionImportRetitle: Schema.optionalKey(Schema.Boolean),
+  /** Server understands `window` on agent session import and reports
+      `recentThreadCounts` on scan candidates. */
+  agentSessionImportWindow: Schema.optionalKey(Schema.Boolean),
   /** Server understands thread.visit / thread.mark-unread commands and
       projects lastVisitedAt on thread shells. Same version-skew contract as
       threadSettlement: clients keep their local visited state against

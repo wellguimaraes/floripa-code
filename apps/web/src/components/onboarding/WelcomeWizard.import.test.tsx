@@ -145,6 +145,7 @@ vi.mock("../settings/providerStatus", () => ({
 vi.mock("../ui/button", () => ({ Button: "button" }));
 vi.mock("../ui/input", () => ({ Input: "input" }));
 vi.mock("../ui/checkbox", () => ({ Checkbox: "input" }));
+vi.mock("../ui/switch", () => ({ Switch: "input" }));
 vi.mock("../ui/collapsible", () => ({
   Collapsible: "div",
   CollapsiblePanel: "div",
@@ -414,7 +415,15 @@ it("completes accepted imports when permission is revoked after the final server
 
 it("asks the server to retitle imported threads when chosen", async () => {
   state.serverConfigs = new Map([
-    [primaryId, { environment: { capabilities: { agentSessionImportRetitle: true } } }],
+    [
+      primaryId,
+      {
+        environment: {
+          platform: { os: "linux" },
+          capabilities: { agentSessionImportRetitle: true },
+        },
+      },
+    ],
   ]);
   await mountImport();
   expect(text(renderer!.root)).toContain("Generate new titles");

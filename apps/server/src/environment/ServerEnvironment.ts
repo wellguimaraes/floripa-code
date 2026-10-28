@@ -244,6 +244,7 @@ export const make = Effect.gen(function* () {
       threadAutoSettleOptOut: true,
       threadTitleRegeneration: true,
       agentSessionImportRetitle: true,
+      agentSessionImportWindow: true,
       threadVisitedTracking: true,
       threadPullRequests: true,
       worktreeSurfaces: true,

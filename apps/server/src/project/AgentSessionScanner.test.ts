@@ -2,6 +2,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeOS from "node:os";
 import { describe, expect, it } from "@effect/vitest";
 import {
+  type AgentSessionImportWindow,
   type OrchestrationProjectShell,
   ProjectId,
   ProviderDriverKind,
@@ -99,16 +100,26 @@ const runScan = (input: ScannerTestInput) =>
     return yield* scanner.scan;
   }).pipe(Effect.provide(layerScannerTest(input)));
 
-const runRecentThreadOutcomes = (input: ScannerTestInput & { readonly workspaceRoot: string }) =>
+const runRecentThreadOutcomes = (
+  input: ScannerTestInput & {
+    readonly workspaceRoot: string;
+    readonly window?: AgentSessionImportWindow;
+  },
+) =>
   Effect.gen(function* () {
     const scanner = yield* AgentSessionScanner.AgentSessionScanner;
-    return yield* scanner.recentThreads(input.workspaceRoot).pipe(
+    return yield* scanner.recentThreads(input.workspaceRoot, [], input.window).pipe(
       Stream.runCollect,
       Effect.map((outcomes) => Array.from(outcomes)),
     );
   }).pipe(Effect.provide(layerScannerTest(input)));
 
-const runRecentThreads = (input: ScannerTestInput & { readonly workspaceRoot: string }) =>
+const runRecentThreads = (
+  input: ScannerTestInput & {
+    readonly workspaceRoot: string;
+    readonly window?: AgentSessionImportWindow;
+  },
+) =>
   runRecentThreadOutcomes(input).pipe(
     Effect.map((outcomes) =>
       outcomes.flatMap((outcome) => (outcome._tag === "Importable" ? [outcome.thread] : [])),
@@ -205,6 +216,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
             title: path.basename(newerWorkspace),
             sources: ["claudeAgent"],
             threadCount: 1,
+            recentThreadCounts: expect.any(Object),
             lastActiveAt: "2026-03-01T00:00:00.000Z",
             alreadyImported: false,
             git: null,
@@ -214,6 +226,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
             title: path.basename(olderWorkspace),
             sources: ["claudeAgent"],
             threadCount: 2,
+            recentThreadCounts: expect.any(Object),
             lastActiveAt: "2026-01-02T00:00:00.000Z",
             alreadyImported: false,
             git: null,
@@ -257,6 +270,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
             title: path.basename(otherWorkspace),
             sources: ["codex"],
             threadCount: 1,
+            recentThreadCounts: expect.any(Object),
             lastActiveAt: "2026-02-09T11:00:00.000Z",
             alreadyImported: false,
             git: null,
@@ -266,6 +280,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
             title: path.basename(workspace),
             sources: ["codex"],
             threadCount: 2,
+            recentThreadCounts: expect.any(Object),
             lastActiveAt: "2026-02-09T10:00:00.000Z",
             alreadyImported: false,
             git: null,
@@ -385,6 +400,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
             projectId: ProjectId.make("project-1"),
             sources: ["claudeAgent", "codex"],
             threadCount: 2,
+            recentThreadCounts: expect.any(Object),
             lastActiveAt: "2026-04-01T09:00:00.000Z",
             alreadyImported: true,
             git: null,
@@ -497,6 +513,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
             projectId: ProjectId.make("project-1"),
             sources: ["claudeAgent", "codex"],
             threadCount: 2,
+            recentThreadCounts: expect.any(Object),
             lastActiveAt: "2026-01-02T00:00:00.000Z",
             alreadyImported: true,
             git: null,
@@ -1346,6 +1363,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
             title: path.basename(workspace),
             sources: ["claudeAgent"],
             threadCount: 1,
+            recentThreadCounts: expect.any(Object),
             lastActiveAt: "2026-05-03T00:00:00.000Z",
             alreadyImported: false,
             git: null,
@@ -1503,6 +1521,49 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         expect(threads.map((thread) => thread.messages.map((message) => message.text))).toEqual([
           ["Review this code", "Looks good"],
           ["Fix the project", "Done"],
+        ]);
+      }),
+    );
+
+    it.effect("counts and imports threads within the chosen window", () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const nowMs = Date.parse("2026-08-24T12:00:00.000Z");
+        yield* TestClock.setTime(nowMs);
+        const claudeHomePath = yield* makeTempDir("floripacode-claude-home-");
+        const codexHomePath = yield* makeTempDir("floripacode-codex-home-");
+        const workspace = yield* makeTempDir("floripacode-workspace-");
+        const dayMs = 24 * 60 * 60 * 1000;
+
+        for (const days of [1, 10, 20, 60]) {
+          yield* writeTranscript({
+            filePath: path.join(claudeHomePath, "projects", "-selected", `${days}d.jsonl`),
+            contents: encodeTranscriptRecord({
+              type: "user",
+              cwd: workspace,
+              sessionId: `session-${days}d`,
+              message: { role: "user", content: `Work from ${days} days ago` },
+            }),
+            mtimeMs: nowMs - days * dayMs,
+          });
+        }
+        const input = { claudeHomePath, codexHomePath, workspaceRoot: workspace };
+        const sessionIds = (window: AgentSessionImportWindow) =>
+          runRecentThreads({ ...input, window }).pipe(
+            Effect.map((threads) => threads.map((thread) => thread.providerSessionId)),
+          );
+
+        const scan = yield* runScan(input);
+        expect(
+          scan.candidates.map((candidate) => [candidate.threadCount, candidate.recentThreadCounts]),
+        ).toEqual([[4, { "7d": 1, "14d": 2, "30d": 3 }]]);
+        expect(yield* sessionIds("7d")).toEqual(["session-1d"]);
+        expect(yield* sessionIds("14d")).toEqual(["session-1d", "session-10d"]);
+        expect(yield* sessionIds("all")).toEqual([
+          "session-1d",
+          "session-10d",
+          "session-20d",
+          "session-60d",
         ]);
       }),
     );

@@ -207,3 +207,21 @@ it.effect("queues a generated title only for threads this import created", () =>
     ]);
   }).pipe(Effect.provide(layerTest));
 });
+
+it.effect("archives threads past the active limit unless Orca still has them open", () => {
+  const settled = makeImporterTest({ worktree: null, active: false });
+  const open = makeImporterTest({ worktree: null, active: true });
+  const importOne = (test: typeof settled) =>
+    Effect.gen(function* () {
+      const importer = yield* AgentSessionImporter.AgentSessionImporter;
+      yield* importer.importRecentAgentThreads({ projectId, activeLimit: 0, retitle: true });
+      return test.writes[0]?.find((event) => event.type === "thread.created")?.payload;
+    }).pipe(Effect.provide(test.layerTest));
+
+  return Effect.gen(function* () {
+    expect(yield* importOne(settled)).toMatchObject({ archivedAt: expect.anything() });
+    // An archived thread gets no generated title.
+    expect(settled.dispatched).toEqual([]);
+    expect(yield* importOne(open)).toMatchObject({ archivedAt: null });
+  });
+});

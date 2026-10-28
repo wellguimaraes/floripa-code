@@ -17,12 +17,14 @@ import * as NodeOS from "node:os";
 
 import {
   AgentSessionScanError,
+  agentSessionImportCutoffMs,
   ClaudeSettings,
   CodexSettings,
   ProviderDriverKind,
   ProviderInstanceId,
   resolveProviderInstanceEnabled,
   type AgentSessionImportSource,
+  type AgentSessionImportWindow,
   type AgentSessionProjectCandidate,
   type AgentSessionProjectGit,
   type AgentSessionScanResult,
@@ -83,7 +85,6 @@ const MAX_METADATA_BYTES_PER_SOURCE = 64 * 1024 * 1024;
 const MAX_METADATA_OPERATIONS_PER_SOURCE = MAX_TRANSCRIPTS_PER_SOURCE * 4;
 const MAX_METADATA_RECORDS_PER_SOURCE = 100_000;
 const MAX_METADATA_RECORDS_PER_TRANSCRIPT = 1_000;
-const RECENT_THREAD_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 /**
  * Large tool results (especially screenshots) can make an otherwise ordinary
  * Codex transcript several GiB. Streaming field selection avoids allocating
@@ -202,11 +203,13 @@ export class AgentSessionScanner extends Context.Service<
     readonly recentThreads: (
       workspaceRoot: string,
       completedSources?: ReadonlyArray<AgentSessionImportSource>,
+      window?: AgentSessionImportWindow,
     ) => Stream.Stream<AgentSessionRecentThread, AgentSessionScanError>;
   }
 >()("t3/project/AgentSessionScanner") {}
 
 type AgentSessionSource = AgentSessionProjectCandidate["sources"][number];
+type RecentThreadCounts = NonNullable<AgentSessionProjectCandidate["recentThreadCounts"]>;
 
 /** A single directory's worth of evidence from one source. */
 interface RawCandidate {
@@ -1284,6 +1287,19 @@ export const make = Effect.gen(function* () {
   const scan: AgentSessionScanner["Service"]["scan"] = Effect.gen(function* () {
     const { candidates: raw, truncated } = yield* collectCandidates();
     cachedCandidates = raw;
+    const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
+    // Same eligibility as `recentThreads`: dated, not in the future, within the window.
+    const countSince = (transcripts: RawCandidate["transcripts"], window: "7d" | "14d" | "30d") => {
+      const cutoff = agentSessionImportCutoffMs(window, nowMs) ?? 0;
+      return transcripts.filter(
+        ({ mtimeMs }) => mtimeMs !== null && mtimeMs >= cutoff && mtimeMs <= nowMs,
+      ).length;
+    };
+    const recentCounts = (transcripts: RawCandidate["transcripts"]): RecentThreadCounts => ({
+      "7d": countSince(transcripts, "7d"),
+      "14d": countSince(transcripts, "14d"),
+      "30d": countSince(transcripts, "30d"),
+    });
 
     // Filesystem identity merges symlinks and case aliases without collapsing
     // distinct case-sensitive directories.
@@ -1293,6 +1309,7 @@ export const make = Effect.gen(function* () {
         path: string;
         sources: Array<AgentSessionSource>;
         threadCount: number;
+        recentThreadCounts: RecentThreadCounts;
         lastActiveAtMs: number | null;
         git: AgentSessionProjectGit | null;
       }
@@ -1316,6 +1333,7 @@ export const make = Effect.gen(function* () {
           path: directory.path,
           sources: [candidate.source],
           threadCount: candidate.threadCount,
+          recentThreadCounts: recentCounts(candidate.transcripts),
           lastActiveAtMs: candidate.lastActiveAtMs,
           git: directory.git,
         });
@@ -1325,6 +1343,12 @@ export const make = Effect.gen(function* () {
         existing.sources.push(candidate.source);
       }
       existing.threadCount += candidate.threadCount;
+      const counts = recentCounts(candidate.transcripts);
+      existing.recentThreadCounts = {
+        "7d": existing.recentThreadCounts["7d"] + counts["7d"],
+        "14d": existing.recentThreadCounts["14d"] + counts["14d"],
+        "30d": existing.recentThreadCounts["30d"] + counts["30d"],
+      };
       existing.lastActiveAtMs =
         existing.lastActiveAtMs === null || candidate.lastActiveAtMs === null
           ? (existing.lastActiveAtMs ?? candidate.lastActiveAtMs)
@@ -1361,6 +1385,7 @@ export const make = Effect.gen(function* () {
         ...(importedProject === undefined ? {} : { projectId: importedProject.id }),
         sources: entry.sources,
         threadCount: entry.threadCount,
+        recentThreadCounts: entry.recentThreadCounts,
         lastActiveAt:
           entry.lastActiveAtMs === null
             ? null
@@ -1388,13 +1413,14 @@ export const make = Effect.gen(function* () {
   const prepareRecentThreads = Effect.fn("AgentSessionScanner.prepareRecentThreads")(function* (
     workspaceRoot: string,
     completedSources: ReadonlyArray<AgentSessionImportSource>,
+    window: AgentSessionImportWindow,
   ) {
     const root = path.resolve(expandHomePath(workspaceRoot, homeDir));
     const realRoot = yield* fileSystem.realPath(root).pipe(Effect.orElseSucceed(() => root));
     if (isExcludedProjectPath(root) || isExcludedProjectPath(realRoot)) return Stream.empty;
     const rootIdentity = yield* directoryIdentity(root);
     const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
-    const cutoffMs = nowMs - RECENT_THREAD_WINDOW_MS;
+    const cutoffMs = agentSessionImportCutoffMs(window, nowMs) ?? Number.NEGATIVE_INFINITY;
 
     const candidates = cachedCandidates ?? (yield* collectCandidates()).candidates;
     cachedCandidates = candidates;
@@ -1568,7 +1594,8 @@ export const make = Effect.gen(function* () {
   const recentThreads: AgentSessionScanner["Service"]["recentThreads"] = (
     workspaceRoot,
     completedSources = [],
-  ) => Stream.unwrap(prepareRecentThreads(workspaceRoot, completedSources));
+    window = "30d",
+  ) => Stream.unwrap(prepareRecentThreads(workspaceRoot, completedSources, window));
 
   return AgentSessionScanner.of({ scan, recentThreads });
 });

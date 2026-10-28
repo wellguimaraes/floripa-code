@@ -3,10 +3,12 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   groupOnboardingProjects,
+  groupOnboardingProjectsBySource,
   partitionOnboardingProjects,
   onboardingProjectKey,
   resolveOnboardingLandingProject,
   resolveOnboardingProjectId,
+  threadCountInWindow,
 } from "./projectImport.logic";
 
 const now = Date.parse("2026-08-22T12:00:00.000Z");
@@ -143,6 +145,47 @@ describe("groupOnboardingProjects", () => {
     expect(grouped.repositories.map((group) => [group.label, group.repository])).toEqual([
       ["legacy", null],
     ]);
+  });
+});
+
+describe("groupOnboardingProjectsBySource", () => {
+  it("gives each agent a section, shared directories a combined one, and plain folders their own", () => {
+    const codexOnly = candidate("/code/codex", { sources: ["codex"] });
+    const both = candidate("/code/both", { sources: ["codex", "claudeAgent"] });
+    const claudeOnly = candidate("/code/claude", { sources: ["claudeAgent"] });
+    const folder = candidate("/tmp/notes", { sources: ["claudeAgent"], git: null });
+    const claudeLater = candidate("/code/claude-2", { sources: ["claudeAgent"] });
+
+    const sections = groupOnboardingProjectsBySource([
+      codexOnly,
+      both,
+      claudeOnly,
+      folder,
+      claudeLater,
+    ]);
+
+    expect(
+      sections.map((section) => [section.label, section.candidates.map((item) => item.path)]),
+    ).toEqual([
+      ["Claude Code", ["/code/claude", "/code/claude-2"]],
+      ["Codex", ["/code/codex"]],
+      ["Claude Code and Codex", ["/code/both"]],
+      ["Other folders", ["/tmp/notes"]],
+    ]);
+  });
+});
+
+describe("threadCountInWindow", () => {
+  it("counts threads in the window and falls back to the total on older servers", () => {
+    const windowed = candidate("/code/app", {
+      threadCount: 9,
+      recentThreadCounts: { "7d": 1, "14d": 4, "30d": 6 },
+    });
+    const legacy = candidate("/code/legacy", { threadCount: 9 });
+
+    expect(threadCountInWindow(windowed, "7d")).toBe(1);
+    expect(threadCountInWindow(windowed, "all")).toBe(9);
+    expect(threadCountInWindow(legacy, "7d")).toBe(9);
   });
 });
 
