@@ -1100,6 +1100,11 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:scheduled-task:webhook-delivery",
       tag: WS_METHODS.scheduledTasksGetWebhookDelivery,
     }),
+    /** Threads the last server restart interrupted and left for the user to resume. */
+    restartContinuationOffer: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:server:restart-continuation-offer",
+      tag: WS_METHODS.serverSubscribeRestartContinuationOffer,
+    }),
     /** Live scheduled-task list: snapshot on subscribe, fresh list after every server-side change. */
     scheduledTasksLive: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:server:scheduled-tasks:live",
@@ -1327,6 +1332,10 @@ export function createServerEnvironmentAtoms<R, E>(
     // Deliberately not on the config lane: run-now blocks until the run is
     // dispatched, and a slow run must not stall settings/keybinding/provider
     // mutations (or other scheduled-task edits) queued behind it.
+    resolveRestartContinuationOffer: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:restart-continuation-offer:resolve",
+      tag: WS_METHODS.serverResolveRestartContinuationOffer,
+    }),
     runScheduledTaskNow: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:scheduled-task:run-now",
       tag: WS_METHODS.scheduledTasksRunNow,

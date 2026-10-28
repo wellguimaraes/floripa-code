@@ -3,6 +3,8 @@ import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import {
   CommandId,
   MessageId,
+  type OrchestrationV2AppThread,
+  type ServerSettings as ServerSettingsValue,
   type OrchestrationV2Run,
   type RunId,
   type ThreadId,
@@ -87,11 +89,43 @@ export function restartContinuationRun(
   return run;
 }
 
+/**
+ * `continued` dispatched the continuation. `ask` found a thread the setting
+ * declined to continue but the user may still resume; `skipped` is everything else.
+ */
+export type RestartContinuationOutcome =
+  | { readonly type: "continued" }
+  | { readonly type: "ask"; readonly title: string }
+  | { readonly type: "skipped" };
+
+const skipped: RestartContinuationOutcome = { type: "skipped" };
+
+/**
+ * Whether a restart may leave this thread's continuation to the user: the
+ * setting is off for its project and the user wants to be asked. Delegated
+ * children are never asked about; their parent hears they stopped.
+ */
+export function shouldAskToContinue(
+  settings: ServerSettingsValue,
+  thread: Pick<OrchestrationV2AppThread, "projectId" | "lineage">,
+): boolean {
+  return (
+    settings.askToContinueThreadsAfterRestart &&
+    !resolveProjectSettings(settings, thread.projectId).settings.continueThreadsAfterServerUpdate &&
+    thread.lineage.relationshipToParent !== "subagent"
+  );
+}
+
 export const continueRestartedRun = Effect.fn("RestartContinuation.continueRestartedRun")(
-  function* (input: { readonly threadId: ThreadId; readonly sourceRunId: RunId }) {
+  function* (input: {
+    readonly threadId: ThreadId;
+    readonly sourceRunId: RunId;
+    /** The user chose to resume, so the continuation setting does not apply. */
+    readonly consented?: boolean;
+  }) {
     const settings = yield* ServerSettings.ServerSettingsService;
     const enabled = yield* settings.getSettings.pipe(Effect.orElseSucceed(() => null));
-    if (!enabled) return;
+    if (!enabled) return skipped;
     const threads = yield* ThreadManagementService.ThreadManagementService;
     const messageId = MessageId.make(`message:restart-continuation:${input.sourceRunId}`);
     const projection = yield* threads.getThreadRecords(
@@ -99,14 +133,15 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
       ["messages", "runs", "providerTurns", "attempts"],
       { messageIds: [messageId] },
     );
-    if (
-      !resolveProjectSettings(enabled, projection.thread.projectId).settings
-        .continueThreadsAfterServerUpdate
-    )
-      return;
-    if (projection.thread.archivedAt !== null || projection.thread.deletedAt !== null) return;
+    const continueAutomatically =
+      input.consented === true ||
+      resolveProjectSettings(enabled, projection.thread.projectId).settings
+        .continueThreadsAfterServerUpdate;
+    if (!continueAutomatically && !shouldAskToContinue(enabled, projection.thread)) return skipped;
+    if (projection.thread.archivedAt !== null || projection.thread.deletedAt !== null)
+      return skipped;
 
-    if (projection.messages.some((message) => message.id === messageId)) return;
+    if (projection.messages.some((message) => message.id === messageId)) return skipped;
     const source = projection.runs.find((run) => run.id === input.sourceRunId);
     // Pending effects from older versions may target settled background work,
     // including waiting runs that reconciliation subsequently cancelled.
@@ -115,7 +150,7 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
       source.status !== "cancelled" ||
       isRestartNoteSource(source, projection.providerTurns)
     )
-      return;
+      return skipped;
     // A user submission after reconciliation takes precedence over an automatic
     // prompt. Queued runs never started and stay held behind this one.
     if (
@@ -123,8 +158,8 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
         (run) => run.id !== source.id && run.status !== "queued" && runRanAfter(run, source),
       )
     )
-      return;
-    if (projection.thread.providerInstanceId !== source.providerInstanceId) return;
+      return skipped;
+    if (projection.thread.providerInstanceId !== source.providerInstanceId) return skipped;
     const sourceRecords = yield* threads.getThreadRecords(
       input.threadId,
       ["messages", "turnItems"],
@@ -140,11 +175,12 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
         (item) => item.runId === source.id && item.type === "run_interrupt_request",
       )
     )
-      return;
+      return skipped;
     const sourceMessage = sourceRecords.messages.find(
       (message) => message.id === source.userMessageId,
     );
-    if (sourceMessage !== undefined && isNativeMaintenanceCommand(sourceMessage)) return;
+    if (sourceMessage !== undefined && isNativeMaintenanceCommand(sourceMessage)) return skipped;
+    if (!continueAutomatically) return { type: "ask", title: projection.thread.title } as const;
     const note = restartContinuationNote(
       source,
       projection.runs,
@@ -181,12 +217,13 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
       creationSource: "server",
       restartContinuationOfRunId: input.sourceRunId,
     });
+    return { type: "continued" } as const;
   },
   // A delegated child this declined to continue still owes its parent a
   // result. Once a continuation run exists this is a no-op; that run settles it.
   (effect, input) =>
     effect.pipe(
-      Effect.andThen(
+      Effect.tap(
         Effect.gen(function* () {
           const threads = yield* ThreadManagementService.ThreadManagementService;
           yield* threads.recoverDelegatedTask(input.threadId, input.sourceRunId);

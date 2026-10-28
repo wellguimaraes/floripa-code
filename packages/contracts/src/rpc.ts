@@ -288,6 +288,9 @@ import {
 import {} from "./previewAutomation.ts";
 import {
   ServerConfigStreamEvent,
+  RestartContinuationOffer,
+  RestartContinuationOfferResolveInput,
+  RestartContinuationOfferResolveResult,
   DesktopUpdateCommitInput,
   ServerConfig,
   ServerProviderUpdateError,
@@ -513,6 +516,8 @@ export const WS_METHODS = {
   serverReportClientActivity: "server.reportClientActivity",
   serverReportHostPowerState: "server.reportHostPowerState",
   serverGetBackgroundPolicy: "server.getBackgroundPolicy",
+  serverSubscribeRestartContinuationOffer: "server.subscribeRestartContinuationOffer",
+  serverResolveRestartContinuationOffer: "server.resolveRestartContinuationOffer",
   serverGetUsageSummary: "server.getUsageSummary",
   serverRefreshUsageRates: "server.refreshUsageRates",
 
@@ -953,6 +958,25 @@ const WsServerGetBackgroundPolicyRpc = Rpc.make(WS_METHODS.serverGetBackgroundPo
   success: BackgroundPolicySnapshot,
   error: EnvironmentAuthorizationError,
 });
+
+const WsServerSubscribeRestartContinuationOfferRpc = Rpc.make(
+  WS_METHODS.serverSubscribeRestartContinuationOffer,
+  {
+    payload: Schema.Struct({}),
+    success: RestartContinuationOffer,
+    error: EnvironmentAuthorizationError,
+    stream: true,
+  },
+);
+
+const WsServerResolveRestartContinuationOfferRpc = Rpc.make(
+  WS_METHODS.serverResolveRestartContinuationOffer,
+  {
+    payload: RestartContinuationOfferResolveInput,
+    success: RestartContinuationOfferResolveResult,
+    error: EnvironmentAuthorizationError,
+  },
+);
 
 const PullRequestRpcError = Schema.Union([
   PullRequestUnavailableError,
@@ -1962,6 +1986,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerReportClientActivityRpc,
   WsServerReportHostPowerStateRpc,
   WsServerGetBackgroundPolicyRpc,
+  WsServerSubscribeRestartContinuationOfferRpc,
+  WsServerResolveRestartContinuationOfferRpc,
   WsCloudGetRelayClientStatusRpc,
   WsCloudInstallRelayClientRpc,
   WsPullRequestsListRpc,

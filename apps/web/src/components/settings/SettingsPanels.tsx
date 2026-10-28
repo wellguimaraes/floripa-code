@@ -655,6 +655,10 @@ export function useSettingsRestore(onRestored?: () => void) {
       DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate
         ? ["Continue threads after restarts"]
         : []),
+      ...(settings.askToContinueThreadsAfterRestart !==
+      DEFAULT_UNIFIED_SETTINGS.askToContinueThreadsAfterRestart
+        ? ["Ask to resume after restarts"]
+        : []),
       ...(isBackgroundActivityDirty ? ["Background activity"] : []),
       ...(settings.defaultThreadEnvMode !== DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode
         ? ["New thread mode"]
@@ -732,6 +736,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.persistComposerContextStrip,
       settings.enableProviderUpdateChecks,
       settings.continueThreadsAfterServerUpdate,
+      settings.askToContinueThreadsAfterRestart,
       settings.sidebarAutoSettleAfterDays,
       settings.sidebarAutoSettleOnMerge,
       settings.autoResumeLimitedThreads,
@@ -846,6 +851,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
+      askToContinueThreadsAfterRestart: DEFAULT_UNIFIED_SETTINGS.askToContinueThreadsAfterRestart,
       backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
       backgroundActivityProfile: DEFAULT_UNIFIED_SETTINGS.backgroundActivityProfile,
       automaticGitFetchInterval: DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval,
@@ -2262,6 +2268,11 @@ export function GeneralSettingsPanel() {
     connectedEnvironments.every(
       (target) => target.serverConfig?.environment.capabilities.threadRestartContinuation === true,
     );
+  const supportsRestartContinuationOffer =
+    connectedEnvironments.length > 0 &&
+    connectedEnvironments.every(
+      (target) => target.serverConfig?.environment.capabilities.restartContinuationOffer === true,
+    );
 
   const textGenerationProviders = serverProviders.filter(
     (provider) => provider.supportsTextGeneration !== false,
@@ -3003,6 +3014,39 @@ export function GeneralSettingsPanel() {
             />
           }
         />
+
+        {supportsRestartContinuationOffer && !settings.continueThreadsAfterServerUpdate ? (
+          <SettingsRow
+            {...searchableSetting("ask-to-continue-threads-after-restart")}
+            serverScoped
+            settingKeys={["askToContinueThreadsAfterRestart"]}
+            description="When threads are not resumed automatically, ask whether to resume them after a restart."
+            resetAction={
+              settings.askToContinueThreadsAfterRestart !==
+              DEFAULT_UNIFIED_SETTINGS.askToContinueThreadsAfterRestart ? (
+                <SettingResetButton
+                  label="ask to resume after restarts"
+                  onClick={() =>
+                    updateSettings({
+                      askToContinueThreadsAfterRestart:
+                        DEFAULT_UNIFIED_SETTINGS.askToContinueThreadsAfterRestart,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <ScopedSwitch
+                settingKeys={["askToContinueThreadsAfterRestart"]}
+                checked={settings.askToContinueThreadsAfterRestart}
+                onCheckedChange={(checked) =>
+                  updateSettings({ askToContinueThreadsAfterRestart: Boolean(checked) })
+                }
+                aria-label="Ask to resume threads after restarts"
+              />
+            }
+          />
+        ) : null}
 
         <SettingsRow
           serverScoped

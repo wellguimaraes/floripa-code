@@ -455,6 +455,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "ask-to-continue-threads-after-restart",
+    title: "Ask to resume after restarts",
+    to: "/settings/general",
+    scope: "environment-defaults",
+    searchTerms: ["prompt dialog resume interrupted threads restart update never always"],
+  },
+  {
     id: "background-activity",
     title: "Background activity",
     to: "/settings/general",

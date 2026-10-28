@@ -41,6 +41,7 @@ import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 import * as ProviderRuntimeRecoveryService from "./ProviderRuntimeRecoveryService.ts";
+import * as RestartContinuationOffer from "./RestartContinuationOffer.ts";
 import * as ProviderSwitchService from "./ProviderSwitchService.ts";
 import * as ProviderTurnControlService from "./ProviderTurnControlService.ts";
 import * as ProviderTurnStartService from "./ProviderTurnStartService.ts";
@@ -299,9 +300,13 @@ const layerThreadTitleRegenerationProvided = ThreadTitleRegenerationService.laye
     ),
   ),
 );
+const layerRestartContinuationOfferProvided = RestartContinuationOffer.layer.pipe(
+  Layer.provide(layerThreadManagementProvided),
+);
 const layerEffectExecutorProvided = EffectWorker.layerExecutor.pipe(
   Layer.provide(
     Layer.mergeAll(
+      layerRestartContinuationOfferProvided,
       layerRunFinalizationServiceProvided,
       layerCheckpointRollbackServiceProvided,
       layerProviderSessionManagerProvided,
@@ -347,6 +352,7 @@ export const layer = Layer.mergeAll(
   layerProviderSessionManagerProvided,
   layerProviderAuthServiceProvided,
   layerProviderRuntimeRecoveryProvided,
+  layerRestartContinuationOfferProvided,
   layerProjectionMaintenanceProvided,
   layerLegacyV1ThreadImporterProvided,
 );

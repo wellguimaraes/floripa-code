@@ -230,6 +230,10 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
     (target) =>
       target.environment.serverConfig.environment.capabilities.threadRestartContinuation === true,
   );
+  const supportsContinuationOffer = targets.every(
+    (target) =>
+      target.environment.serverConfig.environment.capabilities.restartContinuationOffer === true,
+  );
   const disabledFor = (key: string) =>
     disabled ||
     (projectSelected &&
@@ -480,6 +484,25 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                         }
                       />
                     </View>
+                    {supportsContinuationOffer &&
+                    uniform("continueThreadsAfterServerUpdate") !== true ? (
+                      <View className="border-t border-border-subtle">
+                        <SettingsSwitchRow
+                          icon="questionmark.bubble"
+                          label="Ask to resume after restart"
+                          subtitle={
+                            projectSelected
+                              ? "Environment-wide setting. Select All projects to change it."
+                              : "Ask whether to resume threads a restart interrupted."
+                          }
+                          value={uniform("askToContinueThreadsAfterRestart")}
+                          disabled={disabledFor("askToContinueThreadsAfterRestart")}
+                          onValueChange={(value) =>
+                            write({ askToContinueThreadsAfterRestart: value })
+                          }
+                        />
+                      </View>
+                    ) : null}
                   </SettingsSection>
                 </>
               ) : null}

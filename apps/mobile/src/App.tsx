@@ -1,4 +1,5 @@
 import { PermissionUpdateNotice } from "./components/PermissionUpdateNotice";
+import { RestartContinuationPrompt } from "./components/RestartContinuationPrompt";
 import * as Linking from "expo-linking";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
@@ -86,6 +87,7 @@ function AppContent() {
       <SplashScreenCoordinator />
       <SubscriptionUsageCoordinator />
       <PermissionUpdateNotice />
+      <RestartContinuationPrompt />
       <GestureHandlerRootView className="flex-1">
         <KeyboardProvider statusBarTranslucent>
           <SafeAreaProvider>

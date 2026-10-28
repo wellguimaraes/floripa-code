@@ -16,8 +16,11 @@ import {
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Stream from "effect/Stream";
 import * as ServerSettings from "../serverSettings.ts";
 import { restartContinuationRun, continueRestartedRun } from "./RestartContinuation.ts";
+import * as RestartContinuationOffer from "./RestartContinuationOffer.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ProviderRuntimeRecovery from "./ProviderRuntimeRecoveryService.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
@@ -41,6 +44,8 @@ function makeProjection() {
     thread: {
       id: threadId,
       projectId: ProjectId.make("restart-project"),
+      title: "Restart thread",
+      lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
       providerInstanceId: instanceId,
       archivedAt: null,
       deletedAt: null,
@@ -268,6 +273,7 @@ it.effect.each([
           Layer.mergeAll(
             ServerSettings.layerTest({
               continueThreadsAfterServerUpdate: enabled,
+              askToContinueThreadsAfterRestart: false,
               projectSettingsOverrides:
                 projectOverride === undefined
                   ? {}
@@ -833,5 +839,135 @@ it.effect("prepares later threads' continuations when one thread fails", () =>
       writes.map((write) => write.effects[0]?.request),
       [{ type: "provider-runtime.continue", sourceRunId: runId }],
     );
+  }),
+);
+
+it.effect("records restart intent for asking when continuation is off", () =>
+  Effect.gen(function* () {
+    const commitEffects = (askToContinueThreadsAfterRestart: boolean) =>
+      Effect.gen(function* () {
+        let committed: Parameters<EventSink.EventSinkV2["Service"]["commitCommand"]>[0] | undefined;
+        const recovery = yield* ProviderRuntimeRecovery.make.pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              ServerSettings.layerTest({
+                continueThreadsAfterServerUpdate: false,
+                askToContinueThreadsAfterRestart,
+              }),
+              Layer.mock(ProjectionStore.ProjectionStoreV2)({
+                getRecoveryThreadIds: () => Effect.succeed([threadId]),
+                getRuntimeRecoveryProjection: () => Effect.succeed(makeProjection()),
+              }),
+              Layer.mock(EventSink.EventSinkV2)({
+                commitCommand: (input) => {
+                  committed = input;
+                  return Effect.succeed({ committed: true, cancelledEffectCount: 1 } as never);
+                },
+              }),
+              IdAllocator.layer,
+              Layer.mock(EffectWorker.OrchestrationEffectWorkerV2)({
+                runRecoveryOnce: Effect.succeed(false),
+              }),
+              Layer.mock(EffectOutbox.EffectOutboxV2)({
+                reconcileAfterProcessLoss: Effect.succeed({ requeued: 0, cancelled: 0 }),
+              }),
+            ),
+          ),
+        );
+        yield* recovery.reconcile("startup");
+        return committed!.effects.length;
+      });
+    assert.equal(yield* commitEffects(true), 1);
+    assert.equal(yield* commitEffects(false), 0);
+  }),
+);
+
+it.effect("asks instead of continuing when continuation is off, and continues on consent", () =>
+  Effect.gen(function* () {
+    let projection = makeProjection();
+    projection = { ...projection, runs: [{ ...projection.runs[0]!, status: "cancelled" }] };
+    const commands: Parameters<
+      ThreadManagementService.ThreadManagementService["Service"]["dispatch"]
+    >[0][] = [];
+    const layer = Layer.merge(
+      Layer.mock(ThreadManagementService.ThreadManagementService)({
+        getThreadRecords: () => Effect.succeed(projection),
+        recoverDelegatedTask: () => Effect.void,
+        dispatch: (command) => {
+          commands.push(command);
+          return Effect.succeed({} as never);
+        },
+      }),
+      ServerSettings.layerTest({ continueThreadsAfterServerUpdate: false }),
+    );
+    assert.deepEqual(
+      yield* continueRestartedRun({ threadId, sourceRunId: runId }).pipe(Effect.provide(layer)),
+      { type: "ask", title: "Restart thread" },
+    );
+    assert.lengthOf(commands, 0);
+
+    const subagent = projection;
+    projection = {
+      ...subagent,
+      thread: {
+        ...subagent.thread,
+        lineage: { ...subagent.thread.lineage, relationshipToParent: "subagent" },
+      },
+    };
+    assert.deepEqual(
+      yield* continueRestartedRun({ threadId, sourceRunId: runId }).pipe(Effect.provide(layer)),
+      { type: "skipped" },
+    );
+    projection = subagent;
+
+    assert.deepEqual(
+      yield* continueRestartedRun({ threadId, sourceRunId: runId, consented: true }).pipe(
+        Effect.provide(layer),
+      ),
+      { type: "continued" },
+    );
+    assert.lengthOf(commands, 1);
+  }),
+);
+
+it.effect("resolving the offer resumes its threads once, and dismissing resumes none", () =>
+  Effect.gen(function* () {
+    const projection = {
+      ...makeProjection(),
+      runs: [{ ...makeProjection().runs[0]!, status: "cancelled" }],
+    } as unknown as OrchestrationV2ThreadProjection;
+    const commands: Parameters<
+      ThreadManagementService.ThreadManagementService["Service"]["dispatch"]
+    >[0][] = [];
+    const layer = RestartContinuationOffer.layer.pipe(
+      Layer.provide(
+        Layer.merge(
+          Layer.mock(ThreadManagementService.ThreadManagementService)({
+            getThreadRecords: () => Effect.succeed(projection),
+            recoverDelegatedTask: () => Effect.void,
+            dispatch: (command) => {
+              commands.push(command);
+              return Effect.succeed({} as never);
+            },
+          }),
+          ServerSettings.layerTest({ continueThreadsAfterServerUpdate: false }),
+        ),
+      ),
+    );
+    yield* Effect.gen(function* () {
+      const offer = yield* RestartContinuationOffer.RestartContinuationOffer;
+      const current = Stream.runHead(offer.offer).pipe(Effect.map(Option.getOrThrow));
+      yield* offer.add({ threadId, sourceRunId: runId, title: "Restart thread" });
+      yield* offer.add({ threadId, sourceRunId: runId, title: "Restart thread" });
+      assert.deepEqual(yield* current, { threads: [{ threadId, title: "Restart thread" }] });
+
+      assert.deepEqual(yield* offer.resolve({ resume: false }), { resumedThreadCount: 0 });
+      assert.lengthOf(commands, 0);
+
+      yield* offer.add({ threadId, sourceRunId: runId, title: "Restart thread" });
+      assert.deepEqual(yield* offer.resolve({ resume: true }), { resumedThreadCount: 1 });
+      assert.deepEqual(yield* offer.resolve({ resume: true }), { resumedThreadCount: 0 });
+      assert.lengthOf(commands, 1);
+    }).pipe(Effect.provide(layer));
   }),
 );

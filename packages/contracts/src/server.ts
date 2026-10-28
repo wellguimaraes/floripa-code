@@ -862,6 +862,27 @@ export const ServerConfigStreamEvent = Schema.Union([
 ]);
 export type ServerConfigStreamEvent = typeof ServerConfigStreamEvent.Type;
 
+/**
+ * Threads a server restart interrupted and did not resume on its own, because
+ * continuing after restarts is off. Empty once answered or when there are none.
+ */
+export const RestartContinuationOffer = Schema.Struct({
+  threads: Schema.Array(Schema.Struct({ threadId: ThreadId, title: Schema.String })),
+});
+export type RestartContinuationOffer = typeof RestartContinuationOffer.Type;
+
+export const RestartContinuationOfferResolveInput = Schema.Struct({
+  /** True resumes every offered thread; false dismisses the offer. */
+  resume: Schema.Boolean,
+});
+export type RestartContinuationOfferResolveInput = typeof RestartContinuationOfferResolveInput.Type;
+
+export const RestartContinuationOfferResolveResult = Schema.Struct({
+  resumedThreadCount: Schema.Number,
+});
+export type RestartContinuationOfferResolveResult =
+  typeof RestartContinuationOfferResolveResult.Type;
+
 /** Terminal selection recorded by the service launcher for one update. */
 export const ServerSelfUpdateOutcome = Schema.Struct({
   id: TrimmedNonEmptyString,

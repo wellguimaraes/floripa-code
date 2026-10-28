@@ -40,6 +40,7 @@ import * as ProviderContinuationRequests from "@t3tools/provider-core/server/Pro
 import * as ProviderContinuationService from "../ProviderContinuationService.ts";
 import * as ProviderEventIngestor from "../ProviderEventIngestor.ts";
 import * as ProviderRuntimeRecoveryService from "../ProviderRuntimeRecoveryService.ts";
+import * as RestartContinuationOffer from "../RestartContinuationOffer.ts";
 import * as ProviderSessionManager from "../ProviderSessionManager.ts";
 import * as ProviderSwitchService from "../ProviderSwitchService.ts";
 import * as ProviderTurnControlService from "../ProviderTurnControlService.ts";
@@ -475,9 +476,13 @@ export function layerWithRegistry<Error>(
           ),
         )
       : Layer.empty;
+  const layerRestartContinuationOfferProvided = RestartContinuationOffer.layer.pipe(
+    Layer.provide(Layer.merge(layerThreadManagementProvided, layerServerSettings)),
+  );
   const layerEffectExecutorProvided = EffectWorker.layerExecutor.pipe(
     Layer.provide(
       Layer.mergeAll(
+        layerRestartContinuationOfferProvided,
         layerRunFinalizationServiceProvided,
         layerCheckpointRollbackServiceProvided,
         layerProviderSessionManagerProvided,
@@ -499,6 +504,7 @@ export function layerWithRegistry<Error>(
     layerEffectWorkerProvided,
     layerEventSinkProvided,
     layerContinuationWorkerProvided,
+    layerRestartContinuationOfferProvided,
   ).pipe(Layer.provide(ProviderTurnStartServiceTestkit.layer), Layer.provide(NodeServices.layer));
 
   // Build the daemon from the exact worker instance exposed alongside the

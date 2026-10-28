@@ -21,7 +21,7 @@ import * as EventSink from "./EventSink.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import { restartContinuationRun } from "./RestartContinuation.ts";
+import { restartContinuationRun, shouldAskToContinue } from "./RestartContinuation.ts";
 import {
   endOrphanedNativeSubagent,
   endRunlessRootTurns,
@@ -658,10 +658,12 @@ export const make = Effect.gen(function* () {
               }),
           ),
         );
+        // Asking still needs the continuation snapshot; delivery decides.
         const enabled =
           continueAfterRestart !== null &&
-          resolveProjectSettings(continueAfterRestart, projection.thread.projectId).settings
-            .continueThreadsAfterServerUpdate;
+          (resolveProjectSettings(continueAfterRestart, projection.thread.projectId).settings
+            .continueThreadsAfterServerUpdate ||
+            shouldAskToContinue(continueAfterRestart, projection.thread));
         const result = yield* reconcileProjection(projection, trigger, enabled);
         terminalizedRuns += result.terminalizedRuns;
         stoppedSessions += result.stoppedSessions;
@@ -694,7 +696,8 @@ export const make = Effect.gen(function* () {
         const projection = yield* projections.getRuntimeRecoveryProjection(threadId);
         if (
           !resolveProjectSettings(enabled, projection.thread.projectId).settings
-            .continueThreadsAfterServerUpdate
+            .continueThreadsAfterServerUpdate &&
+          !shouldAskToContinue(enabled, projection.thread)
         )
           return;
         const run = restartContinuationRun(projection);

@@ -28,6 +28,7 @@ import * as ThreadTitleRegenerationService from "./ThreadTitleRegenerationServic
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { continueRestartedRun } from "./RestartContinuation.ts";
+import * as RestartContinuationOffer from "./RestartContinuationOffer.ts";
 
 export class OrchestrationEffectExecutionError extends Schema.TaggedError<OrchestrationEffectExecutionError>()(
   "OrchestrationEffectExecutionError",
@@ -90,6 +91,7 @@ export const layerExecutor: Layer.Layer<
   | ThreadTitleRegenerationService.ThreadTitleRegenerationService
   | ThreadManagementService.ThreadManagementService
   | ServerSettings.ServerSettingsService
+  | RestartContinuationOffer.RestartContinuationOffer
 > = Layer.effect(
   OrchestrationEffectExecutorV2,
   Effect.gen(function* () {
@@ -104,6 +106,7 @@ export const layerExecutor: Layer.Layer<
       yield* ThreadTitleRegenerationService.ThreadTitleRegenerationService;
     const threads = yield* ThreadManagementService.ThreadManagementService;
     const settings = yield* ServerSettings.ServerSettingsService;
+    const restartContinuationOffer = yield* RestartContinuationOffer.RestartContinuationOffer;
     return OrchestrationEffectExecutorV2.of({
       execute: (effect, options) => {
         const willRetry = options?.willRetry ?? false;
@@ -113,6 +116,15 @@ export const layerExecutor: Layer.Layer<
             return continueRestartedRun({ threadId: effect.threadId, sourceRunId }).pipe(
               Effect.provideService(ThreadManagementService.ThreadManagementService, threads),
               Effect.provideService(ServerSettings.ServerSettingsService, settings),
+              Effect.flatMap((outcome) =>
+                outcome.type === "ask"
+                  ? restartContinuationOffer.add({
+                      threadId: effect.threadId,
+                      sourceRunId,
+                      title: outcome.title,
+                    })
+                  : Effect.void,
+              ),
               // A continuation that will never run still owes a delegated parent a result.
               Effect.tapError(() =>
                 willRetry

@@ -23,6 +23,7 @@ import * as TestClock from "effect/testing/TestClock";
 import * as CheckpointRollbackService from "./CheckpointRollbackService.ts";
 import * as EffectOutbox from "./EffectOutbox.ts";
 import * as EffectWorker from "./EffectWorker.ts";
+import * as RestartContinuationOffer from "./RestartContinuationOffer.ts";
 import * as RunFinalizationService from "./RunFinalizationService.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 import * as ProviderTurnControlService from "./ProviderTurnControlService.ts";
@@ -82,6 +83,7 @@ function layerExecutorFor(input: {
   readonly failFirstStart?: Ref.Ref<boolean>;
   readonly threads?: Partial<ThreadManagementService.ThreadManagementService["Service"]>;
   readonly continueAfterRestart?: boolean;
+  readonly offered?: Ref.Ref<ReadonlyArray<ThreadId>>;
   readonly interrupt?: ProviderTurnControlService.ProviderTurnControlServiceV2Shape["interrupt"];
 }) {
   const record = (event: string) => Ref.update(input.events, (events) => [...events, event]);
@@ -153,9 +155,15 @@ function layerExecutorFor(input: {
       Layer.mergeAll(
         layerDependencies,
         Layer.mock(ThreadManagementService.ThreadManagementService)(input.threads ?? {}),
-        ServerSettings.layerTest(
-          input.continueAfterRestart === true ? { continueThreadsAfterServerUpdate: true } : {},
-        ),
+        ServerSettings.layerTest({
+          continueThreadsAfterServerUpdate: input.continueAfterRestart === true,
+        }),
+        Layer.mock(RestartContinuationOffer.RestartContinuationOffer)({
+          add: (thread) =>
+            input.offered === undefined
+              ? Effect.die("Unexpected restart continuation offer")
+              : Ref.update(input.offered, (ids) => [...ids, thread.threadId]),
+        }),
       ),
     ),
   );
