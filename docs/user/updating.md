@@ -10,16 +10,17 @@ notice.
 Server updates restart the connection and can interrupt active agents and
 terminal commands. Saved threads, settings, and project files remain.
 
-**Settings → General → Continue threads after restarts** is off by default.
-Enable it to resume supported active threads after an update, crash, or machine
-restart. Changes are saved to connected environments that support this setting;
-update older servers first. If a supported environment was offline or has a
+**Settings → General → Continue threads after restarts** is on by default. It
+resumes supported active threads after an update, crash, or machine restart.
+When it is off, Floripa Code asks after a restart whether to resume the
+interrupted threads: **Yes** or **No** answers this time, **Always** turns the
+setting on, and **Never** stops asking. Turn asking back on with **Ask to
+resume after restarts** in the same section. Changes are saved to connected
+environments that support this setting; update older servers first. If a supported environment was offline or has a
 different value, use **Apply to all** in Settings after it connects.
 Floripa Code must start again on that machine;
 the setting does not enable automatic startup. Terminal commands may still be
 interrupted, and threads without saved provider resume state need a new message.
-If you previously enabled continuation for updates, enable this setting once
-to allow recovery without a connected client.
 
 Updates from the previous orchestration system preserve conversation transcripts but cannot carry
 every kind of runtime history forward. Read [Threads from older Floripa Code versions](./thread-migration.md)
