@@ -45,7 +45,6 @@ import {
   islandBounds,
   resolveArchipelago,
   suggestHue,
-  type IslandArrangement,
   type WorldIsland,
 } from "./engine/archipelago";
 import { EMPTY_BEAT_GATE, gateBeats } from "./engine/beats";
@@ -71,6 +70,7 @@ import {
 import { geometry } from "./scene/geometries";
 import { HAT_COUNT } from "./scene/Hat";
 import { Island, LAGOON_REACH, WIDE_LAGOON_REACH, type FurnitureSpot } from "./scene/Island";
+import { ISLAND_MOVE_MS, ISLAND_SINK_MS, IslandMotion } from "./scene/IslandMotion";
 import { afterPaint, whenIdle } from "./scene/frames";
 import { FadedContext, WorldDaylight } from "./scene/lighting";
 import { palette } from "./scene/palette";
@@ -230,12 +230,64 @@ export default function WorldCanvas(props: {
   // the island does not shrink while the server answers and the saucer comes.
   const [archiving, setArchiving] = useState<ReadonlyArray<CharacterFacts>>([]);
   // Islands hidden from the projects menu leave the map; the rest close up.
-  const hidden = useWorldVisibilityStore((state) => state.hidden);
   const hideIsland = useWorldVisibilityStore((state) => state.toggleHidden);
   const showOnlyIsland = useWorldVisibilityStore((state) => state.showOnly);
+  // What the layout has caught up to: islands being hidden sink first and only then
+  // leave it, so the rest close up after; islands being shown join it at once, and rise
+  // once the rest have moved aside.
+  const [layout, setLayout] = useState(() => ({
+    hidden: useWorldVisibilityStore.getState().hidden,
+    // Islands just shown, which wait for the rest to move aside before growing in.
+    appearing: NO_KEYS,
+    leaving: NO_KEYS,
+  }));
+  const laidOut = layout.hidden;
+  // Told by each island when it has finished sinking (or rising back).
+  const onIslandSunk = useRef<(key: string, sunk: boolean) => void>(() => {});
+  useEffect(() => {
+    let caughtUp = useWorldVisibilityStore.getState().hidden;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // Islands all the way under the water, and the hide waiting on them.
+    const sunk = new Set<string>();
+    let waiting: { readonly leaving: ReadonlyArray<string>; readonly commit: () => void } | null =
+      null;
+    const commitOnceSunk = () => {
+      if (waiting?.leaving.every((key) => sunk.has(key))) waiting.commit();
+    };
+    onIslandSunk.current = (key, isSunk) => {
+      if (isSunk) sunk.add(key);
+      else sunk.delete(key);
+      commitOnceSunk();
+    };
+    const unsubscribe = useWorldVisibilityStore.subscribe(({ hidden }, previous) => {
+      if (hidden === previous.hidden) return;
+      clearTimeout(timer);
+      waiting = null;
+      const leaving = Object.keys(hidden).filter((key) => !caughtUp[key]);
+      const commit = () => {
+        clearTimeout(timer);
+        waiting = null;
+        // They leave the map, so a later show starts them under the water afresh.
+        for (const key of leaving) sunk.delete(key);
+        const appearing = new Set(Object.keys(caughtUp).filter((key) => !hidden[key]));
+        caughtUp = hidden;
+        setLayout({ hidden, appearing, leaving: NO_KEYS });
+      };
+      if (leaving.length === 0 || reducedMotion()) return commit();
+      setLayout((current) => ({ ...current, leaving: new Set(leaving) }));
+      waiting = { leaving, commit };
+      // In case an island never reports back, as in a tab that draws no frames.
+      timer = setTimeout(commit, ISLAND_SINK_MS * 3);
+    });
+    return () => {
+      clearTimeout(timer);
+      unsubscribe();
+      onIslandSunk.current = () => {};
+    };
+  }, []);
   const visibleOrder = useMemo(
-    () => projectOrder.filter((key) => !hidden[key]),
-    [projectOrder, hidden],
+    () => projectOrder.filter((key) => !laidOut[key]),
+    [projectOrder, laidOut],
   );
   const visibleFacts = useMemo(() => {
     // Archived agents still hold their spots while archiving and under the beam,
@@ -244,8 +296,8 @@ export default function WorldCanvas(props: {
     const held = [...archiving, ...abductions.flatMap((a) => a.held ?? [])].filter(
       (f) => !live.has(f.key),
     );
-    return [...islandFacts, ...held].filter((f) => !hidden[f.projectKey]);
-  }, [islandFacts, archiving, abductions, hidden]);
+    return [...islandFacts, ...held].filter((f) => !laidOut[f.projectKey]);
+  }, [islandFacts, archiving, abductions, laidOut]);
   const visibleMembers = useMemo(
     () => new Map(visibleOrder.map((key) => [key, projectMembers.get(key) ?? []])),
     [visibleOrder, projectMembers],
@@ -255,6 +307,18 @@ export default function WorldCanvas(props: {
   const missingProjects = useMissingProjects(projects);
   const arrangement = useWorldArrangementStore((state) => state.arrangement);
   const setArrangement = useWorldArrangementStore((state) => state.setArrangement);
+  // A new one makes the camera frame every island where they settle.
+  // Rising islands come last, once the rest have moved aside.
+  const islandLayout = useMemo(
+    () => ({
+      arrangement,
+      laidOut,
+      settleMs: reducedMotion()
+        ? 0
+        : ISLAND_MOVE_MS + (layout.appearing.size > 0 ? ISLAND_SINK_MS : 0),
+    }),
+    [arrangement, laidOut, layout.appearing],
+  );
   const [memory] = useState(createArchipelagoMemory);
   // Piles picked for agents started from them, by the thread they will become.
   const [requested, setRequested] = useState<ReadonlyMap<string, SlotRequest>>(new Map());
@@ -1286,7 +1350,7 @@ export default function WorldCanvas(props: {
             holdViewOnClose={holdViewOnClose}
             keepInView={keepInView}
             reveal={reveal}
-            arrangement={arrangement}
+            layout={islandLayout}
           />
           <FollowTracker
             roots={roots}
@@ -1342,8 +1406,11 @@ export default function WorldCanvas(props: {
             const plate = islandPlate(island.key, islandPrefs[island.key]);
             return (
               <FadedContext key={island.key} value={faded}>
-                <group
-                  position={island.offset as [number, number, number]}
+                <IslandMotion
+                  position={island.offset}
+                  leaving={layout.leaving.has(island.key)}
+                  appear={layout.appearing.has(island.key)}
+                  onSunk={(isSunk) => onIslandSunk.current(island.key, isSunk)}
                   // A prop or limb in front of a character is hit first; the character still wins.
                   onClick={(event) => {
                     if (hitsCharacter(event)) return;
@@ -1454,7 +1521,7 @@ export default function WorldCanvas(props: {
                         onHover={onHover}
                       />
                     ))}
-                </group>
+                </IslandMotion>
               </FadedContext>
             );
           })}
@@ -1890,6 +1957,7 @@ const PORTALED_LAYERS = [
 const MANAGER_CALL_MS = 3000;
 /** The manager wears no hat. */
 const NO_HATS: ReadonlySet<string> = new Set();
+const NO_KEYS: ReadonlySet<string> = new Set();
 /** Extra height over a hatted head: the tallest hats rise about this far. */
 const HAT_LIFT = 0.35;
 /** How long the island menu can snooze an idle alarm for. */
@@ -2234,7 +2302,7 @@ function WorldControls({
   holdViewOnClose,
   keepInView,
   reveal,
-  arrangement,
+  layout,
 }: {
   /** Each island's ground, in the same order as `islands`. */
   readonly bounds: ReadonlyArray<Bounds> | null;
@@ -2254,8 +2322,11 @@ function WorldControls({
   readonly keepInView: React.RefObject<((points: ReadonlyArray<Vector3>) => void) | null>;
   /** A spot that must show with room above it for the new-agent bubble; a new object checks again. */
   readonly reveal: { readonly islandKey: string; readonly position: Vec3 } | null;
-  /** How the islands line up; a new one frames them all where they now stand. */
-  readonly arrangement: IslandArrangement;
+  /**
+   * Which islands show and how they line up; a new object, on rearranging, showing or
+   * hiding, frames them all once they have stopped moving, `settleMs` later.
+   */
+  readonly layout: { readonly settleMs: number };
 }) {
   // The canvas is orthographic.
   const camera = useThree((state) => state.camera) as OrthographicCamera;
@@ -2388,17 +2459,25 @@ function WorldControls({
     };
   }, [camera, element, invalidate]);
 
-  const framedArrangement = useRef(arrangement);
-  useEffect(() => {
-    if (framedArrangement.current === arrangement) return;
-    framedArrangement.current = arrangement;
+  // Until the islands settle the floor holds still, so the view does not chase them.
+  const settling = useRef(false);
+  const mountLayout = useRef(layout);
+  const frameSettled = useEffectEvent(() => {
+    settling.current = false;
     fly(frame());
-  }, [arrangement, fly, frame]);
+  });
+  useEffect(() => {
+    if (layout === mountLayout.current) return;
+    settling.current = true;
+    const timer = setTimeout(frameSettled, layout.settleMs);
+    return () => clearTimeout(timer);
+  }, [layout]);
   // Frames every island when they first show; after that, only when the view
   // ends up under the zoom floor, as when the canvas grows, the panel narrows
   // or islands go.
   const holdFloor = useEffectEvent(() => {
     const controls = controlsRef.current;
+    if (settling.current && fitted.current) return;
     const all = frame();
     if (controls === null || all === null || gesturing.current) return;
     if (!fitted.current) {

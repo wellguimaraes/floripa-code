@@ -1,11 +1,20 @@
 import type { ThreeEvent } from "@react-three/fiber";
 import { type Ref, useContext, useEffect, useMemo } from "react";
-import { CanvasTexture, Color, type Group, Object3D, SRGBColorSpace, Vector3 } from "three";
+import {
+  CanvasTexture,
+  Color,
+  type Group,
+  Matrix4,
+  Object3D,
+  SRGBColorSpace,
+  Vector3,
+} from "three";
 
 import type { ProjectFaviconProject } from "../../ProjectFavicon";
 import type { WorldSlot } from "../definition/types";
 import { type SignIcon, useSignIcon } from "../useSignIcon";
 import { KeepColorContext, keepColors } from "./contrast";
+import { settledMatrixWorld } from "./IslandMotion";
 import { geometry } from "./geometries";
 import { LitMaterial, TimeOfDayContext } from "./lighting";
 import { palette } from "./palette";
@@ -22,8 +31,8 @@ const CAP_TOP = BOARD_LIFT + BOARD_HEIGHT + FRAME + 0.2;
 export const SIGN_TOP = CAP_TOP + 0.6;
 
 /**
- * The corners of a sign's board, cap and lamps in the world, so the camera can
- * fit the whole board in.
+ * The corners of a sign's board, cap and lamps in the world, where its island settles, so
+ * the camera can fit the whole board in.
  */
 export function signCorners(sign: Object3D): Vector3[] {
   const { boardWidth } = sign.userData as SignUserData;
@@ -32,10 +41,10 @@ export function signCorners(sign: Object3D): Vector3[] {
   const halfZ = (DEPTH + 0.3) / 2;
   const bottom = BOARD_LIFT - FRAME;
   const top = SIGN_TOP;
-  sign.updateWorldMatrix(true, false);
+  const matrix = settledMatrixWorld(sign, new Matrix4());
   return [-halfX, halfX].flatMap((x) =>
     [bottom, top].flatMap((y) =>
-      [-halfZ, halfZ].map((z) => new Vector3(x, y, z).applyMatrix4(sign.matrixWorld)),
+      [-halfZ, halfZ].map((z) => new Vector3(x, y, z).applyMatrix4(matrix)),
     ),
   );
 }
