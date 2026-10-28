@@ -1554,6 +1554,8 @@ export default function ChatView(props: ChatViewProps) {
   // False while a status bar stands in for the composer (a native subagent).
   const composerMountedRef = useRef(true);
   const [scrollToEndClearance, setScrollToEndClearance] = useState(0);
+  // The overlay's real height, which sizes the fade behind it.
+  const [composerOverlayHeight, setComposerOverlayHeight] = useState(0);
   const isAtEndRef = useRef(true);
   const isTimelineAtLogicalEnd = useCallback(
     () => resolveTimelineIsAtEnd(legendListRef.current?.getState()) ?? isAtEndRef.current,
@@ -6552,6 +6554,7 @@ export default function ChatView(props: ChatViewProps) {
     (height: number) => {
       const nextHeight = Math.ceil(height);
       if (nextHeight <= 0) return;
+      setComposerOverlayHeight(nextHeight);
       const isResting = overlayComposerIsResting({
         composerMounted: composerMountedRef.current,
         composerReportedResting: composerRestingRef.current,
@@ -11162,6 +11165,23 @@ export default function ChatView(props: ChatViewProps) {
                     ? {}
                     : { historyControls: threadHistoryControls })}
                 />
+
+                {/* Away from the live edge, text would show through around the composer; fade it out instead. */}
+                {!isDraftHeroState && (
+                  <div
+                    aria-hidden="true"
+                    className={cn(
+                      "pointer-events-none absolute start-0 end-(--app-scrollbar-width) bottom-0 z-10",
+                      "opacity-0 transition-opacity duration-200",
+                      showScrollToBottom && !isThreadFindActive && "opacity-100",
+                    )}
+                    style={{
+                      height: composerOverlayHeight + 40,
+                      backgroundImage:
+                        "linear-gradient(to top, var(--background) calc(100% - 4rem), transparent)",
+                    }}
+                  />
+                )}
 
                 {/* scroll to end pill — shown when user has scrolled away from the live edge */}
                 {showScrollToBottom && !isThreadFindActive && (
