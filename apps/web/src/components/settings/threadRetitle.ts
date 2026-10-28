@@ -9,7 +9,7 @@ export const THREAD_RETITLE_CHOICES: ReadonlyArray<{
   {
     value: "openrouter",
     label: "OpenRouter",
-    detail: "Fastest. OpenRouter's Jev model decides with your OpenRouter key.",
+    detail: "Fastest. A decision model on OpenRouter decides with your OpenRouter key.",
   },
   {
     value: "claudeAgent",

@@ -111,7 +111,7 @@ To have titles follow the work, choose who decides in **Settings → Providers �
 or answer the question during first-run setup. When a follow-up message starts a different
 task, the thread gets a new title. Your messages are sent to the provider you chose:
 
-- **OpenRouter** is the fastest. It uses OpenRouter's Jev model with the key saved in
+- **OpenRouter** is the fastest. It uses a decision model on OpenRouter with the key saved in
   **Settings → Providers → OpenRouter**, or `OPENROUTER_API_KEY` where the server runs.
 - **Claude**, **OpenAI**, or **Cursor subscription** uses that provider's fast model (Claude
   Haiku 5.5, GPT-6 Luna, or Cursor Auto) through the account you signed in with. It counts
