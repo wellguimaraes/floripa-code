@@ -2735,6 +2735,31 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
   });
 
   describe("refName operations", () => {
+    it.effect("compares local branches with origin only when asked", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        yield* git(cwd, ["branch", "local-only"]);
+        yield* writeTextFile(cwd, "README.md", "# newer\n");
+        yield* git(cwd, ["commit", "-am", "newer on origin"]);
+        yield* git(cwd, ["update-ref", `refs/remotes/origin/${initialBranch}`, "HEAD"]);
+        yield* git(cwd, ["reset", "--hard", "HEAD~1"]);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+
+        const plain = yield* driver.listRefs({ cwd, refresh: true });
+        assert.isUndefined(plain.refs.find((ref) => ref.name === initialBranch)?.originComparison);
+
+        const compared = yield* driver.listRefs({ cwd, includeOriginComparison: true });
+        assert.deepEqual(
+          compared.refs.find((ref) => ref.name === initialBranch)?.originComparison,
+          { ahead: 0, behind: 1 },
+        );
+        assert.isUndefined(
+          compared.refs.find((ref) => ref.name === "local-only")?.originComparison,
+        );
+      }),
+    );
+
     it.effect("optionally includes remote refs that match local branches", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTmpDir();

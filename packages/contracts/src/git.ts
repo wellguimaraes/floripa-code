@@ -90,6 +90,13 @@ export const VcsRef = Schema.Struct({
   worktreePath: TrimmedNonEmptyStringSchema.pipe(Schema.NullOr),
   /** When the branch's last commit was made, for local branches. */
   lastCommitAt: Schema.optional(IsoDateTime),
+  /**
+   * How a local branch compares with `origin/<name>` as last fetched. Present only when
+   * `includeOriginComparison` was asked for and that remote branch exists.
+   */
+  originComparison: Schema.optional(
+    Schema.Struct({ ahead: NonNegativeInt, behind: NonNegativeInt }),
+  ),
 });
 export type VcsRef = typeof VcsRef.Type;
 
@@ -148,6 +155,8 @@ export const VcsListRefsInput = Schema.Struct({
   includeMatchingRemoteRefs: Schema.optional(Schema.Boolean),
   refKind: Schema.optional(Schema.Literals(["all", "local", "remote"])),
   refresh: Schema.optional(Schema.Boolean),
+  /** Compare each returned local branch with `origin/<name>`. One git call per such branch. */
+  includeOriginComparison: Schema.optional(Schema.Boolean),
   limit: Schema.optional(
     PositiveInt.check(Schema.isLessThanOrEqualTo(GIT_LIST_BRANCHES_MAX_LIMIT)),
   ),

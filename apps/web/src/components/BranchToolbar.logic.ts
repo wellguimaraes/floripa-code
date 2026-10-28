@@ -213,6 +213,17 @@ export function resolveBranchToolbarValue(input: {
   return currentGitBranch ?? activeThreadBranch;
 }
 
+/** The ref a new worktree branches from, with `origin/` when it starts from the remote. */
+export function resolveWorktreeBaseRef(input: {
+  branch: string;
+  branchIsRemote: boolean | null;
+  startFromOrigin: boolean;
+}): string {
+  return input.startFromOrigin && input.branchIsRemote === false
+    ? `origin/${input.branch}`
+    : input.branch;
+}
+
 export function resolveBranchTriggerLabel(input: {
   activeWorktreePath: string | null;
   effectiveEnvMode: EnvMode;
@@ -231,11 +242,11 @@ export function resolveBranchTriggerLabel(input: {
     return "Select ref";
   }
   if (effectiveEnvMode === "worktree" && !activeWorktreePath) {
-    const baseRef =
-      startFromOrigin && resolvedActiveBranchIsRemote === false
-        ? `origin/${resolvedActiveBranch}`
-        : resolvedActiveBranch;
-    return `From ${baseRef}`;
+    return `From ${resolveWorktreeBaseRef({
+      branch: resolvedActiveBranch,
+      branchIsRemote: resolvedActiveBranchIsRemote,
+      startFromOrigin,
+    })}`;
   }
   return resolvedActiveBranch;
 }

@@ -66,7 +66,7 @@ Hover an island to see each character's thread title above its head; the one
 under the pointer shows its full title. A resting agent's tag also shows how
 long ago it last replied, such as `10s`, `30m` or `2h`. A tag acts like its character:
 clicks and right-clicks on it do the same things. Click a character, or its balloon, to
-open a reply bubble beside it; a character with a `!` or `?` balloon opens its chat instead. It shows the first two lines of the last message you sent. Type a
+open a reply bubble beside it. When the agent waits on you, the bubble shows what it needs: approve or decline a request (a `!` balloon), or answer a question (a `?` balloon) by picking an option or typing your own answer and pressing `Enter`. The bubble shows the first two lines of the last message you sent. Type a
 message and press `Enter` to send it; if the agent is busy, the message waits
 for the current turn to finish. Paste, drop, or use the paperclip to attach
 images and files to the message. The bubble and the thread's full chat share one draft, so
@@ -119,8 +119,10 @@ pile. In a git project, the bubble first asks where it works, with one row each
 for the main worktree, a new worktree, and every worktree that already exists,
 the one an agent used most recently first. Use the up and down arrow keys and
 `Enter`, or click. It starts on the project's worktree setting. Your pick shows
-under the bubble's title; click it to change it. A new worktree starts from the
-default branch; pick another branch, or origin's copy, next to it. Type what the agent should do
+under the bubble's title; click it to change it. A new worktree shows the branch it
+starts from, the default branch at first; click it to pick another. When your local copy of that branch is
+only behind origin, the worktree starts from origin's copy instead, and a warning icon
+says so. Type what the agent should do
 and press `Enter`. It starts on a colour nobody on that island wears; click its
 portrait to pick another. Paste, drop, or use the paperclip to attach images or files too.
 A new thread starts in that project

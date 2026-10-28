@@ -1,12 +1,16 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import { ChevronDownIcon, GitBranchIcon } from "lucide-react";
-import { useDeferredValue, useMemo, useState } from "react";
+import { type ReactNode, useDeferredValue, useMemo, useState } from "react";
 
 import { usePaginatedBranches } from "../state/queries";
 import { useEnvironmentQuery } from "../state/query";
 import { vcsEnvironment } from "../state/vcs";
 import { BranchPicker, BranchPickerRefItem } from "./BranchPicker";
-import { resolveBranchTriggerLabel, sanitizeNewRefName } from "./BranchToolbar.logic";
+import {
+  resolveBranchTriggerLabel,
+  resolveWorktreeBaseRef,
+  sanitizeNewRefName,
+} from "./BranchToolbar.logic";
 import { cn } from "../lib/utils";
 import { MiddleTruncate } from "./ui/middle-truncate";
 import { Button } from "./ui/button";
@@ -22,6 +26,7 @@ export function WorktreeBaseBranchPicker({
   onStartFromOriginChange,
   disabled = false,
   size = "sm",
+  prefix,
   id,
 }: {
   environmentId: EnvironmentId;
@@ -29,9 +34,15 @@ export function WorktreeBaseBranchPicker({
   value: string;
   onValueChange: (branch: string) => void;
   startFromOrigin: boolean;
-  onStartFromOriginChange: (checked: boolean) => void;
+  /** Omitted when the caller decides it, which hides the picker's "Start from origin" switch. */
+  onStartFromOriginChange?: (checked: boolean) => void;
   disabled?: boolean;
   size?: "sm" | "xs";
+  /**
+   * Leads the label in place of the branch icon and its "From", so the button reads as a
+   * sentence ("New worktree from main"). The button goes borderless to match.
+   */
+  prefix?: ReactNode;
   id?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -53,13 +64,17 @@ export function WorktreeBaseBranchPicker({
   const selectedRef =
     branches.refs.find((branch) => branch.name === value) ??
     selectedRefQuery.data?.refs.find((branch) => branch.name === value);
-  const label = resolveBranchTriggerLabel({
-    activeWorktreePath: null,
-    effectiveEnvMode: "worktree",
-    resolvedActiveBranch: value || null,
-    resolvedActiveBranchIsRemote: selectedRef ? selectedRef.isRemote === true : null,
-    startFromOrigin,
-  });
+  const branchIsRemote = selectedRef ? selectedRef.isRemote === true : null;
+  const label =
+    prefix !== undefined && value
+      ? resolveWorktreeBaseRef({ branch: value, branchIsRemote, startFromOrigin })
+      : resolveBranchTriggerLabel({
+          activeWorktreePath: null,
+          effectiveEnvMode: "worktree",
+          resolvedActiveBranch: value || null,
+          resolvedActiveBranchIsRemote: branchIsRemote,
+          startFromOrigin,
+        });
   const branchByName = useMemo(
     () => new Map(branches.refs.map((branch) => [branch.name, branch])),
     [branches.refs],
@@ -97,7 +112,12 @@ export function WorktreeBaseBranchPicker({
       isFetchingNextPage={branches.isFetchingNextPage}
       onLoadNext={branches.loadNext}
       statusText={statusText}
-      originControl={{ checked: startFromOrigin, onCheckedChange: onStartFromOriginChange }}
+      originControl={
+        onStartFromOriginChange && {
+          checked: startFromOrigin,
+          onCheckedChange: onStartFromOriginChange,
+        }
+      }
       popupProps={{ align: "start", side: "bottom", className: "flex w-80 flex-col" }}
       renderItem={(name, index) => {
         const branch = branchByName.get(name);
@@ -117,12 +137,14 @@ export function WorktreeBaseBranchPicker({
       <ComboboxTrigger
         id={id}
         disabled={disabled || !cwd}
-        render={<Button variant="outline" size={size} />}
+        render={<Button variant={prefix !== undefined ? "ghost" : "outline"} size={size} />}
         className="w-full justify-between "
       >
-        <GitBranchIcon
-          className={cn("shrink-0 text-muted-foreground", size === "sm" ? "size-3.5" : "size-3")}
-        />
+        {prefix ?? (
+          <GitBranchIcon
+            className={cn("shrink-0 text-muted-foreground", size === "sm" ? "size-3.5" : "size-3")}
+          />
+        )}
         <MiddleTruncate value={label} className="flex-1 text-left" />
         <ChevronDownIcon
           className={cn("shrink-0 text-muted-foreground", size === "sm" ? "size-3.5" : "size-3")}

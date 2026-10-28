@@ -28,6 +28,9 @@ import {
 } from "./ui/combobox";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
+/** A hairline between refs, so adjacent highlighted and selected rows stay apart. */
+const BRANCH_LIST_GAP = { rowGap: 1 };
+
 /** Shared composer picker UI. The caller owns selection and any checkout mutations. */
 export function BranchPicker({
   items,
@@ -204,6 +207,7 @@ export function BranchPicker({
                 {...(getItemType ? { getItemType } : {})}
                 renderItem={({ item, index }) => renderItem(item, index)}
                 estimatedItemSize={28}
+                columnWrapperStyle={BRANCH_LIST_GAP}
                 drawDistance={336}
                 onLayout={() => {
                   updateBranchListScrollFades();

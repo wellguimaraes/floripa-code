@@ -2,10 +2,12 @@ import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ProviderInstanceId, ScopedProjectRef, ScopedThreadRef } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { Select as SelectPrimitive } from "@base-ui/react/select";
-import { XIcon } from "lucide-react";
+import { TriangleAlertIcon, XIcon } from "lucide-react";
 import { lazy, Suspense, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
+import { useEnvironmentQuery } from "../../state/query";
+import { vcsEnvironment } from "../../state/vcs";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { getCustomModelOptionsByInstance } from "../../modelSelection";
 import {
@@ -168,6 +170,30 @@ export function NewAgentBubble(props: {
   ];
   const projectRecord = useProject(project);
   const workspaceRoot = projectRecord?.workspaceRoot ?? null;
+  const baseBranch =
+    selectedWorkspace.kind === "new-worktree"
+      ? (selectedWorkspace.baseBranch ?? workspaces.worktreeBaseBranch)
+      : null;
+  const baseRefs = useEnvironmentQuery(
+    workspaceRoot !== null && baseBranch !== null
+      ? vcsEnvironment.listRefs({
+          environmentId,
+          input: {
+            cwd: workspaceRoot,
+            query: baseBranch,
+            limit: 10,
+            includeOriginComparison: true,
+          },
+        })
+      : null,
+  );
+  const originComparison = baseRefs.data?.refs.find(
+    (ref) => ref.name === baseBranch && ref.isRemote !== true,
+  )?.originComparison;
+  // A local base that only trails origin would start the agent on stale code, so it starts from
+  // origin instead. One with commits of its own stays local: origin would drop them.
+  const behindOrigin =
+    originComparison !== undefined && originComparison.ahead === 0 ? originComparison.behind : 0;
   const pickModel = (instanceId: ProviderInstanceId, model: string) => {
     // Bring back the traits last used with this model, as the chat does.
     const { stickyOptionsByModelByProvider, stickyModelSelectionByProvider } =
@@ -211,7 +237,9 @@ export function NewAgentBubble(props: {
       const threadId = await startAgent(
         project,
         outgoing,
-        workspace,
+        selectedWorkspace.kind === "new-worktree"
+          ? { ...selectedWorkspace, startFromOrigin: behindOrigin > 0 }
+          : workspace,
         workspaces.worktreeBaseBranch,
         setup === null || runtimeMode === undefined ? null : { ...setup, runtimeMode },
       );
@@ -277,7 +305,39 @@ export function NewAgentBubble(props: {
           <NewAgentCharacter hue={hue} onHueChange={setHue} />
           <div className="flex min-w-0 flex-1 flex-col items-start">
             <span className="max-w-full truncate text-base font-medium">Start New Agent</span>
-            {workspaces.isRepo ? (
+            {workspaces.isRepo && selectedWorkspace.kind === "new-worktree" ? (
+              <div className="flex max-w-full min-w-0 items-center gap-1">
+                <WorktreeBaseBranchPicker
+                  environmentId={project.environmentId}
+                  cwd={workspaceRoot}
+                  value={selectedWorkspace.baseBranch ?? workspaces.worktreeBaseBranch ?? ""}
+                  onValueChange={(baseBranch) => setWorkspace({ ...selectedWorkspace, baseBranch })}
+                  startFromOrigin={behindOrigin > 0}
+                  disabled={state.phase === "starting"}
+                  size="xs"
+                  prefix={
+                    <span className="inline-flex shrink-0 items-center gap-2 pl-1 text-muted-foreground">
+                      <WorkspaceIcon workspace={selectedWorkspace} className="size-3 shrink-0" />
+                      New worktree from
+                    </span>
+                  }
+                />
+                {behindOrigin > 0 && baseBranch !== null ? (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={<span aria-label="Starting from origin" className="flex shrink-0" />}
+                    >
+                      <TriangleAlertIcon aria-hidden className="size-3.5 text-warning" />
+                    </TooltipTrigger>
+                    <TooltipPopup side="top" className="max-w-64 whitespace-normal">
+                      Local {baseBranch} is {behindOrigin}{" "}
+                      {behindOrigin === 1 ? "commit" : "commits"} behind origin, so the new worktree
+                      starts from origin/{baseBranch}.
+                    </TooltipPopup>
+                  </Tooltip>
+                ) : null}
+              </div>
+            ) : workspaces.isRepo ? (
               <Select
                 modal={false}
                 value={workspaceValue(selectedWorkspace)}
@@ -311,29 +371,6 @@ export function NewAgentBubble(props: {
                   ))}
                 </SelectPopup>
               </Select>
-            ) : null}
-            {workspaces.isRepo && selectedWorkspace.kind === "new-worktree" ? (
-              <div className="mt-1 flex max-w-full min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-                <span className="shrink-0">from</span>
-                <div className="max-w-56 min-w-0">
-                  <WorktreeBaseBranchPicker
-                    environmentId={project.environmentId}
-                    cwd={workspaceRoot}
-                    value={selectedWorkspace.baseBranch ?? workspaces.worktreeBaseBranch ?? ""}
-                    onValueChange={(baseBranch) =>
-                      setWorkspace({ ...selectedWorkspace, baseBranch })
-                    }
-                    startFromOrigin={
-                      selectedWorkspace.startFromOrigin ?? workspaces.worktreeStartFromOrigin
-                    }
-                    onStartFromOriginChange={(startFromOrigin) =>
-                      setWorkspace({ ...selectedWorkspace, startFromOrigin })
-                    }
-                    disabled={state.phase === "starting"}
-                    size="xs"
-                  />
-                </div>
-              </div>
             ) : null}
           </div>
           <Button variant="ghost" size="icon-xs" aria-label="Close" onClick={onClose}>

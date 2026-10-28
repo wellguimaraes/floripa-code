@@ -3364,6 +3364,40 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     yield* Cache.invalidate(repositoryPathsCache, repositoryPathsCacheKey);
   });
 
+  /** Adds how a local branch compares with its `origin/<name>`, when that remote branch exists. */
+  const withOriginComparison = (
+    cwd: string,
+    ref: VcsRef,
+    remoteBranches: ReadonlyArray<VcsRef>,
+  ): Effect.Effect<VcsRef> => {
+    const originName = `origin/${ref.name}`;
+    if (ref.isRemote || !remoteBranches.some((remote) => remote.name === originName)) {
+      return Effect.succeed(ref);
+    }
+    return executeGit(
+      "GitVcsDriver.listRefs.originComparison",
+      cwd,
+      [
+        "rev-list",
+        "--left-right",
+        "--count",
+        `refs/heads/${ref.name}...refs/remotes/${originName}`,
+      ],
+      { timeoutMs: 5_000, allowNonZeroExit: true },
+    ).pipe(
+      Effect.map((result) => {
+        if (result.exitCode !== 0) return ref;
+        const [ahead = Number.NaN, behind = Number.NaN] = result.stdout
+          .trim()
+          .split(/\s+/)
+          .map(Number);
+        if (!Number.isSafeInteger(ahead) || !Number.isSafeInteger(behind)) return ref;
+        return { ...ref, originComparison: { ahead, behind } };
+      }),
+      Effect.orElseSucceed(() => ref),
+    );
+  };
+
   const listRefs: GitVcsDriver.GitVcsDriver["Service"]["listRefs"] = Effect.fn("listRefs")(
     function* (input) {
       const repositoryPaths = yield* resolveRepositoryPaths(input.cwd, input.refresh === true).pipe(
@@ -3416,9 +3450,17 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         cursor: input.cursor,
         limit: input.limit,
       });
+      const pageRefs =
+        input.includeOriginComparison === true
+          ? yield* Effect.forEach(
+              refs.refs,
+              (ref) => withOriginComparison(input.cwd, ref, snapshot.remoteBranches),
+              { concurrency: 4 },
+            )
+          : refs.refs;
 
       return {
-        refs: [...refs.refs],
+        refs: [...pageRefs],
         isRepo: true,
         hasPrimaryRemote: snapshot.hasPrimaryRemote,
         nextCursor: refs.nextCursor,
