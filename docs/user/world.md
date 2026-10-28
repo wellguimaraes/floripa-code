@@ -82,7 +82,8 @@ with `Cmd`+`Escape` (`Ctrl`+`Escape`) or `Cmd`+`W` (`Ctrl`+`W`), and the map goe
 `Cmd`+`W` also closes Settings when it opens over the world.
 
 Right-click a character for **Open chat**, **Send voice command**,
-**Regenerate title**, **Stop** and **Archive**. Stop ends the agent's current run, like the stop button in the
+**Regenerate title**, **Stop**, **Archive**, **Archive others** and **Archive to the left**. The last two
+archive the other agents on that island, or only those left of it on screen. Stop ends the agent's current run, like the stop button in the
 chat; the reply bubble has the same button while the agent is busy. Archiving a busy agent, or one waiting on a question, stops its run first. A voice command opens the reply bubble already listening and sends
 what you say once you stop talking; the bubble's microphone fills the message
 box without sending. Click the microphone to listen until you pause, or hold it

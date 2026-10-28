@@ -987,6 +987,16 @@ export default function WorldCanvas(props: {
       return;
     }
     const regenerating = readThreadShell(character.facts.ref)?.titleRegeneration != null;
+    // The other agents on its island, not subagents or ones already leaving.
+    const others =
+      islands
+        .find((island) => island.key === character.facts.projectKey)
+        ?.characters.filter(
+          (c) => c.facts.key !== character.facts.key && !c.facts.kid && !abducted.has(c.facts.key),
+        ) ?? [];
+    // The camera looks from +x+z and never turns, so x - z grows to the right of the screen.
+    const screenX = (c: WorldCharacter) => c.placement.position[0] - c.placement.position[2];
+    const toTheLeft = others.filter((c) => screenX(c) < screenX(character));
     const clicked = await api.contextMenu.show(
       [
         { id: "open", label: "Open chat", icon: "message-square" },
@@ -1014,12 +1024,26 @@ export default function WorldCanvas(props: {
           separatorBefore: true,
         },
         { id: "archive", label: "Archive", icon: "archive" },
+        {
+          id: "archive-others",
+          label: `Archive others (${others.length})`,
+          icon: "archive",
+          disabled: others.length === 0,
+        },
+        {
+          id: "archive-left",
+          label: `Archive to the left (${toTheLeft.length})`,
+          icon: "archive",
+          disabled: toTheLeft.length === 0,
+        },
       ],
       awayFromPointer(point),
     );
     if (clicked === "open") openChat(character);
     else if (clicked === "stop") void stopAll([character]);
     else if (clicked === "archive") void archiveAll([character]);
+    else if (clicked === "archive-others") void archiveAll(others);
+    else if (clicked === "archive-left") void archiveAll(toTheLeft);
     else if (clicked === "regenerate-title") void regenerateTitle(character);
     else if (clicked === "voice") {
       setPicked(new Set());
