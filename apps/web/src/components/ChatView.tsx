@@ -304,7 +304,11 @@ import { BranchToolbar, type BranchToolbarHandle } from "./BranchToolbar";
 import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
 import { isEditableFocused } from "../lib/editableFocus";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
-import { resolveChatShortcutCommand, shortcutLabelForCommand } from "../keybindings";
+import {
+  copiesSelection,
+  resolveChatShortcutCommand,
+  shortcutLabelForCommand,
+} from "../keybindings";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import {
   AlarmClockIcon,
@@ -7871,7 +7875,7 @@ export default function ChatView(props: ChatViewProps) {
       const command = resolveChatShortcutCommand(event, keybindings, scriptKeybindings, {
         context,
       });
-      if (command !== "thread.stop") return;
+      if (command !== "thread.stop" || copiesSelection(event)) return;
       event.preventDefault();
       event.stopPropagation();
       if (event.repeat) return;

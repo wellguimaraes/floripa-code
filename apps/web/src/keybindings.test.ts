@@ -298,18 +298,26 @@ describe("thread undo shortcut", () => {
 });
 
 describe("stop thread shortcut", () => {
-  it("stops on plain Escape, but leaves Escape to a focused terminal", () => {
-    assert.equal(
-      resolveShortcutCommand(event({ key: "Escape" }), DEFAULT_RESOLVED_KEYBINDINGS, {
+  it("stops on Ctrl+C on every platform, but leaves it to a focused terminal", () => {
+    for (const platform of ["MacIntel", "Win32", "Linux x86_64"]) {
+      assert.equal(
+        resolveShortcutCommand(event({ key: "c", ctrlKey: true }), DEFAULT_RESOLVED_KEYBINDINGS, {
+          platform,
+          context: { terminalFocus: false },
+        }),
+        "thread.stop",
+      );
+    }
+    assert.isNull(
+      resolveShortcutCommand(event({ key: "c", ctrlKey: true }), DEFAULT_RESOLVED_KEYBINDINGS, {
         platform: "MacIntel",
-        context: { terminalFocus: false },
+        context: { terminalFocus: true },
       }),
-      "thread.stop",
     );
     assert.isNull(
       resolveShortcutCommand(event({ key: "Escape" }), DEFAULT_RESOLVED_KEYBINDINGS, {
         platform: "MacIntel",
-        context: { terminalFocus: true },
+        context: { terminalFocus: false },
       }),
     );
   });

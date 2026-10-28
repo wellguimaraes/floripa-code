@@ -341,6 +341,28 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
     }).pipe(Effect.provide(layerKeybindings())),
   );
 
+  it.effect("swaps an untouched Escape stop rule for Ctrl+C", () =>
+    Effect.gen(function* () {
+      const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
+      const keybindings = yield* Keybindings.Keybindings;
+      const escape = { key: "escape", command: "thread.stop", when: "!terminalFocus" } as const;
+      const stopRules = Effect.map(readKeybindingsConfig(keybindingsConfigPath), (rules) =>
+        rules.filter((entry) => entry.command === "thread.stop"),
+      );
+      yield* writeKeybindingsConfig(keybindingsConfigPath, [escape]);
+
+      yield* keybindings.syncDefaultKeybindingsOnStartup;
+      assert.deepStrictEqual(yield* stopRules, [
+        { key: "ctrl+c", command: "thread.stop", when: "!terminalFocus" },
+      ]);
+
+      // Choosing Escape again later must survive the next startup.
+      yield* writeKeybindingsConfig(keybindingsConfigPath, [escape]);
+      yield* keybindings.syncDefaultKeybindingsOnStartup;
+      assert.deepStrictEqual(yield* stopRules, [escape]);
+    }).pipe(Effect.provide(layerKeybindings())),
+  );
+
   it.effect("leaves a customized command without the late default", () =>
     Effect.gen(function* () {
       const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;

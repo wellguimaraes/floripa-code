@@ -108,11 +108,13 @@ function isSameKeybindingRule(left: KeybindingRule, right: KeybindingRule): bool
 // that command. Backfill skips commands a config already has, so startup adds
 // each rule once per config, only next to the untouched earlier default
 // (`alongside`), and records its id. Customized commands and later removals
-// stay as the user set them.
+// stay as the user set them. A rule that `replaces` takes the untouched earlier
+// default's place instead of joining it.
 const LATE_DEFAULT_KEYBINDINGS: ReadonlyArray<{
   readonly id: string;
   readonly alongside: KeybindingRule;
   readonly rule: KeybindingRule;
+  readonly replaces?: true;
 }> = [
   {
     id: "composer.sendBackground:mod+enter",
@@ -139,6 +141,12 @@ const LATE_DEFAULT_KEYBINDINGS: ReadonlyArray<{
       command: "rightPanel.new",
       when: "rightPanelOpen && terminalFocus",
     },
+  },
+  {
+    id: "thread.stop:ctrl+c",
+    alongside: { key: "escape", command: "thread.stop", when: "!terminalFocus" },
+    rule: { key: "ctrl+c", command: "thread.stop", when: "!terminalFocus" },
+    replaces: true,
   },
 ];
 
@@ -544,7 +552,18 @@ const make = Effect.gen(function* () {
         yield* Cache.invalidate(resolvedConfigCache, resolvedConfigCacheKey);
         return;
       }
-      const customConfig = runtimeConfig.keybindings;
+      // Replacing late defaults swap in place, so they never need a free slot.
+      const replacedLateDefaults = pendingLateDefaults.filter(
+        (late) =>
+          late.replaces === true &&
+          runtimeConfig.keybindings.some((entry) => isSameKeybindingRule(entry, late.alongside)) &&
+          !runtimeConfig.keybindings.some((entry) => hasSameShortcutContext(entry, late.rule)),
+      );
+      const customConfig = runtimeConfig.keybindings.map(
+        (entry) =>
+          replacedLateDefaults.find((late) => isSameKeybindingRule(entry, late.alongside))?.rule ??
+          entry,
+      );
       const existingCommands = new Set(customConfig.map((entry) => entry.command));
       const missingDefaults: KeybindingRule[] = [];
       const shortcutConflictWarnings: Array<{
@@ -573,8 +592,9 @@ const make = Effect.gen(function* () {
       }
       // The loop above backfills whole missing commands. Late defaults join
       // an untouched earlier default, when their shortcut is still free.
-      for (const { alongside, rule } of pendingLateDefaults) {
+      for (const { alongside, rule, replaces } of pendingLateDefaults) {
         if (
+          replaces !== true &&
           customConfig.some((entry) => isSameKeybindingRule(entry, alongside)) &&
           !customConfig.some((entry) => hasSameShortcutContext(entry, rule))
         ) {
@@ -617,7 +637,7 @@ const make = Effect.gen(function* () {
           commands: skippedDefaults.map((rule) => rule.command),
         });
       }
-      if (defaultsToAppend.length > 0) {
+      if (defaultsToAppend.length > 0 || replacedLateDefaults.length > 0) {
         yield* writeConfigAtomically([...defaultsToAppend, ...customConfig]);
       }
       // A late default skipped at max entries stays pending for a later start.

@@ -356,6 +356,16 @@ export function isOpenFavoriteEditorShortcut(
 }
 
 /**
+ * Whether the keypress copies selected text: Ctrl+C off macOS, with a selection. Shortcuts
+ * bound to Ctrl+C, like the default stop, leave those to the browser.
+ */
+export function copiesSelection(event: ShortcutEventLike, platform = navigator.platform): boolean {
+  if (isMacPlatform(platform) || !event.ctrlKey || !resolveEventKeys(event).has("c")) return false;
+  const selection = window.getSelection();
+  return selection !== null && !selection.isCollapsed;
+}
+
+/**
  * Whether the keypress is the rich-text bold chord (Mod+B without extra
  * modifiers). Tiptap binds the same chord, so app shortcuts captured ahead
  * of the editor must yield when the rich-text composer is focused.

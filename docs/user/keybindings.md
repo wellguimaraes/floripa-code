@@ -137,8 +137,10 @@ a shortcut.
 
 ## Commands with special behavior
 
-`thread.stop` interrupts the running turn in the focused thread. It has no default
-shortcut; assign one in **Settings → Keybindings**.
+`thread.stop` (`Ctrl+C` by default, on every platform) interrupts the running turn in the
+focused thread or the open reply bubble. It skips terminals, and on Windows and Linux
+it leaves `Ctrl+C` to copy while text is selected. Earlier versions bound it to Escape;
+an untouched Escape rule changes to `Ctrl+C` on update.
 
 `thread.undo` (`mod+z` by default) reverses the actions shown in the notice at the
 bottom of the sidebar, such as unpin, settle, snooze, archive, or discarding a
