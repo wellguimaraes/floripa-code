@@ -673,14 +673,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "OpenRouter API key",
     to: "/settings/providers",
     providerSettingsOnly: true,
-    searchTerms: ["voice input microphone speech transcription dictation mic thread title jev"],
-  },
-  {
-    id: "voice-transcription-model",
-    title: "Transcription model",
-    to: "/settings/providers",
-    providerSettingsOnly: true,
-    searchTerms: ["voice input speech to text whisper voxtral scribe elevenlabs openrouter"],
+    searchTerms: ["openrouter thread title branch names jev"],
   },
   {
     id: "auto-retitle-threads",

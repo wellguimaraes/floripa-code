@@ -45,9 +45,16 @@ function recorderSupported(): boolean {
   return typeof MediaRecorder !== "undefined" && navigator.mediaDevices?.getUserMedia != null;
 }
 
+/** Off for now: the world's mic button, push-to-talk keys and voice command are hidden. */
+export const VOICE_INPUT_ENABLED = false;
+
 /** Whether this device can capture speech at all, through the server or the browser. */
 export function voiceInputSupported(): boolean {
-  return typeof window !== "undefined" && (recorderSupported() || speechRecognition() !== null);
+  return (
+    VOICE_INPUT_ENABLED &&
+    typeof window !== "undefined" &&
+    (recorderSupported() || speechRecognition() !== null)
+  );
 }
 
 const SPEECH_ERRORS: Record<string, string> = {

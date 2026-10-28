@@ -1,21 +1,19 @@
-import { DEFAULT_TRANSCRIPTION_MODEL, type EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@t3tools/contracts";
 import { ExternalLinkIcon } from "lucide-react";
 import { useState } from "react";
 
 import { useEnvironmentSettings } from "../../hooks/useSettings";
-import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button, InlineButton } from "../ui/button";
 import { Input } from "../ui/input";
-import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
-import { SettingResetButton, SettingsRow, SettingsSection } from "./settingsLayout";
+import { SettingsRow, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 
 /**
- * OpenRouter features of this environment: voice input in the world view sends
- * what the mic heard with this key and model, and thread retitling can ask Jev
- * whether a follow-up message moved a thread to a new task.
+ * OpenRouter features of this environment: thread retitling can ask Jev whether
+ * a follow-up message moved a thread to a new task. Voice input, which also used
+ * this key, is turned off (see VOICE_INPUT_ENABLED).
  */
 export function VoiceInputSettings({
   environmentId,
@@ -28,9 +26,6 @@ export function VoiceInputSettings({
   const updateSettings = useAtomCommand(serverEnvironment.updateSettings, {
     label: "save OpenRouter settings",
   });
-  const models = useEnvironmentQuery(
-    serverEnvironment.voiceTranscriptionModels({ environmentId, input: {} }),
-  );
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const keySaved = voice.openRouterApiKey !== "";
@@ -38,23 +33,15 @@ export function VoiceInputSettings({
   const hasKey = keySaved || voice.openRouterApiKeyFromEnv === true;
   const newKey = draft.trim();
 
-  const save = async (patch: { openRouterApiKey?: string; transcriptionModel?: string }) => {
+  const save = async (patch: { openRouterApiKey: string }) => {
     setSaving(true);
     try {
       const result = await updateSettings({ environmentId, input: { patch: { voice: patch } } });
-      if (result._tag === "Success" && patch.openRouterApiKey !== undefined) setDraft("");
+      if (result._tag === "Success") setDraft("");
     } finally {
       setSaving(false);
     }
   };
-
-  // The saved model stays pickable even when OpenRouter's list drops it or has not loaded.
-  const modelItems = [
-    ...(models.data?.models.some((model) => model.id === voice.transcriptionModel)
-      ? []
-      : [{ id: voice.transcriptionModel, name: voice.transcriptionModel }]),
-    ...(models.data?.models ?? []),
-  ].map((model) => ({ value: model.id, label: model.name }));
 
   return (
     <SettingsSection id="voice" title="OpenRouter">
@@ -63,7 +50,7 @@ export function VoiceInputSettings({
         serverScoped
         description={
           <>
-            Used for voice input and thread retitling. The key stays on this environment.{" "}
+            Used for thread retitling. The key stays on this environment.{" "}
             <InlineButton
               render={
                 <a
@@ -124,46 +111,6 @@ export function VoiceInputSettings({
               </Button>
             )}
           </form>
-        }
-      />
-      <SettingsRow
-        {...searchableSetting("voice-transcription-model")}
-        serverScoped
-        description={
-          models.error
-            ? `Could not load OpenRouter's models: ${models.error}`
-            : "The model that turns speech into text."
-        }
-        resetAction={
-          voice.transcriptionModel !== DEFAULT_TRANSCRIPTION_MODEL ? (
-            <SettingResetButton
-              label="transcription model"
-              onClick={() => void save({ transcriptionModel: DEFAULT_TRANSCRIPTION_MODEL })}
-            />
-          ) : null
-        }
-        control={
-          <Select
-            value={voice.transcriptionModel}
-            items={modelItems}
-            disabled={saving || readOnly}
-            onValueChange={(value: string | null) => {
-              if (value !== null && value !== voice.transcriptionModel) {
-                void save({ transcriptionModel: value });
-              }
-            }}
-          >
-            <SelectTrigger size="sm" className="w-full sm:w-64" aria-label="Transcription model">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectPopup align="end" alignItemWithTrigger={false}>
-              {modelItems.map((item) => (
-                <SelectItem hideIndicator key={item.value} value={item.value}>
-                  {item.label}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
         }
       />
     </SettingsSection>

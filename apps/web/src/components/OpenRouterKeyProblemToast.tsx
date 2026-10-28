@@ -34,7 +34,7 @@ function EnvironmentKeyProblemToast({ environmentId }: { readonly environmentId:
         problem.reason === "rejected"
           ? "OpenRouter rejected the API key"
           : "OpenRouter is out of credits",
-      description: "Voice input, thread retitling and branch names need a working key.",
+      description: "Thread retitling and branch names need a working key.",
       actionProps: {
         children: "Settings",
         onClick: () => {
