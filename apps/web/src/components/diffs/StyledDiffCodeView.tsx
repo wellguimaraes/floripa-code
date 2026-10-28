@@ -98,8 +98,10 @@ const DIFF_VIEW_UNSAFE_CSS = `${DIFF_SURFACE_THEME_UNSAFE_CSS}
   box-shadow: inset 3px 0 color-mix(in srgb, var(--code-foreground) 24%, transparent);
 }
 
+/* Tall enough to read apart from the file header it often sits right under. Keep in step with
+   hunkSeparatorHeight below. */
 :is([data-separator="line-info"], [data-separator="line-info-basic"]) {
-  height: 24px !important;
+  height: 32px !important;
   margin-block: 0 !important;
   background-color: var(--code-background) !important;
 }
@@ -305,7 +307,7 @@ export function StyledDiffCodeView<LAnnotation = undefined>({
             : DIFF_VIEW_UNSAFE_CSS,
           itemMetrics: {
             diffHeaderHeight: 32,
-            hunkSeparatorHeight: 24,
+            hunkSeparatorHeight: 32,
             // Pierre uses its general file spacing as a fallback in expanded-file layout paths.
             // Keep it zero alongside the explicit paddingTop or expanding the first file can
             // reintroduce the library's default 8px gap above its header.

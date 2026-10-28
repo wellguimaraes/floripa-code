@@ -854,6 +854,33 @@ describe("rightPanelStore", () => {
     expect(state.surfaces[1]).not.toHaveProperty("url");
   });
 
+  it("reuses the tab of a pull request opened under another project or without a host", () => {
+    const own = { projectId: "project-a", repository: "acme/api", number: 7 };
+    useRightPanelStore.getState().openPullRequest(refA, own);
+    useRightPanelStore
+      .getState()
+      .openPullRequest(refA, { ...own, projectId: "project-b", host: "github.com" });
+
+    const state = selectThreadRightPanelState(useRightPanelStore.getState().byPanelKey, refA);
+    expect(state.surfaces.map((surface) => surface.id)).toEqual([pullRequestSurfaceId(own)]);
+  });
+
+  it("swaps a shown link tab for the thread's own tab of the same pull request", () => {
+    const store = useRightPanelStore.getState();
+    const fromLink = pullRequestSurface({
+      projectId: "project-b",
+      host: "github.com",
+      repository: "acme/api",
+      number: 7,
+    });
+    const own = pullRequestSurface({ projectId: "project-a", repository: "acme/api", number: 7 });
+    store.openPullRequest(refA, fromLink);
+    store.reconcilePullRequestSurfaces(refA, [own]);
+
+    expect(panelState().surfaces.map((surface) => surface.id)).toEqual([own.id]);
+    expect(panelState().activeSurfaceId).toBe(own.id);
+  });
+
   it("keeps matching repository and number on different hosts as separate tabs", () => {
     const first = { projectId: "project-a", repository: "acme/api", number: 7, host: "github.com" };
     const second = { ...first, host: "github.example.com" };

@@ -243,6 +243,8 @@ function PullRequestCodeTab({
     false,
     Schema.Boolean,
   );
+  // The file picked in the tree, shown alone. Closing the tree brings every file back.
+  const [focusedPath, setFocusedPath] = useState<string | null>(null);
   const [selectedLines, setSelectedLines] = useState<{
     id: string;
     range: SelectedLineRange;
@@ -618,6 +620,12 @@ function PullRequestCodeTab({
     [parsedSlices],
   );
   const fileKeys = useMemo(() => items.map((item) => item.id), [items]);
+  // A scope without the picked file (another commit, say) shows everything rather than nothing.
+  const focusedItems = useMemo(() => {
+    if (!fileTreeOpen || focusedPath === null) return null;
+    const matching = items.filter((item) => resolveFileDiffPath(item.fileDiff) === focusedPath);
+    return matching.length > 0 ? matching : null;
+  }, [fileTreeOpen, focusedPath, items]);
   const collapsedFileKeys = useMemo(
     () => new Set(items.filter((item) => item.collapsed === true).map((item) => item.id)),
     [items],
@@ -688,6 +696,7 @@ function PullRequestCodeTab({
       const item = items.find((candidate) => resolveFileDiffPath(candidate.fileDiff) === path);
       if (item === undefined) return;
       if (item.collapsed === true) toggleFile(item.id);
+      setFocusedPath(path);
       requestTreeReveal(item.id);
     },
     [items, requestTreeReveal, toggleFile],
@@ -776,8 +785,9 @@ function PullRequestCodeTab({
     () =>
       // Only while something is still owed. A finished diff whose query fails on a later
       // refresh — a reconnect re-runs every one of them — is whole on screen already, and
-      // saying otherwise sends the reader looking for files that are all there.
-      nextCursor === null ? null : (
+      // saying otherwise sends the reader looking for files that are all there. One file shown
+      // alone has no end to reach, so it would only page in the rest unseen.
+      nextCursor === null || focusedItems !== null ? null : (
         <div
           ref={setSentinel}
           className="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground"
@@ -794,7 +804,7 @@ function PullRequestCodeTab({
           ) : null}
         </div>
       ),
-    [nextCursor, diffQuery.error, diffQuery.isPending, diffQuery.refresh],
+    [nextCursor, focusedItems, diffQuery.error, diffQuery.isPending, diffQuery.refresh],
   );
 
   const renderHeaderPrefix = useCallback(
@@ -1090,6 +1100,29 @@ function PullRequestCodeTab({
   const toolbar = (
     <div className="@container flex h-10 min-h-10 shrink-0 items-center justify-between gap-2 border-b border-border/60 bg-background px-4 text-xs text-muted-foreground">
       <div className="flex min-w-0 flex-1 items-center gap-3">
+        {fileKeys.length > 0 ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Toggle
+                  aria-label={fileTreeOpen ? "Hide file tree" : "Show file tree"}
+                  variant="ghost"
+                  size="sm"
+                  pressed={fileTreeOpen}
+                  onPressedChange={(pressed) => {
+                    setFileTreeOpen(Boolean(pressed));
+                    if (!pressed) setFocusedPath(null);
+                  }}
+                />
+              }
+            >
+              <FolderTreeIcon className="size-3.5" />
+            </TooltipTrigger>
+            <TooltipPopup side="top">
+              {fileTreeOpen ? "Hide file tree" : "Show file tree"}
+            </TooltipPopup>
+          </Tooltip>
+        ) : null}
         {/* A host that reports no commits has nothing to scope by, and a dropdown whose only
             entry is the scope already showing is a control that does nothing. */}
         {orderedCommits.length > 0 ? (
@@ -1366,26 +1399,6 @@ function PullRequestCodeTab({
             </TooltipPopup>
           </Tooltip>
         ) : null}
-        {fileKeys.length > 0 ? (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Toggle
-                  aria-label={fileTreeOpen ? "Hide file tree" : "Show file tree"}
-                  variant="ghost"
-                  size="sm"
-                  pressed={fileTreeOpen}
-                  onPressedChange={(pressed) => setFileTreeOpen(Boolean(pressed))}
-                />
-              }
-            >
-              <FolderTreeIcon className="size-3.5" />
-            </TooltipTrigger>
-            <TooltipPopup side="top">
-              {fileTreeOpen ? "Hide file tree" : "Show file tree"}
-            </TooltipPopup>
-          </Tooltip>
-        ) : null}
       </div>
     </div>
   );
@@ -1533,6 +1546,38 @@ function PullRequestCodeTab({
         </div>
       ) : null}
       <div className="flex min-h-0 flex-1 overflow-hidden">
+        {fileTreeOpen ? (
+          <aside className="flex w-[min(20rem,40%)] min-w-48 shrink-0 border-r border-border/60">
+            <DiffFileTree
+              ariaLabel={`Pull request #${detail.number} files`}
+              entries={fileTreeEntries}
+              onSelectFile={revealFile}
+              selectedPath={focusedItems === null ? null : focusedPath}
+              // The tree lists only what has arrived; a footer says so while the diff is still
+              // paging, and lets the reader pull the rest in without scrolling for it.
+              footer={
+                nextCursor === null ? null : (
+                  <div className="shrink-0 border-t border-border/60 p-2">
+                    <Button
+                      type="button"
+                      size="xs"
+                      variant="outline"
+                      className="w-full"
+                      disabled={diffQuery.isPending}
+                      onClick={diffQuery.error !== null ? () => diffQuery.refresh() : loadNextSlice}
+                    >
+                      {diffQuery.error !== null
+                        ? "Retry"
+                        : diffQuery.isPending
+                          ? "Loading more files..."
+                          : "Load more files"}
+                    </Button>
+                  </div>
+                )
+              }
+            />
+          </aside>
+        ) : null}
         {/* Relative wrapper so the review overlay floats over the diff rather than pushing it
             up; the viewer inside still owns its own scrolling. */}
         <div
@@ -1575,7 +1620,7 @@ function PullRequestCodeTab({
             // indicators on its actual controls.
             className="@container h-full overflow-auto [scrollbar-gutter:stable]"
             viewerRef={setViewer}
-            items={items}
+            items={focusedItems ?? items}
             selectedLines={selectedLines}
             onSelectedLinesChange={setSelectedLines}
             options={diffViewOptions}
@@ -1595,37 +1640,6 @@ function PullRequestCodeTab({
             unsafeCSSExtra={REPLACE_FILE_COUNTS_CSS}
           />
         </div>
-        {fileTreeOpen ? (
-          <aside className="flex w-[min(20rem,40%)] min-w-48 shrink-0 border-l border-border/60">
-            <DiffFileTree
-              ariaLabel={`Pull request #${detail.number} files`}
-              entries={fileTreeEntries}
-              onSelectFile={revealFile}
-              // The tree lists only what has arrived; a footer says so while the diff is still
-              // paging, and lets the reader pull the rest in without scrolling for it.
-              footer={
-                nextCursor === null ? null : (
-                  <div className="shrink-0 border-t border-border/60 p-2">
-                    <Button
-                      type="button"
-                      size="xs"
-                      variant="outline"
-                      className="w-full"
-                      disabled={diffQuery.isPending}
-                      onClick={diffQuery.error !== null ? () => diffQuery.refresh() : loadNextSlice}
-                    >
-                      {diffQuery.error !== null
-                        ? "Retry"
-                        : diffQuery.isPending
-                          ? "Loading more files..."
-                          : "Load more files"}
-                    </Button>
-                  </div>
-                )
-              }
-            />
-          </aside>
-        ) : null}
       </div>
       {unstructured}
     </div>

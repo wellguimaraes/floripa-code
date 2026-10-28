@@ -296,14 +296,17 @@ function ConversationGroup({
   cwd,
   onOpen,
   reactions,
+  defaultOpen = false,
 }: {
   events: ReadonlyArray<PullRequestTimelineEvent>;
   editable: ReadonlyMap<string, PullRequestComment>;
   cwd: string;
   onOpen: (url: string) => void;
   reactions: ReactionSurface;
+  /** The comments tab exists to read them, so its conversations start expanded. */
+  defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const actors = uniqueConversationActors(events);
   const first = events[0];
   if (first === undefined) return null;
@@ -543,6 +546,7 @@ export function PullRequestTimelineTab({
   threadRef = null,
   reference,
   order,
+  only = "all",
   onOpenCommit,
   onRefresh,
 }: {
@@ -551,10 +555,16 @@ export function PullRequestTimelineTab({
   threadRef?: ScopedThreadRef | null;
   reference: PullRequestRef;
   order: "newest" | "oldest";
+  /** `comments` keeps only comments and reviews: the conversation without commits or lifecycle. */
+  only?: "all" | "comments";
   onOpenCommit: (oid: string) => void;
   onRefresh: () => void;
 }) {
-  const events = buildPullRequestTimeline(detail);
+  const timeline = buildPullRequestTimeline(detail);
+  const events =
+    only === "comments"
+      ? timeline.filter((event) => event.kind === "comment" || event.kind === "review")
+      : timeline;
   const newestCommitAt = newestPullRequestCommitAt(detail.commits);
   const reactions: ReactionSurface = {
     canReact: detail.capabilities.reactions === true,
@@ -591,6 +601,7 @@ export function PullRequestTimelineTab({
                   cwd={detail.workspaceRoot}
                   onOpen={openOnHost}
                   reactions={reactions}
+                  defaultOpen={only === "comments"}
                 />
               );
             }
@@ -619,7 +630,9 @@ export function PullRequestTimelineTab({
         {events.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
             <PullRequestGlyph.pullRequest className="mb-2 size-5" />
-            <p className="text-xs">No activity yet.</p>
+            <p className="text-xs">
+              {only === "comments" ? "No comments yet." : "No activity yet."}
+            </p>
           </div>
         ) : null}
       </div>

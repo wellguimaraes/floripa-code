@@ -38,6 +38,7 @@ import {
   PlayIcon,
   RotateCcwIcon,
   TriangleAlertIcon,
+  XIcon,
 } from "lucide-react";
 import {
   lazy,
@@ -177,7 +178,7 @@ import {
 import { PullRequestGlyph } from "./pullRequestIcons";
 import { useInlineActionConfirm } from "./useInlineActionConfirm";
 
-type DetailTab = "summary" | "timeline" | "code";
+type DetailTab = "summary" | "timeline" | "code" | "comments";
 
 /** Said as the thing that did not happen, rather than as the operation that returned an error. */
 const ACTION_FAILURE_LABELS: Record<PullRequestAction, string> = {
@@ -230,6 +231,7 @@ const TABS: ReadonlyArray<{ value: DetailTab; label: string }> = [
   { value: "summary", label: "Summary" },
   { value: "timeline", label: "Timeline" },
   { value: "code", label: "Code" },
+  { value: "comments", label: "Comments" },
 ];
 
 // The diff viewer pulls in its worker pool, so load it only when the reader approaches Code.
@@ -402,6 +404,7 @@ export function PullRequestDetailPanel({
   refreshToken: forcedRefreshToken = 0,
   onActed,
   onClose,
+  inDialog = false,
   context = "page",
   composerDraftTarget,
   onBack,
@@ -439,6 +442,8 @@ export function PullRequestDetailPanel({
   onActed?: (action?: PullRequestAction, phase?: "sent" | "done" | "failed") => void;
   /** Page-owned detail columns use this to clear the selected pull request. */
   onClose?: () => void;
+  /** Shown in a dialog, so closing dismisses it rather than collapsing a column. */
+  inDialog?: boolean;
   /**
    * Beside a thread, the checkout affordance disappears: the panel is showing that thread's
    * own pull request, so the branch is already under the reader's feet — and checking it out
@@ -2270,10 +2275,10 @@ export function PullRequestDetailPanel({
             <Button
               size="icon-xs"
               variant="ghost"
-              aria-label="Collapse pull request panel"
+              aria-label={inDialog ? "Close pull request" : "Collapse pull request panel"}
               onClick={onClose}
             >
-              <PanelRightIcon className="size-3.5" />
+              {inDialog ? <XIcon className="size-3.5" /> : <PanelRightIcon className="size-3.5" />}
             </Button>
           ) : null}
         </div>
@@ -2637,7 +2642,7 @@ export function PullRequestDetailPanel({
                   label={checksSummary}
                 />
               )
-            ) : tab === "timeline" ? (
+            ) : tab === "timeline" || tab === "comments" ? (
               <div className="ml-auto flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
                 <PullRequestMetaLine
                   className={cn(
@@ -2787,6 +2792,29 @@ export function PullRequestDetailPanel({
                   />
                 ) : (
                   <PullRequestTimelineTab
+                    detail={detail}
+                    environmentId={environmentId}
+                    threadRef={threadRef}
+                    reference={reference}
+                    order={timelineOrder}
+                    onOpenCommit={openCommit}
+                    onRefresh={refreshDetail}
+                  />
+                )}
+              </div>
+            ) : null}
+            {mountedTabs.has("comments") ? (
+              <div className={cn("absolute inset-0", tab !== "comments" && "invisible")}>
+                {activityPending ? (
+                  <PullRequestTimelineGhost />
+                ) : activityError ? (
+                  <PullRequestActivityUnavailableState
+                    error={activityError}
+                    onRetry={activityQuery.refresh}
+                  />
+                ) : (
+                  <PullRequestTimelineTab
+                    only="comments"
                     detail={detail}
                     environmentId={environmentId}
                     threadRef={threadRef}

@@ -52,6 +52,7 @@ const DEFAULT_DETAIL_TABS = [
   { value: "summary", label: "Summary" },
   { value: "timeline", label: "Timeline" },
   { value: "code", label: "Code" },
+  { value: "comments", label: "Comments" },
 ] as const;
 
 /** Rows in the list's own grid — glyph, title over meta, time over diffstat. */

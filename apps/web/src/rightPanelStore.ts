@@ -381,6 +381,21 @@ export function pullRequestSurface(target: {
 }
 
 /**
+ * Whether two tabs show the same pull request. The project only routes the read, and a missing
+ * host or environment means the thread's own, so only values that differ tell two apart.
+ */
+function samePullRequest(a: PullRequestSurface, b: PullRequestSurface): boolean {
+  return (
+    a.number === b.number &&
+    a.repository.toLowerCase() === b.repository.toLowerCase() &&
+    (a.host === undefined || b.host === undefined || a.host === b.host) &&
+    (a.environmentId === undefined ||
+      b.environmentId === undefined ||
+      a.environmentId === b.environmentId)
+  );
+}
+
+/**
  * The pull-request tabs beside a thread. The app keeps them in step with the thread rather than
  * the reader opening and closing them: the list when there is more than one to pick from, the
  * thread's own pull request, then every other one linked to it.
@@ -749,7 +764,18 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
       openPullRequest: (ref, target) =>
         set((state) =>
           userAction(state, ref, (current) => {
-            const surface = pullRequestSurface(target);
+            const requested = pullRequestSurface(target);
+            // The same pull request may already have a tab under another project or no host.
+            const existing = current.surfaces.find(
+              (surface): surface is PullRequestSurface =>
+                surface.kind === "pull-request" && samePullRequest(surface, requested),
+            );
+            const surface =
+              existing === undefined
+                ? requested
+                : target.url
+                  ? { ...existing, url: target.url }
+                  : existing;
             const next = upsertSurface(current, surface);
             return target.url
               ? {
@@ -1015,17 +1041,30 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
         set((state) =>
           automaticUpdate(state, ref, (current) => {
             const wanted = new Set(surfaces.map((surface) => surface.id));
+            // A tab opened from a link for a pull request the thread lists too gives way to the
+            // thread's own tab, rather than showing the same one twice.
+            const active = current.surfaces.find(
+              (surface) => surface.id === current.activeSurfaceId,
+            );
+            const twin =
+              active?.kind === "pull-request" && !wanted.has(active.id)
+                ? surfaces.find(
+                    (surface) =>
+                      surface.kind === "pull-request" && samePullRequest(surface, active),
+                  )
+                : undefined;
+            const activeSurfaceId = twin?.id ?? current.activeSurfaceId;
             // Filtered in place so the tabs keep the order the reader dragged them into.
             const kept = current.surfaces.filter(
               (surface) =>
                 rightPanelSurfaceType(surface.kind) !== "pull-request" ||
                 wanted.has(surface.id) ||
-                surface.id === current.activeSurfaceId,
+                surface.id === activeSurfaceId,
             );
             const knownIds = new Set(kept.map((surface) => surface.id));
             const added = surfaces.filter((surface) => !knownIds.has(surface.id));
             if (kept.length === current.surfaces.length && added.length === 0) return current;
-            const next = { ...current, surfaces: [...kept, ...added] };
+            const next = { ...current, activeSurfaceId, surfaces: [...kept, ...added] };
             // The type was picked before its tabs arrived; show the first rather than an empty type.
             const first = next.surfaces.find(
               (surface) => rightPanelSurfaceType(surface.kind) === "pull-request",
