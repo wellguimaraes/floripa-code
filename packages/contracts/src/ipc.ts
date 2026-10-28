@@ -1123,6 +1123,8 @@ export interface DesktopBridge {
   getClientPlatform?: () => string;
   setNotificationBadge?: (badge: { count: number; image: string | null }) => Promise<void>;
   onNotificationBadgeClear?: (listener: () => void) => () => void;
+  /** Asks the OS to allow notifications; false when it refuses. */
+  requestNotificationPermission?: () => Promise<boolean>;
   onTrackpadScrollEnd?: (listener: () => void) => () => void;
   /**
    * The OS locale as a BCP-47 tag, which the renderer cannot read for itself:
