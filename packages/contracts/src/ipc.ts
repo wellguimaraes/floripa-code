@@ -1125,6 +1125,8 @@ export interface DesktopBridge {
   onNotificationBadgeClear?: (listener: () => void) => () => void;
   /** Asks the OS to allow notifications; false when it refuses. */
   requestNotificationPermission?: () => Promise<boolean>;
+  /** Opens the OS notification settings for this app; false where there is none to open. */
+  openNotificationSettings?: () => Promise<boolean>;
   onTrackpadScrollEnd?: (listener: () => void) => () => void;
   /**
    * The OS locale as a BCP-47 tag, which the renderer cannot read for itself:

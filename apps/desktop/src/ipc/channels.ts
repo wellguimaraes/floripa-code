@@ -1,6 +1,7 @@
 export const PICK_FOLDER_CHANNEL = "desktop:pick-folder";
 export const SET_NOTIFICATION_BADGE_CHANNEL = "desktop:set-notification-badge";
 export const REQUEST_NOTIFICATION_PERMISSION_CHANNEL = "desktop:request-notification-permission";
+export const OPEN_NOTIFICATION_SETTINGS_CHANNEL = "desktop:open-notification-settings";
 export const PICK_PROJECT_FAVICON_CHANNEL = "desktop:pick-project-favicon";
 export const PICK_THEME_FILES_CHANNEL = "desktop:pick-theme-files";
 export const SET_THEME_CHANNEL = "desktop:set-theme";

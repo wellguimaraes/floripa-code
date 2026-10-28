@@ -18,6 +18,13 @@ export function NotificationSettings() {
   const updateSettings = useUpdateScopedSettings();
   const [permissionMessage, setPermissionMessage] = useState<string | null>(null);
   const [requesting, setRequesting] = useState(false);
+  // The OS switch can be off even when the browser permission is granted, and
+  // Electron cannot read it, so the desktop app links to it instead.
+  const openSystemSettings =
+    window.desktopBridge?.openNotificationSettings &&
+    ["darwin", "win32"].includes(window.desktopBridge.getClientPlatform?.() ?? "")
+      ? window.desktopBridge.openNotificationSettings
+      : null;
 
   // Uses the same sound and system notification a thread would, without the
   // focus check, so the user can see what macOS or the browser lets through.
@@ -55,6 +62,20 @@ export function NotificationSettings() {
       description={
         permissionMessage ??
         "System alerts when a thread finishes, fails, or needs input or approval. Applies to this device while Floripa Code is open."
+      }
+      status={
+        openSystemSettings && (hasDesktopNotifications(mode) || permissionMessage !== null) ? (
+          <>
+            Not seeing alerts?{" "}
+            <button
+              type="button"
+              className="text-foreground underline-offset-4 hover:underline"
+              onClick={() => void openSystemSettings()}
+            >
+              Open system notification settings
+            </button>
+          </>
+        ) : null
       }
       control={
         <>

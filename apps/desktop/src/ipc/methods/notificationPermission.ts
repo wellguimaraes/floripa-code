@@ -5,7 +5,10 @@ import * as Schema from "effect/Schema";
 
 import * as DesktopEnvironment from "../../app/DesktopEnvironment.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
-import { REQUEST_NOTIFICATION_PERMISSION_CHANNEL } from "../channels.ts";
+import {
+  OPEN_NOTIFICATION_SETTINGS_CHANNEL,
+  REQUEST_NOTIFICATION_PERMISSION_CHANNEL,
+} from "../channels.ts";
 
 /**
  * Chromium answers the renderer's `Notification.requestPermission()` itself, so
@@ -35,5 +38,35 @@ export const requestNotificationPermission = DesktopIpc.makeIpcMethod({
       return Effect.sync(() => notification.removeAllListeners());
     }).pipe(Effect.timeoutOption("1 minute"));
     return Option.getOrElse(shown, () => true);
+  }),
+});
+
+/**
+ * Electron cannot read whether the OS allows our notifications, so the
+ * settings screen offers a way to the OS switch instead. On macOS a packaged
+ * build opens its own entry; dev builds use a per-checkout bundle id and land
+ * on the app list.
+ */
+export const openNotificationSettings = DesktopIpc.makeIpcMethod({
+  channel: OPEN_NOTIFICATION_SETTINGS_CHANNEL,
+  payload: Schema.Void,
+  result: Schema.Boolean,
+  handler: Effect.fn("desktop.ipc.openNotificationSettings")(function* () {
+    const environment = yield* DesktopEnvironment.DesktopEnvironment;
+    const url =
+      environment.platform === "darwin"
+        ? `x-apple.systempreferences:com.apple.Notifications-Settings.extension${
+            environment.isPackaged ? `?id=${environment.appUserModelId}` : ""
+          }`
+        : environment.platform === "win32"
+          ? "ms-settings:notifications"
+          : null;
+    if (url === null) return false;
+    return yield* Effect.promise(() =>
+      Electron.shell.openExternal(url).then(
+        () => true,
+        () => false,
+      ),
+    );
   }),
 });

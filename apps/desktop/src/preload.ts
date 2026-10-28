@@ -95,6 +95,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   },
   requestNotificationPermission: () =>
     ipcRenderer.invoke(IpcChannels.REQUEST_NOTIFICATION_PERMISSION_CHANNEL),
+  openNotificationSettings: () =>
+    ipcRenderer.invoke(IpcChannels.OPEN_NOTIFICATION_SETTINGS_CHANNEL),
   onTrackpadScrollEnd: (listener) => {
     const handler = () => listener();
     ipcRenderer.on(IpcChannels.TRACKPAD_SCROLL_END_CHANNEL, handler);

@@ -3,7 +3,10 @@ import * as Effect from "effect/Effect";
 import { receiveProviderAuthCallback, cancelProviderAuthCallback } from "./methods/providerAuth.ts";
 import * as DesktopIpc from "./DesktopIpc.ts";
 import { installNotificationBadge } from "./methods/notificationBadge.ts";
-import { requestNotificationPermission } from "./methods/notificationPermission.ts";
+import {
+  openNotificationSettings,
+  requestNotificationPermission,
+} from "./methods/notificationPermission.ts";
 import { getClientSettings, setClientSettings } from "./methods/clientSettings.ts";
 import {
   getLocalEnvironmentEnabled,
@@ -82,6 +85,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   const ipc = yield* DesktopIpc.DesktopIpc;
   yield* installNotificationBadge();
   yield* ipc.handle(requestNotificationPermission);
+  yield* ipc.handle(openNotificationSettings);
   yield* PreviewIpc.installPreviewEventForwarding();
 
   yield* ipc.handle(AppActivationIpc.setReady);
