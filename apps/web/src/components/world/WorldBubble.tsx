@@ -2,7 +2,6 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { resolveProviderSkillsForCwd } from "@t3tools/client-runtime/providerSkills";
 import { presentPendingBackgroundWork } from "@t3tools/client-runtime/state/thread-execution";
-import { fileBasename } from "@t3tools/shared/path";
 import type { ServerProvider } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import { ArchiveIcon, MessagesSquareIcon, RefreshCwIcon, SquareIcon, XIcon } from "lucide-react";
@@ -45,6 +44,7 @@ import { ARCHIVE_SHORTCUT, confirmArchive, useArchiveShortcut } from "./useArchi
 import { LatestTurn } from "./LatestTurn";
 import { RollingSwap } from "./RollingSwap";
 import { useLastExchange } from "./useLastExchange";
+import { worktreeLabel } from "./worktreeLabel";
 
 /**
  * Whether the character's thread has a run to stop: working, waiting on you,
@@ -175,13 +175,7 @@ export function WorldBubble(props: {
     [facts.status, thread],
   );
   const regeneratingTitle = thread?.titleRegeneration != null;
-  // Worktree folders are often generated (e.g. `t3-8f432bc3`), so a worktree goes by its branch.
-  const worktreeLabel =
-    thread === null
-      ? null
-      : thread.worktreePath === null
-        ? "Main worktree"
-        : (thread.branch ?? fileBasename(thread.worktreePath));
+  const worktree = thread === null ? null : worktreeLabel(thread);
   const [pickingHue, setPickingHue] = useState(false);
   // The thread's composer draft, shared with the chat panel: what you type in either shows in both.
   const draftTarget = useMemo(
@@ -370,8 +364,8 @@ export function WorldBubble(props: {
               <p className={cn("truncate text-sm font-medium", regeneratingTitle && "opacity-55")}>
                 {facts.title || "Untitled thread"}
               </p>
-              {worktreeLabel !== null ? (
-                <p className="truncate text-muted-foreground text-xs">{worktreeLabel}</p>
+              {worktree !== null ? (
+                <p className="truncate text-muted-foreground text-xs">{worktree}</p>
               ) : null}
             </div>
             {readEnvironmentSupportsTitleRegeneration(facts.ref.environmentId) ? (

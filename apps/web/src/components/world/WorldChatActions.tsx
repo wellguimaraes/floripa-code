@@ -5,7 +5,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { ArchiveIcon, RefreshCwIcon } from "lucide-react";
-import { lazy, memo, Suspense, useRef, useState } from "react";
+import { memo, useRef, useState } from "react";
 
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { cn } from "../../lib/utils";
@@ -15,15 +15,11 @@ import { threadEnvironment } from "../../state/threads";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { Button } from "../ui/button";
 import { Kbd } from "../ui/kbd";
-import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { HuePicker } from "./HuePicker";
 import { ARCHIVE_SHORTCUT, confirmArchive, useArchiveShortcut } from "./useArchiveShortcut";
-import { useWorldLook, useWorldLookStore } from "./worldLookStore";
+import { useWorldLook } from "./worldLookStore";
 import { useWorldModeStore } from "./worldModeStore";
-
-const CharacterPortrait = lazy(() => import("./scene/CharacterPortrait"));
 
 /** The world chat's thread, while the world shows it and the user may act on it. */
 function useWorldChatThread(threadRef: ScopedThreadRef | null) {
@@ -104,69 +100,6 @@ export const WorldArchiveButton = memo(function WorldArchiveButton({
         </span>
       </TooltipPopup>
     </Tooltip>
-  );
-});
-
-/**
- * The world chat's character, leading its title. Clicking it picks the agent's colour when
- * the user may act on the thread; otherwise it is just a portrait.
- */
-export const WorldChatCharacter = memo(function WorldChatCharacter({
-  threadRef,
-  hue,
-  hat,
-}: {
-  readonly threadRef: ScopedThreadRef | null;
-  readonly hue: number;
-  readonly hat: number | null;
-}) {
-  const chat = useWorldChatThread(threadRef);
-  const recolor = useWorldLookStore((state) => state.recolor);
-  const [pickingHue, setPickingHue] = useState(false);
-  const portrait = (
-    <Suspense fallback={<div className="size-full" />}>
-      <CharacterPortrait hue={hue} hat={hat} className="size-full" />
-    </Suspense>
-  );
-  if (chat === null || recolor === null) {
-    return <div className="size-8 shrink-0">{portrait}</div>;
-  }
-
-  return (
-    // Subagents share the family colour, so a kid repaints its parent and siblings too.
-    <Popover open={pickingHue} onOpenChange={setPickingHue}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <PopoverTrigger
-              render={
-                <button
-                  type="button"
-                  aria-label="Change color"
-                  className={cn(
-                    "size-8 shrink-0 cursor-pointer rounded-md outline-none",
-                    "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-                  )}
-                />
-              }
-            />
-          }
-        >
-          {portrait}
-        </TooltipTrigger>
-        <TooltipPopup side="top">Change color</TooltipPopup>
-      </Tooltip>
-      <PopoverPopup side="top" align="start" padding="compact">
-        <HuePicker
-          hue={chat.worldLook.hue}
-          onChange={(picked) => {
-            recolor(chat.threadKey, picked);
-            setPickingHue(false);
-          }}
-          label={chat.worldLook.kid ? "Color of this agent's family" : "Agent color"}
-        />
-      </PopoverPopup>
-    </Popover>
   );
 });
 

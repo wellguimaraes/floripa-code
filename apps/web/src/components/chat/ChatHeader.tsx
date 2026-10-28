@@ -29,6 +29,7 @@ import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
+import { useThreadShell } from "../../state/entities";
 import { ProjectFavicon } from "../ProjectFavicon";
 import {
   WorkspaceBreadcrumb,
@@ -40,14 +41,9 @@ import { observeResize } from "~/lib/observeResize";
 import { cn } from "~/lib/utils";
 import { useClientSettings } from "../../hooks/useSettings";
 import { useWorldLook } from "../world/worldLookStore";
-import {
-  WorldArchiveButton,
-  WorldChatCharacter,
-  WorldRegenerateTitleButton,
-} from "../world/WorldChatActions";
+import { WorldArchiveButton, WorldRegenerateTitleButton } from "../world/WorldChatActions";
+import { worktreeLabel } from "../world/worktreeLabel";
 import { WorktreeSwitcher } from "./WorktreeSwitcher";
-
-// three.js loads only when the world shows this thread's character.
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -108,8 +104,9 @@ export const ChatHeader = memo(function ChatHeader({
     () => scopeThreadRef(activeThreadEnvironmentId, activeThreadId),
     [activeThreadEnvironmentId, activeThreadId],
   );
-  // In the world, the chat leads with its character, so you can tell who you're talking to.
+  // In the world, the chat leads with its project and names its worktree under the title.
   const worldLook = useWorldLook(scopedThreadKey(activeThreadRef));
+  const worldThread = useThreadShell(worldLook !== null && isServerThread ? activeThreadRef : null);
   const canOperateThread = useEnvironmentScope(
     activeThreadEnvironmentId,
     AuthOrchestrationOperateScope,
@@ -325,12 +322,11 @@ export const ChatHeader = memo(function ChatHeader({
       )}
       onContextMenu={handleHeaderContextMenu}
     >
-      {worldLook !== null ? (
-        <WorldChatCharacter
-          threadRef={isServerThread ? activeThreadRef : null}
-          hue={worldLook.hue}
-          hat={worldLook.hat}
-        />
+      {worldLook !== null && activeProject ? (
+        // A white tile keeps any icon legible on any background.
+        <span className="flex shrink-0 rounded-md bg-white">
+          <ProjectFavicon project={activeProject} className="size-8" />
+        </span>
       ) : null}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* The project title is often just a folder name, so the sidebar's
@@ -499,6 +495,11 @@ export const ChatHeader = memo(function ChatHeader({
             )}
           </WorkspaceBreadcrumbItem>
         </WorkspaceBreadcrumb>
+        {worldThread !== null ? (
+          <span className="min-w-0 truncate text-muted-foreground text-xs">
+            {worktreeLabel(worldThread)}
+          </span>
+        ) : null}
       </div>
       {worldLook !== null && isServerThread ? (
         <span className="flex shrink-0 items-center gap-0.5">
