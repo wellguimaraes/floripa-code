@@ -1049,13 +1049,23 @@ export default function WorldCanvas(props: {
       return;
     }
     const regenerating = readThreadShell(character.facts.ref)?.titleRegeneration != null;
+    const neighbours =
+      islands.find((island) => island.key === character.facts.projectKey)?.characters ?? [];
     // The other agents on its island, not subagents or ones already leaving.
-    const others =
-      islands
-        .find((island) => island.key === character.facts.projectKey)
-        ?.characters.filter(
-          (c) => c.facts.key !== character.facts.key && !c.facts.kid && !abducted.has(c.facts.key),
-        ) ?? [];
+    const others = neighbours.filter(
+      (c) => c.facts.key !== character.facts.key && !c.facts.kid && !abducted.has(c.facts.key),
+    );
+    // Its subagents and theirs, which all live on its island, not ones already leaving.
+    const parentOf = new Map(neighbours.map((c) => [c.facts.key, c.facts.parentKey]));
+    const descends = (c: WorldCharacter) => {
+      let parent = c.facts.parentKey;
+      for (let depth = 0; depth < 32 && parent !== null; depth += 1) {
+        if (parent === character.facts.key) return true;
+        parent = parentOf.get(parent) ?? null;
+      }
+      return false;
+    };
+    const subagents = neighbours.filter((c) => !abducted.has(c.facts.key) && descends(c));
     // The camera looks from +x+z and never turns, so x - z grows to the right of the screen.
     const screenX = (c: WorldCharacter) => c.placement.position[0] - c.placement.position[2];
     const toTheLeft = others.filter((c) => screenX(c) < screenX(character));
@@ -1091,6 +1101,12 @@ export default function WorldCanvas(props: {
         },
         { id: "archive", label: "Archive", icon: "archive" },
         {
+          id: "archive-subagents",
+          label: `Archive subagents (${subagents.length})`,
+          icon: "archive",
+          disabled: subagents.length === 0,
+        },
+        {
           id: "archive-others",
           label: `Archive others (${others.length})`,
           icon: "archive",
@@ -1108,6 +1124,7 @@ export default function WorldCanvas(props: {
     if (clicked === "open") openChat(character);
     else if (clicked === "stop") void stopAll([character]);
     else if (clicked === "archive") void archiveAll([character]);
+    else if (clicked === "archive-subagents") void archiveAll(subagents);
     else if (clicked === "archive-others") void archiveAll(others);
     else if (clicked === "archive-left") void archiveAll(toTheLeft);
     else if (clicked === "regenerate-title") void regenerateTitle(character);
