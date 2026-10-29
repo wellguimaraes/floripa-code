@@ -95,9 +95,19 @@ export interface GitRunStackedActionOptions {
   readonly progressReporter?: GitActionProgressReporter;
 }
 
+/** A remote status still being read: `pr` is absent until its lookup lands. */
+export type GitRemoteStatusProgress = Omit<VcsStatusRemoteResult, "pr"> & {
+  readonly pr?: VcsStatusRemoteResult["pr"];
+};
+
 export interface GitRemoteStatusOptions extends GitVcsDriver.GitRemoteStatusOptions {
   /** Retry a cached missing PR without clearing known PRs or failed lookup backoff. */
   readonly refreshMissingPullRequest?: boolean;
+  /**
+   * Fetches the upstream and looks the PR up side by side, reporting each as it lands, so
+   * neither waits on the other to show. Ignored when the upstream isn't fetched.
+   */
+  readonly onProgress?: (progress: GitRemoteStatusProgress) => Effect.Effect<void>;
 }
 
 export type GitBranchPullRequest = NonNullable<VcsStatusResult["pr"]> & {
@@ -1372,16 +1382,22 @@ export const make = Effect.gen(function* () {
     cwd: string,
     options?: GitRemoteStatusOptions,
   ) {
-    const details = yield* gitCore
-      .statusDetailsRemote(cwd, options)
-      .pipe(Effect.catchIf(isNotGitRepositoryError, () => Effect.succeed(null)));
+    const refreshUpstream = options?.refreshUpstream !== false;
+    const onProgress = refreshUpstream ? options?.onProgress : undefined;
+    const readDetails = (refresh: boolean) =>
+      gitCore
+        .statusDetailsRemote(cwd, { refreshUpstream: refresh })
+        .pipe(Effect.catchIf(isNotGitRepositoryError, () => Effect.succeed(null)));
+    // With progress to report, the branch is read before the fetch, which the PR lookup
+    // needs and doesn't wait on.
+    const details = yield* readDetails(refreshUpstream && onProgress === undefined);
     if (details === null || !details.isRepo) {
       return null;
     }
 
-    const pr =
+    const lookupPr =
       details.branch !== null
-        ? yield* lookupStatusPr(
+        ? lookupStatusPr(
             cwd,
             {
               branch: details.branch,
@@ -1391,13 +1407,34 @@ export const make = Effect.gen(function* () {
             },
             options?.refreshMissingPullRequest,
           )
-        : null;
+        : Effect.succeed(null);
+    const divergenceOf = (read: typeof details) => ({
+      hasUpstream: read.hasUpstream,
+      aheadCount: read.aheadCount,
+      behindCount: read.behindCount,
+      aheadOfDefaultCount: read.aheadOfDefaultCount,
+    });
 
+    if (onProgress === undefined) {
+      return { ...divergenceOf(details), pr: yield* lookupPr } satisfies VcsStatusRemoteResult;
+    }
+    let progress: GitRemoteStatusProgress = divergenceOf(details);
+    const report = (update: Partial<GitRemoteStatusProgress>) =>
+      Effect.suspend(() => {
+        progress = { ...progress, ...update };
+        return onProgress(progress);
+      });
+    const [fetched, pr] = yield* Effect.all(
+      [
+        readDetails(true).pipe(
+          Effect.tap((read) => (read?.isRepo ? report(divergenceOf(read)) : Effect.void)),
+        ),
+        lookupPr.pipe(Effect.tap((found) => report({ pr: found }))),
+      ],
+      { concurrency: "unbounded" },
+    );
     return {
-      hasUpstream: details.hasUpstream,
-      aheadCount: details.aheadCount,
-      behindCount: details.behindCount,
-      aheadOfDefaultCount: details.aheadOfDefaultCount,
+      ...divergenceOf(fetched?.isRepo ? fetched : details),
       pr,
     } satisfies VcsStatusRemoteResult;
   });
@@ -2233,7 +2270,11 @@ export const make = Effect.gen(function* () {
   const remoteStatus: GitManager["Service"]["remoteStatus"] = Effect.fn("remoteStatus")(
     function* (input, options) {
       const cacheKey = yield* normalizeStatusCacheKey(input.cwd);
-      if (options?.refreshUpstream === false || options?.refreshMissingPullRequest) {
+      if (
+        options?.refreshUpstream === false ||
+        options?.refreshMissingPullRequest ||
+        options?.onProgress
+      ) {
         return yield* readRemoteStatus(cacheKey, options);
       }
       return yield* Cache.get(remoteStatusResultCache, cacheKey);

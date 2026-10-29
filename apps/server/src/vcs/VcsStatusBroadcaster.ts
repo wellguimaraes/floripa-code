@@ -208,6 +208,20 @@ export class VcsStatusBroadcaster extends Context.Service<
   }
 >()("t3/vcs/VcsStatusBroadcaster") {}
 
+/** Whether a fetch moved the counts that local status's Changes totals depend on. */
+function divergenceMoved(
+  previous: VcsStatusRemoteResult | null | undefined,
+  next: VcsStatusRemoteResult | null,
+): boolean {
+  return (
+    next !== null &&
+    (!previous ||
+      previous.aheadCount !== next.aheadCount ||
+      previous.behindCount !== next.behindCount ||
+      previous.aheadOfDefaultCount !== next.aheadOfDefaultCount)
+  );
+}
+
 function fingerprintStatusPart(status: unknown): string {
   return JSON.stringify(status);
 }
@@ -464,13 +478,7 @@ export const make = Effect.gen(function* () {
         // Local status holds the Changes totals, which compare against remote refs. A fetch can
         // move them with no local trigger (a push from a terminal, a PR merged on the host), so
         // re-read local status on the first fetch and whenever divergence moves.
-        if (
-          remote &&
-          (!previousRemote ||
-            previousRemote.aheadCount !== remote.aheadCount ||
-            previousRemote.behindCount !== remote.behindCount ||
-            previousRemote.aheadOfDefaultCount !== remote.aheadOfDefaultCount)
-        ) {
+        if (divergenceMoved(previousRemote, remote)) {
           yield* refreshLocalStatusCore(cwd);
         }
         return yield* updateCachedRemoteStatus(cwd, remote, { publish: true });
@@ -488,9 +496,41 @@ export const make = Effect.gen(function* () {
       cwd,
       Effect.gen(function* () {
         yield* workflow.invalidateStatus(cwd);
-        // Local after remote: the fetch can move the base that the Changes totals compare with.
-        const remote = yield* workflow.remoteStatus({ cwd });
-        const local = yield* workflow.localStatus({ cwd });
+        // Each part shows as it lands: local status first, then the upstream's counts and the
+        // PR, which are fetched and looked up side by side.
+        const firstLocal = yield* updateCachedLocalStatus(
+          cwd,
+          yield* workflow.localStatus({ cwd }),
+          { publish: true },
+        );
+        const previousRemote = (yield* getCachedStatus(cwd))?.remote?.value;
+        const remote = yield* workflow.remoteStatus(
+          { cwd },
+          {
+            onProgress: (progress) =>
+              getCachedStatus(cwd).pipe(
+                Effect.flatMap((cached) =>
+                  updateCachedRemoteStatus(
+                    cwd,
+                    {
+                      ...progress,
+                      // Until its lookup lands, the PR stays as last shown.
+                      pr:
+                        progress.pr === undefined
+                          ? (cached?.remote?.value?.pr ?? null)
+                          : progress.pr,
+                    },
+                    { publish: true },
+                  ),
+                ),
+                Effect.asVoid,
+              ),
+          },
+        );
+        // Read again when the fetch moved the base that the Changes totals compare with.
+        const local = divergenceMoved(previousRemote, remote)
+          ? yield* refreshLocalStatusCore(cwd)
+          : firstLocal;
         const pulled = yield* maybeAutoPull(cwd, remote, [rawCwd]);
         if (pulled !== null) return mergeGitStatusParts(pulled.local, pulled.remote);
         return yield* updateCachedStatus(cwd, local, remote, { publish: true });

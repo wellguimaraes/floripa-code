@@ -415,14 +415,15 @@ describe("VcsStatusBroadcaster", () => {
         ...state.currentLocalStatus,
         ...state.currentRemoteStatus,
       });
-      assert.equal(state.localStatusCalls, 2);
+      // Local is read before the fetch and again after it, since the counts moved.
+      assert.equal(state.localStatusCalls, 3);
       assert.equal(state.remoteStatusCalls, 2);
-      assert.equal(state.localInvalidationCalls, 1);
+      assert.equal(state.localInvalidationCalls, 2);
       assert.equal(state.remoteInvalidationCalls, 1);
     }).pipe(Effect.provide(layerTestFor(state)));
   });
 
-  it.effect("keeps the cached snapshot unchanged when a refresh branch fails", () => {
+  it.effect("keeps the cached remote status when a refresh's remote read fails", () => {
     const state = {
       currentLocalStatus: baseLocalStatus,
       currentRemoteStatus: baseRemoteStatus,
@@ -490,7 +491,8 @@ describe("VcsStatusBroadcaster", () => {
       const cached = yield* broadcaster.getStatus({ cwd: "/repo" });
 
       assert.isTrue(Exit.isFailure(refreshExit));
-      assert.deepStrictEqual(cached, baseStatus);
+      // Local status lands before the remote read fails.
+      assert.deepStrictEqual(cached, { ...state.currentLocalStatus, ...baseRemoteStatus });
     }).pipe(Effect.provide(layerTest));
   });
 
@@ -594,6 +596,70 @@ describe("VcsStatusBroadcaster", () => {
       }).pipe(Effect.provide(layerTest));
     },
   );
+
+  it.effect("a refresh publishes each part before the slowest lands", () => {
+    const fetched = { ...remoteStatusWithPr, behindCount: 1 };
+    const releasePr = Deferred.makeUnsafe<void>();
+    let remoteReads = 0;
+    let local = baseLocalStatus;
+    const layer = VcsStatusBroadcaster.layer.pipe(
+      Layer.provideMerge(NodeServices.layer),
+      Layer.provide(layerBackgroundPolicy(() => true)),
+      Layer.provide(
+        Layer.mock(GitWorkflowService.GitWorkflowService)({
+          localStatus: () => Effect.sync(() => local),
+          remoteStatus: (_input, options) =>
+            Effect.gen(function* () {
+              remoteReads += 1;
+              if (remoteReads === 1) return remoteStatusWithPr;
+              // The fetch lands while the PR lookup is still out.
+              const { pr: _pr, ...counts } = fetched;
+              yield* options?.onProgress?.(counts) ?? Effect.void;
+              yield* Deferred.await(releasePr);
+              return { ...fetched, pr: null };
+            }),
+          invalidateLocalStatus: () => Effect.void,
+          invalidateStatus: () => Effect.void,
+        }),
+      ),
+    );
+
+    return Effect.gen(function* () {
+      const broadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
+      yield* broadcaster.getStatus({ cwd: "/repo" });
+      const events: Array<VcsStatusStreamEvent> = [];
+      const subscribed = Deferred.makeUnsafe<void>();
+      const countsShown = Deferred.makeUnsafe<void>();
+      yield* Stream.runForEach(
+        broadcaster.streamStatus({ cwd: "/repo", includeRemote: false }),
+        (event) =>
+          Effect.sync(() => events.push(event)).pipe(
+            Effect.andThen(
+              event._tag === "snapshot"
+                ? Deferred.succeed(subscribed, undefined)
+                : event._tag === "remoteUpdated"
+                  ? Deferred.succeed(countsShown, undefined)
+                  : Effect.void,
+            ),
+          ),
+      ).pipe(Effect.forkScoped);
+      yield* Deferred.await(subscribed);
+
+      local = { ...baseLocalStatus, hasWorkingTreeChanges: true };
+      const refresh = yield* broadcaster.refreshStatus("/repo").pipe(Effect.forkScoped);
+      yield* Deferred.await(countsShown);
+
+      // Local status and the fetched counts show before the PR lookup finishes, the PR as
+      // last shown until it does.
+      assert.deepStrictEqual(events.slice(1), [
+        { _tag: "localUpdated", local },
+        { _tag: "remoteUpdated", remote: fetched },
+      ]);
+      yield* Deferred.succeed(releasePr, undefined);
+      const final = yield* Fiber.join(refresh);
+      assert.isNull(final.pr);
+    }).pipe(Effect.provide(layer), Effect.scoped);
+  });
 
   it.effect("passive streams retain cached remote status", () => {
     const state = {

@@ -1332,6 +1332,53 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     }),
   );
 
+  it.effect("reports the fetched counts and the PR as each lands", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("floripacode-git-manager-");
+      yield* initRepo(repoDir);
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      yield* runGit(repoDir, ["checkout", "-b", "feature/progress"]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "feature/progress"]);
+      // The remote gains a commit that only a fetch reveals.
+      yield* runGit(repoDir, ["commit", "--allow-empty", "-m", "remote only"]);
+      yield* runGit(repoDir, ["push"]);
+      yield* runGit(repoDir, ["reset", "--hard", "HEAD~1"]);
+      yield* runGit(repoDir, ["update-ref", "refs/remotes/origin/feature/progress", "HEAD"]);
+
+      const { manager } = yield* makeManager({
+        ghScenario: {
+          prListSequence: [
+            // Fake gh returns raw JSON stdout, matching the CLI boundary under test.
+            JSON.stringify([
+              {
+                number: 115,
+                title: "Progress PR",
+                url: "https://github.com/pingdotgg/codething-mvp/pull/115",
+                baseRefName: "main",
+                headRefName: "feature/progress",
+              },
+            ]),
+          ],
+        },
+      });
+      const reported: Array<GitManager.GitRemoteStatusProgress> = [];
+      const remote = yield* manager.remoteStatus(
+        { cwd: repoDir },
+        { onProgress: (progress) => Effect.sync(() => reported.push(progress)) },
+      );
+
+      expect(remote?.behindCount).toBe(1);
+      expect(remote?.pr?.number).toBe(115);
+      expect(reported).toHaveLength(2);
+      // Whichever landed first reported without the other; the last report is complete.
+      expect(
+        reported.some((progress) => progress.pr === undefined || progress.behindCount === 0),
+      ).toBe(true);
+      expect(reported.at(-1)).toEqual(remote);
+    }),
+  );
+
   it.effect("turn-end refresh preserves failed PR lookup backoff", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("floripacode-git-manager-");
