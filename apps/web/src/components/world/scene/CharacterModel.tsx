@@ -21,7 +21,7 @@ import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js
 
 import type { Pose } from "../definition/types";
 import { keepColors } from "./contrast";
-import { drawSoon } from "./frames";
+import { drawSoon, runStepSeconds } from "./frames";
 import { geometry } from "./geometries";
 import { GlowContext, LitMaterial } from "./lighting";
 import { type FamilyShades, palette } from "./palette";
@@ -165,6 +165,7 @@ export function CharacterModel(props: {
   }, [rig]);
 
   const playing = useRef<AnimationAction | null>(null);
+  const lastWalkFrame = useRef<number | null>(null);
   const fadeUntil = useRef(0);
   // Effects can re-run while refs survive (hot reload, strict mode), so forget
   // the stopped clip too; the next frame starts it again instead of leaving the
@@ -196,7 +197,7 @@ export function CharacterModel(props: {
     }
     // Draw the fade through, then let the scene go still again.
     if (performance.now() < fadeUntil.current) drawSoon(state.invalidate, FADE_FPS);
-    rig.mixer.update(Math.min(delta, 0.1));
+    rig.mixer.update(runStepSeconds(lastWalkFrame, isWalking(), state.clock.elapsedTime, delta));
     const dead = pose === "dead" && !isWalking();
     if (deadEyes.current !== null) deadEyes.current.visible = dead;
     if (dead) {

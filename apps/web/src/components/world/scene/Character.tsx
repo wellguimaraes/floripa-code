@@ -18,7 +18,7 @@ import type { Placement } from "../engine/slots";
 import type { WorldCharacter } from "../engine/world";
 import { balloonTexture } from "./balloons";
 import { CharacterModel } from "./CharacterModel";
-import { drawSoon } from "./frames";
+import { drawSoon, runStepSeconds } from "./frames";
 import { geometry } from "./geometries";
 import { Hat } from "./Hat";
 import { KeepColorContext, keepColors } from "./contrast";
@@ -30,8 +30,6 @@ import type { Ground } from "./shadows";
 export type { FamilyShades } from "./palette";
 import type { FamilyShades } from "./palette";
 
-/** Long idle gaps arrive as one huge frame delta; never let a walker teleport. */
-const MAX_FRAME_DELTA = 0.1;
 const DRAG_CLICK_TOLERANCE_PX = 4;
 /** On-screen balloon size, whatever the zoom. */
 export const BALLOON_PX = 46;
@@ -202,13 +200,15 @@ export function Character(props: {
   }, [placement, startAt, surface, obstacles, ground, invalidate]);
 
   const speed = movement.walkSpeed * (facts.kid ? movement.kidSpeedScale : 1);
+  const lastWalkFrame = useRef<number | null>(null);
   useFrame((state, frameDelta) => {
     const current = motion.current;
     const group = root.current;
     if (group === null) return;
     const walking = current.route.length > 0;
+    if (!walking) lastWalkFrame.current = null;
     if (walking) {
-      let budget = speed * Math.min(frameDelta, MAX_FRAME_DELTA);
+      let budget = speed * runStepSeconds(lastWalkFrame, true, state.clock.elapsedTime, frameDelta);
       while (budget > 0 && current.route.length > 0) {
         const target = current.route[0]!;
         const dx = target[0] - current.position[0];

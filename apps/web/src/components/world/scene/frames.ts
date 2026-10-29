@@ -14,6 +14,29 @@ export function drawSoon(invalidate: () => void, fps: number): void {
   }, 1000 / fps);
 }
 
+/** The first frame after the scene sat still carries the whole idle gap; it must not leap. */
+const FIRST_FRAME_STEP = 0.1;
+/** Within a run, a late frame still owes its time; only a hidden tab's gap is cut short. */
+const RUN_FRAME_STEP = 1;
+
+/**
+ * How many seconds a moving thing advances this frame. While it keeps moving, that is the real
+ * time since its last frame, so a late frame catches up instead of slowing it down. The first
+ * frame of a run has no earlier frame of its own, and the delta it is given reaches back over
+ * the idle gap, so it is capped. `lastRun` holds the previous frame's time between calls.
+ */
+export function runStepSeconds(
+  lastRun: { current: number | null },
+  running: boolean,
+  now: number,
+  frameDelta: number,
+): number {
+  const previous = lastRun.current;
+  lastRun.current = running ? now : null;
+  if (!running || previous === null) return Math.min(frameDelta, FIRST_FRAME_STEP);
+  return Math.min(now - previous, RUN_FRAME_STEP);
+}
+
 /**
  * Runs `run` once the browser has painted the current frame: the animation
  * frame lands just before the paint, the task queued from it just after.
