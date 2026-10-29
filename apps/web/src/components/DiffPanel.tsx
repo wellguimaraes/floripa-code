@@ -55,7 +55,13 @@ import { DiffPanelLoadingState, DiffPanelShell, type DiffPanelMode } from "./Dif
 import { DiffStatLabel } from "./chat/DiffStatLabel";
 import { AnnotatableCodeView, type AnnotatableCodeViewHandle } from "./diffs/AnnotatableCodeView";
 import { DiffFileTree } from "./diffs/DiffFileTree";
+import {
+  DiffFileTreeLayoutToggle,
+  DiffFileTreePane,
+  useDiffFileTreeLayout,
+} from "./diffs/DiffFileTreePane";
 import { diffFileTreeEntries } from "./diffs/diffFileTree.logic";
+import { firstExpandedFileInView } from "./diffs/firstExpandedFileInView";
 import { Button } from "./ui/button";
 import { MorphIcon } from "~/components/MorphIcon";
 import { ToggleGroup, Toggle } from "./ui/toggle-group";
@@ -95,6 +101,7 @@ import { DiffFileStatus } from "./diffs/DiffFileStatus";
 type DiffThemeType = "light" | "dark";
 const AUTOMATIC_BASE_REF = "__automatic_base_ref__";
 const DIFF_FILE_TREE_STORAGE_KEY = "floripacode.diffFileTreeOpen";
+const DIFF_FILE_TREE_SIZE_STORAGE_KEY = "floripacode.diffFileTree";
 const fileEntryCache = new WeakMap<
   FileDiffMetadata,
   { fileDiff: FileDiffMetadata; fileKey: string; fileVersion: number }
@@ -209,6 +216,13 @@ export default function DiffPanel({
     false,
     Schema.Boolean,
   );
+  const [fileTreeLayout, setFileTreeLayout] = useDiffFileTreeLayout();
+  // The file picked in the tree, shown alone. Closing the tree brings every file back.
+  const [treePick, setTreePick] = useState<{
+    scopeKey: string | null;
+    revealRequestId: number;
+    path: string;
+  } | null>(null);
   const [baseRefQuery, setBaseRefQuery] = useState("");
   const [collapsedDiffFiles, setCollapsedDiffFiles] = useState<CollapsedDiffFilesState>(() => ({
     scopeKey: null,
@@ -522,15 +536,39 @@ export default function DiffPanel({
     collapsedDiffFiles.scopeKey === collapseScopeKey
       ? collapsedDiffFiles.fileKeys
       : defaultCollapsedDiffFileKeys;
+  const fileTreeEntries = useMemo(() => diffFileTreeEntries(renderableFiles), [renderableFiles]);
+  // While the tree is open the diff shows one file. A reveal from outside the panel outranks the
+  // reader's earlier pick, and a scope holding neither falls back to the tree's first file.
+  const focusedPath = useMemo(() => {
+    if (!fileTreeOpen) return null;
+    const picked =
+      treePick?.scopeKey === collapseScopeKey &&
+      treePick.revealRequestId === selectedFileRevealRequestId
+        ? treePick.path
+        : null;
+    const treePaths = new Set(fileTreeEntries.map((entry) => entry.path));
+    return (
+      [picked, selectedFilePath, fileTreeEntries[0]?.path].find(
+        (path): path is string => path != null && treePaths.has(path),
+      ) ?? null
+    );
+  }, [
+    collapseScopeKey,
+    fileTreeEntries,
+    fileTreeOpen,
+    selectedFilePath,
+    selectedFileRevealRequestId,
+    treePick,
+  ]);
   const renderLoadingBoundary = useCallback(
     () =>
-      settledFileCount < renderableFiles.length ? (
+      focusedPath === null && settledFileCount < renderableFiles.length ? (
         <DiffFileLoadingBoundary
           load={loadNextFiles}
           count={renderableFiles.length - settledFileCount}
         />
       ) : null,
-    [settledFileCount, renderableFiles.length, loadNextFiles],
+    [focusedPath, settledFileCount, renderableFiles.length, loadNextFiles],
   );
   const codeViewFiles = useMemo(
     () =>
@@ -550,6 +588,13 @@ export default function DiffPanel({
         }),
     [collapsedDiffFileKeys, renderableFileEntries, lazySource, readyFilePaths],
   );
+  const visibleCodeViewFiles = useMemo(
+    () =>
+      focusedPath === null
+        ? codeViewFiles
+        : codeViewFiles.filter((file) => file.filePath === focusedPath),
+    [codeViewFiles, focusedPath],
+  );
   const diffFileKeys = useMemo(
     () => renderableFileEntries.map((file) => file.fileKey),
     [renderableFileEntries],
@@ -567,7 +612,6 @@ export default function DiffPanel({
     }
     return getDiffLineStat(renderableFiles);
   }, [renderableFiles, selectedGitSource, selectedTurn]);
-  const fileTreeEntries = useMemo(() => diffFileTreeEntries(renderableFiles), [renderableFiles]);
   const selectedDiffFileKey = selectedFilePath
     ? (codeViewFiles.find((candidate) => candidate.filePath === selectedFilePath)?.fileKey ?? null)
     : null;
@@ -584,7 +628,7 @@ export default function DiffPanel({
   const requestTreeReveal = useCodeViewFileReveal(
     codeView,
     treeRevealScope,
-    codeViewFiles.map((file) => file.fileKey),
+    visibleCodeViewFiles.map((file) => file.fileKey),
   );
   const revealDiffFile = useCallback(
     (filePath: string) => {
@@ -593,6 +637,11 @@ export default function DiffPanel({
       );
       const file = renderableFileEntries[index];
       if (!file) return;
+      setTreePick({
+        scopeKey: collapseScopeKey,
+        revealRequestId: selectedFileRevealRequestId,
+        path: filePath,
+      });
       setCollapsedDiffFiles((current) => {
         const next = new Set(
           current.scopeKey === collapseScopeKey ? current.fileKeys : defaultCollapsedDiffFileKeys,
@@ -608,6 +657,7 @@ export default function DiffPanel({
     [
       renderableFileEntries,
       collapseScopeKey,
+      selectedFileRevealRequestId,
       defaultCollapsedDiffFileKeys,
       requestTreeReveal,
       lazySource,
@@ -687,6 +737,29 @@ export default function DiffPanel({
       return { scopeKey: collapseScopeKey, fileKeys: next };
     });
   }, []);
+  // A file shown alone has to be readable, whichever way it got picked.
+  const focusedFileKey =
+    focusedPath === null
+      ? null
+      : (renderableFileEntries.find((file) => resolveFileDiffPath(file.fileDiff) === focusedPath)
+          ?.fileKey ?? null);
+  useEffect(() => {
+    if (focusedFileKey) unfoldDiffFile(focusedFileKey);
+  }, [focusedFileKey, unfoldDiffFile]);
+  const setFileTreeShown = (open: boolean) => {
+    if (open) {
+      // Open onto the file the reader is looking at, or the tree's first file.
+      const fileInViewKey = firstExpandedFileInView(codeView?.getInstance(), codeViewFiles);
+      const path =
+        codeViewFiles.find((file) => file.fileKey === fileInViewKey)?.filePath ??
+        fileTreeEntries[0]?.path;
+      if (path) revealDiffFile(path);
+    } else if (focusedFileKey) {
+      // Every file comes back; keep the one the reader had open in view.
+      requestTreeReveal(focusedFileKey);
+    }
+    setFileTreeOpen(open);
+  };
 
   const toggleDiffFileCollapse = useCallback(() => {
     setCodeViewRevision((current) => current + 1);
@@ -747,7 +820,7 @@ export default function DiffPanel({
                   variant="ghost"
                   size="sm"
                   pressed={fileTreeOpen}
-                  onPressedChange={(pressed) => setFileTreeOpen(Boolean(pressed))}
+                  onPressedChange={(pressed) => setFileTreeShown(Boolean(pressed))}
                 />
               }
             >
@@ -1098,7 +1171,12 @@ export default function DiffPanel({
                 </div>
               )
             ) : lazySource || renderablePatch?.kind === "files" ? (
-              <div className="flex min-h-0 flex-1 overflow-hidden">
+              <div
+                className={cn(
+                  "flex min-h-0 flex-1 overflow-hidden",
+                  fileTreeOpen && fileTreeLayout === "vertical" && "flex-col",
+                )}
+              >
                 <div
                   className="min-h-0 min-w-0 flex-1"
                   onClickCapture={(event) => {
@@ -1157,7 +1235,7 @@ export default function DiffPanel({
                     viewerRef={setCodeView}
                     codeViewKey={`${codeViewMountKey}:${lazySource ? filePatchScope : "preview"}`}
                     className="h-full min-h-0 overflow-auto"
-                    files={codeViewFiles}
+                    files={visibleCodeViewFiles}
                     renderCodeViewFooter={renderLoadingBoundary}
                     sectionId={reviewSectionId}
                     sectionTitle={reviewSectionTitle}
@@ -1217,15 +1295,27 @@ export default function DiffPanel({
                   />
                 </div>
                 {fileTreeOpen ? (
-                  <aside className="order-first flex w-[min(16rem,40%)] min-w-40 shrink-0 border-r border-border/60">
+                  <DiffFileTreePane
+                    className="order-first"
+                    layout={fileTreeLayout}
+                    storageKey={DIFF_FILE_TREE_SIZE_STORAGE_KEY}
+                    defaultWidth={256}
+                    minWidth={192}
+                  >
                     <DiffFileTree
                       ariaLabel={`${reviewSectionTitle} files`}
                       entries={fileTreeEntries}
-                      selectedPath={selectedFilePath}
+                      selectedPath={focusedPath}
                       revealRequestId={selectedFileRevealRequestId}
                       onSelectFile={revealDiffFile}
+                      headerAccessory={
+                        <DiffFileTreeLayoutToggle
+                          layout={fileTreeLayout}
+                          onLayoutChange={setFileTreeLayout}
+                        />
+                      }
                     />
-                  </aside>
+                  </DiffFileTreePane>
                 ) : null}
               </div>
             ) : (

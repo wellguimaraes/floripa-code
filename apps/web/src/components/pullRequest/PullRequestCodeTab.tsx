@@ -61,6 +61,12 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { DiffPanelLoadingState } from "../DiffPanelShell";
 import { DiffCommentAnnotation } from "../diffs/DiffCommentAnnotation";
 import { DiffFileTree } from "../diffs/DiffFileTree";
+import {
+  DiffFileTreeLayoutToggle,
+  DiffFileTreePane,
+  useDiffFileTreeLayout,
+} from "../diffs/DiffFileTreePane";
+import { firstExpandedFileInView } from "../diffs/firstExpandedFileInView";
 import { useCodeViewFileReveal } from "../diffs/useCodeViewFileReveal";
 import { diffFileTreeEntries } from "../diffs/diffFileTree.logic";
 import { StyledDiffCodeView } from "../diffs/StyledDiffCodeView";
@@ -111,6 +117,7 @@ type ReviewAnnotation = DiffLineAnnotation<ReviewAnnotationGroup>;
 const COMMIT_PAGE_SIZE = 10;
 
 const PULL_REQUEST_FILE_TREE_STORAGE_KEY = "floripacode.pullRequestFileTreeOpen";
+const PULL_REQUEST_FILE_TREE_SIZE_STORAGE_KEY = "floripacode.pullRequestFileTree";
 
 /** One answer from the host: a whole number of files, and where the next one carries on. */
 interface DiffSlice {
@@ -243,6 +250,7 @@ function PullRequestCodeTab({
     false,
     Schema.Boolean,
   );
+  const [fileTreeLayout, setFileTreeLayout] = useDiffFileTreeLayout();
   // The file picked in the tree, shown alone. Closing the tree brings every file back.
   const [focusedPath, setFocusedPath] = useState<string | null>(null);
   const [selectedLines, setSelectedLines] = useState<{
@@ -620,18 +628,22 @@ function PullRequestCodeTab({
     [parsedSlices],
   );
   const fileKeys = useMemo(() => items.map((item) => item.id), [items]);
-  // A scope without the picked file (another commit, say) shows everything rather than nothing.
+  const fileTreeEntries = useMemo(() => diffFileTreeEntries(files), [files]);
+  // A scope without the picked file (another commit, say) shows the tree's first file instead.
   const focusedItems = useMemo(() => {
-    if (!fileTreeOpen || focusedPath === null) return null;
-    const matching = items.filter((item) => resolveFileDiffPath(item.fileDiff) === focusedPath);
+    if (!fileTreeOpen) return null;
+    const matchingPath = (path: string | null | undefined) =>
+      items.filter((item) => resolveFileDiffPath(item.fileDiff) === path);
+    const picked = matchingPath(focusedPath);
+    const matching = picked.length > 0 ? picked : matchingPath(fileTreeEntries[0]?.path);
     return matching.length > 0 ? matching : null;
-  }, [fileTreeOpen, focusedPath, items]);
+  }, [fileTreeEntries, fileTreeOpen, focusedPath, items]);
+  const shownPath = focusedItems?.[0] ? resolveFileDiffPath(focusedItems[0].fileDiff) : null;
   const collapsedFileKeys = useMemo(
     () => new Set(items.filter((item) => item.collapsed === true).map((item) => item.id)),
     [items],
   );
   const allFilesCollapsed = areAllDiffFilesCollapsed(fileKeys, collapsedFileKeys);
-  const fileTreeEntries = useMemo(() => diffFileTreeEntries(files), [files]);
 
   // A failed slice must not be asked for again on its own. The files already loaded keep the
   // sentinel on screen, so re-arming it after a failure would request the same slice forever.
@@ -701,6 +713,32 @@ function PullRequestCodeTab({
     },
     [items, requestTreeReveal, toggleFile],
   );
+  // A file shown alone has to be readable, including the fallback nobody picked.
+  const unfoldedFocusRef = useRef<string | null>(null);
+  const focusedItem = focusedItems?.[0];
+  useEffect(() => {
+    if (focusedItem === undefined || unfoldedFocusRef.current === focusedItem.id) return;
+    unfoldedFocusRef.current = focusedItem.id;
+    if (focusedItem.collapsed === true) toggleFile(focusedItem.id);
+  }, [focusedItem, toggleFile]);
+  const setFileTreeShown = (open: boolean) => {
+    if (open) {
+      // Open onto the file the reader is looking at, or the tree's first file.
+      const fileInViewKey = firstExpandedFileInView(
+        viewer?.getInstance(),
+        items.map((item) => ({ fileKey: item.id, collapsed: item.collapsed === true })),
+      );
+      const fileInView = items.find((item) => item.id === fileInViewKey);
+      const path = fileInView ? resolveFileDiffPath(fileInView.fileDiff) : fileTreeEntries[0]?.path;
+      if (path) revealFile(path);
+    } else {
+      // Every file comes back; keep the one the reader had open in view.
+      if (focusedItem) requestTreeReveal(focusedItem.id);
+      setFocusedPath(null);
+      unfoldedFocusRef.current = null;
+    }
+    setFileTreeOpen(open);
+  };
 
   const toggleAllFiles = () => {
     // Held as an override of the default rather than as the file keys on screen: a diff that is
@@ -1109,10 +1147,7 @@ function PullRequestCodeTab({
                   variant="ghost"
                   size="sm"
                   pressed={fileTreeOpen}
-                  onPressedChange={(pressed) => {
-                    setFileTreeOpen(Boolean(pressed));
-                    if (!pressed) setFocusedPath(null);
-                  }}
+                  onPressedChange={(pressed) => setFileTreeShown(Boolean(pressed))}
                 />
               }
             >
@@ -1545,14 +1580,30 @@ function PullRequestCodeTab({
           </Collapsible>
         </div>
       ) : null}
-      <div className="flex min-h-0 flex-1 overflow-hidden">
+      <div
+        className={cn(
+          "flex min-h-0 flex-1 overflow-hidden",
+          fileTreeOpen && fileTreeLayout === "vertical" && "flex-col",
+        )}
+      >
         {fileTreeOpen ? (
-          <aside className="flex w-[min(20rem,40%)] min-w-48 shrink-0 border-r border-border/60">
+          <DiffFileTreePane
+            layout={fileTreeLayout}
+            storageKey={PULL_REQUEST_FILE_TREE_SIZE_STORAGE_KEY}
+            defaultWidth={320}
+            minWidth={192}
+          >
             <DiffFileTree
               ariaLabel={`Pull request #${detail.number} files`}
               entries={fileTreeEntries}
               onSelectFile={revealFile}
-              selectedPath={focusedItems === null ? null : focusedPath}
+              selectedPath={shownPath}
+              headerAccessory={
+                <DiffFileTreeLayoutToggle
+                  layout={fileTreeLayout}
+                  onLayoutChange={setFileTreeLayout}
+                />
+              }
               // The tree lists only what has arrived; a footer says so while the diff is still
               // paging, and lets the reader pull the rest in without scrolling for it.
               footer={
@@ -1576,7 +1627,7 @@ function PullRequestCodeTab({
                 )
               }
             />
-          </aside>
+          </DiffFileTreePane>
         ) : null}
         {/* Relative wrapper so the review overlay floats over the diff rather than pushing it
             up; the viewer inside still owns its own scrolling. */}
