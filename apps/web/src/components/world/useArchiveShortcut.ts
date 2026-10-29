@@ -44,7 +44,7 @@ export async function confirmArchive(anchor: Element | null): Promise<boolean> {
   if (isConfirmDialogActive()) return false;
   return (
     (await requestConfirmDialog(
-      "Archive this thread?\nYou can restore it from Settings → Archived.",
+      "Archive this thread?\nYou can restore it by clicking the island billboard and choosing Restore archived agent…, or from Settings → Archived.",
       { anchor },
     )) ??
     // No themed host is mounted; fall back to the native prompt rather than archiving unasked.

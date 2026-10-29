@@ -61,6 +61,7 @@ import { EMPTY_BEAT_GATE, gateBeats } from "./engine/beats";
 import {
   ageReplies,
   buildCharacterFacts,
+  collapseSubagents,
   type CharacterFacts,
   isResting,
   islandIdleSeconds,
@@ -116,7 +117,7 @@ import { IslandPullRequestDialog } from "./IslandPullRequestDialog";
 import { IslandPullRequestsPopover } from "./IslandPullRequestsPopover";
 import type { IslandPullRequestAgent, IslandPullRequestRow } from "./islandPullRequests";
 import { useCreateIdleWorldThread } from "./useStartWorldAgent";
-import { canChangeIslandIcon, IslandIconPicker, useSetIslandIcon } from "./IslandIconPicker";
+import { canOperateIsland } from "./islandAccess";
 import { IslandPrefsDialog } from "./IslandPrefsDialog";
 import { useRemoveIsland } from "./useRemoveIsland";
 import { IslandRunScriptDialog } from "./IslandRunScriptDialog";
@@ -232,6 +233,8 @@ export default function WorldCanvas(props: {
     () => facts.map((f) => ({ ...f, projectKey: islandOf.get(f.projectKey) ?? f.projectKey })),
     [facts, islandOf],
   );
+  // One smaller figure per agent stands for all of its subagents.
+  const collapsed = useMemo(() => collapseSubagents(islandFacts), [islandFacts]);
   // Archived characters leave by saucer: the real one is hidden at once and
   // a stand-in of it is beamed up from where it stood. New agents started here
   // arrive the same way, hidden until their stand-in has landed on their pile.
@@ -313,12 +316,12 @@ export default function WorldCanvas(props: {
   const visibleFacts = useMemo(() => {
     // Archived agents still hold their spots while archiving and under the beam,
     // so the beach only closes ranks once the saucer has flown off with them.
-    const live = new Set(islandFacts.map((f) => f.key));
+    const live = new Set(collapsed.facts.map((f) => f.key));
     const held = [...archiving, ...abductions.flatMap((a) => a.held ?? [])].filter(
       (f) => !live.has(f.key),
     );
-    return [...islandFacts, ...held].filter((f) => !laidOut[f.projectKey]);
-  }, [islandFacts, archiving, abductions, laidOut]);
+    return [...collapsed.facts, ...held].filter((f) => !laidOut[f.projectKey]);
+  }, [collapsed, archiving, abductions, laidOut]);
   const visibleMembers = useMemo(
     () => new Map(visibleOrder.map((key) => [key, projectMembers.get(key) ?? []])),
     [visibleOrder, projectMembers],
@@ -698,32 +701,41 @@ export default function WorldCanvas(props: {
   const panBy = useRef<((dx: number, dy: number) => void) | null>(null);
   const { archiveThread } = useThreadActions();
   // Archive, not delete: each can be undone from its toast or Settings → Archived.
-  const archiveAll = async (characters: ReadonlyArray<WorldCharacter>) => {
+  const archiveAll = async (
+    characters: ReadonlyArray<WorldCharacter>,
+    /** Subagents the world draws as one figure. They leave with it, without a figure of their own. */
+    extras: ReadonlyArray<CharacterFacts> = [],
+  ) => {
     setPicked(new Set());
     setBubbleKey(null);
-    const keys = new Set(characters.map((character) => character.facts.key));
+    const facts = [...characters.map((character) => character.facts), ...extras];
+    const keys = new Set(facts.map((fact) => fact.key));
     // The open chat closes when its agent is archived, maybe before the archive call
     // returns; the map stays where it is rather than going back to its view before the chat.
     if (selectedKey !== null && keys.has(selectedKey)) holdViewOnClose.current?.();
+    // Only the drawn characters keep their spots. The hidden subagents were never placed.
     setArchiving((all) => [...all, ...characters.map((character) => character.facts)]);
     const results = await Promise.all(
-      characters.map(async (character) => ({
-        character,
-        result: await archiveThread(character.facts.ref),
+      facts.map(async (fact) => ({
+        fact,
+        result: await archiveThread(fact.ref),
       })),
     );
-    const archived = results.filter((r) => r.result._tag === "Success").map((r) => r.character);
+    const archivedKeys = new Set(
+      results.flatMap(({ fact, result }) => (result._tag === "Success" ? [fact.key] : [])),
+    );
+    const archived = characters.filter((character) => archivedKeys.has(character.facts.key));
     try {
       // The open chat of an archived agent closes first, so its saucer is seen leaving.
-      if (archived.some((character) => character.facts.key === selectedKey)) {
+      if (selectedKey !== null && archivedKeys.has(selectedKey)) {
         await onCollapse();
       }
       abduct(archived);
     } finally {
       setArchiving((all) => all.filter((f) => !keys.has(f.key)));
     }
-    const failed = results.flatMap(({ character, result }) =>
-      result._tag === "Failure" ? [{ character, error: squashAtomCommandFailure(result) }] : [],
+    const failed = results.flatMap(({ fact, result }) =>
+      result._tag === "Failure" ? [{ fact, error: squashAtomCommandFailure(result) }] : [],
     );
     const first = failed[0];
     if (first !== undefined) {
@@ -731,7 +743,7 @@ export default function WorldCanvas(props: {
         type: "error",
         title:
           failed.length === 1
-            ? `Could not archive "${first.character.facts.title || "Untitled thread"}"`
+            ? `Could not archive "${first.fact.title || "Untitled thread"}"`
             : `Could not archive ${failed.length} agents`,
         description:
           first.error instanceof Error && first.error.message !== ""
@@ -794,37 +806,6 @@ export default function WorldCanvas(props: {
   };
   // The island whose preferences are open.
   const [prefsOn, setPrefsOn] = useState<string | null>(null);
-  const [iconPicking, setIconPicking] = useState<{
-    readonly key: string;
-    readonly picker: "icon" | "file";
-  } | null>(null);
-  const setIslandIcon = useSetIslandIcon();
-  const showIconMenu = async (key: string, point: { x: number; y: number }) => {
-    const api = readLocalApi();
-    const checkouts = projectCheckouts.get(key) ?? [];
-    if (api === undefined || checkouts.length === 0) return;
-    const disabled = !canChangeIslandIcon(checkouts);
-    const clicked = await api.contextMenu.show(
-      [
-        { id: "detect", label: "Detect automatically", disabled },
-        { id: "icon", label: "Choose icon…", disabled, separatorBefore: true },
-        { id: "file", label: "Choose image file…", disabled },
-      ],
-      awayFromPointer(point),
-    );
-    if (clicked === "detect")
-      void setIslandIcon(checkouts, { faviconPath: null, projectIcon: null });
-    else if (clicked === "icon" || clicked === "file") setIconPicking({ key, picker: clicked });
-  };
-  // A click goes straight to the icon picker; automatic detection and image files stay on the
-  // right-click menu. Without permission the menu shows its choices turned off instead.
-  const openIconPicker = (key: string, point: { x: number; y: number }) => {
-    if (!canChangeIslandIcon(projectCheckouts.get(key) ?? [])) {
-      void showIconMenu(key, point);
-      return;
-    }
-    setIconPicking({ key, picker: "icon" });
-  };
   const removeIsland = useRemoveIsland();
   // The agent an island's "Run script" runs in; its chat opens only once a script runs.
   const [scriptAgent, setScriptAgent] = useState<ScopedThreadRef | null>(null);
@@ -902,7 +883,7 @@ export default function WorldCanvas(props: {
           id: "remove",
           label: "Remove project…",
           icon: "trash",
-          disabled: !canChangeIslandIcon(checkouts),
+          disabled: !canOperateIsland(checkouts),
         },
       ],
       awayFromPointer(point),
@@ -1055,17 +1036,16 @@ export default function WorldCanvas(props: {
     const others = neighbours.filter(
       (c) => c.facts.key !== character.facts.key && !c.facts.kid && !abducted.has(c.facts.key),
     );
-    // Its subagents and theirs, which all live on its island, not ones already leaving.
-    const parentOf = new Map(neighbours.map((c) => [c.facts.key, c.facts.parentKey]));
-    const descends = (c: WorldCharacter) => {
-      let parent = c.facts.parentKey;
-      for (let depth = 0; depth < 32 && parent !== null; depth += 1) {
-        if (parent === character.facts.key) return true;
-        parent = parentOf.get(parent) ?? null;
-      }
-      return false;
-    };
-    const subagents = neighbours.filter((c) => !abducted.has(c.facts.key) && descends(c));
+    // Every subagent of this agent, including the ones drawn as its single figure.
+    const members = (collapsed.subagentsOf.get(character.facts.key) ?? []).filter(
+      (fact) => !abducted.has(fact.key),
+    );
+    const visibleSubagents = neighbours.filter((c) =>
+      members.some((fact) => fact.key === c.facts.key),
+    );
+    const hiddenSubagents = members.filter(
+      (fact) => !visibleSubagents.some((c) => c.facts.key === fact.key),
+    );
     // The camera looks from +x+z and never turns, so x - z grows to the right of the screen.
     const screenX = (c: WorldCharacter) => c.placement.position[0] - c.placement.position[2];
     const toTheLeft = others.filter((c) => screenX(c) < screenX(character));
@@ -1102,9 +1082,9 @@ export default function WorldCanvas(props: {
         { id: "archive", label: "Archive", icon: "archive" },
         {
           id: "archive-subagents",
-          label: `Archive subagents (${subagents.length})`,
+          label: `Archive subagents (${members.length})`,
           icon: "archive",
-          disabled: subagents.length === 0,
+          disabled: members.length === 0,
         },
         {
           id: "archive-others",
@@ -1124,7 +1104,7 @@ export default function WorldCanvas(props: {
     if (clicked === "open") openChat(character);
     else if (clicked === "stop") void stopAll([character]);
     else if (clicked === "archive") void archiveAll([character]);
-    else if (clicked === "archive-subagents") void archiveAll(subagents);
+    else if (clicked === "archive-subagents") void archiveAll(visibleSubagents, hiddenSubagents);
     else if (clicked === "archive-others") void archiveAll(others);
     else if (clicked === "archive-left") void archiveAll(toTheLeft);
     else if (clicked === "regenerate-title") void regenerateTitle(character);
@@ -1176,10 +1156,14 @@ export default function WorldCanvas(props: {
     setArchiveChatAgent(() => archiveChat.current());
     return () => setArchiveChatAgent(null);
   }, [archiveChat, chatCharacterKey]);
-  // Subagents tag only under the pointer, so they don't crowd their parent's tag.
+  // A lone subagent tags only under the pointer, so it doesn't crowd its agent.
+  // The one figure that stands for several shows its count with the other titles.
   const tagged = [
     ...(islands.find((island) => island.key === hoveredIsland)?.characters ?? []).filter(
-      (character) => !character.facts.kid || character.facts.key === hoveredKey,
+      (character) =>
+        !character.facts.kid ||
+        character.facts.subagentCount > 1 ||
+        character.facts.key === hoveredKey,
     ),
     ...(chatCharacter !== undefined && chatCharacter.facts.projectKey !== hoveredIsland
       ? [chatCharacter]
@@ -1195,17 +1179,19 @@ export default function WorldCanvas(props: {
   const newAgentDraft = useNewAgentDraftStore((state) =>
     newAgent === null ? null : (state.drafts[newAgent.islandKey] ?? null),
   );
-  // None while a saucer is over the island: the buttons draw above the canvas, saucer included.
+  // A saucer over the island hides the manager's tag, but never the new-agent buttons: the
+  // buttons draw over the canvas, so they cover part of the ship briefly, and hiding them
+  // meant nobody could start an agent for the whole animation.
   const hoveredLeaving = hoveredIsland !== null && leaving.has(hoveredIsland);
   const newAgentSpots = useMemo(() => {
     const island = islands.find((i) => i.key === hoveredIsland);
-    if (island === undefined || hoveredLeaving) return [];
+    if (island === undefined) return [];
     return freePiles(island, definition).map((pile) => ({
       key: `${island.key}#${pile.slotIndex}`,
       islandKey: island.key,
       ...pile,
     }));
-  }, [definition, islands, hoveredIsland, hoveredLeaving]);
+  }, [definition, islands, hoveredIsland]);
   // The new-thread shortcut asks for an island, then opens the bubble at its
   // first free pile and brings that into view.
   const pickingProject = useWorldModeStore((state) => state.pickingProject);
@@ -1596,14 +1582,19 @@ export default function WorldCanvas(props: {
                         closeManager();
                         setPullRequestsOn({ key: island.key, point });
                       }}
+                      onBoardClick={(point) => {
+                        // The sign is on the canvas, so it is not a press outside the bubbles.
+                        setBubbleKey(null);
+                        setNewAgent(null);
+                        closeManager();
+                        void showIslandMenu(island.key, point);
+                      }}
                       onPrefsClick={() => {
                         setBubbleKey(null);
                         setNewAgent(null);
                         closeManager();
                         setPrefsOn(island.key);
                       }}
-                      onIconClick={(point) => openIconPicker(island.key, point)}
-                      onIconMenu={(point) => void showIconMenu(island.key, point)}
                       ref={(sign) => {
                         if (sign === null) signs.current.delete(island.key);
                         else signs.current.set(island.key, sign);
@@ -1913,20 +1904,10 @@ export default function WorldCanvas(props: {
           onClose={() => setRestoringOn(null)}
         />
       ) : null}
-      {iconPicking !== null && (projectCheckouts.get(iconPicking.key)?.length ?? 0) > 0 ? (
-        <IslandIconPicker
-          checkouts={projectCheckouts.get(iconPicking.key)!}
-          projectName={projectTitles.get(iconPicking.key) ?? "Project"}
-          picker={iconPicking.picker}
-          onSelect={(icon) => void setIslandIcon(projectCheckouts.get(iconPicking.key)!, icon)}
-          onClose={() => setIconPicking(null)}
-        />
-      ) : null}
       {prefsOn !== null ? (
         <IslandPrefsDialog
           islandKey={prefsOn}
           title={projectTitles.get(prefsOn) ?? "Project"}
-          checkouts={projectCheckouts.get(prefsOn) ?? []}
           onClose={() => setPrefsOn(null)}
         />
       ) : null}
@@ -1996,7 +1977,7 @@ export default function WorldCanvas(props: {
                   key,
                   title: projectTitles.get(key) ?? "Project",
                   color: islandPlate(key, islandPrefs[key]),
-                  removable: canChangeIslandIcon(projectCheckouts.get(key) ?? []),
+                  removable: canOperateIsland(projectCheckouts.get(key) ?? []),
                 }))}
                 onRemove={(key) =>
                   void removeIsland(
@@ -2085,7 +2066,9 @@ function CharacterTag(props: {
   readonly onContextMenu: (event: React.MouseEvent) => void;
 }) {
   const { facts, focused, chatting, ...handlers } = props;
-  const resting = isResting(facts);
+  // The count stands for several subagents, so it does not age like one reply.
+  const crowd = facts.subagentCount > 1;
+  const resting = isResting(facts) && !crowd;
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
     if (!resting) return;
@@ -2119,7 +2102,12 @@ function CharacterTag(props: {
             className={cn("shrink-0 opacity-70", chatting ? "size-3.5" : "size-2.5")}
           />
         ) : null}
-        <span className="truncate">{facts.title || "Untitled thread"}</span>
+        <span
+          className={cn("truncate", crowd && "font-semibold tabular-nums")}
+          aria-label={crowd ? `${facts.subagentCount} subagents` : undefined}
+        >
+          {crowd ? `×${facts.subagentCount}` : facts.title || "Untitled thread"}
+        </span>
       </span>
       {elapsed !== "" ? (
         // Red for a reply in the last 5 minutes, amber within the hour, green within 12 hours, gray after.

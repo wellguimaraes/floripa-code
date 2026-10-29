@@ -91,6 +91,7 @@ const character = (overrides: Partial<CharacterFacts> = {}): CharacterFacts => {
     hasWorkingKids: false,
     parentBusy: false,
     backgroundTask: false,
+    subagentCount: 1,
     beat: 0,
     quiet: false,
     provider: "codex",

@@ -83,7 +83,8 @@ interface Badge {
  * standing at the definition's sign slot. The project's icon leads the name;
  * after it, counts of the
  * island's local branches (the default one aside) and the open PRs from
- * those branches, then a button for the island's preferences.
+ * those branches, then a button for the island's preferences. Clicking the
+ * board itself opens the island's menu; its icon changes in Settings only.
  */
 export function Sign(props: {
   readonly slot: WorldSlot;
@@ -97,10 +98,8 @@ export function Sign(props: {
   readonly onListClick: (point: { readonly x: number; readonly y: number }) => void;
   /** Clicking the PR count, at this point on screen, e.g. to list the PRs. */
   readonly onPullRequestsClick: (point: { readonly x: number; readonly y: number }) => void;
-  /** Clicking the project's icon, at this point on screen, e.g. to change it. */
-  readonly onIconClick: (point: { readonly x: number; readonly y: number }) => void;
-  /** Right-clicking the project's icon, for every way to change it. */
-  readonly onIconMenu: (point: { readonly x: number; readonly y: number }) => void;
+  /** Clicking the board anywhere but a count or the preferences button, e.g. for the island's menu. */
+  readonly onBoardClick: (point: { readonly x: number; readonly y: number }) => void;
   /** Clicking the preferences button. */
   readonly onPrefsClick: () => void;
   /** The sign's root, for `signCorners`. */
@@ -115,8 +114,7 @@ export function Sign(props: {
     pullRequests,
     onListClick,
     onPullRequestsClick,
-    onIconClick,
-    onIconMenu,
+    onBoardClick,
     onPrefsClick,
     ref,
   } = props;
@@ -133,16 +131,16 @@ export function Sign(props: {
     [text, color, icon, branches, pullRequests],
   );
   useEffect(() => () => board.texture.dispose(), [board]);
-  // The icon, both counts and the preferences button take clicks; the rest of the board doesn't.
+  // The two counts and the preferences button take clicks; the rest of the board opens
+  // the island's menu, as clicking its ground does.
   const target = (event: ThreeEvent<PointerEvent | MouseEvent>) => {
     const x = (event.uv?.x ?? -1) * board.pixelWidth;
     const within = (span: { readonly left: number; readonly right: number } | undefined) =>
       span !== undefined && x >= span.left && x <= span.right;
-    if (within(board.icon)) return "icon";
     if (within(board.badges[0])) return "list";
     if (within(board.badges[1])) return "pullRequests";
     if (within(board.prefs)) return "prefs";
-    return null;
+    return "board";
   };
   const width = board.width;
   const lampTarget = useMemo(() => new Object3D(), []);
@@ -185,22 +183,15 @@ export function Sign(props: {
 
           onClick={(event) => {
             const clicked = target(event);
-            if (clicked === null) return;
             event.stopPropagation();
             const point = { x: event.nativeEvent.clientX, y: event.nativeEvent.clientY };
-            if (clicked === "icon") onIconClick(point);
-            else if (clicked === "prefs") onPrefsClick();
+            if (clicked === "prefs") onPrefsClick();
             else if (clicked === "pullRequests") onPullRequestsClick(point);
-            else onListClick(point);
+            else if (clicked === "list") onListClick(point);
+            else onBoardClick(point);
           }}
-          onContextMenu={(event) => {
-            if (target(event) !== "icon") return;
-            event.stopPropagation();
-            event.nativeEvent.preventDefault();
-            onIconMenu({ x: event.nativeEvent.clientX, y: event.nativeEvent.clientY });
-          }}
-          onPointerMove={(event) => {
-            document.body.style.cursor = target(event) === null ? "" : "pointer";
+          onPointerMove={() => {
+            document.body.style.cursor = "pointer";
           }}
           onPointerOut={() => {
             document.body.style.cursor = "";
@@ -257,9 +248,8 @@ function signBoard(
 ): {
   readonly texture: CanvasTexture;
   readonly width: number;
-  /** The canvas's width, and the icon's and each badge's span across it, in pixels. */
+  /** The canvas's width, and each badge's span across it, in pixels. */
   readonly pixelWidth: number;
-  readonly icon: { readonly left: number; readonly right: number };
   readonly badges: ReadonlyArray<{ readonly left: number; readonly right: number }>;
   readonly prefs: { readonly left: number; readonly right: number };
 } {
@@ -429,7 +419,6 @@ function signBoard(
     texture,
     width,
     pixelWidth: canvas.width,
-    icon: { left: padding, right: padding + pillHeight },
     badges: spans,
     prefs,
   };

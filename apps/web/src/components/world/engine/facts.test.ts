@@ -2,7 +2,13 @@ import { ProjectId, ProviderInstanceId, RunId, ThreadId } from "@t3tools/contrac
 import { describe, expect, it } from "vite-plus/test";
 
 import { makeThreadFixture, type ThreadFixtureOverrides } from "../../../test-fixtures";
-import { ageReplies, buildCharacterFacts, islandIdleSeconds } from "./facts";
+import {
+  ageReplies,
+  buildCharacterFacts,
+  collapseSubagents,
+  type CharacterFacts,
+  islandIdleSeconds,
+} from "./facts";
 
 const running = {
   status: "running" as const,
@@ -155,6 +161,126 @@ describe("buildCharacterFacts", () => {
       2,
     );
     expect(facts.map((f) => f.ref.threadId)).toEqual(["new", "mid"]);
+  });
+});
+
+describe("collapseSubagents", () => {
+  const base = build([thread("template")])[0]!;
+  const fact = (key: string, overrides: Partial<CharacterFacts> = {}): CharacterFacts => ({
+    ...base,
+    key,
+    title: key,
+    ref: { ...base.ref, threadId: ThreadId.make(key) },
+    ...overrides,
+  });
+
+  it("draws one figure for an agent's subagents and counts them", () => {
+    const parent = fact("parent");
+    const kids = ["a", "b", "c", "d"].map((id, index) =>
+      fact(id, {
+        kid: true,
+        parentKey: parent.key,
+        lastReplyAt: `2026-01-0${index + 1}T00:00:00.000Z`,
+      }),
+    );
+    const { facts, subagentsOf } = collapseSubagents([
+      kids[0]!,
+      parent,
+      kids[2]!,
+      kids[1]!,
+      kids[3]!,
+    ]);
+    const figure = facts.find((item) => item.kid);
+    expect(facts.filter((item) => !item.kid).map((item) => item.key)).toEqual([parent.key]);
+    expect(figure).toMatchObject({
+      key: "d",
+      parentKey: parent.key,
+      subagentCount: 4,
+    });
+    expect(
+      subagentsOf
+        .get(parent.key)
+        ?.map((item) => item.key)
+        .toSorted(),
+    ).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("lets the subagent that needs you stand for the others", () => {
+    const parent = fact("parent", { status: "working" });
+    const working = fact("working", {
+      kid: true,
+      parentKey: parent.key,
+      status: "working",
+      lastReplyAt: "2026-01-03T00:00:00.000Z",
+    });
+    const asking = fact("asking", {
+      kid: true,
+      parentKey: parent.key,
+      status: "approval",
+      lastReplyAt: "2026-01-01T00:00:00.000Z",
+    });
+    const { facts } = collapseSubagents([parent, working, asking]);
+    expect(facts.find((item) => item.kid)).toMatchObject({
+      key: "asking",
+      status: "approval",
+      subagentCount: 2,
+      parentBusy: true,
+    });
+  });
+
+  it("counts a nested subagent on the agent and stands the figure next to it", () => {
+    const parent = fact("parent");
+    const kid = fact("kid", { kid: true, parentKey: parent.key, status: "ready" });
+    const grandkid = fact("grandkid", {
+      kid: true,
+      parentKey: kid.key,
+      status: "working",
+      lastReplyAt: "2026-01-02T00:00:00.000Z",
+    });
+    const { facts, subagentsOf } = collapseSubagents([parent, kid, grandkid]);
+    expect(facts.find((item) => item.key === parent.key)?.hasWorkingKids).toBe(true);
+    expect(facts.find((item) => item.kid)).toMatchObject({
+      key: "grandkid",
+      parentKey: parent.key,
+      subagentCount: 2,
+    });
+    expect(
+      subagentsOf
+        .get(parent.key)
+        ?.map((item) => item.key)
+        .toSorted(),
+    ).toEqual(["grandkid", "kid"]);
+    expect(subagentsOf.has(kid.key)).toBe(false);
+  });
+
+  it("prefers a subagent that is still producing over a quiet one", () => {
+    const parent = fact("parent");
+    const quiet = fact("quiet", {
+      kid: true,
+      parentKey: parent.key,
+      status: "working",
+      quiet: true,
+      lastReplyAt: "2026-01-03T00:00:00.000Z",
+    });
+    const busy = fact("busy", {
+      kid: true,
+      parentKey: parent.key,
+      status: "working",
+      lastReplyAt: "2026-01-01T00:00:00.000Z",
+    });
+    const { facts } = collapseSubagents([parent, quiet, busy]);
+    expect(facts.find((item) => item.kid)?.key).toBe("busy");
+  });
+
+  it("leaves an agent with one subagent as that subagent", () => {
+    const parent = fact("parent");
+    const kid = fact("kid", { kid: true, parentKey: parent.key, title: "Review the tests" });
+    const { facts } = collapseSubagents([parent, kid]);
+    expect(facts.find((item) => item.kid)).toMatchObject({
+      key: "kid",
+      title: "Review the tests",
+      subagentCount: 1,
+    });
   });
 });
 

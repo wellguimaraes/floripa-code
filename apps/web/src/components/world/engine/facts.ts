@@ -44,6 +44,11 @@ export interface CharacterFacts {
   readonly lookSeed: string;
   /** The worktree folder the thread works in; null in the project's own checkout. */
   readonly worktreePath: string | null;
+  /**
+   * How many subagents this figure stands for. One, unless it is the single
+   * copy an agent shows for all of its subagents.
+   */
+  readonly subagentCount: number;
 }
 
 /** Done with its turn and waiting on nothing: resting on the beach. */
@@ -159,6 +164,7 @@ export function buildCharacterFacts(input: {
     projectKey: familyProject(facts),
     hasWorkingKids: parentsWithWorkingKids.has(facts.key),
     parentBusy: false,
+    subagentCount: 1,
   }));
   // A kid goes along with a busy parent, and its own kids with it.
   const byKey = new Map(family.map((facts) => [facts.key, facts]));
@@ -171,6 +177,106 @@ export function buildCharacterFacts(input: {
     return false;
   };
   return family.map((facts) => ({ ...facts, parentBusy: parentBusy(facts) }));
+}
+
+/** Which subagent the single copy should act as. A question beats work beats rest. */
+const SUBAGENT_ATTENTION = {
+  approval: 0,
+  input: 1,
+  failed: 2,
+  limited: 3,
+  working: 4,
+  waiting: 5,
+  ready: 6,
+} satisfies Record<SidebarThreadStatus, number>;
+
+/**
+ * One smaller figure per agent for all of its subagents. `subagentCount` on
+ * that figure is how many it stands for, and `subagentsOf` still lists every
+ * one so they can be archived together. The figure is the subagent that most
+ * needs attention, and it stands next to the agent even when they were nested.
+ */
+export function collapseSubagents(facts: ReadonlyArray<CharacterFacts>): {
+  readonly facts: CharacterFacts[];
+  readonly subagentsOf: ReadonlyMap<string, readonly CharacterFacts[]>;
+} {
+  const byKey = new Map(facts.map((fact) => [fact.key, fact]));
+  const rootKeyOf = (fact: CharacterFacts) => {
+    let current = fact;
+    for (let depth = 0; depth < 32 && current.parentKey !== null; depth += 1) {
+      const parent = byKey.get(current.parentKey);
+      if (parent === undefined) break;
+      current = parent;
+    }
+    return current.kid ? fact.key : current.key;
+  };
+
+  const groups = new Map<string, CharacterFacts[]>();
+  const grouped = new Set<string>();
+  for (const fact of facts) {
+    if (!fact.kid) continue;
+    const rootKey = rootKeyOf(fact);
+    const root = byKey.get(rootKey);
+    if (root === undefined || root.kid) continue;
+    const group = groups.get(rootKey);
+    if (group === undefined) groups.set(rootKey, [fact]);
+    else group.push(fact);
+    grouped.add(fact.key);
+  }
+
+  const subagentsOf = new Map<string, readonly CharacterFacts[]>();
+  const figureOf = new Map<string, CharacterFacts>();
+  for (const [rootKey, kids] of groups) {
+    const root = byKey.get(rootKey);
+    const lead = leadSubagent(kids);
+    if (root === undefined || lead === undefined) continue;
+    subagentsOf.set(rootKey, kids);
+    figureOf.set(rootKey, {
+      ...lead,
+      subagentCount: kids.length,
+      parentKey: rootKey,
+      parentBusy: busyWithSubagents(root, kids),
+    });
+  }
+
+  const shown = facts.flatMap((fact) => {
+    if (grouped.has(fact.key)) return [];
+    const kids = groups.get(fact.key);
+    if (kids === undefined) return [fact];
+    return [
+      {
+        ...fact,
+        hasWorkingKids:
+          fact.hasWorkingKids || kids.some((kid) => kid.status === "working" || kid.hasWorkingKids),
+      },
+    ];
+  });
+  for (const figure of figureOf.values()) shown.push(figure);
+  return { facts: shown, subagentsOf };
+}
+
+function leadSubagent(kids: readonly CharacterFacts[]): CharacterFacts | undefined {
+  let lead: CharacterFacts | undefined;
+  for (const kid of kids) {
+    if (lead === undefined) {
+      lead = kid;
+      continue;
+    }
+    const rank = SUBAGENT_ATTENTION[kid.status] - SUBAGENT_ATTENTION[lead.status];
+    if (rank < 0 || (rank === 0 && lead.quiet && !kid.quiet)) lead = kid;
+    else if (rank === 0 && kid.quiet === lead.quiet && kid.lastReplyAt > lead.lastReplyAt) {
+      lead = kid;
+    }
+  }
+  return lead;
+}
+
+function busyWithSubagents(root: CharacterFacts, kids: readonly CharacterFacts[]): boolean {
+  return isBusy({
+    ...root,
+    hasWorkingKids:
+      root.hasWorkingKids || kids.some((kid) => kid.status === "working" || kid.hasWorkingKids),
+  });
 }
 
 function threadKey(thread: EnvironmentThreadShell): string {

@@ -179,8 +179,8 @@ Floripa Code detect an icon again.
 Detection looks for a favicon, app icon, or logo, first in the usual places at the project's root,
 then anywhere in the repository except ignored files, tests, and docs, so a monorepo picks up an
 app's icon such as `apps/web/public/favicon.svg`. A new or changed icon file shows up within an
-hour. To check sooner, click the icon on the project's island in the world view and choose
-**Detect automatically**.
+hour. To check sooner, reset the icon with the undo button beside it in Project settings: that asks
+each server to look at its files again.
 
 Choose **Monogram** in the icon picker to set one or two letters or numbers and a color.
 

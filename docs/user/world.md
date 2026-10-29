@@ -12,10 +12,10 @@ minute. Click the branch count to list the branches, with the worktree each is
 checked out in, its last commit, and whether that worktree has uncommitted
 changes. Delete removes a branch along with its worktree and archives the agents
 that worked there; it asks for a second click, and once more if the branch isn't
-merged. Click the icon to choose a new
-one, as in Settings. Right-click it for **Detect automatically**, which drops any
-icon you chose and looks through the project's files again, and **Choose image
-file…**.
+merged. Click the pull request count to list the open pull requests. Click the
+sign anywhere else, or right-click it, for the island's menu. The project's icon
+on the sign changes in Settings only; see
+[Project icons](project-settings.md#project-icons).
 If a project's folder was moved or deleted outside the app, a **Folder not found**
 pill shows over its sign. Click it to point the project at the folder's new
 place, or to remove the project along with its threads.
@@ -47,10 +47,11 @@ six worktrees.
 The water ripples around an island while an agent on it waits for your answer
 or approval, so you can spot it from far out. It stops as soon as you reply.
 
-Subagents appear as smaller copies of the agent that started them and mine the
-same rock pile beside it, on its island. A subagent that has finished still goes
-back to the pile with its agent and stands by. Anywhere else, such as on the
-beach, an agent and its subagents sit next to each other.
+An agent with subagents has one smaller copy beside it. The copy mines the
+same rock pile on the agent's island, and its title is only the count, such
+as ×4. Clicking the copy opens the subagent that most needs attention. The copy
+stays by the pile while the agent is busy, and sits next to the agent on the
+beach.
 
 ## Open the world
 
@@ -72,7 +73,8 @@ for the current turn to finish. Paste, drop, or use the paperclip to attach
 images and files to the message. The bubble and the thread's full chat share one draft, so
 what you type or attach in either shows in both. The expand button, or `Cmd`+`Enter`
 (`Ctrl`+`Enter`), opens the full chat over the world. The archive button, or `Option`+`A` (`Alt`+`A`), archives the thread; undo it
-from the notice that appears, or later from **Settings → Archived**. `Option`-click
+from the notice that appears, or later from the island's **Restore archived agent…**
+(click its sign) or **Settings → Archived**. `Option`-click
 (`Alt`-click) a character to skip the bubble and open its chat; the map frames the character's
 island beside the panel. While a chat is open, clicking another character switches the
 chat to it instead of opening a bubble. The chat's footer has the same regenerate-title and
@@ -90,9 +92,9 @@ character whose bubble or chat is open joins the selection too. Then
 right-click one of them to stop or archive them all at once.
 
 Drag to pan the map and scroll to zoom. Double-click an island to zoom
-to it, or the sea to see every island. Right-click an island to show only that
-island, hide it, grow or shrink it, zoom to it, or archive every agent resting
-on its beach. **Run script…** lists the project's commands and package scripts; the one you
+to it, or the sea to see every island. Right-click an island, or click its sign,
+to show only that island, hide it, grow or shrink it, zoom to it, or archive
+every agent resting on its beach. **Run script…** lists the project's commands and package scripts; the one you
 pick runs in the terminal of the island's latest agent in the main checkout (or its latest agent
 anywhere, if none works there), and that agent's chat opens to show it. **Restore archived agent…** lists the island's archived agents,
 newest first; click **Restore** on one to bring it back. Its search box matches words in titles

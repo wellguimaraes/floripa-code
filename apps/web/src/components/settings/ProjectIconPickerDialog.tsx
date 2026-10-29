@@ -79,17 +79,17 @@ export function ProjectIconPickerDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogPopup className="w-full sm:w-[32rem]">
-        <ProjectIconPicker {...picker} onClose={() => onOpenChange(false)} variant="dialog" />
+        <ProjectIconPicker {...picker} onClose={() => onOpenChange(false)} />
       </DialogPopup>
     </Dialog>
   );
 }
 
 /**
- * The icon picker's fields and its Cancel and Save buttons, laid out for a dialog's popup or a
- * popover's. It starts from the current icon, so mount it each time it opens.
+ * The icon picker's fields and its Cancel and Save buttons, inside a dialog's popup. It starts
+ * from the current icon, so mount it each time it opens.
  */
-export function ProjectIconPicker({
+function ProjectIconPicker({
   current,
   currentFaviconPath,
   environmentId,
@@ -97,10 +97,8 @@ export function ProjectIconPicker({
   projectName,
   onSelect,
   onClose,
-  variant,
 }: ProjectIconPickerProps & {
   readonly onClose: () => void;
-  readonly variant: "dialog" | "popover";
 }) {
   const automatic = deriveProjectIdentity(projectName);
   const initialMode: IconMode = current?.kind ?? (currentFaviconPath ? "project" : "lucide");
@@ -319,14 +317,6 @@ export function ProjectIconPicker({
       </Button>
     </>
   );
-  if (variant === "popover") {
-    return (
-      <div className="flex flex-col gap-3">
-        {fields}
-        <div className="flex justify-end gap-2">{actions}</div>
-      </div>
-    );
-  }
   return (
     <>
       <DialogHeader>

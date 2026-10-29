@@ -14,7 +14,7 @@ import { toastManager } from "../ui/toast";
 /**
  * Removes every checkout on an island after a confirmation, as Settings removes a
  * project group: the project entries and their threads go, the files on disk stay.
- * Callers gate on `canChangeIslandIcon`, the same operate scope on every checkout.
+ * Callers gate on `canOperateIsland`, the same operate scope on every checkout.
  */
 export function useRemoveIsland() {
   const deleteProject = useOrchestrationCommand(projectEnvironment.delete, {

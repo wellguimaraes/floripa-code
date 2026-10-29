@@ -1,9 +1,7 @@
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { PipetteIcon } from "lucide-react";
-import { lazy, Suspense, useId, useState } from "react";
+import { useId } from "react";
 
 import { cn } from "../../lib/utils";
-import { ProjectFavicon } from "../ProjectFavicon";
 import { Button } from "../ui/button";
 import {
   Dialog,
@@ -14,10 +12,7 @@ import {
   DialogTitle,
 } from "../ui/dialog";
 import { Label } from "../ui/label";
-import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
-import { Spinner } from "../ui/spinner";
-import { canChangeIslandIcon, useSetIslandIcon } from "./IslandIconPicker";
 import { signTextColor } from "./scene/Sign";
 import { islandPlate, islandStaleDays, useWorldIslandPrefsStore } from "./worldIslandPrefsStore";
 
@@ -50,25 +45,17 @@ const IDLE_ALARM_MINUTES = [5, 10, 15, 30, 60] as const;
 /** The chosen swatch: a white border, then an outline. */
 const CHOSEN = "ring-2 ring-foreground ring-offset-2 ring-offset-white";
 
-const ProjectIconPicker = lazy(() =>
-  import("../settings/ProjectIconPickerDialog").then((module) => ({
-    default: module.ProjectIconPicker,
-  })),
-);
-
 /**
- * An island's preferences, opened from its sign's gear: the sign's colour and icon, when
+ * An island's preferences, opened from its sign's gear: the sign's colour, when
  * branches count as stale, and how long the island may sit idle before it
- * ripples for you.
+ * ripples for you. The project's icon is set in Settings, not here.
  */
 export function IslandPrefsDialog(props: {
   readonly islandKey: string;
   readonly title: string;
-  /** The island's checkouts, the main one first; the icon is saved on each. */
-  readonly checkouts: ReadonlyArray<EnvironmentProject>;
   readonly onClose: () => void;
 }) {
-  const { islandKey, title, checkouts, onClose } = props;
+  const { islandKey, title, onClose } = props;
   const id = useId();
   const prefs = useWorldIslandPrefsStore((state) => state.prefs[islandKey]);
   const update = useWorldIslandPrefsStore((state) => state.update);
@@ -145,7 +132,6 @@ export function IslandPrefsDialog(props: {
               </label>
             </div>
           </div>
-          <IslandIconRow checkouts={checkouts} />
           <div className="flex items-center justify-between gap-2">
             <Label htmlFor={`${id}-stale`}>Stale branches after</Label>
             <Select
@@ -205,62 +191,5 @@ export function IslandPrefsDialog(props: {
         </DialogPanel>
       </DialogPopup>
     </Dialog>
-  );
-}
-
-/** The island's icon: a picker in a popover, and a way back to the one found automatically. */
-function IslandIconRow(props: { readonly checkouts: ReadonlyArray<EnvironmentProject> }) {
-  const { checkouts } = props;
-  const [picking, setPicking] = useState(false);
-  const setIslandIcon = useSetIslandIcon();
-  const main = checkouts[0];
-  const allowed = canChangeIslandIcon(checkouts);
-  const picked = main !== undefined && (main.projectIcon != null || main.faviconPath != null);
-  return (
-    <div className="flex items-center justify-between gap-2">
-      <div className="flex items-center gap-2">
-        <Label>Icon</Label>
-        {/* The icon the sign shows now, picked or found automatically. */}
-        {main !== undefined ? <ProjectFavicon project={main} className="size-6" /> : null}
-      </div>
-      <div className="flex items-center gap-1">
-        {picked ? (
-          <Button
-            type="button"
-            variant="ghost-muted"
-            size="sm"
-            disabled={!allowed}
-            // Back to automatic also has each server look at its files again.
-            onClick={() => void setIslandIcon(checkouts, { faviconPath: null, projectIcon: null })}
-          >
-            Reset
-          </Button>
-        ) : null}
-        <Popover open={picking} onOpenChange={setPicking}>
-          <PopoverTrigger
-            disabled={!allowed || main === undefined}
-            render={<Button type="button" variant="outline" size="sm" />}
-          >
-            Change…
-          </PopoverTrigger>
-          {main !== undefined ? (
-            <PopoverPopup align="end" sideOffset={8} width="lg">
-              <Suspense fallback={<Spinner size="sm" tone="muted" />}>
-                <ProjectIconPicker
-                  current={main.projectIcon ?? null}
-                  currentFaviconPath={main.faviconPath ?? null}
-                  environmentId={main.environmentId}
-                  cwd={main.workspaceRoot}
-                  projectName={main.title}
-                  onSelect={(icon) => void setIslandIcon(checkouts, icon)}
-                  onClose={() => setPicking(false)}
-                  variant="popover"
-                />
-              </Suspense>
-            </PopoverPopup>
-          ) : null}
-        </Popover>
-      </div>
-    </div>
   );
 }
