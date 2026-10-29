@@ -111,6 +111,7 @@ const ImportHistoryDialog = lazy(() =>
   })),
 );
 import { IslandBranchesPopover, type WorktreeSurfacesTarget } from "./IslandBranchesPopover";
+import { IdleAlarmPopover } from "./IdleAlarmPopover";
 import { IslandPullRequestDialog } from "./IslandPullRequestDialog";
 import { IslandPullRequestsPopover } from "./IslandPullRequestsPopover";
 import type { IslandPullRequestAgent, IslandPullRequestRow } from "./islandPullRequests";
@@ -451,6 +452,8 @@ export default function WorldCanvas(props: {
   );
   // When each snoozed island's idle alarm may go off again, by island key.
   const [idleSnoozedUntil, setIdleSnoozedUntil] = useState<Readonly<Record<string, number>>>({});
+  // A dismissed island's latest reply when it was dismissed: its alarm stays quiet until a newer one.
+  const [idleDismissedAt, setIdleDismissedAt] = useState<Readonly<Record<string, number>>>({});
   // Islands idle for longer than their alarm allows, which ripple for you in wavy rings.
   const idleAlarmed = useMemo(
     () =>
@@ -462,10 +465,11 @@ export default function WorldCanvas(props: {
           const idle = islandIdleSeconds(facts);
           if (idle === null) return [];
           if (idle < minutes * 60 || clock < (idleSnoozedUntil[island.key] ?? 0)) return [];
+          if (idleDismissedAt[island.key] === latestReplyMs(facts)) return [];
           return [island.key];
         }),
       ),
-    [islands, islandPrefs, idleSnoozedUntil, clock],
+    [islands, islandPrefs, idleSnoozedUntil, idleDismissedAt, clock],
   );
   const ambientFps = Math.max(
     0,
@@ -833,6 +837,10 @@ export default function WorldCanvas(props: {
         ?.characters.filter((c) => isResting(c.facts) && !abducted.has(c.facts.key)) ?? [];
     const snoozedUntil = idleSnoozedUntil[key] ?? 0;
     const snoozed = snoozedUntil > Date.now();
+    const island = islands.find((candidate) => candidate.key === key);
+    const dismissed =
+      island !== undefined &&
+      idleDismissedAt[key] === latestReplyMs(island.characters.map((c) => c.facts));
     // Scripts run in an agent's terminal: the latest in the main checkout, else the latest here.
     const agents = (islands.find((island) => island.key === key)?.characters ?? [])
       .filter((c) => !c.facts.kid && !abducted.has(c.facts.key))
@@ -859,17 +867,20 @@ export default function WorldCanvas(props: {
                       hour: "numeric",
                       minute: "2-digit",
                     })}`
-                  : "Snooze idle alarm",
+                  : dismissed
+                    ? // Until the island works again, then it can go off anew.
+                      "Idle alarm dismissed"
+                    : "Snooze idle alarm",
                 icon: "bell-off",
-                // Nothing to snooze until the alarm goes off; a snoozed one stays open to unsnooze.
-                disabled: !snoozed && !idleAlarmed.has(key),
+                // Nothing to snooze until the alarm goes off; a quieted one stays open to unsnooze.
+                disabled: !snoozed && !dismissed && !idleAlarmed.has(key),
                 separatorBefore: true,
                 children: [
                   ...IDLE_SNOOZE_OPTIONS.map((option) => ({
                     id: `snooze-idle:${option.minutes}`,
                     label: option.label,
                   })),
-                  ...(snoozed
+                  ...(snoozed || dismissed
                     ? [{ id: "unsnooze-idle", label: "Unsnooze", separatorBefore: true }]
                     : []),
                 ],
@@ -904,10 +915,10 @@ export default function WorldCanvas(props: {
     else if (clicked === "zoom") setZoomTo({ key });
     else if (clicked === "prefs") setPrefsOn(key);
     else if (clicked?.startsWith("snooze-idle:")) {
-      const minutes = Number(clicked.slice("snooze-idle:".length));
-      setIdleSnoozedUntil((snoozed) => ({ ...snoozed, [key]: Date.now() + minutes * 60_000 }));
+      snoozeIdleAlarm(key, Number(clicked.slice("snooze-idle:".length)));
     } else if (clicked === "unsnooze-idle") {
       setIdleSnoozedUntil(({ [key]: _, ...rest }) => rest);
+      setIdleDismissedAt(({ [key]: _, ...rest }) => rest);
     } else if (clicked === "archive-idle") void archiveAll(idle);
     else if (clicked === "restore-archived") setRestoringOn(key);
   };
@@ -1254,6 +1265,33 @@ export default function WorldCanvas(props: {
       if (pill !== undefined) pill.style.transform = `translate(${point.x}px, ${point.y}px)`;
     }
   }, []);
+  // A rippling idle island gets a popover over its middle to dismiss or snooze the alarm.
+  const idleAlarms = useMemo(
+    () =>
+      islandSpots.flatMap((spot) => {
+        const minutes = islandPrefs[spot.key]?.idleAlarmMinutes;
+        if (!idleAlarmed.has(spot.key) || minutes === undefined) return [];
+        const island = islands.find((candidate) => candidate.key === spot.key)!;
+        const position: Vec3 = [spot.x, island.offset[1] + IDLE_ALARM_HEIGHT, spot.z];
+        return [{ key: spot.key, minutes, position }];
+      }),
+    [islandSpots, islandPrefs, idleAlarmed, islands],
+  );
+  const idleAlarmRefs = useRef(new Map<string, HTMLDivElement>());
+  const moveIdleAlarms = useCallback((points: ReadonlyArray<ScreenPoint>) => {
+    for (const point of points) {
+      const alarm = idleAlarmRefs.current.get(point.key);
+      if (alarm !== undefined) alarm.style.transform = `translate(${point.x}px, ${point.y}px)`;
+    }
+  }, []);
+  const dismissIdleAlarm = (key: string) => {
+    const island = islands.find((candidate) => candidate.key === key);
+    if (island === undefined) return;
+    const at = latestReplyMs(island.characters.map((c) => c.facts));
+    setIdleDismissedAt((dismissed) => ({ ...dismissed, [key]: at }));
+  };
+  const snoozeIdleAlarm = (key: string, minutes: number) =>
+    setIdleSnoozedUntil((snoozed) => ({ ...snoozed, [key]: Date.now() + minutes * 60_000 }));
   const openSurfacesOf = (ref: ScopedThreadRef) => {
     setBubbleKey(null);
     closeManager();
@@ -1449,6 +1487,7 @@ export default function WorldCanvas(props: {
           <FollowTracker roots={roots} keys={managerKeys} hatted={NO_HATS} onMove={moveManager} />
           <PointTracker points={newAgentSpots} onMove={moveSpots} />
           <PointTracker points={missingFolders} onMove={moveMissingFolders} />
+          <PointTracker points={idleAlarms} onMove={moveIdleAlarms} />
           <PointTracker
             points={newAgent === null ? [] : [{ key: "new-agent", position: newAgent.position }]}
             onMove={moveNewAgent}
@@ -1690,6 +1729,28 @@ export default function WorldCanvas(props: {
         >
           <div className="pointer-events-auto w-max -translate-x-1/2 -translate-y-full">
             <MissingFolderPill projects={spot.projects} />
+          </div>
+        </div>
+      ))}
+      {idleAlarms.map((alarm) => (
+        // Positioned by PointTracker on drawn frames, over the island's middle. Above the name
+        // tags, which would otherwise cover its buttons, and under the bubbles.
+        <div
+          key={alarm.key}
+          ref={(element) => {
+            if (element === null) idleAlarmRefs.current.delete(alarm.key);
+            else idleAlarmRefs.current.set(alarm.key, element);
+          }}
+          className="pointer-events-none absolute top-0 left-0 z-20"
+          onWheel={forwardWheel}
+        >
+          <div className="pointer-events-auto w-max -translate-x-1/2 -translate-y-1/2">
+            <IdleAlarmPopover
+              minutes={alarm.minutes}
+              snoozeOptions={IDLE_SNOOZE_OPTIONS}
+              onDismiss={() => dismissIdleAlarm(alarm.key)}
+              onSnooze={(minutes) => snoozeIdleAlarm(alarm.key, minutes)}
+            />
           </div>
         </div>
       ))}
@@ -2097,6 +2158,11 @@ function awayFromPointer(point: { readonly x: number; readonly y: number }) {
   return { x: point.x + MENU_OFFSET, y: point.y + MENU_OFFSET };
 }
 
+/** When an island's agents last replied; an idle island's idleness counts from it. */
+function latestReplyMs(facts: ReadonlyArray<CharacterFacts>): number {
+  return Math.max(...facts.map((fact) => Date.parse(fact.lastReplyAt)));
+}
+
 const IDLE_SNOOZE_OPTIONS = [
   { minutes: 15, label: "For 15 minutes" },
   { minutes: 60, label: "For 1 hour" },
@@ -2108,6 +2174,8 @@ const BALLOON_CLEARANCE_PX = 4;
 /** How long a held overlay takes to glide onto its character once the walk ends. */
 const GLIDE_MS = 320;
 const SPOT_MIN_SPACING_PX = 34;
+/** How far above an island's base its idle alarm popover floats. */
+const IDLE_ALARM_HEIGHT = 1;
 // Reused on every frame; trackers only touch them inside their frame callback.
 const followPoint = new Vector3();
 const balloonPoint = new Vector3();
