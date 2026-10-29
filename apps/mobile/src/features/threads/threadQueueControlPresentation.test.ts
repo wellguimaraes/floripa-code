@@ -28,6 +28,20 @@ describe("threadQueueControlPresentation", () => {
     expect(controls.dismissAccessibilityLabel).toBe(REMOVE_QUEUED_MESSAGE_ACCESSIBILITY_LABEL);
   });
 
+  it("enables the primary action for an idle agent even though nothing can be steered", () => {
+    const idle = resolveThreadQueueRowControls({
+      busy: false,
+      canPromoteToSteer: false,
+      canSendQueuedNow: true,
+      canReorder: false,
+      index: 1,
+      queuedCount: 2,
+      text: "Queued",
+    });
+
+    expect(idle.canSteer).toBe(true);
+  });
+
   it("disables edge reorder controls and busy dismissal", () => {
     const first = resolveThreadQueueRowControls({
       busy: false,

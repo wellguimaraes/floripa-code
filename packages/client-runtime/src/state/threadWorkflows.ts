@@ -34,6 +34,12 @@ export interface ThreadQueueWorkflowState {
   readonly isHeld: boolean;
   readonly canReorder: boolean;
   readonly canPromoteToSteer: boolean;
+  /**
+   * Nothing is running, so a queued message has no turn to steer and should
+   * already be on its way. When it is not (a held queue, a stalled drain),
+   * clients offer Send, which resumes the queue.
+   */
+  readonly canSendQueuedNow: boolean;
 }
 
 export function resolveActiveThreadRun(projection: Pick<Projection, "runs">): Run | null {
@@ -159,6 +165,7 @@ export function deriveThreadQueueWorkflowState(projection: Projection): ThreadQu
       hasSteerableProviderTurn &&
       (capabilities?.supportsActiveSteering === true ||
         capabilities?.supportsSteeringByInterruptRestart === true),
+    canSendQueuedNow: activeRun === null && queuedRuns.length > 0,
   };
 }
 

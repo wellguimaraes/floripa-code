@@ -325,6 +325,39 @@ describe("thread workflows", () => {
     expect(state.canPromoteToSteer).toBe(false);
   });
 
+  it("offers to send queued work only while no run is active", () => {
+    const queued = { id: "queued", status: "queued", userMessageId: "message", ordinal: 2 };
+    const derive = (previous: { status: string } | null) =>
+      deriveThreadQueueWorkflowState({
+        thread: { id: "thread", activeProviderThreadId: null },
+        runs: [...(previous === null ? [] : [{ id: "previous", ordinal: 1, ...previous }]), queued],
+        messages: [{ id: "message", text: "Queued" }],
+        providerTurns: [],
+        providerThreads: [],
+        providerSessions: [],
+      } as never);
+
+    expect(derive(null).canSendQueuedNow).toBe(true);
+    expect(derive({ status: "completed" }).canSendQueuedNow).toBe(true);
+    expect(derive({ status: "failed" }).canSendQueuedNow).toBe(true);
+    // A run still finalizing its checkpoint is not idle yet.
+    expect(derive({ status: "waiting" }).canSendQueuedNow).toBe(false);
+    expect(derive({ status: "running" }).canSendQueuedNow).toBe(false);
+  });
+
+  it("does not offer to send when nothing is queued", () => {
+    const state = deriveThreadQueueWorkflowState({
+      thread: { id: "thread", activeProviderThreadId: null },
+      runs: [{ id: "done", status: "completed", ordinal: 1 }],
+      messages: [],
+      providerTurns: [],
+      providerThreads: [],
+      providerSessions: [],
+    } as never);
+
+    expect(state.canSendQueuedNow).toBe(false);
+  });
+
   it("does not expose known unsupported queue or fork actions", () => {
     const projection = {
       thread: { id: "thread", activeProviderThreadId: "provider-thread" },

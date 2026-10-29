@@ -62,6 +62,7 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
   const promote = useAtomCommand(threadEnvironment.promoteQueuedRun, "promote queued message");
   const cancel = useAtomCommand(threadEnvironment.cancelQueuedRun, "remove queued message");
   const resume = useAtomCommand(threadEnvironment.resumeThreadQueue, "resume queue");
+  const sendNow = useAtomCommand(threadEnvironment.sendQueuedRunNow, "send queued message");
   const [resuming, setResuming] = useState(false);
   const [busyRunId, setBusyRunId] = useState<RunId | null>(null);
   const busyRef = useRef(false);
@@ -145,6 +146,16 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
     try {
       if (action === "remove") {
         await cancel(buildCancelQueuedRunCommand({ ...target, runId }));
+      } else if (workflow?.canSendQueuedNow) {
+        const headRunId = queuedRuns[0]?.run.id ?? null;
+        await sendNow({
+          ...target,
+          input: {
+            threadId: target.threadId,
+            runId,
+            headRunId: headRunId === runId ? null : headRunId,
+          },
+        });
       } else if (workflow?.activeRun && workflow.canPromoteToSteer) {
         await promote({
           ...target,
@@ -221,6 +232,7 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
         const controls = resolveThreadQueueRowControls({
           busy: busyRunId !== null || draggedRunId !== null,
           canPromoteToSteer: workflow?.canPromoteToSteer ?? false,
+          canSendQueuedNow: workflow?.canSendQueuedNow ?? false,
           canReorder: workflow?.canReorder ?? false,
           index,
           isEditing: editing?.runId === run.id,
@@ -327,11 +339,11 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
                   accessibilityLabel={`Actions for queued message ${index + 1}`}
                   shouldOpenOnLongPress
                   actions={[
-                    ...(workflow?.canPromoteToSteer
+                    ...(workflow?.canPromoteToSteer || workflow?.canSendQueuedNow
                       ? [
                           {
                             id: "steer",
-                            title: "Steer now",
+                            title: workflow.canSendQueuedNow ? "Send now" : "Steer now",
                             attributes: { disabled: !controls.canSteer },
                             image: Platform.OS === "ios" ? "arrow.turn.left.up" : "arrow_upward",
                           },
@@ -386,16 +398,20 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
                         Editing
                       </Text>
                     ) : null}
-                    {workflow?.canPromoteToSteer ? (
+                    {workflow?.canPromoteToSteer || workflow?.canSendQueuedNow ? (
                       <Pressable
                         accessibilityRole="button"
-                        accessibilityLabel={`Steer with message ${index + 1} now`}
+                        accessibilityLabel={
+                          workflow.canSendQueuedNow
+                            ? `Send message ${index + 1} now`
+                            : `Steer with message ${index + 1} now`
+                        }
                         disabled={!controls.canSteer}
                         onPress={() => void act(run.id, "steer")}
                         className="h-8 shrink-0 justify-center rounded-full bg-primary px-3 active:opacity-70 disabled:opacity-40"
                       >
                         <Text className="font-t3-medium text-xs text-primary-foreground">
-                          Steer
+                          {workflow.canSendQueuedNow ? "Send" : "Steer"}
                         </Text>
                       </Pressable>
                     ) : null}

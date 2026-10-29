@@ -16,6 +16,8 @@ export interface ThreadQueueRowControls {
 export function resolveThreadQueueRowControls(input: {
   readonly busy: boolean;
   readonly canPromoteToSteer: boolean;
+  /** No turn is running, so the row's primary action sends instead of steering. */
+  readonly canSendQueuedNow?: boolean;
   readonly canReorder: boolean;
   readonly index: number;
   /** This row's message is already open in the composer. */
@@ -33,7 +35,8 @@ export function resolveThreadQueueRowControls(input: {
     canEdit: mutationEnabled && !isEditing,
     canMoveDown: mutationEnabled && input.canReorder && input.index < input.queuedCount - 1,
     canMoveUp: mutationEnabled && input.canReorder && input.index > 0,
-    canSteer: mutationEnabled && input.canPromoteToSteer && !isEditing,
+    canSteer:
+      mutationEnabled && (input.canPromoteToSteer || input.canSendQueuedNow === true) && !isEditing,
     dismissAccessibilityLabel: REMOVE_QUEUED_MESSAGE_ACCESSIBILITY_LABEL,
     displayText: input.text,
     isEditing,

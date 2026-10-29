@@ -240,6 +240,12 @@ export interface CancelQueuedRunInput extends ThreadCommandInput {
   readonly runId: RunId;
 }
 
+export interface SendQueuedRunNowInput extends ThreadCommandInput {
+  readonly runId: RunId;
+  /** The run now at the head of the queue, or null when `runId` already is. */
+  readonly headRunId: RunId | null;
+}
+
 export interface RetryWorkspacePreparationInput extends ThreadCommandInput {
   readonly runId: RunId;
 }
@@ -1009,6 +1015,25 @@ export const promoteQueuedRun = Effect.fn("EnvironmentCommands.promoteQueuedRun"
     queuedRunId: input.queuedRunId,
     targetRunId: input.targetRunId,
   });
+});
+
+/**
+ * The way out of a queue that is not draining while the agent is idle: moves
+ * the chosen message to the head, then resumes the queue, which also clears a
+ * hold. The server still refuses while a usage limit stops the thread.
+ */
+export const sendQueuedRunNow = Effect.fn("EnvironmentCommands.sendQueuedRunNow")(function* (
+  input: SendQueuedRunNowInput,
+) {
+  // Each step is its own command, so neither reuses a caller-supplied command id.
+  if (input.headRunId !== null) {
+    yield* reorderQueuedRun({
+      threadId: input.threadId,
+      runId: input.runId,
+      beforeRunId: input.headRunId,
+    });
+  }
+  return yield* resumeThreadQueue({ threadId: input.threadId });
 });
 
 export const cancelQueuedRun = Effect.fn("EnvironmentCommands.cancelQueuedRun")(function* (

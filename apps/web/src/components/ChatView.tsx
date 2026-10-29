@@ -4127,7 +4127,7 @@ export default function ChatView(props: ChatViewProps) {
   const canSteerQueuedMessage = useMemo(() => {
     if (!canOperateThread || serverProjection === null) return false;
     const queue = deriveThreadQueueWorkflowState(serverProjection);
-    return queue.canPromoteToSteer && queue.queuedRuns.length > 0;
+    return (queue.canPromoteToSteer || queue.canSendQueuedNow) && queue.queuedRuns.length > 0;
   }, [canOperateThread, serverProjection]);
   const steerShortcutLabel = canSteerQueuedMessage
     ? shortcutLabelForCommand(keybindings, "thread.steerQueuedMessage", {

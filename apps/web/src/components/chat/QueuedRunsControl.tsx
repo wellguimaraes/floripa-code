@@ -14,6 +14,7 @@ import {
   GripVerticalIcon,
   ListOrderedIcon,
   PencilIcon,
+  SendHorizontalIcon,
 } from "lucide-react";
 import { useId, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
 
@@ -73,6 +74,7 @@ export function QueuedRunsControl({
   )?.projection;
   const reorder = useAtomCommand(threadEnvironment.reorderQueuedRun);
   const promote = useAtomCommand(threadEnvironment.promoteQueuedRun);
+  const sendNow = useAtomCommand(threadEnvironment.sendQueuedRunNow);
   const cancel = useAtomCommand(threadEnvironment.cancelQueuedRun);
   const [expanded, setExpanded] = useState(true);
   const queueListId = useId();
@@ -192,9 +194,32 @@ export function QueuedRunsControl({
     void move(runId, queued[insertIndex]?.run.id ?? null);
   };
 
+  // With an active turn a queued message steers it. With none, the message
+  // should already be running, so the action sends it by resuming the queue.
+  const canSendNow = workflow?.canSendQueuedNow === true;
   const steerInFlightRef = useRef(false);
   const steer = async (queuedRunId: RunId) => {
-    if (activeRun === null || !workflow?.canPromoteToSteer || steerInFlightRef.current) return;
+    if (steerInFlightRef.current) return;
+    const headRunId = queued[0]?.run.id ?? null;
+    if (canSendNow) {
+      steerInFlightRef.current = true;
+      setBusyRunId(queuedRunId);
+      try {
+        await sendNow({
+          environmentId: props.environmentId,
+          input: {
+            threadId: props.threadId,
+            runId: queuedRunId,
+            headRunId: headRunId === queuedRunId ? null : headRunId,
+          },
+        });
+      } finally {
+        steerInFlightRef.current = false;
+        setBusyRunId(null);
+      }
+      return;
+    }
+    if (activeRun === null || !workflow?.canPromoteToSteer) return;
     steerInFlightRef.current = true;
     setBusyRunId(queuedRunId);
     try {
@@ -211,7 +236,7 @@ export function QueuedRunsControl({
   useImperativeHandle(ref, () => ({
     steerNext(repeat) {
       const next = queued[0];
-      if (!next || !workflow?.canPromoteToSteer) return false;
+      if (!next || !(canSendNow || workflow?.canPromoteToSteer)) return false;
       if (!repeat && busyRunId === null) void steer(next.run.id);
       return true;
     },
@@ -458,7 +483,7 @@ export function QueuedRunsControl({
                             disabled={
                               item.runId === null ||
                               busyRunId !== null ||
-                              !workflow?.canPromoteToSteer
+                              !(canSendNow || workflow?.canPromoteToSteer)
                             }
                             onClick={() => {
                               if (item.runId !== null) {
@@ -466,14 +491,16 @@ export function QueuedRunsControl({
                               }
                             }}
                           >
-                            <CornerUpRightIcon />
-                            Steer
+                            {canSendNow ? <SendHorizontalIcon /> : <CornerUpRightIcon />}
+                            {canSendNow ? "Send" : "Steer"}
                           </Button>
                         </TooltipTrigger>
                         <TooltipPopup>
-                          {activeRun === null
-                            ? "There is no active run to steer"
-                            : `Send as a steer instead${item.serverIndex === 0 && props.steerShortcutLabel ? ` (${props.steerShortcutLabel})` : ""}`}
+                          {canSendNow
+                            ? "The agent is idle. Send this message now"
+                            : activeRun === null
+                              ? "There is no active run to steer"
+                              : `Send as a steer instead${item.serverIndex === 0 && props.steerShortcutLabel ? ` (${props.steerShortcutLabel})` : ""}`}
                         </TooltipPopup>
                       </Tooltip>
                       <Tooltip>

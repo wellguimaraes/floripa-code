@@ -177,7 +177,8 @@ switch the button to a queue icon. Click while holding that key, or press `Cmd+E
 
 Queued messages appear above the composer. Rows show a thumbnail of any attached image alongside
 the text. Drag a row by its handle to reorder it, use the handle's arrow keys, promote the message
-to a steer, or remove it.
+to a steer, or remove it. When the agent is idle, the row's **Steer** becomes **Send**, which
+starts that message now and clears any hold on the queue.
 
 If the server restarts, saved queued messages keep their order and are held. Press
 **Resume** in an empty composer on web or desktop, or **Resume queue** in the queue

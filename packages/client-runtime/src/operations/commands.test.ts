@@ -50,6 +50,7 @@ import {
   reorderActiveThread,
   reorderQueuedRun,
   revertThreadCheckpoint,
+  sendQueuedRunNow,
   settleThread,
   startThreadTurn,
   unsettleThread,
@@ -719,6 +720,37 @@ describe("V2 environment commands", () => {
         // A text-only edit must not send an attachments replacement list.
         expect(commands[5]).not.toHaveProperty("attachments");
       }).pipe(Effect.provide(layerTestCrypto)),
+  );
+
+  it.effect("sends a queued run now by moving it to the head, then resuming the queue", () =>
+    Effect.gen(function* () {
+      const commands: OrchestrationV2Command[] = [];
+      const supervisor = yield* makeSupervisor({ commands, projects: [] });
+      const provide = Effect.provideService(
+        EnvironmentSupervisor.EnvironmentSupervisor,
+        supervisor,
+      );
+
+      yield* sendQueuedRunNow({
+        commandId: CommandId.make("caller-supplied"),
+        threadId: v2ThreadId,
+        runId: RunId.make("run-2"),
+        headRunId: RunId.make("run-1"),
+      }).pipe(provide);
+      yield* sendQueuedRunNow({
+        threadId: v2ThreadId,
+        runId: RunId.make("run-1"),
+        headRunId: null,
+      }).pipe(provide);
+
+      expect(commands).toMatchObject([
+        { type: "queued-run.reorder", runId: "run-2", beforeRunId: "run-1" },
+        { type: "queue.resume", threadId: v2ThreadId },
+        { type: "queue.resume", threadId: v2ThreadId },
+      ]);
+      // A caller-supplied id must not name both commands of the pair.
+      expect(commands.map((command) => command.commandId)).not.toContain("caller-supplied");
+    }).pipe(Effect.provide(layerTestCrypto)),
   );
 
   it.effect("delegates model selection to the server without fetching the full projection", () =>
