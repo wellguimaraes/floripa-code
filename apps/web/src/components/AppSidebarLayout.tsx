@@ -235,12 +235,16 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   // Seeds server-side visited tracking from this browser's localStorage the
   useThreadVisitedMigration();
   const pathname = useLocation({ select: (location) => location.pathname });
-  const panelAnimationsSuppressed = usePanelNavigationSuppression(pathname);
-  const routePanelAnimationsActive = panelAnimationsActive && !panelAnimationsSuppressed;
-  const isOnSettings = pathname === "/settings" || pathname.startsWith("/settings/");
   // The world loads lazily, so the route says it is coming before it has mounted and
   // folded the sidebar away. Until then the threads must not show.
-  const { worldMode } = useWorldRoute();
+  const { worldMode, target: worldTarget } = useWorldRoute();
+  // The world's chat frame stays up from one agent to the next, so switching agents is not
+  // a navigation: the frame and its surfaces animate to the next agent's widths.
+  const panelAnimationsSuppressed = usePanelNavigationSuppression(
+    worldMode && worldTarget?.kind === "server" ? "world-chat" : pathname,
+  );
+  const routePanelAnimationsActive = panelAnimationsActive && !panelAnimationsSuppressed;
+  const isOnSettings = pathname === "/settings" || pathname.startsWith("/settings/");
   const worldShown = useWorldModeStore((state) => state.shown) || worldMode;
   // Opening the app onto the world, or onto Settings over it (see WorldHost), starts with the
   // sidebar folded, as the world would fold it. It still remembers being open, so it comes back
