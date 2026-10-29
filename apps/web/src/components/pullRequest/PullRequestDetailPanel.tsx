@@ -1657,7 +1657,7 @@ export function PullRequestDetailPanel({
       ) : null}
       <div
         className={cn(
-          "@container/pr-header grid min-w-0 shrink-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2",
+          "@container/pr-header grid min-w-0 shrink-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 pt-2",
           detail && "border-b border-border/60",
           !detail && !onClose && "hidden",
         )}
