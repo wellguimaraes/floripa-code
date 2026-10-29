@@ -713,7 +713,7 @@ function ExchangePin(props: {
               {`${attachmentCount} ${attachmentCount === 1 ? "attachment" : "attachments"}`}
             </span>
           ) : (
-            <ClampedUserMessage message={message} chips={props.chips} />
+            <ClampedUserMessage message={message} chips={props.chips} interactive />
           )}
         </RollingSwap>
       </div>

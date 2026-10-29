@@ -2144,16 +2144,19 @@ function TimelinePinnedPrompt({
 
 /**
  * A sent message clipped to two lines, with the timeline's body and chips: the pinned
- * prompt, and the world's agent bubble. Chips render as labels only, since the whole
- * preview is one target. Goes inside the padded bubble, never on it, so a third line
- * can't peek through the padding.
+ * prompt, and the world's agent bubble. Chips render as labels only. The pinned prompt is
+ * one jump target, so its body is inert; `interactive` keeps links clickable where the
+ * preview isn't a target itself. Goes inside the padded bubble, never on it, so a third
+ * line can't peek through the padding.
  */
 export const ClampedUserMessage = memo(function ClampedUserMessage({
   message,
   chips,
+  interactive = false,
 }: {
   message: Pick<ChatMessage, "text" | "context" | "attachments">;
   chips: UserMessageChipState;
+  interactive?: boolean;
 }) {
   const resolvedContext = useMemo(() => resolveUserMessageContext(message), [message]);
   const renderContextReference = useCallback(
@@ -2168,15 +2171,17 @@ export const ClampedUserMessage = memo(function ClampedUserMessage({
             ) ?? null)
           : null;
       return (
-        <UserMessageContextReferenceChip
-          reference={reference}
-          record={record}
-          annotationImage={null}
-          attachment={attachment}
-          onExpandImage={NOOP_PINNED_PROMPT_ACTION}
-          onExpandVideo={NOOP_PINNED_PROMPT_ACTION}
-          onOpenFile={NOOP_PINNED_PROMPT_ACTION}
-        />
+        <span inert>
+          <UserMessageContextReferenceChip
+            reference={reference}
+            record={record}
+            annotationImage={null}
+            attachment={attachment}
+            onExpandImage={NOOP_PINNED_PROMPT_ACTION}
+            onExpandVideo={NOOP_PINNED_PROMPT_ACTION}
+            onOpenFile={NOOP_PINNED_PROMPT_ACTION}
+          />
+        </span>
       );
     },
     [resolvedContext, message.attachments],
@@ -2184,7 +2189,7 @@ export const ClampedUserMessage = memo(function ClampedUserMessage({
   const attachmentCount = message.attachments?.length ?? 0;
   return (
     <UserMessageChipCtx value={chips}>
-      <div inert className="clamped-message line-clamp-2">
+      <div inert={!interactive} className="clamped-message line-clamp-2">
         {resolvedContext.text.trim().length > 0 ? (
           <UserMessageBody
             text={resolvedContext.text}
