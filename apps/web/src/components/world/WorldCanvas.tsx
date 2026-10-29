@@ -695,6 +695,7 @@ export default function WorldCanvas(props: {
 
   const holdViewOnClose = useRef<(() => void) | null>(null);
   const keepInView = useRef<((points: ReadonlyArray<Vector3>) => void) | null>(null);
+  const panBy = useRef<((dx: number, dy: number) => void) | null>(null);
   const { archiveThread } = useThreadActions();
   // Archive, not delete: each can be undone from its toast or Settings → Archived.
   const archiveAll = async (characters: ReadonlyArray<WorldCharacter>) => {
@@ -1348,9 +1349,13 @@ export default function WorldCanvas(props: {
       covered: coveredOf(container.getBoundingClientRect(), panel(), bars()),
     };
   }, [panel, bars]);
-  const moveBubble = useBubblePlacement(bubbleRef, visibleArea, bubble !== null);
-  const moveNewAgent = useBubblePlacement(newAgentRef, visibleArea, newAgent !== null);
-  const moveManager = useBubblePlacement(managerRef, visibleArea, manager?.open === true);
+  const moveBubble = useBubblePlacement(bubbleRef, visibleArea, bubble?.facts.key ?? null, panBy);
+  const moveNewAgent = useBubblePlacement(
+    newAgentRef,
+    visibleArea,
+    newAgent === null ? null : NEW_AGENT_KEY,
+  );
+  const moveManager = useBubblePlacement(managerRef, visibleArea, managerKeys[0] ?? null, panBy);
   // The map zooms on wheel; overlays pass it on so that keeps working under the pointer.
   const forwardWheel = (event: React.WheelEvent) =>
     containerRef.current
@@ -1465,6 +1470,7 @@ export default function WorldCanvas(props: {
             zoomTo={zoomTo}
             holdViewOnClose={holdViewOnClose}
             keepInView={keepInView}
+            panBy={panBy}
             reveal={reveal}
             layout={islandLayout}
           />
@@ -1489,7 +1495,7 @@ export default function WorldCanvas(props: {
           <PointTracker points={missingFolders} onMove={moveMissingFolders} />
           <PointTracker points={idleAlarms} onMove={moveIdleAlarms} />
           <PointTracker
-            points={newAgent === null ? [] : [{ key: "new-agent", position: newAgent.position }]}
+            points={newAgent === null ? [] : [{ key: NEW_AGENT_KEY, position: newAgent.position }]}
             onMove={moveNewAgent}
           />
           <IslandHoverTracker
@@ -2441,6 +2447,8 @@ interface VisibleArea {
   readonly covered: Covered;
 }
 
+/** The new-agent bubble's tracked point. */
+const NEW_AGENT_KEY = "new-agent";
 /** Room kept between a bubble and the edges of the visible canvas. */
 const BUBBLE_EDGE_PX = 8;
 /** How far above its point a bubble floats; the bubble's own wrapper adds the same 0.75rem. */
@@ -2450,14 +2458,19 @@ const BUBBLE_GAP_PX = 12;
  * Places a bubble over its tracked point, shifted as little as it takes to stay in the part of
  * the canvas the panel and the bars leave visible. Returns the tracker's `onMove`. The bubble's
  * wrapper (`anchor`'s first child) centres it above the point; a change in its size draws no
- * frame, so that places it again too.
+ * frame, so that places it again too. `subject` is the key of the point it is open over, null
+ * while it is closed. Given `panBy`, a bubble that opens, or grows, pushed down over its
+ * character by the top edge slides the map down to make room above it; a pan or zoom by hand
+ * leaves the map alone.
  */
 function useBubblePlacement(
   anchor: React.RefObject<HTMLDivElement | null>,
   visibleArea: () => VisibleArea | null,
-  open: boolean,
+  subject: string | null,
+  panBy?: React.RefObject<((dx: number, dy: number) => void) | null>,
 ): (points: ReadonlyArray<ScreenPoint>) => void {
   const last = useRef<ScreenPoint | null>(null);
+  const clearCharacter = useRef(false);
   const place = () => {
     const element = anchor.current;
     const bubble = element?.firstElementChild as HTMLElement | null | undefined;
@@ -2473,19 +2486,33 @@ function useBubblePlacement(
       BUBBLE_EDGE_PX,
       area.width - covered.right - width - BUBBLE_EDGE_PX,
     );
+    const above = point.y - height - BUBBLE_GAP_PX;
     const top = clamp(
-      point.y - height - BUBBLE_GAP_PX,
+      above,
       covered.top + BUBBLE_EDGE_PX,
       area.height - covered.bottom - height - BUBBLE_EDGE_PX,
     );
     element.style.transform = `translate(${left + width / 2}px, ${top + height + BUBBLE_GAP_PX}px)`;
+    // Switching subjects, the tracker reports the old point until the next frame.
+    if (!clearCharacter.current || point.key !== subject) return;
+    clearCharacter.current = false;
+    // Only as far as the character stays in view, for a bubble taller than the canvas.
+    const shift = Math.min(
+      top - above,
+      area.height - covered.bottom - KEEP_IN_VIEW_MARGIN - point.y,
+    );
+    if (shift >= 1) panBy?.current?.(0, shift);
   };
-  const placeOnResize = useEffectEvent(place);
+  const placeOnResize = useEffectEvent(() => {
+    clearCharacter.current = true;
+    place();
+  });
   useEffect(() => {
     const bubble = anchor.current?.firstElementChild;
-    if (!open || bubble == null) return;
+    if (subject === null || bubble == null) return;
+    // Observing reports the size at once, which places the bubble as it opens.
     return observeResize(bubble, () => placeOnResize());
-  }, [anchor, open]);
+  }, [anchor, subject]);
   return (points: ReadonlyArray<ScreenPoint>) => {
     last.current = points[0] ?? null;
     place();
@@ -2509,6 +2536,7 @@ function WorldControls({
   zoomTo,
   holdViewOnClose,
   keepInView,
+  panBy,
   reveal,
   layout,
 }: {
@@ -2528,6 +2556,8 @@ function WorldControls({
   readonly holdViewOnClose: React.RefObject<(() => void) | null>;
   /** Set here: moves the map as little as it takes to show every point, if any is hidden. */
   readonly keepInView: React.RefObject<((points: ReadonlyArray<Vector3>) => void) | null>;
+  /** Set here: glides the map so what shows moves `dx` right and `dy` down, in pixels. */
+  readonly panBy: React.RefObject<((dx: number, dy: number) => void) | null>;
   /** A spot that must show with room above it for the new-agent bubble; a new object checks again. */
   readonly reveal: { readonly islandKey: string; readonly position: Vec3 } | null;
   /**
@@ -2831,6 +2861,19 @@ function WorldControls({
       keepInViewWait.current = null;
     };
   }, [camera, size, covered, fly, keepInView]);
+  useEffect(() => {
+    panBy.current = (dx, dy) => {
+      const controls = controlsRef.current;
+      // A hand on the map wins.
+      if (controls === null || gesturing.current) return;
+      const view = currentView(camera, controls);
+      const shift = targetShift(probeAt(camera, view), dx, dy, view.zoom);
+      fly({ target: view.target.add(shift), zoom: view.zoom });
+    };
+    return () => {
+      panBy.current = null;
+    };
+  }, [camera, fly, panBy]);
   const waitForPanel = useRef<(() => void) | null>(null);
   const stopWaiting = useCallback(() => {
     waitForPanel.current?.();
