@@ -3,11 +3,27 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import type { ProviderInstanceId, ScopedProjectRef, ScopedThreadRef } from "@t3tools/contracts";
+import type {
+  ProviderInstanceId,
+  ProviderInteractionMode,
+  RuntimeMode,
+  ScopedProjectRef,
+  ScopedThreadRef,
+} from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { Select as SelectPrimitive } from "@base-ui/react/select";
 import { TriangleAlertIcon, XIcon } from "lucide-react";
-import { lazy, Suspense, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import {
+  type ComponentProps,
+  lazy,
+  type ReactNode,
+  Suspense,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { useVcsPullAction } from "../../lib/sourceControlActions";
@@ -22,9 +38,19 @@ import {
 } from "../../providerInstances";
 import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
 import { useProject, useServerConfigs, useThreadShellsForProjectRefs } from "../../state/entities";
-import { ComposerFooterModeControls, runtimeModeOptions } from "../chat/ChatComposer";
+import {
+  ComposerFooterModeControls,
+  type RuntimeModeOption,
+  runtimeModeOptions,
+} from "../chat/ChatComposer";
+import { CompactComposerControlsMenu } from "../chat/CompactComposerControlsMenu";
+import { ComposerControlSeparator } from "../chat/ComposerControl";
+import {
+  ComposerControlBlocks,
+  useRestingComposerControlsLayout,
+} from "../chat/ComposerControlBlocks";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
-import { TraitsPicker } from "../chat/TraitsPicker";
+import { shouldRenderTraitsControls, TraitsMenuContent, TraitsPicker } from "../chat/TraitsPicker";
 import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
@@ -432,39 +458,37 @@ export function NewAgentBubble(props: {
       }
       toolbar={
         setup !== null && providerEntry !== undefined && runtimeMode !== undefined ? (
-          // Only the provider's logo and the labels: the pickers' own icons, chevrons and
-          // dividers don't fit the bubble's single line.
-          <div className="flex flex-wrap items-center gap-y-1 [&_[data-composer-control-chevron]]:hidden [&_[data-composer-control-icon]]:hidden [&_[data-slot=separator]]:hidden">
-            <ProviderModelPicker
-              activeInstanceId={setup.modelSelection.instanceId}
-              model={setup.modelSelection.model}
-              lockedProvider={null}
-              instanceEntries={providerEntries}
-              modelOptionsByInstance={getCustomModelOptionsByInstance(
-                settings,
-                providers,
-                setup.modelSelection.instanceId,
-                setup.modelSelection.model,
-              )}
-              size="sm"
-              triggerClassName="min-w-0 shrink"
-              open={modelPickerOpen}
-              onOpenChange={setModelPickerOpen}
-              disabled={state.phase === "starting"}
-              onInstanceModelChange={pickModel}
-            />
-            <TraitsPicker
-              provider={providerEntry.driverKind}
-              instanceId={setup.modelSelection.instanceId}
-              models={providerEntry.models}
-              model={setup.modelSelection.model}
-              prompt={text}
-              onPromptChange={setText}
-              modelOptions={setup.modelSelection.options ?? []}
-              planModeEnabled={settings.planModeEnabled}
-              size="sm"
-              disabled={state.phase === "starting"}
-              onModelOptionsChange={(options) =>
+          <NewAgentControls
+            modelPicker={
+              <ProviderModelPicker
+                activeInstanceId={setup.modelSelection.instanceId}
+                model={setup.modelSelection.model}
+                lockedProvider={null}
+                instanceEntries={providerEntries}
+                modelOptionsByInstance={getCustomModelOptionsByInstance(
+                  settings,
+                  providers,
+                  setup.modelSelection.instanceId,
+                  setup.modelSelection.model,
+                )}
+                size="sm"
+                triggerClassName="min-w-13 shrink"
+                open={modelPickerOpen}
+                onOpenChange={setModelPickerOpen}
+                disabled={state.phase === "starting"}
+                onInstanceModelChange={pickModel}
+              />
+            }
+            traits={{
+              provider: providerEntry.driverKind,
+              instanceId: setup.modelSelection.instanceId,
+              models: providerEntry.models,
+              model: setup.modelSelection.model,
+              prompt: text,
+              onPromptChange: setText,
+              modelOptions: setup.modelSelection.options ?? [],
+              planModeEnabled: settings.planModeEnabled,
+              onModelOptionsChange: (options) =>
                 setPicked((current) => ({
                   ...current,
                   modelSelection: createModelSelection(
@@ -472,29 +496,107 @@ export function NewAgentBubble(props: {
                     setup.modelSelection.model,
                     options,
                   ),
-                }))
-              }
-            />
-            <ComposerFooterModeControls
-              showInteractionModeToggle={planModeAvailable}
-              interactionMode={planModeAvailable ? setup.interactionMode : "default"}
-              runtimeMode={runtimeMode}
-              runtimeModeOptions={compatibleRuntimeModeOptions}
-              size="sm"
-              onToggleInteractionMode={() =>
-                setPicked((current) => ({
-                  ...current,
-                  interactionMode: setup.interactionMode === "plan" ? "default" : "plan",
-                }))
-              }
-              onRuntimeModeChange={(mode) =>
-                setPicked((current) => ({ ...current, runtimeMode: mode }))
-              }
-            />
-          </div>
+                })),
+            }}
+            disabled={state.phase === "starting"}
+            showInteractionModeToggle={planModeAvailable}
+            interactionMode={planModeAvailable ? setup.interactionMode : "default"}
+            runtimeMode={runtimeMode}
+            runtimeModeOptions={compatibleRuntimeModeOptions}
+            onToggleInteractionMode={() =>
+              setPicked((current) => ({
+                ...current,
+                interactionMode: setup.interactionMode === "plan" ? "default" : "plan",
+              }))
+            }
+            onRuntimeModeChange={(mode) =>
+              setPicked((current) => ({ ...current, runtimeMode: mode }))
+            }
+          />
         ) : null
       }
     />
+  );
+}
+
+/**
+ * The model, traits and mode pickers, fitted to the bubble as the chat's own footer fits
+ * them: trailing labels go first, then trailing pickers move into an overflow menu.
+ */
+function NewAgentControls(props: {
+  readonly modelPicker: ReactNode;
+  readonly traits: ComponentProps<typeof TraitsMenuContent>;
+  readonly disabled: boolean;
+  readonly showInteractionModeToggle: boolean;
+  readonly interactionMode: ProviderInteractionMode;
+  readonly runtimeMode: RuntimeMode;
+  readonly runtimeModeOptions: ReadonlyArray<RuntimeModeOption>;
+  readonly onToggleInteractionMode: () => void;
+  readonly onRuntimeModeChange: (mode: RuntimeMode) => void;
+}) {
+  const { traits, disabled } = props;
+  const layout = useRestingComposerControlsLayout(null, true);
+  const blocks = [
+    ...(shouldRenderTraitsControls({ ...traits, modelOptions: traits.modelOptions })
+      ? [
+          {
+            id: "traits",
+            content: (
+              <>
+                <ComposerControlSeparator size="sm" />
+                <TraitsPicker
+                  {...traits}
+                  size="sm"
+                  disabled={disabled}
+                  hidden={layout.hiddenBlockCount > 1}
+                />
+              </>
+            ),
+          },
+        ]
+      : []),
+    {
+      id: "mode",
+      content: (
+        <ComposerFooterModeControls
+          showInteractionModeToggle={props.showInteractionModeToggle}
+          interactionMode={props.interactionMode}
+          runtimeMode={props.runtimeMode}
+          runtimeModeOptions={props.runtimeModeOptions}
+          size="sm"
+          hidden={layout.hiddenBlockCount > 0}
+          onToggleInteractionMode={props.onToggleInteractionMode}
+          onRuntimeModeChange={props.onRuntimeModeChange}
+        />
+      ),
+    },
+  ];
+  return (
+    <div ref={layout.attachControls} className="relative flex min-w-0 items-center gap-1">
+      {props.modelPicker}
+      <ComposerControlBlocks
+        blocks={blocks}
+        hiddenBlockCount={layout.hiddenBlockCount}
+        iconOnlyBlockCount={layout.iconOnlyBlockCount}
+        renderOverflowMenu={(hiddenBlockIds) => (
+          <CompactComposerControlsMenu
+            interactionMode={props.interactionMode}
+            runtimeMode={props.runtimeMode}
+            runtimeModeOptions={props.runtimeModeOptions}
+            size="sm"
+            hidden={hiddenBlockIds.length === 0}
+            showInteractionModeToggle={
+              props.showInteractionModeToggle && hiddenBlockIds.includes("mode")
+            }
+            traitsMenuContent={
+              hiddenBlockIds.includes("traits") ? <TraitsMenuContent {...traits} /> : undefined
+            }
+            onToggleInteractionMode={props.onToggleInteractionMode}
+            onRuntimeModeChange={props.onRuntimeModeChange}
+          />
+        )}
+      />
+    </div>
   );
 }
 
