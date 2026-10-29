@@ -138,7 +138,9 @@ export function WorktreeBaseBranchPicker({
         id={id}
         disabled={disabled || !cwd}
         render={<Button variant={prefix !== undefined ? "ghost" : "outline"} size={size} />}
-        className="w-full justify-between "
+        // Inline, it sizes to its sentence: full width would also claim the space of siblings
+        // in a fit-content row, opening a gap before the chevron.
+        className={cn("justify-between", prefix !== undefined ? "min-w-0 shrink" : "w-full")}
       >
         {prefix ?? (
           <GitBranchIcon
