@@ -115,7 +115,7 @@ function RestartContinuationDialog({
           <AlertDialogDescription>
             {label === null ? "Floripa Code" : label} restarted while {agents} working.
           </AlertDialogDescription>
-          <ul className="min-w-0 list-disc space-y-1 pl-5 text-left text-sm">
+          <ul className="min-w-0 list-inside list-disc space-y-1 text-left text-sm">
             {listed.map((thread) => (
               <li key={thread.threadId} className="truncate">
                 {thread.title}
