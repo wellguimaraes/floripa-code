@@ -737,4 +737,200 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
       assert.deepEqual([...projected.readyCheckpointOrdinals].toSorted(), [0, 1]);
     }),
   );
+
+  // A waiting run blocks the thread's queue, so a capture that can never
+  // succeed must not leave the run waiting once the worker stops retrying.
+  it.effect("completes a waiting run without a checkpoint once capture stops retrying", () =>
+    Effect.gen(function* () {
+      const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+      const now = yield* DateTime.now;
+      const stuckThreadId = ThreadId.make("thread:checkpoint-capture-abandoned");
+      const stuckRunId = RunId.make("run:checkpoint-capture-abandoned");
+      const stuckRootNodeId = NodeId.make("node:checkpoint-capture-abandoned-root");
+      const stuckScopeId = CheckpointScopeId.make("scope:checkpoint-capture-abandoned");
+      const stuckProviderThreadId = ProviderThreadId.make(
+        "provider-thread:checkpoint-capture-abandoned",
+      );
+      yield* projectionStore.apply({
+        id: EventId.make("event:checkpoint-capture-abandoned:thread"),
+        type: "thread.created",
+        threadId: stuckThreadId,
+        occurredAt: now,
+        payload: {
+          createdBy: "user",
+          creationSource: "web",
+          id: stuckThreadId,
+          projectId,
+          title: "Checkpoint capture that never succeeds",
+          providerInstanceId,
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          activeProviderThreadId: null,
+          lineage: {
+            parentThreadId: null,
+            relationshipToParent: null,
+            rootThreadId: stuckThreadId,
+          },
+          forkedFrom: null,
+          createdAt: now,
+          updatedAt: now,
+          archivedAt: null,
+          settledOverride: null,
+          settledAt: null,
+          lastVisitedAt: null,
+          deletedAt: null,
+        },
+      });
+      const waitingRun: OrchestrationV2Run = {
+        id: stuckRunId,
+        threadId: stuckThreadId,
+        ordinal: 1,
+        providerInstanceId,
+        modelSelection,
+        providerThreadId: stuckProviderThreadId,
+        userMessageId: MessageId.make("message:checkpoint-capture-abandoned"),
+        rootNodeId: stuckRootNodeId,
+        activeAttemptId: null,
+        status: "waiting",
+        requestedAt: now,
+        startedAt: now,
+        completedAt: null,
+        checkpointId: null,
+        contextHandoffId: null,
+      };
+      const waitingRootNode = {
+        id: stuckRootNodeId,
+        threadId: stuckThreadId,
+        runId: stuckRunId,
+        parentNodeId: null,
+        rootNodeId: stuckRootNodeId,
+        kind: "root_turn" as const,
+        status: "waiting" as const,
+        countsForRun: true,
+        providerThreadId: stuckProviderThreadId,
+        providerTurnId: null,
+        nativeItemRef: null,
+        runtimeRequestId: null,
+        checkpointScopeId: stuckScopeId,
+        startedAt: now,
+        completedAt: null,
+      };
+      yield* projectionStore.apply({
+        id: EventId.make("event:checkpoint-capture-abandoned:run"),
+        type: "run.updated",
+        threadId: stuckThreadId,
+        runId: stuckRunId,
+        nodeId: stuckRootNodeId,
+        providerInstanceId,
+        occurredAt: now,
+        payload: waitingRun,
+      });
+      yield* projectionStore.apply({
+        id: EventId.make("event:checkpoint-capture-abandoned:node"),
+        type: "node.updated",
+        threadId: stuckThreadId,
+        runId: stuckRunId,
+        nodeId: stuckRootNodeId,
+        providerInstanceId,
+        occurredAt: now,
+        payload: waitingRootNode,
+      });
+      yield* projectionStore.apply({
+        id: EventId.make("event:checkpoint-capture-abandoned:provider-thread"),
+        type: "provider-thread.updated",
+        threadId: stuckThreadId,
+        nodeId: stuckRootNodeId,
+        driver,
+        providerInstanceId,
+        occurredAt: now,
+        payload: {
+          id: stuckProviderThreadId,
+          driver,
+          providerInstanceId,
+          providerSessionId: null,
+          appThreadId: stuckThreadId,
+          ownerNodeId: stuckRootNodeId,
+          nativeThreadRef: null,
+          nativeConversationHeadRef: null,
+          status: "idle",
+          firstRunOrdinal: 1,
+          lastRunOrdinal: 1,
+          handoffIds: [],
+          forkedFrom: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+      yield* projectionStore.apply({
+        id: EventId.make("event:checkpoint-capture-abandoned:scope"),
+        type: "checkpoint-scope.created",
+        threadId: stuckThreadId,
+        runId: stuckRunId,
+        nodeId: stuckRootNodeId,
+        occurredAt: now,
+        payload: {
+          id: stuckScopeId,
+          threadId: stuckThreadId,
+          runId: stuckRunId,
+          nodeId: stuckRootNodeId,
+          parentScopeId: null,
+          providerThreadId: stuckProviderThreadId,
+          kind: "root_run",
+          ordinalWithinParent: 0,
+          advancesAppRunCount: true,
+          cwd: "/repo",
+          createdAt: now,
+        },
+      });
+
+      const layerCapture = CheckpointCaptureService.layer.pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            Layer.mock(CheckpointService.CheckpointServiceV2)({
+              materializeBaselineCheckpoint: () =>
+                Effect.fail(
+                  new VcsProcessTimeoutError({
+                    operation: "test.materializeBaselineCheckpoint",
+                    command: "git",
+                    cwd: "/repo",
+                    timeoutMs: 30000,
+                  }),
+                ) as never,
+              capture: () => Effect.die("capture must not run after the baseline fails"),
+            }),
+            Layer.mock(EventSink.EventSinkV2)({
+              commitCommand: (input) =>
+                Effect.forEach(input.events, (event) => projectionStore.apply(event)).pipe(
+                  Effect.as({ committed: true } as never),
+                  Effect.orDie,
+                ),
+            }),
+          ),
+        ),
+      );
+
+      yield* Effect.gen(function* () {
+        const service = yield* CheckpointCaptureService.CheckpointCaptureServiceV2;
+        const input = { threadId: stuckThreadId, runId: stuckRunId, scopeId: stuckScopeId };
+
+        // A failure the worker will retry leaves the run waiting for that retry.
+        yield* service.execute({ ...input, willRetry: true }).pipe(Effect.flip);
+        assert.equal(
+          (yield* projectionStore.getCheckpointCaptureContext(stuckThreadId, input)).run?.status,
+          "waiting",
+        );
+
+        // The last attempt frees the run and settles the effect instead of failing it.
+        yield* service.execute({ ...input, willRetry: false });
+        const projected = yield* projectionStore.getCheckpointCaptureContext(stuckThreadId, input);
+        assert.equal(projected.run?.status, "completed");
+        assert.isNull(projected.run?.checkpointId ?? null);
+        assert.equal(projected.rootNode?.status, "completed");
+      }).pipe(Effect.provide(layerCapture));
+    }),
+  );
 });
