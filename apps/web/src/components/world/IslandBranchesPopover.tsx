@@ -267,75 +267,81 @@ export function IslandBranchesPopover(props: {
         sideOffset={8}
         width="lg"
       >
-        <div className="flex items-center justify-between gap-2 pb-4">
-          <PopoverTitle>Local Branches</PopoverTitle>
-          {staleDays !== null ? (
-            <label className="ml-auto flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
-              Hide stale
-              <Switch size="sm" checked={hideStale} onCheckedChange={setHideStale} />
-            </label>
-          ) : null}
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <span className="-my-1 shrink-0">
-                  <Button
-                    type="button"
-                    variant="ghost-muted"
-                    size="icon-xs"
-                    aria-label={refreshing ? "Refreshing" : "Refresh"}
-                    disabled={refreshing}
-                    onClick={() => void refreshAll()}
-                  >
-                    <RefreshIcon refreshing={refreshing} />
-                  </Button>
-                </span>
-              }
-            />
-            <TooltipPopup>{refreshing ? "Refreshing…" : "Refresh"}</TooltipPopup>
-          </Tooltip>
-        </div>
-        <Separator className="-mx-4 data-[orientation=horizontal]:w-auto" />
-        {rows.length === 0 ? (
-          <p className="flex items-center gap-2 pt-3 text-sm text-muted-foreground">
-            {loading ? <Spinner size="sm" tone="muted" /> : null}
-            {loading
-              ? "Loading branches…"
-              : hiddenStale > 0
-                ? `No recent branches. ${hiddenStale} stale ${hiddenStale === 1 ? "branch is" : "branches are"} hidden.`
-                : "No branches."}
-          </p>
-        ) : (
-          <ul className="-mx-2 -mb-2 flex flex-col pt-2">
-            {rows.map((row) => (
-              <BranchItem
-                key={row.key}
-                row={row}
-                // As the sign counts them: the default branch never goes stale.
-                staleDays={row.isDefault ? null : staleDays}
-                now={now}
-                surfaces={
-                  row.worktreePath !== null
-                    ? {
-                        environmentId: row.environmentId,
-                        cwd: row.cwd,
-                        path: row.worktreePath,
-                        branch: row.name,
-                        inProjectFolder: row.inProjectFolder,
-                      }
-                    : null
+        {/* 500px tall at most, less the popup's padding; the header stays put while the
+            branches scroll. */}
+        <div className="flex max-h-[calc(500px-2rem)] flex-col">
+          <div className="flex items-center justify-between gap-2 pb-4">
+            <PopoverTitle>Local Branches</PopoverTitle>
+            {staleDays !== null ? (
+              <label className="ml-auto flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                Hide stale
+                <Switch size="sm" checked={hideStale} onCheckedChange={setHideStale} />
+              </label>
+            ) : null}
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <span className="-my-1 shrink-0">
+                    <Button
+                      type="button"
+                      variant="ghost-muted"
+                      size="icon-xs"
+                      aria-label={refreshing ? "Refreshing" : "Refresh"}
+                      disabled={refreshing}
+                      onClick={() => void refreshAll()}
+                    >
+                      <RefreshIcon refreshing={refreshing} />
+                    </Button>
+                  </span>
                 }
-                hat={
-                  row.worktreePath !== null && !row.inProjectFolder ? hatOf(row.worktreePath) : null
-                }
-                onOpenSurfaces={(worktree) => {
-                  onOpenSurfaces(worktree);
-                  onClose();
-                }}
               />
-            ))}
-          </ul>
-        )}
+              <TooltipPopup>{refreshing ? "Refreshing…" : "Refresh"}</TooltipPopup>
+            </Tooltip>
+          </div>
+          <Separator className="-mx-4 data-[orientation=horizontal]:w-auto" />
+          {rows.length === 0 ? (
+            <p className="flex items-center gap-2 pt-3 text-sm text-muted-foreground">
+              {loading ? <Spinner size="sm" tone="muted" /> : null}
+              {loading
+                ? "Loading branches…"
+                : hiddenStale > 0
+                  ? `No recent branches. ${hiddenStale} stale ${hiddenStale === 1 ? "branch is" : "branches are"} hidden.`
+                  : "No branches."}
+            </p>
+          ) : (
+            <ul className="-mx-2 -mb-2 flex min-h-0 flex-col overflow-y-auto overscroll-y-contain pt-2">
+              {rows.map((row) => (
+                <BranchItem
+                  key={row.key}
+                  row={row}
+                  // As the sign counts them: the default branch never goes stale.
+                  staleDays={row.isDefault ? null : staleDays}
+                  now={now}
+                  surfaces={
+                    row.worktreePath !== null
+                      ? {
+                          environmentId: row.environmentId,
+                          cwd: row.cwd,
+                          path: row.worktreePath,
+                          branch: row.name,
+                          inProjectFolder: row.inProjectFolder,
+                        }
+                      : null
+                  }
+                  hat={
+                    row.worktreePath !== null && !row.inProjectFolder
+                      ? hatOf(row.worktreePath)
+                      : null
+                  }
+                  onOpenSurfaces={(worktree) => {
+                    onOpenSurfaces(worktree);
+                    onClose();
+                  }}
+                />
+              ))}
+            </ul>
+          )}
+        </div>
       </PopoverPopup>
     </Popover>
   );
