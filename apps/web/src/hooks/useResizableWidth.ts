@@ -28,8 +28,9 @@ export interface UseResizableWidthOptions {
    * Which edge of the host element carries the drag handle:
    *   - "left"  → panel grows leftward (right-anchored panels)
    *   - "right" → panel grows rightward (left-anchored panels)
+   *   - "top" / "bottom" → the same vertically; `width` is then the host's height
    */
-  readonly edge: "left" | "right";
+  readonly edge: "left" | "right" | "top" | "bottom";
   /** Starts something that resizes along with a drag from `width`, such as a panel inside the host. */
   readonly follow?: ((width: number) => ResizeFollower | null) | undefined;
 }
