@@ -1,6 +1,6 @@
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef } from "@t3tools/contracts";
-import { MessagesSquareIcon } from "lucide-react";
+import { PanelRightCloseIcon } from "lucide-react";
 import type { ReactNode, Ref } from "react";
 
 import { useThreadWorktreeScope } from "~/worktreeScope";
@@ -48,7 +48,7 @@ export function WorldChatFrameHeader(props: {
             />
           }
         >
-          <MessagesSquareIcon className="size-4" />
+          <PanelRightCloseIcon className="size-4" />
         </TooltipTrigger>
         <TooltipPopup side="bottom">{toggleLabel}</TooltipPopup>
       </Tooltip>
