@@ -463,6 +463,15 @@ export function showContextMenuFallback<T extends string>(
         label.textContent = item.label;
         button.appendChild(label);
 
+        if (typeof item.trailing === "string") {
+          const trailing = document.createElement("span");
+          trailing.className = "ms-4 shrink-0 text-muted-foreground tabular-nums";
+          trailing.style.cssText =
+            "margin-inline-start:1rem;flex-shrink:0;color:var(--contrast-muted-foreground);font-variant-numeric:tabular-nums;";
+          trailing.textContent = item.trailing;
+          button.appendChild(trailing);
+        }
+
         if (hasChildren) {
           button.setAttribute("aria-haspopup", "menu");
           button.setAttribute("aria-expanded", "false");

@@ -32,7 +32,7 @@ import { useClientSettings } from "../../hooks/useSettings";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { threadEnvironment } from "../../state/threads";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
-import { readLocalApi } from "../../localApi";
+import { showContextMenuFallback } from "../../contextMenuFallback";
 import { observeResize } from "../../lib/observeResize";
 import { cn } from "../../lib/utils";
 import { formatElapsedDurationLabel } from "../../timestampFormat";
@@ -810,8 +810,6 @@ export default function WorldCanvas(props: {
   // The agent an island's "Run script" runs in; its chat opens only once a script runs.
   const [scriptAgent, setScriptAgent] = useState<ScopedThreadRef | null>(null);
   const showIslandMenu = async (key: string, point: { x: number; y: number }) => {
-    const api = readLocalApi();
-    if (api === undefined) return;
     const checkouts = projectCheckouts.get(key) ?? [];
     const idle =
       islands
@@ -828,7 +826,7 @@ export default function WorldCanvas(props: {
       .filter((c) => !c.facts.kid && !abducted.has(c.facts.key))
       .toSorted((a, b) => b.facts.lastReplyAt.localeCompare(a.facts.lastReplyAt));
     const scriptAgent = agents.find((c) => c.facts.worktreePath === null) ?? agents[0];
-    const clicked = await api.contextMenu.show(
+    const clicked = await showContextMenuFallback(
       [
         { id: "only", label: "Show only this island", icon: "eye" },
         { id: "hide", label: "Hide this island", icon: "eye-off" },
@@ -913,9 +911,7 @@ export default function WorldCanvas(props: {
     [addProject.environmentId],
   );
   const showOceanMenu = async (point: { x: number; y: number }) => {
-    const api = readLocalApi();
-    if (api === undefined) return;
-    const clicked = await api.contextMenu.show(
+    const clicked = await showContextMenuFallback(
       [
         ...(addProject.available
           ? [
@@ -1004,8 +1000,6 @@ export default function WorldCanvas(props: {
   };
 
   const showMenu = async (character: WorldCharacter, point: { x: number; y: number }) => {
-    const api = readLocalApi();
-    if (api === undefined) return;
     const all = islands.flatMap((island) => island.characters);
     const group =
       picked.has(character.facts.key) && picked.size > 1
@@ -1013,15 +1007,21 @@ export default function WorldCanvas(props: {
         : null;
     if (group !== null) {
       const running = group.filter((c) => isStoppable(c.facts)).length;
-      const clicked = await api.contextMenu.show(
+      const clicked = await showContextMenuFallback(
         [
           {
             id: "stop",
-            label: `Stop (${running})`,
+            label: "Stop",
+            trailing: String(running),
             icon: "circle-stop",
             disabled: running === 0,
           },
-          { id: "archive", label: `Archive (${group.length})`, icon: "archive" },
+          {
+            id: "archive",
+            label: "Archive",
+            trailing: String(group.length),
+            icon: "archive",
+          },
         ],
         awayFromPointer(point),
       );
@@ -1049,7 +1049,7 @@ export default function WorldCanvas(props: {
     // The camera looks from +x+z and never turns, so x - z grows to the right of the screen.
     const screenX = (c: WorldCharacter) => c.placement.position[0] - c.placement.position[2];
     const toTheLeft = others.filter((c) => screenX(c) < screenX(character));
-    const clicked = await api.contextMenu.show(
+    const clicked = await showContextMenuFallback(
       [
         { id: "open", label: "Open chat", icon: "message-square" },
         ...(VOICE_INPUT_ENABLED
@@ -1079,24 +1079,32 @@ export default function WorldCanvas(props: {
           disabled: !isStoppable(character.facts),
           separatorBefore: true,
         },
-        { id: "archive", label: "Archive", icon: "archive" },
         {
-          id: "archive-subagents",
-          label: `Archive subagents (${members.length})`,
+          id: "archive-menu",
+          label: "Archive",
           icon: "archive",
-          disabled: members.length === 0,
-        },
-        {
-          id: "archive-others",
-          label: `Archive others (${others.length})`,
-          icon: "archive",
-          disabled: others.length === 0,
-        },
-        {
-          id: "archive-left",
-          label: `Archive to the left (${toTheLeft.length})`,
-          icon: "archive",
-          disabled: toTheLeft.length === 0,
+          children: [
+            { id: "archive", label: "This agent" },
+            {
+              id: "archive-subagents",
+              label: "Subagents",
+              trailing: String(members.length),
+              disabled: members.length === 0,
+              separatorBefore: true,
+            },
+            {
+              id: "archive-others",
+              label: "Others",
+              trailing: String(others.length),
+              disabled: others.length === 0,
+            },
+            {
+              id: "archive-left",
+              label: "To the left",
+              trailing: String(toTheLeft.length),
+              disabled: toTheLeft.length === 0,
+            },
+          ],
         },
       ],
       awayFromPointer(point),
