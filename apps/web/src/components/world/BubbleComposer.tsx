@@ -120,6 +120,11 @@ export function BubbleComposer(props: {
 }) {
   const { attachments, text, onTextChange, onSubmit, onError, error, busy } = props;
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const stopping =
+    props.onStop !== undefined &&
+    text.trim() === "" &&
+    attachments.attachments.length === 0 &&
+    props.submitReady !== true;
   const fileInput = useRef<HTMLInputElement>(null);
   const [dropping, setDropping] = useState(false);
   const latestText = useRef(text);
@@ -448,21 +453,37 @@ export function BubbleComposer(props: {
           )}
         </Button>
       ) : null}
-      <Button
-        size="icon-sm"
-        aria-label={props.submitLabel}
+      {/* One solid button for both: it stops a running agent while there is nothing to send. */}
+      <button
+        type="button"
+        className={cn(
+          "flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full shadow-xs transition-colors duration-150 enabled:inset-shadow-control-highlight active:inset-shadow-control-pressed active:shadow-none disabled:pointer-events-none disabled:opacity-64 disabled:shadow-none sm:size-7 [&_svg]:pointer-events-none [&_svg]:size-3.5",
+          stopping
+            ? "bg-destructive text-white shadow-destructive/24 hover:bg-destructive/90"
+            : "bg-message-action text-message-action-foreground shadow-message-action/24 hover:bg-message-action-hover",
+        )}
+        aria-label={stopping ? "Stop this run" : props.submitLabel}
+        title={stopping ? "Stop this run" : props.submitLabel}
         disabled={
-          (text.trim() === "" &&
-            attachments.attachments.length === 0 &&
-            props.submitReady !== true) ||
-          attachments.preparing ||
-          busy ||
-          props.submitBlocked === true
+          stopping
+            ? false
+            : (text.trim() === "" &&
+                attachments.attachments.length === 0 &&
+                props.submitReady !== true) ||
+              attachments.preparing ||
+              busy ||
+              props.submitBlocked === true
         }
-        onClick={() => onSubmit(text)}
+        onClick={() => (stopping ? props.onStop?.() : onSubmit(text))}
       >
-        {busy ? <LoaderIcon className="animate-spin" /> : <SendHorizontalIcon />}
-      </Button>
+        {stopping ? (
+          <SquareIcon className="fill-current" />
+        ) : busy ? (
+          <LoaderIcon className="animate-spin" />
+        ) : (
+          <SendHorizontalIcon />
+        )}
+      </button>
     </>
   );
 
