@@ -219,6 +219,14 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
   ],
 };
 
+function createIconSpacer(): HTMLSpanElement {
+  const spacer = document.createElement("span");
+  spacer.className = "size-4.5 shrink-0 sm:size-4";
+  spacer.style.cssText = "display:inline-block;width:1rem;height:1rem;flex-shrink:0;";
+  spacer.setAttribute("aria-hidden", "true");
+  return spacer;
+}
+
 function createIconElement(name: string, tone: "neutral" | "destructive"): SVGSVGElement | null {
   const paths = ICON_PATHS[name];
   if (!paths || typeof document.createElementNS !== "function") {
@@ -391,6 +399,13 @@ export function showContextMenuFallback<T extends string>(
       inner.style.cssText =
         "max-height:min(24rem,70vh);min-width:0;max-width:24rem;overflow-x:hidden;overflow-y:auto;padding:0.25rem;";
 
+      const reserveIconSlot = entries.some(
+        (entry) =>
+          entry.header !== true &&
+          (typeof entry.checked === "boolean" ||
+            (typeof entry.icon === "string" && ICON_PATHS[entry.icon] !== undefined)),
+      );
+
       for (const item of entries) {
         if (item.separatorBefore === true && inner.children.length > 0) {
           const separator = document.createElement("div");
@@ -442,19 +457,17 @@ export function showContextMenuFallback<T extends string>(
           button.setAttribute("role", "menuitemradio");
           button.setAttribute("aria-checked", item.checked ? "true" : "false");
           const check = item.checked ? createIconElement("check", "neutral") : null;
-          if (check) {
-            button.appendChild(check);
-          } else {
-            const spacer = document.createElement("span");
-            spacer.className = "size-4.5 shrink-0 sm:size-4";
-            spacer.style.cssText = "display:inline-block;width:1rem;height:1rem;flex-shrink:0;";
-            spacer.setAttribute("aria-hidden", "true");
-            button.appendChild(spacer);
-          }
-        } else if (typeof item.icon === "string") {
-          const icon = createIconElement(item.icon, isLeafDestructive ? "destructive" : "neutral");
+          button.appendChild(check ?? createIconSpacer());
+        } else {
+          const icon =
+            typeof item.icon === "string"
+              ? createIconElement(item.icon, isLeafDestructive ? "destructive" : "neutral")
+              : null;
           if (icon) {
             button.appendChild(icon);
+          } else if (reserveIconSlot) {
+            // Iconless rows keep the slot so labels line up with icon rows.
+            button.appendChild(createIconSpacer());
           }
         }
 

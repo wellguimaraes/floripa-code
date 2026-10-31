@@ -234,6 +234,25 @@ describe("showContextMenuFallback", () => {
     await expect(selectionPromise).resolves.toBeNull();
   });
 
+  it("reserves the icon slot on iconless rows only when a sibling has an icon", async () => {
+    const leadingSpacer = (label: string) =>
+      findButton(label)?.children[0]?.attributes.get("aria-hidden") === "true";
+
+    showContextMenuFallback([
+      { id: "add", label: "Add", icon: "plus" },
+      { id: "import", label: "Import" },
+    ]);
+    expect(leadingSpacer("Import")).toBe(true);
+    dismissContextMenu();
+
+    showContextMenuFallback([
+      { id: "rename", label: "Rename" },
+      { id: "archive", label: "Archive" },
+    ]);
+    expect(leadingSpacer("Rename")).toBe(false);
+    dismissContextMenu();
+  });
+
   it("resolves a clicked flat menu item", async () => {
     const selectionPromise = showContextMenuFallback([
       { id: "rename", label: "Rename" },
