@@ -8,7 +8,7 @@ import * as DateTime from "effect/DateTime";
 import {
   ArchiveIcon,
   ChevronDownIcon,
-  MessagesSquareIcon,
+  PanelRightCloseIcon,
   RefreshCwIcon,
   SquareIcon,
   XIcon,
@@ -513,7 +513,7 @@ export function WorldBubble(props: {
                   />
                 }
               >
-                <MessagesSquareIcon />
+                <PanelRightCloseIcon />
               </TooltipTrigger>
               <TooltipPopup side="top">
                 <span className="flex items-center gap-2">
