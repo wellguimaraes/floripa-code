@@ -2,6 +2,7 @@ import { Canvas, events, type ThreeEvent, useFrame, useThree } from "@react-thre
 import { PlusIcon, SquareTerminalIcon } from "lucide-react";
 import { scopedProjectKey, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
+import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import {
   lazy,
@@ -41,6 +42,7 @@ import {
   readEnvironmentSupportsTitleRegeneration,
   readThreadShell,
   useProjects,
+  useServerConfigs,
   useThreadShells,
   waitForThreadShell,
 } from "../../state/entities";
@@ -80,7 +82,13 @@ import {
 } from "./scene/Character";
 import { geometry } from "./scene/geometries";
 import { HAT_COUNT } from "./scene/Hat";
-import { Island, LAGOON_REACH, WIDE_LAGOON_REACH, type FurnitureSpot } from "./scene/Island";
+import {
+  Island,
+  LAGOON_REACH,
+  MainlandCoast,
+  WIDE_LAGOON_REACH,
+  type FurnitureSpot,
+} from "./scene/Island";
 import { ISLAND_MOVE_MS, ISLAND_SINK_MS, IslandMotion } from "./scene/IslandMotion";
 import { afterPaint, whenIdle } from "./scene/frames";
 import { FadedContext, WorldDaylight } from "./scene/lighting";
@@ -167,6 +175,7 @@ export default function WorldCanvas(props: {
 
   const threads = useThreadShells();
   const projects = useProjects();
+  const serverConfigs = useServerConfigs();
   const localVisits = useUiStateStore((state) => state.threadLastVisitedAtById);
   const facts = useMemo(
     () => buildCharacterFacts({ threads, localLastVisitedAt: (key) => localVisits[key] }),
@@ -177,6 +186,7 @@ export default function WorldCanvas(props: {
   const groupingSettings = useClientSettings(selectProjectGroupingSettings);
   const {
     islandOf,
+    mainland,
     projectOrder,
     projectTitles,
     projectRefs,
@@ -189,17 +199,32 @@ export default function WorldCanvas(props: {
     for (const group of groups) {
       for (const ref of group.memberProjectRefs) islandOf.set(scopedProjectKey(ref), group.key);
     }
+    // Threads without a project live on the mainland, land left of every island.
+    const mainland = new Set(
+      groups
+        .filter((group) =>
+          group.members.some(({ project }) =>
+            isScratchProject(
+              project,
+              serverConfigs.get(project.environmentId)?.scratchWorkspaceRoot,
+            ),
+          ),
+        )
+        .map((group) => group.key),
+    );
     // Signs are read at a glance: "owner/repo" groups show just the repo.
     const title = (group: (typeof groups)[number]) =>
-      group.label.slice(group.label.lastIndexOf("/") + 1);
-    // Islands line up by the name on their sign.
+      mainland.has(group.key) ? "Mainland" : group.label.slice(group.label.lastIndexOf("/") + 1);
+    // The mainland leads every list, then islands line up by the name on their sign.
     const sorted = groups.toSorted(
       (a, b) =>
+        Number(mainland.has(b.key)) - Number(mainland.has(a.key)) ||
         title(a).localeCompare(title(b), undefined, { sensitivity: "base", numeric: true }) ||
         a.key.localeCompare(b.key),
     );
     return {
       islandOf,
+      mainland,
       projectOrder: sorted.map((group) => group.key),
       projectTitles: new Map(sorted.map((group) => [group.key, title(group)])),
       // New agents on an island start in its group's main project.
@@ -228,7 +253,7 @@ export default function WorldCanvas(props: {
         ]),
       ),
     };
-  }, [projects, groupingSettings]);
+  }, [projects, groupingSettings, serverConfigs]);
   const islandFacts = useMemo(
     () => facts.map((f) => ({ ...f, projectKey: islandOf.get(f.projectKey) ?? f.projectKey })),
     [facts, islandOf],
@@ -322,9 +347,15 @@ export default function WorldCanvas(props: {
     );
     return [...collapsed.facts, ...held].filter((f) => !laidOut[f.projectKey]);
   }, [collapsed, archiving, abductions, laidOut]);
+  // The mainland has no repository, so its sign has no branches or pull requests to count.
   const visibleMembers = useMemo(
-    () => new Map(visibleOrder.map((key) => [key, projectMembers.get(key) ?? []])),
-    [visibleOrder, projectMembers],
+    () =>
+      new Map(
+        visibleOrder
+          .filter((key) => !mainland.has(key))
+          .map((key) => [key, projectMembers.get(key) ?? []]),
+      ),
+    [visibleOrder, projectMembers, mainland],
   );
   const islandPrefs = useWorldIslandPrefsStore((state) => state.prefs);
   const signStats = useIslandSignStats(visibleMembers, projects);
@@ -371,7 +402,11 @@ export default function WorldCanvas(props: {
         chosenHues,
         checkedAt: clock,
         requested,
-        columns: arrangementColumns(arrangement, visibleOrder.length),
+        columns: arrangementColumns(
+          arrangement,
+          visibleOrder.filter((key) => !mainland.has(key)).length,
+        ),
+        mainland,
       }),
     [
       memory,
@@ -383,6 +418,7 @@ export default function WorldCanvas(props: {
       requested,
       chosenHues,
       arrangement,
+      mainland,
     ],
   );
   // The open chat's header shows its character, so it needs the same look.
@@ -826,18 +862,24 @@ export default function WorldCanvas(props: {
       .filter((c) => !c.facts.kid && !abducted.has(c.facts.key))
       .toSorted((a, b) => b.facts.lastReplyAt.localeCompare(a.facts.lastReplyAt));
     const scriptAgent = agents.find((c) => c.facts.worktreePath === null) ?? agents[0];
+    const onMainland = mainland.has(key);
     const clicked = await showContextMenuFallback(
       [
         { id: "only", label: "Show only this island", icon: "eye" },
         { id: "hide", label: "Hide this island", icon: "eye-off" },
         { id: "zoom", label: "Zoom to this island", icon: "zoom-in" },
-        {
-          id: "run-script",
-          label: "Run script…",
-          icon: "square-play",
-          disabled: scriptAgent === undefined,
-          separatorBefore: true,
-        },
+        // The mainland has no project to script or remove.
+        ...(onMainland
+          ? []
+          : [
+              {
+                id: "run-script",
+                label: "Run script…",
+                icon: "square-play",
+                disabled: scriptAgent === undefined,
+                separatorBefore: true,
+              },
+            ]),
         ...(islandPrefs[key]?.idleAlarmMinutes !== undefined
           ? [
               {
@@ -877,12 +919,16 @@ export default function WorldCanvas(props: {
         { id: "restore-archived", label: "Restore archived agent…", icon: "archive-restore" },
         { id: "prefs", label: "Island preferences…", icon: "settings", separatorBefore: true },
         // Hiding keeps the project; removing it drops the project and its threads.
-        {
-          id: "remove",
-          label: "Remove project…",
-          icon: "trash",
-          disabled: !canOperateIsland(checkouts),
-        },
+        ...(onMainland
+          ? []
+          : [
+              {
+                id: "remove",
+                label: "Remove project…",
+                icon: "trash",
+                disabled: !canOperateIsland(checkouts),
+              },
+            ]),
       ],
       awayFromPointer(point),
     );
@@ -1562,6 +1608,9 @@ export default function WorldCanvas(props: {
                     });
                   }}
                 >
+                  {mainland.has(island.key) ? (
+                    <MainlandCoast definition={island.definition} />
+                  ) : null}
                   <Island
                     definition={island.definition}
                     furniture={buildFurniture(island.definition, island.characters)}
@@ -1577,6 +1626,7 @@ export default function WorldCanvas(props: {
                       color={plate}
                       branches={signStats.get(island.key)?.branches ?? 0}
                       pullRequests={signStats.get(island.key)?.pullRequests ?? 0}
+                      hideCounts={mainland.has(island.key)}
                       onListClick={(point) => {
                         // The sign is on the canvas, so it is not a press outside the bubbles.
                         setBubbleKey(null);
@@ -3352,6 +3402,7 @@ function createArchipelagoMemory() {
       readonly checkedAt: number;
       readonly requested: ReadonlyMap<string, SlotRequest>;
       readonly columns: number;
+      readonly mainland: ReadonlySet<string>;
     }): WorldIsland[] {
       const { movement } = input.definition;
       const now = Math.max(input.checkedAt, Date.now());

@@ -694,6 +694,48 @@ describe("resolveArchipelago", () => {
     expect(sizeOf(miners(100))).toBe(islandWorlds.length - 1);
   });
 
+  it("pins the mainland left of the grid, whatever the arrangement", () => {
+    const onScreen = (offset: readonly [number, number, number]) =>
+      [Math.round(offset[0] - offset[2]), Math.round(offset[0] + offset[2])] as const;
+    const facts = ["home", "a", "b"].map((projectKey) => character({ projectKey }));
+    const layout = (columns: number, previous = EMPTY_ARCHIPELAGO_MEMORY) =>
+      resolveArchipelago({
+        facts,
+        definition: testWorld,
+        projectOrder: ["home", "a", "b"],
+        hueCount: 3,
+        hatCount: 3,
+        columns,
+        mainland: new Set(["home"]),
+        previous,
+      });
+    for (const columns of [1, 2]) {
+      const result = layout(columns);
+      const at = Object.fromEntries(
+        result.islands.map((island) => [island.key, onScreen(island.offset)]),
+      );
+      // The grid starts at the origin as if the mainland were not there.
+      expect(at.a).toEqual([0, 0]);
+      // The mainland sits a gap left of the first column, level with the first row.
+      const reach = Math.sqrt(34);
+      expect(at.home).toEqual([
+        Math.round(-(Math.SQRT2 * (2 * reach + testWorld.archipelago.gap))),
+        0,
+      ]);
+      expect(result.islands.find((island) => island.key === "home")!.cell).toBe(-1);
+      // A mainland key never takes a grid cell, even one remembered from before.
+      const again = layout(columns, {
+        ...result.memory,
+        cells: new Map([["home", 0]]),
+      });
+      expect(Object.fromEntries(again.islands.map((island) => [island.key, island.cell]))).toEqual({
+        home: -1,
+        a: 0,
+        b: 1,
+      });
+    }
+  });
+
   it("lines islands up down the screen, along it, or in a square grid", () => {
     // The camera looks down the (1, 1) diagonal: x - z runs right, x + z runs down.
     const onScreen = (arrangement: IslandArrangement, count: number) =>

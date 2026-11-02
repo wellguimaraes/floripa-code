@@ -19,6 +19,14 @@ on the sign changes in Settings only; see
 If a project's folder was moved or deleted outside the app, a **Folder not found**
 pill shows over its sign. Click it to point the project at the folder's new
 place, or to remove the project along with its threads.
+
+Threads without a project live on the **Mainland**, a coast on the left of the
+map that stays there however you arrange the islands. It appears once you have
+started a thread without a project, and it comes first when you pick an island
+for a new agent. Each agent there works in its own folder under `~/FloripaCode`
+(see [Threads without a project](thread-sidebar.md)). Its sign has no branch or
+pull request counts, and its menu has no **Run script…** or **Remove project…**.
+
 Where a character is and what it does tells you the thread's state at a glance:
 
 - **Swinging a pickaxe at the quarry**: the agent is working, or its turn

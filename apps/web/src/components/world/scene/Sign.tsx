@@ -94,6 +94,8 @@ export function Sign(props: {
   readonly color: string;
   readonly branches: number;
   readonly pullRequests: number;
+  /** Leaves both counts off, for land with no repository such as the mainland. */
+  readonly hideCounts?: boolean;
   /** Clicking the branch count, at this point on screen, e.g. to list the branches. */
   readonly onListClick: (point: { readonly x: number; readonly y: number }) => void;
   /** Clicking the PR count, at this point on screen, e.g. to list the PRs. */
@@ -112,6 +114,7 @@ export function Sign(props: {
     color,
     branches,
     pullRequests,
+    hideCounts = false,
     onListClick,
     onPullRequestsClick,
     onBoardClick,
@@ -124,11 +127,18 @@ export function Sign(props: {
   const lit = useContext(TimeOfDayContext).lampsOn;
   const board = useMemo(
     () =>
-      signBoard(text, color, icon, [
-        { icon: BRANCH_ICON, count: branches },
-        { icon: PULL_REQUEST_ICON, count: pullRequests },
-      ]),
-    [text, color, icon, branches, pullRequests],
+      signBoard(
+        text,
+        color,
+        icon,
+        hideCounts
+          ? []
+          : [
+              { icon: BRANCH_ICON, count: branches },
+              { icon: PULL_REQUEST_ICON, count: pullRequests },
+            ],
+      ),
+    [text, color, icon, branches, pullRequests, hideCounts],
   );
   useEffect(() => () => board.texture.dispose(), [board]);
   // The two counts and the preferences button take clicks; the rest of the board opens

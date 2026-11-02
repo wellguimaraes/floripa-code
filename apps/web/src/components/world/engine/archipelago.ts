@@ -9,6 +9,7 @@ import { resolveWorld, type WorldCharacter } from "./world";
 export interface WorldIsland {
   /** The project's key; every character on the island shares it. */
   readonly key: string;
+  /** Its place in the grid; negative on the mainland, which stands outside it. */
   readonly cell: number;
   /** This island's own template, e.g. one of a bigger size. */
   readonly definition: WorldDefinition;
@@ -65,6 +66,11 @@ export function resolveArchipelago(input: {
   readonly requested?: ReadonlyMap<string, SlotRequest>;
   /** Islands per grid row; the definition's `columns` when left out. */
   readonly columns?: number;
+  /**
+   * The mainland: projects drawn as land to the left of the grid rather than
+   * in it, top to bottom in `projectOrder`, e.g. the Scratch project.
+   */
+  readonly mainland?: ReadonlySet<string>;
   readonly previous: ArchipelagoMemory;
 }): { readonly islands: WorldIsland[]; readonly memory: ArchipelagoMemory } {
   const { definition, previous } = input;
@@ -80,11 +86,16 @@ export function resolveArchipelago(input: {
   const keys = [...new Set([...input.projectOrder, ...byProject.keys()])].toSorted(
     (a, b) => (rank.get(a) ?? Infinity) - (rank.get(b) ?? Infinity) || a.localeCompare(b),
   );
+  const mainland = input.mainland ?? new Set<string>();
   const cells = new Map<string, number>();
+  for (const [index, key] of keys.filter((key) => mainland.has(key)).entries()) {
+    cells.set(key, -1 - index);
+  }
   const used = new Set<number>();
   for (const key of keys) {
+    if (mainland.has(key)) continue;
     const cell = previous.cells.get(key);
-    if (cell !== undefined && !used.has(cell)) {
+    if (cell !== undefined && cell >= 0 && !used.has(cell)) {
       cells.set(key, cell);
       used.add(cell);
     }
@@ -344,6 +355,9 @@ export function islandRadius(definition: WorldDefinition): number {
  * with a `key` sits somewhere in its slot, picked by the key, so the grid
  * doesn't look ruled; otherwise it stays in the middle. Islands never leave their slot's column
  * or row, so neighbours' ground circles keep at least `gap` of water between.
+ *
+ * Negative cells are the mainland: `-1`, `-2`, ... stack down a column of
+ * their own left of the grid, level with its first row and never wandering.
  */
 export function islandOffsets(input: {
   readonly islands: ReadonlyArray<{
@@ -360,6 +374,7 @@ export function islandOffsets(input: {
   const columnRadius: number[] = [];
   const rowRadius: number[] = [];
   for (const { cell, radius } of islands) {
+    if (cell < 0) continue;
     const column = cell % columns;
     const row = Math.floor(cell / columns);
     columnRadius[column] = Math.max(columnRadius[column] ?? 0, radius + wander);
@@ -373,7 +388,20 @@ export function islandOffsets(input: {
     }
     return distance;
   };
+  const mainland = islands
+    .filter(({ cell }) => cell < 0)
+    .toSorted((a, b) => b.cell - a.cell)
+    .map(({ radius }) => radius);
+  const toWorld = (right: number, down: number): Vec3 => [
+    (right + down) / Math.SQRT2,
+    0,
+    (down - right) / Math.SQRT2,
+  ];
   return islands.map(({ cell, radius, key }) => {
+    if (cell < 0) {
+      const gridEdge = columnRadius.length === 0 ? -radius : (columnRadius[0] ?? 0) + gap;
+      return toWorld(-(gridEdge + radius), along(mainland, -1 - cell));
+    }
     const column = cell % columns;
     const row = Math.floor(cell / columns);
     // Anywhere in the slot, from one edge of it to the other.
@@ -382,7 +410,7 @@ export function islandOffsets(input: {
       key === undefined || wander === 0 ? 0 : (random() * 2 - 1) * room;
     const right = along(columnRadius, column) + shift(columnRadius[column]! - radius);
     const down = along(rowRadius, row) + shift(rowRadius[row]! - radius);
-    return [(right + down) / Math.SQRT2, 0, (down - right) / Math.SQRT2];
+    return toWorld(right, down);
   });
 }
 

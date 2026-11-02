@@ -227,6 +227,50 @@ export function Island(props: {
   );
 }
 
+/** How far the mainland's land runs: off screen to the left, and up and down. */
+const COAST_WIDTH = 400;
+const COAST_LENGTH = 1200;
+/** Bands from the water up, each starting this much further left than the last. */
+const COAST_BANDS = [
+  { color: palette.shallows, top: -0.24, inset: -3 },
+  { color: palette.foam, top: -0.215, inset: -0.35 },
+  { color: palette.sand, top: TERRAIN_TOP.sand - 0.005, inset: 0 },
+  { color: palette.grass, top: TERRAIN_TOP.grass - 0.005, inset: 2.4 },
+] as const;
+
+/**
+ * The mainland's coast: land running from just left of the island's middle
+ * off the left of the screen, so the island reads as a cape of it. It is
+ * scenery only; the island's own ground stays what agents walk on and what
+ * the camera frames. Its tops sit a hair under the island's so they never fight.
+ */
+export function MainlandCoast(props: { readonly definition: WorldDefinition }) {
+  const { definition } = props;
+  const { minX, minZ, maxX, maxZ } = islandBounds(definition);
+  const [centerX, centerZ] = [(minX + maxX) / 2, (minZ + maxZ) / 2];
+  // The camera looks down the (1, 1) diagonal, so (1, -1) is screen right.
+  const centerRight = (centerX - centerZ) / Math.SQRT2;
+  const centerDown = (centerX + centerZ) / Math.SQRT2;
+  const shore = centerRight - (maxX - minX) * 0.15;
+  return (
+    <group rotation-y={Math.PI / 4}>
+      {COAST_BANDS.map((band) => {
+        const right = shore - band.inset;
+        return (
+          <mesh
+            key={band.color}
+            geometry={geometry.box}
+            position={[right - COAST_WIDTH / 2, band.top - TERRAIN_DEPTH / 2, centerDown]}
+            scale={[COAST_WIDTH, TERRAIN_DEPTH, COAST_LENGTH]}
+          >
+            <LitMaterial color={band.color} />
+          </mesh>
+        );
+      })}
+    </group>
+  );
+}
+
 /**
  * The turquoise and paler bands of water round a sand patch. Widening or
  * narrowing, they grow from the middle over a moment, drawn by scaling the same discs.
