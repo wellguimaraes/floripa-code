@@ -190,8 +190,26 @@ export const make = Effect.gen(function* () {
     function* (input) {
       const resolvedInputPath = yield* resolveBrowseTarget(input, path);
       const endsWithSeparator = /[\\/]$/.test(input.partialPath) || input.partialPath === "~";
-      const parentPath = endsWithSeparator ? resolvedInputPath : path.dirname(resolvedInputPath);
-      const prefix = endsWithSeparator ? "" : path.basename(resolvedInputPath);
+      // Split at the typed separator rather than after resolving, which would
+      // fold a typed `.` or `..` (the start of a dot name) into the folder.
+      const separatorIndex = Math.max(
+        input.partialPath.lastIndexOf("/"),
+        input.partialPath.lastIndexOf("\\"),
+      );
+      const splitAtSeparator = !endsWithSeparator && separatorIndex >= 0;
+      const parentPath = endsWithSeparator
+        ? resolvedInputPath
+        : splitAtSeparator
+          ? yield* resolveBrowseTarget(
+              { ...input, partialPath: input.partialPath.slice(0, separatorIndex + 1) },
+              path,
+            )
+          : path.dirname(resolvedInputPath);
+      const prefix = endsWithSeparator
+        ? ""
+        : splitAtSeparator
+          ? input.partialPath.slice(separatorIndex + 1)
+          : path.basename(resolvedInputPath);
 
       const dirents = yield* Effect.tryPromise({
         try: () => NodeFSP.readdir(parentPath, { withFileTypes: true }),
@@ -212,25 +230,41 @@ export const make = Effect.gen(function* () {
         ),
       );
 
-      const showHidden = endsWithSeparator || prefix.startsWith(".");
+      // The folder picker shows a listed folder's dot folders; a file list
+      // would bury what the user is after under them, so it waits for a dot.
+      const showHidden = prefix.startsWith(".") || (endsWithSeparator && !input.includeFiles);
       const lowerPrefix = prefix.toLowerCase();
-      const entries: Array<{ readonly name: string; readonly fullPath: string }> = [];
+      const entries: Array<{
+        readonly name: string;
+        readonly fullPath: string;
+        readonly kind: "file" | "directory";
+      }> = [];
       for (const dirent of dirents) {
-        if (
-          dirent.isDirectory() &&
-          dirent.name.toLowerCase().startsWith(lowerPrefix) &&
-          (showHidden || !dirent.name.startsWith("."))
-        ) {
-          entries.push({
-            name: dirent.name,
-            fullPath: path.join(parentPath, dirent.name),
-          });
-        }
+        if (!dirent.name.toLowerCase().startsWith(lowerPrefix)) continue;
+        if (!showHidden && dirent.name.startsWith(".")) continue;
+        const fullPath = path.join(parentPath, dirent.name);
+        const kind = dirent.isDirectory()
+          ? "directory"
+          : !input.includeFiles
+            ? null
+            : dirent.isSymbolicLink()
+              ? // A link counts as what it points at; a broken one is left out.
+                yield* Effect.tryPromise(() => NodeFSP.stat(fullPath)).pipe(
+                  Effect.map((stats) => (stats.isDirectory() ? "directory" : "file")),
+                  Effect.orElseSucceed(() => null),
+                )
+              : "file";
+        if (kind !== null) entries.push({ name: dirent.name, fullPath, kind });
       }
 
+      const sorted = entries.toSorted(
+        (left, right) =>
+          (left.kind === right.kind ? 0 : left.kind === "directory" ? -1 : 1) ||
+          left.name.localeCompare(right.name),
+      );
       return {
         parentPath,
-        entries: entries.toSorted((left, right) => left.name.localeCompare(right.name)),
+        entries: input.limit === undefined ? sorted : sorted.slice(0, input.limit),
       };
     },
   );

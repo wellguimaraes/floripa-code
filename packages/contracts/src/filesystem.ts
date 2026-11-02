@@ -6,12 +6,23 @@ const FILESYSTEM_PATH_MAX_LENGTH = 512;
 export const FilesystemBrowseInput = Schema.Struct({
   partialPath: TrimmedNonEmptyString.check(Schema.isMaxLength(FILESYSTEM_PATH_MAX_LENGTH)),
   cwd: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(FILESYSTEM_PATH_MAX_LENGTH))),
+  /**
+   * Lists files too, folders first, and hides dot entries unless the typed
+   * name starts with a dot. Older servers ignore it and list folders only.
+   */
+  includeFiles: Schema.optional(Schema.Boolean),
+  /** Most entries to return, after sorting. */
+  limit: Schema.optional(
+    Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(1000)),
+  ),
 });
 export type FilesystemBrowseInput = typeof FilesystemBrowseInput.Type;
 
 export const FilesystemBrowseEntry = Schema.Struct({
   name: TrimmedNonEmptyString,
   fullPath: TrimmedNonEmptyString,
+  /** Missing from older servers, which list folders only. */
+  kind: Schema.optional(Schema.Literals(["file", "directory"])),
 });
 export type FilesystemBrowseEntry = typeof FilesystemBrowseEntry.Type;
 

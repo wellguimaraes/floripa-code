@@ -196,6 +196,7 @@ import {
   type TerminalContextSelection,
 } from "../../lib/terminalContext";
 import { useComposerPathSearch } from "../../lib/composerPathSearchState";
+import { useBrowsesHome, useHomePathBrowse } from "../../lib/homePathBrowse";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import {
   getRestingComposerImagePreviewCounts,
@@ -2516,10 +2517,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const isPathTrigger = composerTriggerKind === "path";
   // Thread shells only feed `@` thread matches, so skip shell updates otherwise.
   const environmentThreadShells = useThreadShells(isPathTrigger);
+  // Threads without a project have no workspace worth searching, so `@`
+  // walks the machine from `~` instead.
+  const browsesHome = useBrowsesHome(environmentId, gitCwd);
   const workspaceEntries = useComposerPathSearch({
     environmentId,
-    cwd: isPathTrigger ? gitCwd : null,
-    query: isPathTrigger ? pathTriggerQuery : null,
+    cwd: isPathTrigger && !browsesHome ? gitCwd : null,
+    query: isPathTrigger && !browsesHome ? pathTriggerQuery : null,
+  });
+  const homeBrowse = useHomePathBrowse({
+    environmentId,
+    query: isPathTrigger && browsesHome ? pathTriggerQuery : null,
   });
   const compactSlashCommandAvailable =
     composerTrigger?.kind === "slash-command" &&
@@ -2606,6 +2614,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           excludeThreadId: activeThreadId,
           query: composerTrigger.query,
         }),
+        ...homeBrowse.items,
         ...workspaceEntries.entries.map((entry) => ({
           id: `path:${entry.kind}:${entry.path}`,
           type: "path" as const,
@@ -2763,6 +2772,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     selectedProviderStatus,
     settings.showSkillsInSlashMenu,
     workspaceEntries.entries,
+    homeBrowse.items,
   ]);
 
   const composerMenuOpen = Boolean(composerTrigger);
@@ -2836,6 +2846,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const isComposerMenuLoading =
     (composerTriggerKind === "path" && pathTriggerQuery.length > 0 && workspaceEntries.isPending) ||
+    (composerTriggerKind === "path" && homeBrowse.isPending) ||
     (composerTriggerKind === "pull-request" &&
       pullRequestProjectId !== null &&
       pullRequestRepository !== null &&
@@ -3954,6 +3965,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       });
       const { snapshot, trigger } = resolveActiveComposerTrigger();
       if (!trigger) return;
+      if (item.type === "path" && item.browseTo !== undefined) {
+        // Opening a folder keeps the `@` query going, one level down.
+        const applied = applyPromptReplacement(
+          trigger.rangeStart,
+          trigger.rangeEnd,
+          `@${item.browseTo}`,
+          { expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd) },
+        );
+        if (applied) {
+          setComposerHighlightedItemId(null);
+        }
+        return;
+      }
       if (item.type === "path") {
         const replacement = `${serializeComposerFileLink(item.path)} `;
         const replacementRangeEnd = extendReplacementRangeForTrailingSpace(

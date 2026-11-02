@@ -248,6 +248,13 @@ opens it when selected. Your prompt only carries a reference: the agent reads th
 history on demand, so attaching a long thread costs nothing until the agent looks. Attaching a
 thread does not change it, and the agent cannot send messages to it unless you ask.
 
+In a thread without a project, `@` browses the environment's machine from your home folder
+instead of searching a workspace. `@` alone lists your home folder, and each `/` you type
+moves into a folder; you can also type a path such as `@~/Documents/` or `@/etc/`. Choose a
+folder to open it, or a file to mention it. Inside a folder, its first suggestion mentions the
+folder itself. Hidden files appear once you type a dot. The mobile app does not browse this
+way yet.
+
 Images keep their thumbnail shelf above the text and also get a chip at your cursor, so you can
 say exactly which image you mean. Deleting an image's last chip asks whether to remove the image
 too; check **Remember my choice** to stop asking, and change it later under **Settings → General

@@ -757,8 +757,8 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {
         expect(result).toEqual({
           parentPath: cwd,
           entries: [
-            { name: "alpha", fullPath: path.join(cwd, "alpha") },
-            { name: "alpine", fullPath: path.join(cwd, "alpine") },
+            { name: "alpha", fullPath: path.join(cwd, "alpha"), kind: "directory" },
+            { name: "alpine", fullPath: path.join(cwd, "alpine"), kind: "directory" },
           ],
         });
       }),
@@ -783,8 +783,50 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {
         expect(directoryResult.entries.map((entry) => entry.name)).toEqual([".config", "config"]);
         expect(hiddenPrefixResult).toEqual({
           parentPath: cwd,
-          entries: [{ name: ".config", fullPath: path.join(cwd, ".config") }],
+          entries: [{ name: ".config", fullPath: path.join(cwd, ".config"), kind: "directory" }],
         });
+      }),
+    );
+
+    it.effect("lists files after folders, hiding dot entries until a dot is typed", () =>
+      Effect.gen(function* () {
+        const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir({ prefix: "floripacode-workspace-browse-files-" });
+        yield* writeTextFile(cwd, "notes.md", "# notes");
+        yield* writeTextFile(cwd, "Photos/cat.png", "png");
+        yield* writeTextFile(cwd, ".zshrc", "export X=1");
+        yield* writeTextFile(cwd, ".config/settings.json", "{}");
+        yield* Effect.promise(() =>
+          NodeFSP.symlink(path.join(cwd, "Photos"), path.join(cwd, "pics")),
+        );
+        yield* Effect.promise(() =>
+          NodeFSP.symlink(path.join(cwd, "gone"), path.join(cwd, "broken")),
+        );
+        const cwdWithSeparator = yield* appendSeparator(cwd);
+
+        const listing = yield* workspaceEntries.browse({
+          partialPath: cwdWithSeparator,
+          includeFiles: true,
+        });
+        expect(listing.entries.map(({ name, kind }) => [name, kind])).toEqual([
+          ["Photos", "directory"],
+          ["pics", "directory"],
+          ["notes.md", "file"],
+        ]);
+
+        const dotted = yield* workspaceEntries.browse({
+          partialPath: `${cwdWithSeparator}.`,
+          includeFiles: true,
+        });
+        expect(dotted.entries.map(({ name }) => name)).toEqual([".config", ".zshrc"]);
+
+        const limited = yield* workspaceEntries.browse({
+          partialPath: cwdWithSeparator,
+          includeFiles: true,
+          limit: 1,
+        });
+        expect(limited.entries.map(({ name }) => name)).toEqual(["Photos"]);
       }),
     );
 
@@ -802,7 +844,7 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {
 
         expect(result).toEqual({
           parentPath: cwd,
-          entries: [{ name: "packages", fullPath: path.join(cwd, "packages") }],
+          entries: [{ name: "packages", fullPath: path.join(cwd, "packages"), kind: "directory" }],
         });
       }),
     );

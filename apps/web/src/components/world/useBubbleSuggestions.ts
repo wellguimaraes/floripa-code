@@ -16,6 +16,7 @@ import {
 } from "../../composer-logic";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { useComposerPathSearch } from "../../lib/composerPathSearchState";
+import { useBrowsesHome, useHomePathBrowse } from "../../lib/homePathBrowse";
 import { basenameOfPath } from "../../pierre-icons";
 import { searchProviderSkills } from "../../providerSkillSearch";
 import type { ComposerCommandItem } from "../chat/ComposerCommandMenu";
@@ -41,7 +42,7 @@ function rangeEndWithTrailingSpace(text: string, rangeEnd: number, replacement: 
 
 /**
  * The chat composer's suggestions for a world bubble: `@` for files and
- * folders in the agent's workspace, `/` for the provider's commands and skills
+ * folders in the agent's workspace (from `~` on the mainland), `/` for the provider's commands and skills
  * plus the bubble's own, `$` for skills. Picks insert the same text the chat
  * inserts, so the agent reads them the same way. Thread and pull request
  * mentions are left out: they carry context records only a chat draft keeps.
@@ -69,10 +70,15 @@ export function useBubbleSuggestions(input: {
   }>({ itemId: null, searchKey: null });
 
   const pathQuery = trigger?.kind === "path" && cwd !== null ? trigger.query : null;
+  const browsesHome = useBrowsesHome(environmentId, cwd);
   const workspaceEntries = useComposerPathSearch({
     environmentId,
-    cwd: pathQuery === null ? null : cwd,
-    query: pathQuery,
+    cwd: pathQuery === null || browsesHome ? null : cwd,
+    query: browsesHome ? null : pathQuery,
+  });
+  const homeBrowse = useHomePathBrowse({
+    environmentId,
+    query: browsesHome ? pathQuery : null,
   });
   const skills = useMemo(
     () => (provider === null ? [] : resolveProviderSkillsForCwd(provider, cwd)),
@@ -86,6 +92,7 @@ export function useBubbleSuggestions(input: {
   const items = useMemo<ComposerCommandItem[]>(() => {
     if (trigger === null) return EMPTY_ITEMS;
     if (trigger.kind === "path") {
+      if (browsesHome) return homeBrowse.items;
       return workspaceEntries.entries.map((entry) => ({
         id: `path:${entry.kind}:${entry.path}`,
         type: "path" as const,
@@ -150,6 +157,8 @@ export function useBubbleSuggestions(input: {
     }
     return EMPTY_ITEMS;
   }, [
+    browsesHome,
+    homeBrowse.items,
     provider,
     providerSlashCommands,
     showSkillsInSlashMenu,
@@ -200,6 +209,12 @@ export function useBubbleSuggestions(input: {
     setTrigger(null);
     switch (item.type) {
       case "path":
+        if (item.browseTo !== undefined) {
+          // Opening a folder keeps the `@` query going, one level down.
+          const opened = replaceTextRange(text, rangeStart, rangeEnd, `@${item.browseTo}`);
+          setTrigger(detectComposerTrigger(opened.text, opened.cursor));
+          return opened;
+        }
         return replace(`${serializeComposerFileLink(item.path)} `);
       case "slash-command":
         onSlashCommand(item.command);
@@ -229,7 +244,8 @@ export function useBubbleSuggestions(input: {
     trigger: open ? trigger : null,
     items: open ? items : EMPTY_ITEMS,
     activeItem: open ? (items.find((item) => item.id === activeItemId) ?? null) : null,
-    isLoading: open && trigger?.kind === "path" && workspaceEntries.isPending,
+    isLoading:
+      open && trigger?.kind === "path" && (workspaceEntries.isPending || homeBrowse.isPending),
     highlightItem,
     moveHighlight,
     dismiss: () => dismissTrigger(trigger),

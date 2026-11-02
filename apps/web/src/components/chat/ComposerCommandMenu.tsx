@@ -38,6 +38,8 @@ export type ComposerCommandItem =
       pathKind: ProjectEntry["kind"];
       label: string;
       description: string;
+      /** When browsing from `~`: the `@` query that opens this folder instead of inserting it. */
+      browseTo?: string;
     }
   | {
       id: string;
