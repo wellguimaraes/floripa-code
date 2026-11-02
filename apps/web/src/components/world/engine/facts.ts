@@ -1,6 +1,6 @@
 import { scopedProjectKey, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import { PROJECT_ACTIVE_THREAD_CAP, type ScopedThreadRef } from "@t3tools/contracts";
 
 import {
   hasUnseenCompletion,
@@ -88,22 +88,54 @@ export function ageReplies(facts: ReadonlyArray<CharacterFacts>, now: number): C
   }));
 }
 
-const WORLD_CHARACTER_LIMIT = 30;
+/**
+ * The most recently updated agents on each island, at most
+ * `PROJECT_ACTIVE_THREAD_CAP`, each with its subagents. The server archives
+ * past the cap, so this only guards against servers that predate it.
+ */
+function chooseThreads(
+  threads: ReadonlyArray<EnvironmentThreadShell>,
+  byId: ReadonlyMap<string, EnvironmentThreadShell>,
+): EnvironmentThreadShell[] {
+  const sorted = threads.toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  // A family's root: the nearest ancestor still in the shell, so a subagent
+  // whose parent is archived stands on its own.
+  const rootOf = (thread: EnvironmentThreadShell) => {
+    let current = thread;
+    for (let depth = 0; depth < 32; depth += 1) {
+      const parent = subagentParent(current, byId);
+      if (parent === null) break;
+      current = parent;
+    }
+    return current;
+  };
+  const perIsland = new Map<string, number>();
+  const chosenRoots = new Set<string>();
+  for (const thread of sorted) {
+    if (rootOf(thread) !== thread) continue;
+    const island = scopedProjectKey({
+      environmentId: thread.environmentId,
+      projectId: thread.projectId,
+    });
+    const count = perIsland.get(island) ?? 0;
+    if (count >= PROJECT_ACTIVE_THREAD_CAP) continue;
+    perIsland.set(island, count + 1);
+    chosenRoots.add(threadKey(thread));
+  }
+  return sorted.filter((thread) => chosenRoots.has(threadKey(rootOf(thread))));
+}
 
 /**
- * Turns the thread shell into characters: the most recently updated threads,
- * with subagents attached to their parent when the parent is present too.
+ * Turns the thread shell into characters: the most recent agents on each
+ * island, with subagents attached to their parent when the parent is present too.
  */
 export function buildCharacterFacts(input: {
   readonly threads: ReadonlyArray<EnvironmentThreadShell>;
   /** Browser-local visited watermarks, for servers without visited tracking. */
   readonly localLastVisitedAt: (key: string) => string | undefined;
-  readonly limit?: number;
 }): CharacterFacts[] {
   const byId = new Map(input.threads.map((thread) => [thread.id as string, thread]));
-  const chosen = input.threads
-    .toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-    .slice(0, input.limit ?? WORLD_CHARACTER_LIMIT);
+  const chosen = chooseThreads(input.threads, byId);
   const chosenKeys = new Set(chosen.map((thread) => threadKey(thread)));
 
   const drafts = chosen.map((thread) => {

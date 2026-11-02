@@ -1,4 +1,10 @@
-import { ProjectId, ProviderInstanceId, RunId, ThreadId } from "@t3tools/contracts";
+import {
+  PROJECT_ACTIVE_THREAD_CAP,
+  ProjectId,
+  ProviderInstanceId,
+  RunId,
+  ThreadId,
+} from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { makeThreadFixture, type ThreadFixtureOverrides } from "../../../test-fixtures";
@@ -30,14 +36,30 @@ const subagentOf = (parent: string) => ({
   },
 });
 
-const build = (threads: ReturnType<typeof thread>[], limit?: number) =>
-  buildCharacterFacts({
-    threads,
-    localLastVisitedAt: () => undefined,
-    ...(limit ? { limit } : {}),
-  });
+const build = (threads: ReturnType<typeof thread>[]) =>
+  buildCharacterFacts({ threads, localLastVisitedAt: () => undefined });
 
 describe("buildCharacterFacts", () => {
+  it("draws the most recent agents of each island up to the cap, subagents riding along", () => {
+    const at = (minute: number) => `2026-01-01T00:${String(minute).padStart(2, "0")}:00.000Z`;
+    const busy = Array.from({ length: PROJECT_ACTIVE_THREAD_CAP + 1 }, (_, index) =>
+      thread(`busy${index}`, { updatedAt: at(index + 10) }),
+    );
+    const other = thread("other", {
+      projectId: ProjectId.make("project-2"),
+      updatedAt: at(0),
+    });
+    const kid = thread("kid", { ...subagentOf("busy1"), updatedAt: at(1) });
+    const shown = new Set(build([...busy, other, kid]).map((f) => f.ref.threadId as string));
+
+    // The oldest agent on the full island is left off; the other island keeps its own.
+    expect(shown.has("busy0")).toBe(false);
+    expect(shown.has("busy1")).toBe(true);
+    expect(shown.has("kid")).toBe(true);
+    expect(shown.has("other")).toBe(true);
+    expect(shown.size).toBe(PROJECT_ACTIVE_THREAD_CAP + 2);
+  });
+
   it("makes a subagent a kid of its parent and gives it the parent's look", () => {
     const facts = build([
       thread("parent"),
@@ -149,18 +171,6 @@ describe("buildCharacterFacts", () => {
     const parent = facts.find((f) => f.ref.threadId === "parent")!;
     expect(kid.projectKey).toBe(parent.projectKey);
     expect(parent.projectKey).toMatch(/:app$/);
-  });
-
-  it("keeps the most recently updated threads", () => {
-    const facts = build(
-      [
-        thread("old", { updatedAt: "2026-01-01T00:00:00.000Z" }),
-        thread("new", { updatedAt: "2026-03-01T00:00:00.000Z" }),
-        thread("mid", { updatedAt: "2026-02-01T00:00:00.000Z" }),
-      ],
-      2,
-    );
-    expect(facts.map((f) => f.ref.threadId)).toEqual(["new", "mid"]);
   });
 });
 

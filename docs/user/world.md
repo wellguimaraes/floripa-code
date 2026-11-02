@@ -138,7 +138,11 @@ button per island in its sign's colour; use the arrow keys and `Enter`, or click
 The map then glides to that island if needed and opens the new-agent bubble over
 its first free pile. With only one island, it skips the question.
 
-The world shows the 30 most recently updated threads.
+Each island keeps at most 20 agents. When a new agent arrives or one finishes,
+the agents that have rested longest are archived to make room: only ones that
+are done, have nothing running, and whose last reply you have seen. Subagents
+go with their agent. Restore one from the island's **Restore archived agent…**
+or **Settings → Archived**.
 
 The pill beside the Settings gear shows how much subscription quota is left
 for each provider, pooled across your accounts as in **Usage → Limits**, with the

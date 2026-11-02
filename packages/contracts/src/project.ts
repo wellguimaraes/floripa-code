@@ -162,6 +162,12 @@ export const ReceivedProjectIcon = ForwardCompatibleUnion(projectIconMembers, "k
   ),
 );
 
+/**
+ * Active top-level threads a project keeps. The server archives the
+ * longest-resting ones past it; the world draws at most this many per island.
+ */
+export const PROJECT_ACTIVE_THREAD_CAP = 20;
+
 export const Project = Schema.Struct({
   id: ProjectId,
   title: TrimmedNonEmptyString,

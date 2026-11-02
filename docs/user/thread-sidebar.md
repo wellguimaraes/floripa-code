@@ -230,6 +230,11 @@ On web and desktop, use **Agents** to follow work delegated to subagents.
 Stop on a thread also stops the subagents it delegated to. Archiving a thread
 also archives its idle subagents; a subagent that is still working stays active.
 
+Each project keeps at most 20 active threads, not counting subagents. Past that,
+the threads that have rested longest are archived automatically: only finished
+ones with nothing running, no question or approval waiting, and no unread reply.
+Pinned threads count like any other. Find them under **Settings → Archived**.
+
 Subagent threads started by the agent can't take messages; message the parent
 thread instead. When such a subagent needs an approval or an answer, the parent
 thread asks for it.
