@@ -327,12 +327,11 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
       ponder: { pose: "ponder", ambientFps: 8 },
       idle: { pose: "stand" },
       wait: { pose: "sitUp" },
-      celebrate: { pose: "wave", ambientFps: 12 },
+      celebrate: { pose: "wave" },
       sit: { pose: "slump" },
       sleep: { pose: "lie" },
-      // Sits on the sand off the pier; the spot hands over the rod. Frames for
-      // the swinging legs and the glances around.
-      fish: { pose: "slump", ambientFps: 10 },
+      // Sits on the sand off the pier; the spot hands over the rod.
+      fish: { pose: "slump" },
       stranded: { pose: "slump" },
       dead: { pose: "dead" },
     },

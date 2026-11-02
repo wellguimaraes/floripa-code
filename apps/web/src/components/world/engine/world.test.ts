@@ -130,6 +130,36 @@ describe("resolveIntent", () => {
     ).toEqual(["beach:celebrate", "beach:sit", "beach:sleep", "pier:fish"]);
   });
 
+  it("asks for frames only for agents at work, so everyone else holds still", () => {
+    const [island] = islandWorlds;
+    const day = 24 * 60 * 60;
+    const cases: Array<[Partial<CharacterFacts>, boolean]> = [
+      [{ status: "working" }, true],
+      [{ status: "working", quiet: true }, true],
+      [{ status: "waiting", hasWorkingKids: true }, true],
+      [{ kid: true, parentKey: "env:parent", status: "working" }, true],
+      [{ status: "approval" }, false],
+      [{ status: "input" }, false],
+      [{ status: "failed" }, false],
+      [{ status: "limited" }, false],
+      [{ status: "ready", backgroundTask: true }, false],
+      [{ kid: true, parentKey: "env:parent", status: "ready" }, false],
+      ...[60, 30 * 60, 3 * 60 * 60, 2 * day].map(
+        (replyAgeSeconds): [Partial<CharacterFacts>, boolean] => [
+          { status: "ready", replyAgeSeconds },
+          false,
+        ],
+      ),
+    ];
+    for (const [facts, moves] of cases) {
+      const activity = resolveIntent(character(facts), island!).do;
+      expect({ facts, moves: island!.activities[activity]?.ambientFps !== undefined }).toEqual({
+        facts,
+        moves,
+      });
+    }
+  });
+
   it("waits at the pile for a background command, but digs beside a working subagent", () => {
     const [island] = islandWorlds;
     const waiting = { status: "waiting" as const, backgroundTask: true };

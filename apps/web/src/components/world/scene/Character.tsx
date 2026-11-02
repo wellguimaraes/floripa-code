@@ -351,7 +351,7 @@ export function Character(props: {
               shades={shades}
               isWalking={() => motion.current.route.length > 0}
               raiseHand={intent.balloon !== undefined}
-              raiseHands={seated && activity.pose === "wave"}
+              raiseHands={activity.pose === "wave"}
               reachHand={placement.fishing === true}
               dangleLegs={placement.ledge === true}
               watch={placement.fishing === true ? bobber : undefined}
@@ -681,7 +681,8 @@ function applyPose(pose: Pose | "walk", time: number, rig: PoseRig) {
       break;
     }
     case "wave":
-      armRight.rotation.z = 2.6 + Math.sin(time * 8) * 0.35;
+      armRight.rotation.z = 2.6;
+      armLeft.rotation.z = -2.6;
       break;
     case "mine": {
       // Wind up over the head slowly, swing down fast into the rock.

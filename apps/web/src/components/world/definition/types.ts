@@ -162,8 +162,9 @@ export type Pose = "stand" | "lie" | "dead" | "wave" | "slump" | "mine" | "ponde
 export interface WorldActivity {
   readonly pose: Pose;
   /**
-   * Frame rate for the activity's idle motion. Omit for a still pose, which
-   * costs no frames at all once the character has arrived.
+   * Frame rate for the activity's motion. Only work gets one, so movement on the
+   * map means an agent is working; omit it for a still pose, which costs no
+   * frames at all once the character has arrived.
    */
   readonly ambientFps?: number;
 }

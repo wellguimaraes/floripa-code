@@ -34,6 +34,12 @@ const FADE_SECONDS = 0.25;
 const FADE_FPS = 30;
 /** A quiet thread's character keeps swinging, at this fraction of the speed. */
 const PONDER_SPEED = 0.35;
+/**
+ * Only work moves, so movement on the map means an agent is working. Every
+ * other pose holds still once its cross-fade ends, even while other characters
+ * keep the scene drawing.
+ */
+const MOVING_POSES: ReadonlySet<Pose> = new Set(["mine", "ponder"]);
 
 const CLIPS: Record<Pose | "walk", string> = {
   walk: "Walking_A",
@@ -41,7 +47,8 @@ const CLIPS: Record<Pose | "walk", string> = {
   // Still at it, just slowly: see PONDER_SPEED.
   ponder: "1H_Melee_Attack_Chop",
   mine: "1H_Melee_Attack_Chop",
-  wave: "Cheer",
+  // A still cheer: standing, with both arms held up by `raiseHands`.
+  wave: "Idle",
   lie: "Lie_Idle",
   dead: "Lie_Idle",
   slump: "Sit_Floor_Idle",
@@ -59,7 +66,8 @@ function shadeFor(name: string): keyof FamilyShades {
 /**
  * The rigged, animated character in its family's colours. Animations only
  * advance on frames something else asked for (walking, the ambient ticker),
- * so a still character costs nothing; a pose change cross-fades briefly.
+ * and only while walking or working; a pose change cross-fades briefly, then a
+ * resting character freezes and costs nothing per frame.
  */
 export function CharacterModel(props: {
   readonly pose: Pose;
@@ -167,6 +175,16 @@ export function CharacterModel(props: {
   const playing = useRef<AnimationAction | null>(null);
   const lastWalkFrame = useRef<number | null>(null);
   const fadeUntil = useRef(0);
+  // Set once a resting pose has been drawn in full; frames skip the rig until something changes.
+  const settled = useRef(false);
+  useEffect(
+    () => {
+      settled.current = false;
+      invalidate();
+    },
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Any change to the pose or its overrides redraws it.
+    [rig, pose, raiseHand, raiseHands, reachHand, dangleLegs, watch, invalidate],
+  );
   // Effects can re-run while refs survive (hot reload, strict mode), so forget
   // the stopped clip too; the next frame starts it again instead of leaving the
   // rig in its bind pose.
@@ -180,7 +198,8 @@ export function CharacterModel(props: {
   useFrame((state, delta) => {
     seatOn(rig.hand, handGroup.current);
     seatOn(rig.head, headGroup.current);
-    const next = rig.actions.get(CLIPS[isWalking() ? "walk" : pose]) ?? null;
+    const walking = isWalking();
+    const next = rig.actions.get(CLIPS[walking ? "walk" : pose]) ?? null;
     if (next !== playing.current) {
       const previous = playing.current;
       next
@@ -191,14 +210,19 @@ export function CharacterModel(props: {
       playing.current = next;
       fadeUntil.current = performance.now() + FADE_SECONDS * 1000;
     }
+    const fading = performance.now() < fadeUntil.current;
+    const still = !walking && !fading && !MOVING_POSES.has(pose);
+    if (still && settled.current) return;
+    // This frame draws the resting pose in full; later ones leave it as it is.
+    settled.current = still;
     // Mining and pondering share a clip, so the speed is set every frame, not on a switch.
     if (playing.current !== null) {
-      playing.current.timeScale = !isWalking() && pose === "ponder" ? PONDER_SPEED : 1;
+      playing.current.timeScale = !walking && pose === "ponder" ? PONDER_SPEED : 1;
     }
     // Draw the fade through, then let the scene go still again.
-    if (performance.now() < fadeUntil.current) drawSoon(state.invalidate, FADE_FPS);
-    rig.mixer.update(runStepSeconds(lastWalkFrame, isWalking(), state.clock.elapsedTime, delta));
-    const dead = pose === "dead" && !isWalking();
+    if (fading) drawSoon(state.invalidate, FADE_FPS);
+    rig.mixer.update(runStepSeconds(lastWalkFrame, walking, state.clock.elapsedTime, delta));
+    const dead = pose === "dead" && !walking;
     if (deadEyes.current !== null) deadEyes.current.visible = dead;
     if (dead) {
       spreadArm(rig.arm, rig.head);
@@ -207,17 +231,18 @@ export function CharacterModel(props: {
       raiseArm(rig.arm);
       raiseArm(rig.armLeft);
     } else if (raiseHand) raiseArm(rig.arm);
-    else if (reachHand && !isWalking()) reachArm(rig.arm);
-    const time = state.clock.elapsedTime + rig.seed;
-    if (dangleLegs && pose === "slump" && !isWalking()) {
+    else if (reachHand && !walking) reachArm(rig.arm);
+    // Held still, the legs hang straight and the head looks ahead: time 0 kicks and glances nowhere.
+    const time = still ? 0 : state.clock.elapsedTime + rig.seed;
+    if (dangleLegs && pose === "slump" && !walking) {
       rig.legs.forEach((leg, index) => {
         // The legs kick in turn.
-        const kick = Math.sin((time / KICK_SECONDS) * Math.PI * 2 + index * Math.PI);
+        const kick = still ? 0 : Math.sin((time / KICK_SECONDS) * Math.PI * 2 + index * Math.PI);
         dangleLeg(leg, rig.scene, kick);
       });
     }
     const target = watch?.current;
-    if (target && rig.head !== null && rig.headRest !== null && !isWalking()) {
+    if (target && rig.head !== null && rig.headRest !== null && !walking) {
       watchTarget(rig.head, rig.headRest, target, time);
     }
   });

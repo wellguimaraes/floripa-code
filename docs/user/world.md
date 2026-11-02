@@ -29,18 +29,21 @@ for a new agent. Each agent there works in its own folder under `~/FloripaCode`
 pull request counts, and its menu has no **Run script…** or **Remove project…**.
 Hide or show it from the **Lands** button at the top left, like any island.
 
-Where a character is and what it does tells you the thread's state at a glance:
+Where a character is and what it does tells you the thread's state at a glance.
+Only working agents move; everyone else holds still, so movement on the map
+always means work:
 
-- **Swinging a pickaxe at the quarry**: the agent is working, or its turn
-  ended while a command it started still runs in the background. A gold nugget
+- **Swinging a pickaxe at the quarry**: the agent is working. A gold nugget
   lands in its pile each time its work advances.
+- **Sitting by its pile**: its turn ended, but a command it started still runs
+  in the background.
 - **Swinging the pickaxe slowly**: still working, but nothing new has come out
   for a while. It may be thinking or stuck.
 - **Standing with a `!` or `?` balloon**: it needs your approval or has a question.
-- **On the beach**: it finished. It cheers for the first 5 minutes after its last
-  reply (on a lounger, it raises an arm), sits for the rest of the hour, then lies
-  down. After a day it goes fishing, from the pier or the far shore. Agents that
-  finished most recently rest furthest right.
+- **On the beach**: it finished. It holds its arms up for the first 5 minutes
+  after its last reply, sits for the rest of the hour, then lies down. After a
+  day it goes fishing, from the pier or the far shore. Agents that finished most
+  recently rest furthest right.
 - **Sitting on the sand behind the beach, under a grey cloud**: the run failed.
 - **Flat out on the sand with × eyes**: the agent hit its usage limit.
 
