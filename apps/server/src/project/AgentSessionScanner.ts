@@ -662,11 +662,13 @@ export const make = Effect.gen(function* () {
     ),
   );
   // Codex creates one scratch directory per conversation under
-  // ~/Documents/Codex/<date>/<slug>. Neither those nor anything a user
+  // ~/Documents/Codex/<date>/<slug>, and Floripa Code's own threads without
+  // a project get one under ~/FloripaCode. Neither those nor anything a user
   // unpacked into Downloads is a project.
   const excludedProjectAncestors = [
     path.join(homeDir, "Downloads"),
     path.join(homeDir, "Documents", "Codex"),
+    path.join(homeDir, "FloripaCode"),
   ];
 
   const isExcludedProjectPath = (candidatePath: string) =>

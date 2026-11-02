@@ -1,6 +1,7 @@
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { CommandId, GitCommandError, ProjectId, ThreadId } from "@t3tools/contracts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -143,6 +144,89 @@ it.effect("offers nothing when the data dir sits inside a Git checkout", () =>
       assert.equal(failure._tag, "ScratchUnavailableError");
     }).pipe(Effect.provide(layer(baseDir)));
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+/** Runs `body` as the default install: the data dir is `<home>/.t3`. */
+const withDefaultHome = <A, E>(
+  body: (input: {
+    readonly home: string;
+    readonly baseDir: string;
+  }) => Effect.Effect<
+    A,
+    E,
+    | ManagedProjectFolders.ManagedProjectFolders
+    | ProjectService.ProjectService
+    | NodeServices.NodeServices
+    | Scope.Scope
+  >,
+) =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-home-" });
+    const baseDir = path.join(home, ".t3");
+    yield* fileSystem.makeDirectory(baseDir);
+    return yield* body({ home, baseDir }).pipe(
+      Effect.provide(layer(baseDir)),
+      Effect.provideService(HostProcess.HomeDirectory, home),
+    );
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
+
+it.effect("keeps Scratch in ~/FloripaCode for the default data dir", () =>
+  withDefaultHome(({ home }) =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const scratch = yield* ManagedProjectFolders.ManagedProjectFolders;
+      const root = yield* requireRoot;
+      assert.equal(root, path.join(home, "FloripaCode"));
+
+      const { projectId } = yield* scratch.ensureScratchProject;
+      const folder = Option.getOrThrow(
+        yield* scratch.folderForThread({
+          projectId,
+          threadId: ThreadId.make("thread-home"),
+          text: "Rename my photos",
+        }),
+      );
+      assert.equal(path.dirname(folder), root);
+      assert.isTrue(yield* fileSystem.exists(folder));
+    }),
+  ),
+);
+
+it.effect("moves an existing Scratch project from the data dir to ~/FloripaCode", () =>
+  withDefaultHome(({ home, baseDir }) =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const projects = yield* ProjectService.ProjectService;
+      const scratch = yield* ManagedProjectFolders.ManagedProjectFolders;
+      const legacyRoot = path.join(baseDir, "scratch");
+      const legacy = yield* projects.create({
+        commandId: CommandId.make("command:legacy-scratch"),
+        projectId: ProjectId.make("project:legacy-scratch"),
+        title: "No project",
+        workspaceRoot: legacyRoot,
+        createWorkspaceRootIfMissing: true,
+      });
+      yield* fileSystem.makeDirectory(path.join(legacyRoot, "2026-01-01-old-thread"));
+
+      // Clients learn the root from the server config, so the move happens
+      // before the first one is handed out.
+      const root = yield* requireRoot;
+      assert.equal(root, path.join(home, "FloripaCode"));
+      const moved = Option.getOrThrow(yield* projects.getById(legacy.id));
+      assert.equal(moved.workspaceRoot, root);
+      assert.equal((yield* scratch.ensureScratchProject).projectId, legacy.id);
+      assert.lengthOf(
+        (yield* projects.snapshot).projects.filter((project) => project.title === "No project"),
+        1,
+      );
+      // Old thread folders stay where their threads expect them.
+      assert.isTrue(yield* fileSystem.exists(path.join(legacyRoot, "2026-01-01-old-thread")));
+    }),
+  ),
 );
 
 it.effect("creates one Scratch project, even for concurrent first requests", () =>

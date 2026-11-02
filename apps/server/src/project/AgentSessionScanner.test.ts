@@ -874,7 +874,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
       }),
     );
 
-    it.effect("excludes Codex scratch directories and Downloads", () =>
+    it.effect("excludes Codex and Floripa Code scratch directories and Downloads", () =>
       Effect.gen(function* () {
         const path = yield* Path.Path;
         const fileSystem = yield* FileSystem.FileSystem;
@@ -882,7 +882,8 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         const codexHomePath = yield* makeTempDir("floripacode-codex-home-");
         // The exclusions key off the real home directory, so these fixtures
         // must live there. Each run owns a uniquely named subtree and removes
-        // only that subtree, never the shared Codex or Downloads parents.
+        // only that subtree, never the shared Codex, Downloads, or FloripaCode
+        // parents.
         const home = NodeOS.homedir();
         // Borrow a unique suffix from a scoped temp dir instead of reaching for
         // Date.now or Math.random, which the Effect lint rejects.
@@ -890,17 +891,20 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         const scratchRoot = path.join(home, "Documents", "Codex", runId);
         const scratch = path.join(scratchRoot, "2026-09-01", "some-conversation");
         const downloads = path.join(home, "Downloads", runId);
+        const floripa = path.join(home, "FloripaCode", `2026-09-01-${runId}`);
         const keep = yield* makeTempDir("floripacode-workspace-keep-");
         yield* fileSystem.makeDirectory(scratch, { recursive: true });
         yield* fileSystem.makeDirectory(downloads, { recursive: true });
+        yield* fileSystem.makeDirectory(floripa, { recursive: true });
         yield* Effect.addFinalizer(() =>
           Effect.all([
             fileSystem.remove(scratchRoot, { recursive: true }).pipe(Effect.ignore),
             fileSystem.remove(downloads, { recursive: true }).pipe(Effect.ignore),
+            fileSystem.remove(floripa, { recursive: true }).pipe(Effect.ignore),
           ]),
         );
 
-        for (const [index, cwd] of [scratch, downloads, keep].entries()) {
+        for (const [index, cwd] of [scratch, downloads, floripa, keep].entries()) {
           yield* writeTranscript({
             filePath: path.join(
               codexHomePath,

@@ -2,14 +2,16 @@
  * ManagedProjectFolders - the project folders Floripa Code makes for the user under
  * its data dir, rather than ones the user picks:
  *
- * - `<baseDir>/scratch`: the Scratch project ("No project"), with a folder of
- *   its own for each thread;
+ * - `~/FloripaCode` (`<baseDir>/scratch` when the data dir is not the default
+ *   `~/.t3`): the Scratch project ("No project"), with a folder of its own
+ *   for each thread;
  * - `<baseDir>/projects/<slug>`: projects started from just a name, each a new
  *   Git repository with a README, an icon, and a first commit.
  *
  * @module ManagedProjectFolders
  */
 import { CommandId, ProjectId, type ThreadId } from "@t3tools/contracts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { newProjectFolderName } from "@t3tools/shared/path";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -256,15 +258,50 @@ const make = Effect.gen(function* () {
     }
   });
 
+  const makeScratchFolder = (folder: string) =>
+    fileSystem
+      .makeDirectory(folder, { recursive: true })
+      .pipe(Effect.mapError((cause) => new ScratchFolderError({ folder, cause })));
+
+  // The default install keeps Scratch where the user can find it; a dev or
+  // custom data dir keeps its own inside, so it never shares the real one.
+  const home = yield* HostProcess.HomeDirectory;
+  const legacyScratchRoot = path.resolve(config.baseDir, "scratch");
+  const candidateRoot =
+    path.resolve(config.baseDir) === path.resolve(home, ".t3")
+      ? path.resolve(home, "FloripaCode")
+      : legacyScratchRoot;
+
+  // Scratch used to live at `<baseDir>/scratch`. Clients know Scratch by its
+  // root, so the existing project moves to the new one; its old thread
+  // folders stay where they are. Best effort: a failed move leaves the old
+  // project as an ordinary one and a new Scratch project starts next time.
+  const adoptLegacyScratch = (root: string) =>
+    Effect.gen(function* () {
+      if (root === legacyScratchRoot) return;
+      const legacy = yield* projects
+        .getByWorkspaceRoot(legacyScratchRoot)
+        .pipe(Effect.orElseSucceed(() => Option.none()));
+      if (Option.isNone(legacy)) return;
+      yield* makeScratchFolder(root);
+      yield* projects.update({
+        commandId: CommandId.make(`scratch-project-move:${legacy.value.id}`),
+        projectId: legacy.value.id,
+        workspaceRoot: root,
+      });
+    }).pipe(Effect.ignoreCause({ log: true }));
+
   // Inside a checkout (a dev worktree's .t3, a dotfiles home) the folder would
   // inherit the repo's git status and checkpoints, so Scratch is offered only
-  // when the data dir is outside any work tree. Probed once; detection
+  // when its parent is outside any work tree. Probed once; detection
   // failures hide Scratch rather than failing callers. An interrupted probe
   // invalidates the cache so the next caller probes again.
   const [probe, invalidate] = yield* Effect.cachedInvalidateWithTTL(
-    gitWorkflow.isRepository(config.baseDir).pipe(
-      Effect.map((isRepository) =>
-        isRepository ? Option.none<string>() : Option.some(path.resolve(config.baseDir, "scratch")),
+    gitWorkflow.isRepository(path.dirname(candidateRoot)).pipe(
+      Effect.flatMap((isRepository) =>
+        isRepository
+          ? Effect.succeed(Option.none<string>())
+          : adoptLegacyScratch(candidateRoot).pipe(Effect.as(Option.some(candidateRoot))),
       ),
       Effect.catchCause((cause) =>
         Cause.hasInterrupts(cause) ? Effect.interrupt : Effect.succeed(Option.none<string>()),
@@ -273,11 +310,6 @@ const make = Effect.gen(function* () {
     Duration.infinity,
   );
   const scratchRoot = probe.pipe(Effect.onInterrupt(() => invalidate));
-
-  const makeScratchFolder = (folder: string) =>
-    fileSystem
-      .makeDirectory(folder, { recursive: true })
-      .pipe(Effect.mapError((cause) => new ScratchFolderError({ folder, cause })));
 
   const ensureScratchProject: ManagedProjectFolders["Service"]["ensureScratchProject"] = Effect.gen(
     function* () {
@@ -370,7 +402,7 @@ const make = Effect.gen(function* () {
     );
   });
 
-  // Projects started from just a name live beside Scratch and worktrees, away
+  // Projects started from just a name live beside worktrees in the data dir, away
   // from folders the user organizes by hand. A nested repository is fine here
   // (unlike Scratch) because each project gets its own `git init`.
   const namedProjectsRoot = path.resolve(config.baseDir, "projects");

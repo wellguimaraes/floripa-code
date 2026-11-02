@@ -23,13 +23,15 @@ list. It starts on your current machine; before sending, pick another machine
 from the machine menu to move it there. To move a draft into a project, pick the
 project in the heading.
 
-Each thread without a project works in its own folder under `~/.t3/scratch` (the
-`scratch` folder of your T3 data directory), named after its date, the first words
-of its first message, and a short id, like
-`2026-09-25-convert-these-pngs-to-webp-a1b2c3d4`. Deleting a thread keeps its
-folder, so the files the agent wrote stay until you delete them. Branch, worktree, and diff controls stay hidden because
-these folders are not Git repositories. This is unavailable when the data
-directory itself sits inside a Git checkout.
+Each thread without a project works in its own folder under `~/FloripaCode`,
+named after its date, the first words of its first message, and a short id, like
+`2026-09-25-convert-these-pngs-to-webp-a1b2c3d4`. With a custom data directory,
+these folders live in its `scratch` folder instead. Threads started before this
+location changed keep their folders under `~/.t3/scratch`. Deleting a thread
+keeps its folder, so the files the agent wrote stay until you delete them.
+Branch, worktree, and diff controls stay hidden because these folders are not
+Git repositories. This is unavailable when the folder's parent sits inside a
+Git checkout.
 
 ### Start in the background
 
