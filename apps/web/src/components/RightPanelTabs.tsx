@@ -171,6 +171,7 @@ interface RightPanelTabsProps {
   pullRequestAvailable: boolean;
   pullRequestsAvailable: boolean;
   deviceAvailable: boolean;
+  neverAvailable?: readonly RightPanelSurfaceType[];
   pullRequestStatusSeeds?: Readonly<Record<string, PullRequestTabStatusSeed>>;
   children: ReactNode;
 }
@@ -899,6 +900,8 @@ export interface RightPanelTypeAvailability {
   pullRequestAvailable: boolean;
   pullRequestsAvailable: boolean;
   deviceAvailable: boolean;
+  /** Types that can never apply here, e.g. Diff without a repository: left off the rail, not greyed. */
+  neverAvailable?: readonly RightPanelSurfaceType[];
 }
 
 const SURFACE_TYPE_META = {
@@ -973,6 +976,7 @@ export function RightPanelTypeRail(
         const meta = SURFACE_TYPE_META[type];
         const Icon = meta.icon;
         const count = counts.get(type) ?? 0;
+        if (count === 0 && props.neverAvailable?.includes(type)) return null;
         const enabled = count > 0 || surfaceTypeAvailable(type, props);
         const active = props.activeType === type;
         // Diff and Files are always there once picked, so a count would say nothing.
@@ -1897,6 +1901,9 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             pullRequestAvailable={props.pullRequestAvailable}
             pullRequestsAvailable={props.pullRequestsAvailable}
             deviceAvailable={props.deviceAvailable}
+            {...(props.neverAvailable === undefined
+              ? {}
+              : { neverAvailable: props.neverAvailable })}
             className={cn(
               "border-border border-l",
               reservesTitleBarControls && "pt-(--workspace-topbar-height)",

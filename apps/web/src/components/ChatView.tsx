@@ -627,6 +627,7 @@ import {
 import { observeResize } from "~/lib/observeResize";
 
 const EMPTY_PROVIDERS: ServerProvider[] = [];
+const SCRATCH_NEVER_AVAILABLE_TYPES: readonly RightPanelSurfaceType[] = ["diff", "pull-request"];
 const EMPTY_PROVIDER_MODELS: ServerProvider["models"] = [];
 const EMPTY_USAGE_LIMIT_SOURCES: UsageLimitSourceSnapshots = [];
 import type { CodexArtifactTemplate } from "@t3tools/shared/codexArtifactTemplates";
@@ -10847,6 +10848,8 @@ export default function ChatView(props: ChatViewProps) {
     pullRequestAvailable: pullRequestSurfaceAvailable,
     pullRequestsAvailable: pullRequestsSurfaceAvailable,
     deviceAvailable: activeThreadRef !== null,
+    // Scratch has no repository, so it never gets a diff or a pull request.
+    ...(activeProjectIsScratch ? { neverAvailable: SCRATCH_NEVER_AVAILABLE_TYPES } : {}),
   };
   const activeRightPanelType = selectActiveRightPanelType(rightPanelState);
   const startAgentInWorktree =
