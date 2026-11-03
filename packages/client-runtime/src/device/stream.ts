@@ -128,7 +128,8 @@ const IOS_MSG_TOUCH = 0x03;
 const IOS_MSG_BUTTON = 0x04;
 const IOS_MSG_KEY = 0x06;
 const IOS_MSG_ORIENTATION = 0x07;
-const IOS_MSG_HARDWARE_KEYBOARD = 0x0d;
+// Device Hub 0.15 moved this from 0x0d, which now syncs software keyboard visibility.
+const IOS_MSG_HARDWARE_KEYBOARD = 0x0e;
 // helper -> browser.
 const IOS_TAG_SCREEN_CONFIG = 0x82;
 const IOS_TAG_INPUT_ADMITTED = 0x83;
