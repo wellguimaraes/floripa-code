@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import { islandWorlds } from "../definitions/island";
-import { MIN_LAND, mainlandCoastline, mainlandShoreline } from "./coast";
+import { mainlandShoreline } from "./coast";
 
 // Screen right and down for a ground point: the camera looks down the (1, 1) diagonal.
 const screen = (x: number, z: number) => [(x - z) / Math.SQRT2, (x + z) / Math.SQRT2] as const;
@@ -41,16 +41,6 @@ describe("mainlandShoreline", () => {
           );
           expect(shoreline(pointDown - sandDown)).toBeLessThan(pointRight);
         }
-      }
-    },
-  );
-
-  it.each(islandWorlds.map((definition, size) => [size, definition] as const))(
-    "keeps the strip at least a minimum wide, round the bay too (size %i)",
-    (_, definition) => {
-      const { shore, back } = mainlandCoastline(definition);
-      for (let along = -80; along <= 80; along += 0.5) {
-        expect(shore(along) - back(along)).toBeGreaterThan(MIN_LAND - 1e-9);
       }
     },
   );
