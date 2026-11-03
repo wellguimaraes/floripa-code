@@ -49,7 +49,8 @@ function WorldUpdateControl() {
   };
 
   return (
-    <div className="relative">
+    // Light whatever the app theme, like the world's top bar it pairs with.
+    <div className="theme-light relative">
       {!isDownloading ? <UpdateRipple /> : null}
       <Tooltip>
         <TooltipTrigger
