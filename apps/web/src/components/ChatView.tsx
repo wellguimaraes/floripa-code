@@ -11671,6 +11671,7 @@ export default function ChatView(props: ChatViewProps) {
             inlineSize={worldSurfacesSize ?? previewPanelInlineSize}
             surfaces={renderedRightPanelSurfaces}
             environmentId={activeThreadRef.environmentId}
+            threadRef={activeThreadRef}
             activeSurfaceId={renderedRightPanelSurface?.id ?? null}
             pendingSurfaceIds={pendingFileSurfaceIds}
             previewSessions={activePreviewState.sessions}
@@ -11741,6 +11742,7 @@ export default function ChatView(props: ChatViewProps) {
               }
               surfaces={renderedRightPanelSurfaces}
               environmentId={activeThreadRef.environmentId}
+              threadRef={activeThreadRef}
               activeSurfaceId={renderedRightPanelSurface?.id ?? null}
               pendingSurfaceIds={pendingFileSurfaceIds}
               previewSessions={activePreviewState.sessions}

@@ -6,6 +6,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   RightPanelTabs,
+  pullRequestTabMenuItems,
   resolvePullRequestTabLink,
   shouldOpenDefaultBrowserProfileFromMenuClick,
   surfaceShortcutActionForKey,
@@ -333,5 +334,50 @@ describe("pull request tab snapshots", () => {
         link,
       ),
     ).toBe(newer);
+  });
+});
+
+describe("pullRequestTabMenuItems", () => {
+  const url = "https://github.com/acme/app/pull/7";
+  const ids = (items: ReturnType<typeof pullRequestTabMenuItems>) => items.map((item) => item.id);
+
+  it("offers only copy and open for a pull request the thread has not linked", () => {
+    expect(ids(pullRequestTabMenuItems({ url, link: null, supportsWatch: true }))).toEqual([
+      "pr-copy-link",
+      "pr-open",
+    ]);
+  });
+
+  it("offers watching only for an open linked pull request on a server that supports it", () => {
+    const open = { source: "agent", snapshot: null, watch: undefined } as const;
+    expect(ids(pullRequestTabMenuItems({ url, link: open, supportsWatch: true }))).toEqual([
+      "pr-copy-link",
+      "pr-open",
+      "pr-watch",
+      "pr-unlink",
+    ]);
+    expect(ids(pullRequestTabMenuItems({ url, link: open, supportsWatch: false }))).toEqual([
+      "pr-copy-link",
+      "pr-open",
+      "pr-unlink",
+    ]);
+  });
+
+  it("names the reverse action for a watched pull request and a stack layer", () => {
+    const items = pullRequestTabMenuItems({
+      url,
+      link: {
+        source: "stack",
+        snapshot: null,
+        watch: {} as NonNullable<ThreadPullRequestLink["watch"]>,
+      },
+      supportsWatch: true,
+    });
+    expect(items.map((item) => item.label)).toEqual([
+      "Copy link",
+      "Open in browser",
+      "Stop watching",
+      "Dismiss from thread",
+    ]);
   });
 });

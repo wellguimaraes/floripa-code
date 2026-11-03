@@ -66,6 +66,7 @@ export class ElectronMenu extends Context.Service<
  */
 const SF_SYMBOLS: Readonly<Record<string, string>> = {
   archive: "archivebox",
+  "arrow-up-right": "arrow.up.right",
   "archive-restore": "arrow.uturn.backward",
   "bell-off": "bell.slash",
   check: "checkmark",
@@ -81,6 +82,7 @@ const SF_SYMBOLS: Readonly<Record<string, string>> = {
   "git-branch": "arrow.triangle.branch",
   hash: "number",
   "layout-grid": "square.grid.2x2",
+  link: "link",
   "mail-open": "envelope.open",
   "message-square": "bubble.left",
   "message-square-plus": "plus.bubble",
@@ -94,6 +96,7 @@ const SF_SYMBOLS: Readonly<Record<string, string>> = {
   "square-play": "play.rectangle",
   timer: "timer",
   trash: "trash",
+  unlink: "minus.circle",
   "zoom-in": "plus.magnifyingglass",
 };
 

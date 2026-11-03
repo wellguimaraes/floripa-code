@@ -1,6 +1,6 @@
 import { pullRequestHostOf, type SourceControlProviderKind } from "@t3tools/contracts";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import { useProjects, useServerConfigs, useThreadShells } from "~/state/entities";
+import { readThreadShell, useProjects, useServerConfigs, useThreadShells } from "~/state/entities";
 import {
   threadPullRequestKeysEqual,
   visibleThreadPullRequests,
@@ -12,6 +12,8 @@ import type {
   ProjectId,
   PullRequestState,
   ResolvedKeybindingsConfig,
+  ScopedThreadRef,
+  ThreadPullRequestLink,
 } from "@t3tools/contracts";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import {
@@ -64,6 +66,9 @@ import {
 import { cn } from "~/lib/utils";
 import { resolveShortcutCommand, type ShortcutMatchContext } from "~/keybindings";
 import { readLocalApi } from "~/localApi";
+import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
+import { threadEnvironment } from "~/state/threads";
+import { useAtomCommand } from "~/state/use-atom-command";
 import { Button } from "~/components/ui/button";
 import { MorphIcon } from "~/components/MorphIcon";
 import { AndroidIcon, AppleIcon } from "~/components/Icons";
@@ -126,6 +131,8 @@ interface RightPanelTabsProps {
   onActivateType?: (type: RightPanelSurfaceType) => void;
   /** Fallback environment for surfaces that do not carry their own. */
   environmentId: EnvironmentId | null;
+  /** The thread beside the panel, whose linked pull requests a pull-request tab's menu acts on. */
+  threadRef?: ScopedThreadRef | null;
   activeSurfaceId: string | null;
   pendingSurfaceIds: ReadonlySet<string>;
   previewSessions: Readonly<Record<string, PreviewSessionSnapshot>>;
@@ -227,10 +234,13 @@ const SURFACE_UNAVAILABLE_HINTS = {
   device: "Available from a thread.",
 } as const;
 
+type PullRequestTabMenuAction = "pr-copy-link" | "pr-open" | "pr-watch" | "pr-unlink";
+
 type TabContextMenuAction =
   | "rename"
   | "copy-path"
   | "toggle-mute"
+  | PullRequestTabMenuAction
   | "close"
   | "close-others"
   | "close-to-right"
@@ -740,6 +750,61 @@ function SurfaceIcon({
   }
 }
 
+/**
+ * The linked pull requests panel's row menu, for a pull-request tab. A tab whose pull request
+ * is not linked to the thread still has a link to copy and open.
+ */
+export function pullRequestTabMenuItems(input: {
+  url: string | null;
+  link: Pick<ThreadPullRequestLink, "source" | "snapshot" | "watch"> | null;
+  supportsWatch: boolean;
+}): ContextMenuItem<PullRequestTabMenuAction>[] {
+  const items: ContextMenuItem<PullRequestTabMenuAction>[] = [];
+  if (input.url !== null) {
+    items.push(
+      { id: "pr-copy-link", label: "Copy link", icon: "link" },
+      { id: "pr-open", label: "Open in browser", icon: "arrow-up-right" },
+    );
+  }
+  const link = input.link;
+  if (link === null) return items;
+  const open = link.snapshot === null || link.snapshot.state === "open";
+  if (input.supportsWatch && open) {
+    const watching = link.watch !== undefined;
+    items.push({
+      id: "pr-watch",
+      label: watching ? "Stop watching" : "Watch for changes",
+      icon: watching ? "eye-off" : "eye",
+    });
+  }
+  items.push({
+    id: "pr-unlink",
+    label: link.source === "stack" ? "Dismiss from thread" : "Unlink from thread",
+    icon: "unlink",
+  });
+  return items;
+}
+
+/** The thread's own link for a pull-request tab, so its menu can unlink or watch it. */
+function threadLinkForPullRequestTab(
+  threadRef: ScopedThreadRef | null | undefined,
+  surface: Extract<RightPanelSurface, { kind: "pull-request" }>,
+): ThreadPullRequestLink | null {
+  if (!threadRef) return null;
+  if (surface.environmentId !== undefined && surface.environmentId !== threadRef.environmentId) {
+    return null;
+  }
+  const links = visibleThreadPullRequests(readThreadShell(threadRef)?.pullRequests ?? []);
+  return (
+    links.find(
+      (link) =>
+        link.repository === surface.repository &&
+        link.number === surface.number &&
+        (surface.host === undefined || link.host === surface.host),
+    ) ?? null
+  );
+}
+
 export function resolvePullRequestTabLink(
   threads: readonly Pick<EnvironmentThreadShell, "environmentId" | "pullRequests">[],
   environmentId: EnvironmentId | null,
@@ -1049,6 +1114,13 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   const tabListRef = useRef<HTMLDivElement>(null);
   const addSurfaceTriggerRef = useRef<HTMLButtonElement>(null);
   const [renamingDevice, setRenamingDevice] = useState<string | null>(null);
+  const serverConfigs = useServerConfigs();
+  const unlinkPullRequest = useAtomCommand(threadEnvironment.unlinkPullRequest, {
+    reportFailure: true,
+  });
+  const watchPullRequest = useAtomCommand(threadEnvironment.watchPullRequest, {
+    reportFailure: true,
+  });
   const [addSurfaceMenuOpen, setAddSurfaceMenuOpen] = useState(false);
   const [tabScrollState, setTabScrollState] = useState({
     hasOverflow: false,
@@ -1296,6 +1368,22 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       if (surface.kind === "file" && surface.attachment === undefined) {
         items.push({ id: "copy-path", label: "Copy path" });
       }
+      const threadRef = props.threadRef ?? null;
+      const prLink =
+        surface.kind === "pull-request" ? threadLinkForPullRequestTab(threadRef, surface) : null;
+      const prUrl = surface.kind === "pull-request" ? (prLink?.url ?? surface.url ?? null) : null;
+      if (surface.kind === "pull-request") {
+        items.push(
+          ...pullRequestTabMenuItems({
+            url: prUrl,
+            link: prLink,
+            supportsWatch:
+              threadRef !== null &&
+              serverConfigs.get(threadRef.environmentId)?.environment.capabilities
+                .threadPullRequestWatch === true,
+          }),
+        );
+      }
       const menuPreviewTabId = previewTabIdOf(surface, props.previewSessions);
       // Desktop overlay state only arrives once the preview manager has created
       // the tab. A server session id alone can still be ahead of that, and
@@ -1317,7 +1405,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       }
       if (!tabsFollowThread) {
         items.push(
-          { id: "close", label: "Close" },
+          { id: "close", label: "Close", separatorBefore: items.length > 0 },
           {
             id: "close-others",
             label: "Close others",
@@ -1359,6 +1447,31 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           }
           break;
         }
+        case "pr-copy-link":
+          if (prUrl) void writeTextToClipboard(prUrl, "link");
+          break;
+        case "pr-open":
+          if (prUrl) void api.shell.openExternal(prUrl).catch(() => undefined);
+          break;
+        case "pr-watch":
+        case "pr-unlink":
+          if (threadRef && prLink) {
+            const reference = {
+              threadId: threadRef.threadId,
+              host: prLink.host,
+              repository: prLink.repository,
+              number: prLink.number,
+            };
+            if (action === "pr-unlink") {
+              void unlinkPullRequest({ environmentId: threadRef.environmentId, input: reference });
+            } else {
+              void watchPullRequest({
+                environmentId: threadRef.environmentId,
+                input: { ...reference, watching: prLink.watch === undefined },
+              });
+            }
+          }
+          break;
         case "close":
           props.onCloseSurface(surface);
           break;
@@ -1375,7 +1488,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           break;
       }
     },
-    [props, tabsFollowThread, visibleSurfaces],
+    [props, serverConfigs, tabsFollowThread, unlinkPullRequest, visibleSurfaces, watchPullRequest],
   );
   const handleTabMouseDown = useCallback((event: ReactMouseEvent) => {
     if (event.button !== 1) return;
