@@ -5,7 +5,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { ArchiveIcon, RefreshCwIcon } from "lucide-react";
-import { memo, useRef, useState } from "react";
+import { memo, useState } from "react";
 
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { cn } from "../../lib/utils";
@@ -47,13 +47,12 @@ export const WorldArchiveButton = memo(function WorldArchiveButton({
   const { archiveThread } = useThreadActions();
   const archiveChatAgent = useWorldModeStore((state) => state.archiveChatAgent);
   const [archiving, setArchiving] = useState(false);
-  const archiveButton = useRef<HTMLButtonElement>(null);
 
   // Archive, not delete: it can be undone from the toast or Settings → Archived. The world's
   // own archive plays the agent's exit and reports its own failures. Either way the chat closes.
-  const archive = async () => {
+  const archive = async (anchor: Element | null) => {
     if (chat === null || archiving) return;
-    if (!(await confirmArchive(archiveButton.current))) return;
+    if (!(await confirmArchive(anchor))) return;
     setArchiving(true);
     if (archiveChatAgent !== null) {
       await archiveChatAgent();
@@ -74,7 +73,7 @@ export const WorldArchiveButton = memo(function WorldArchiveButton({
 
   // A chat opened on an archived agent has nothing left to archive.
   const archivable = chat !== null && chat.thread.archivedAt == null;
-  useArchiveShortcut(archive, archivable);
+  useArchiveShortcut(() => archive(null), archivable);
   if (!archivable) return null;
 
   return (
@@ -82,13 +81,12 @@ export const WorldArchiveButton = memo(function WorldArchiveButton({
       <TooltipTrigger
         render={
           <Button
-            ref={archiveButton}
             variant="ghost"
             size="icon-sm"
             aria-label="Archive this thread"
             aria-keyshortcuts="Alt+A"
             disabled={archiving}
-            onClick={() => void archive()}
+            onClick={(event) => void archive(event.currentTarget)}
           />
         }
       >

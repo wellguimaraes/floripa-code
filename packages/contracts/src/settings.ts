@@ -363,6 +363,8 @@ export const ClientSettingsSchema = Schema.Struct({
   confirmThreadArchive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   confirmThreadDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   confirmThreadUnpin: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /** Ask before archiving from the world chat (its archive button or Option/Alt+A). */
+  confirmWorldArchive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   composerChipAttachmentRemoval: ComposerChipAttachmentRemoval.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_COMPOSER_CHIP_ATTACHMENT_REMOVAL)),
   ),
@@ -1680,6 +1682,7 @@ export const ClientSettingsPatch = Schema.Struct({
   confirmThreadArchive: Schema.optionalKey(Schema.Boolean),
   confirmThreadDelete: Schema.optionalKey(Schema.Boolean),
   confirmThreadUnpin: Schema.optionalKey(Schema.Boolean),
+  confirmWorldArchive: Schema.optionalKey(Schema.Boolean),
   composerChipAttachmentRemoval: Schema.optionalKey(ComposerChipAttachmentRemoval),
   diffFilesCollapsed: Schema.optionalKey(Schema.Boolean),
   diffIgnoreWhitespace: Schema.optionalKey(Schema.Boolean),

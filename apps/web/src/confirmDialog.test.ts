@@ -5,6 +5,7 @@ import {
   isConfirmDialogActive,
   readConfirmDialogState,
   registerConfirmDialogHost,
+  requestConfirmChoice,
   requestConfirmDialog,
   resetConfirmDialogForTests,
   respondToConfirmDialog,
@@ -38,6 +39,7 @@ describe("confirm dialog coordinator", () => {
       message: "Delete this thread?",
       variant: "destructive",
       anchor: null,
+      rememberLabel: null,
     });
 
     respondToConfirmDialog(true);
@@ -49,6 +51,7 @@ describe("confirm dialog coordinator", () => {
       message: "Delete this thread?",
       variant: "destructive",
       anchor: null,
+      rememberLabel: null,
     });
 
     completeConfirmDialogClose();
@@ -69,6 +72,7 @@ describe("confirm dialog coordinator", () => {
       message: "Delete the project?",
       variant: "default",
       anchor: null,
+      rememberLabel: null,
     });
 
     completeConfirmDialogClose();
@@ -77,6 +81,7 @@ describe("confirm dialog coordinator", () => {
       message: "Delete the worktree too?",
       variant: "default",
       anchor: null,
+      rememberLabel: null,
     });
 
     respondToConfirmDialog(true);
@@ -108,5 +113,17 @@ describe("confirm dialog coordinator", () => {
     expect(readConfirmDialogState()).toEqual({ status: "idle" });
     unregister();
     return expect(confirmation).resolves.toBe(true);
+  });
+
+  it("reports the remember checkbox alongside the answer", async () => {
+    const unregister = registerConfirmDialogHost();
+    const choice = requestConfirmChoice("Archive this thread?", {
+      rememberLabel: "Don't ask again",
+    });
+
+    expect(readConfirmDialogState()).toMatchObject({ rememberLabel: "Don't ask again" });
+    respondToConfirmDialog(true, true);
+    await expect(choice).resolves.toEqual({ confirmed: true, remember: true });
+    unregister();
   });
 });

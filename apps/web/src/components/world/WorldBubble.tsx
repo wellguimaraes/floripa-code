@@ -132,7 +132,6 @@ export function WorldBubble(props: {
   // The exchange opens scrolled to its end, where the latest words are, and follows the agent's
   // work as it grows unless you scrolled up to read.
   const exchange = useRef<HTMLDivElement>(null);
-  const archiveButton = useRef<HTMLButtonElement>(null);
   const exchangeContent = useRef<HTMLDivElement>(null);
   const followingEnd = useRef(true);
   // Scrolled up away from the latest words: offers a way back down.
@@ -328,9 +327,9 @@ export function WorldBubble(props: {
   };
 
   // Archive, not delete: it can be undone from the toast or Settings → Archived.
-  const archive = async () => {
+  const archive = async (anchor: Element | null) => {
     if (state.phase === "archiving") return;
-    if (!(await confirmArchive(archiveButton.current))) return;
+    if (!(await confirmArchive(anchor))) return;
     setState({ phase: "archiving" });
     const result = await archiveThread(facts.ref);
     if (result._tag === "Failure") {
@@ -345,7 +344,7 @@ export function WorldBubble(props: {
     onArchived();
   };
 
-  useArchiveShortcut(archive);
+  useArchiveShortcut(() => archive(null));
 
   // The draft is the chat's own, so the full chat opens with it as it stands.
   const expand = onExpand;
@@ -472,13 +471,12 @@ export function WorldBubble(props: {
               <TooltipTrigger
                 render={
                   <Button
-                    ref={archiveButton}
                     variant="ghost"
                     size="icon-xs"
                     aria-label="Archive this thread"
                     aria-keyshortcuts="Alt+A"
                     disabled={state.phase === "archiving"}
-                    onClick={() => void archive()}
+                    onClick={(event) => void archive(event.currentTarget)}
                   />
                 }
               >

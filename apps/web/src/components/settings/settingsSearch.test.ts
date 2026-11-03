@@ -105,6 +105,7 @@ describe("searchSettings", () => {
     expect(searchSettings("confirmation").map((item) => item.id)).toEqual([
       "unpin-confirmation",
       "archive-confirmation",
+      "world-archive-confirmation",
       "delete-confirmation",
     ]);
   });

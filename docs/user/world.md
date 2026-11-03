@@ -84,7 +84,8 @@ images and files to the message. The bubble and the thread's full chat share one
 what you type or attach in either shows in both. The expand button, or `Cmd`+`Enter`
 (`Ctrl`+`Enter`), opens the full chat over the world. The archive button, or `Option`+`A` (`Alt`+`A`), archives the thread; undo it
 from the notice that appears, or later from the island's **Restore archived agent…**
-(click its sign) or **Settings → Archived**. `Option`-click
+(click its sign) or **Settings → Archived**. It asks first; check **Don't ask again** to
+skip that, and turn it back on in **Settings → General → World archive confirmation**. `Option`-click
 (`Alt`-click) a character to skip the bubble and open its chat; the map frames the character's
 island beside the panel. While a chat is open, clicking another character switches the
 chat to it instead of opening a bubble. The chat's footer has the same regenerate-title and

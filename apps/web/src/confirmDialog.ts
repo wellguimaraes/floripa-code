@@ -6,12 +6,20 @@ import type { ConfirmDialogOptions, ConfirmDialogVariant } from "@t3tools/contra
  */
 export type ThemedConfirmDialogOptions = ConfirmDialogOptions & {
   readonly anchor?: Element | null;
+  /** Shows a checkbox with this label; its value comes back as `remember`. */
+  readonly rememberLabel?: string;
+};
+
+export type ConfirmDialogResult = {
+  readonly confirmed: boolean;
+  readonly remember: boolean;
 };
 
 type ConfirmationRequest = {
   readonly message: string;
   readonly variant: ConfirmDialogVariant;
   readonly anchor: Element | null;
+  readonly rememberLabel: string | null;
 };
 
 export type ConfirmDialogState =
@@ -20,7 +28,7 @@ export type ConfirmDialogState =
   | ({ readonly status: "closing" } & ConfirmationRequest);
 
 type PendingConfirmation = ConfirmationRequest & {
-  readonly resolve: (confirmed: boolean) => void;
+  readonly resolve: (result: ConfirmDialogResult) => void;
 };
 
 const idleState: ConfirmDialogState = { status: "idle" };
@@ -38,9 +46,10 @@ function publish(next: ConfirmDialogState): void {
 }
 
 function resolvePendingConfirmations(confirmed: boolean): void {
-  activeConfirmation?.resolve(confirmed);
+  const result = { confirmed, remember: false };
+  activeConfirmation?.resolve(result);
   for (const confirmation of queuedConfirmations) {
-    confirmation.resolve(confirmed);
+    confirmation.resolve(result);
   }
   activeConfirmation = null;
   queuedConfirmations = [];
@@ -52,6 +61,7 @@ function confirmingState(pending: PendingConfirmation): ConfirmDialogState {
     message: pending.message,
     variant: pending.variant,
     anchor: pending.anchor,
+    rememberLabel: pending.rememberLabel,
   };
 }
 
@@ -94,13 +104,22 @@ export function requestConfirmDialog(
   message: string,
   options?: ThemedConfirmDialogOptions,
 ): Promise<boolean> | undefined {
+  return requestConfirmChoice(message, options)?.then((result) => result.confirmed);
+}
+
+/** Like `requestConfirmDialog`, also reporting the `rememberLabel` checkbox. */
+export function requestConfirmChoice(
+  message: string,
+  options?: ThemedConfirmDialogOptions,
+): Promise<ConfirmDialogResult> | undefined {
   if (registeredHostCount === 0) return undefined;
 
-  const confirmation = new Promise<boolean>((resolve) => {
+  const confirmation = new Promise<ConfirmDialogResult>((resolve) => {
     const pending = {
       message,
       variant: options?.variant ?? "default",
       anchor: options?.anchor ?? null,
+      rememberLabel: options?.rememberLabel ?? null,
       resolve,
     } satisfies PendingConfirmation;
     if (activeConfirmation || state.status === "closing") {
@@ -120,12 +139,12 @@ export function isConfirmDialogActive(): boolean {
   return state.status !== "idle" || activeConfirmation !== null || queuedConfirmations.length > 0;
 }
 
-export function respondToConfirmDialog(confirmed: boolean): void {
+export function respondToConfirmDialog(confirmed: boolean, remember = false): void {
   if (state.status !== "confirming" || !activeConfirmation) return;
 
   const confirmation = activeConfirmation;
   activeConfirmation = null;
-  confirmation.resolve(confirmed);
+  confirmation.resolve({ confirmed, remember });
   publish({ ...state, status: "closing" });
 }
 

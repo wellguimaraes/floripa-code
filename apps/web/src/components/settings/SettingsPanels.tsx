@@ -676,6 +676,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.confirmThreadArchive !== DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive
         ? ["Archive confirmation"]
         : []),
+      ...(settings.confirmWorldArchive !== DEFAULT_UNIFIED_SETTINGS.confirmWorldArchive
+        ? ["World archive confirmation"]
+        : []),
       ...(settings.confirmThreadDelete !== DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete
         ? ["Delete confirmation"]
         : []),
@@ -708,6 +711,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.enableAgentBrowserAccess,
       settings.confirmQuit,
       settings.confirmThreadArchive,
+      settings.confirmWorldArchive,
       settings.confirmThreadDelete,
       settings.confirmThreadUnpin,
       settings.composerChipAttachmentRemoval,
@@ -860,6 +864,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       newWorktreesStartFromOrigin: DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin,
       addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
       confirmThreadArchive: DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive,
+      confirmWorldArchive: DEFAULT_UNIFIED_SETTINGS.confirmWorldArchive,
       confirmThreadDelete: DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete,
       confirmThreadUnpin: DEFAULT_UNIFIED_SETTINGS.confirmThreadUnpin,
       confirmQuit: DEFAULT_UNIFIED_SETTINGS.confirmQuit,
@@ -3276,6 +3281,32 @@ export function GeneralSettingsPanel() {
                 updateSettings({ confirmThreadArchive: Boolean(checked) })
               }
               aria-label="Confirm thread archiving"
+            />
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("world-archive-confirmation")}
+          description="Ask before archiving a thread from its world chat."
+          resetAction={
+            settings.confirmWorldArchive !== DEFAULT_UNIFIED_SETTINGS.confirmWorldArchive ? (
+              <SettingResetButton
+                label="world archive confirmation"
+                onClick={() =>
+                  updateSettings({
+                    confirmWorldArchive: DEFAULT_UNIFIED_SETTINGS.confirmWorldArchive,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.confirmWorldArchive}
+              onCheckedChange={(checked) =>
+                updateSettings({ confirmWorldArchive: Boolean(checked) })
+              }
+              aria-label="Confirm world archiving"
             />
           }
         />

@@ -517,6 +517,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["ask before thread second click inline action"],
   },
   {
+    id: "world-archive-confirmation",
+    title: "World archive confirmation",
+    to: "/settings/general",
+    searchTerms: ["ask before thread island agent chat shortcut don't ask again"],
+  },
+  {
     id: "delete-confirmation",
     title: "Delete confirmation",
     to: "/settings/general",

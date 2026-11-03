@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 import {
   completeConfirmDialogClose,
@@ -17,6 +17,7 @@ import {
   AlertDialogTitle,
 } from "./ui/alert-dialog";
 import { Button } from "./ui/button";
+import { Checkbox } from "./ui/checkbox";
 import { Popover, PopoverClose, PopoverPopup, PopoverTitle } from "./ui/popover";
 
 type ConfirmationCopy = {
@@ -64,8 +65,20 @@ export function ConfirmDialogHost() {
   const copy = resolveConfirmDialogCopy(state.status === "idle" ? "" : state.message);
   const confirmVariant = state.status === "idle" ? "default" : state.variant;
   const anchor = state.status === "idle" ? null : state.anchor;
+  const rememberLabel = state.status === "idle" ? null : state.rememberLabel;
+  const [remember, setRemember] = useState(false);
   const onCancel = () => respondToConfirmDialog(false);
-  const onConfirm = () => respondToConfirmDialog(true);
+  const onConfirm = () => respondToConfirmDialog(true, remember);
+  const onClosed = () => {
+    setRemember(false);
+    completeConfirmDialogClose();
+  };
+  const rememberCheckbox = rememberLabel ? (
+    <label className="flex items-center gap-2 text-muted-foreground text-sm">
+      <Checkbox checked={remember} onCheckedChange={(checked) => setRemember(checked)} />
+      {rememberLabel}
+    </label>
+  ) : null;
 
   if (anchor) {
     return (
@@ -75,7 +88,7 @@ export function ConfirmDialogHost() {
           if (!open) onCancel();
         }}
         onOpenChangeComplete={(open) => {
-          if (!open) completeConfirmDialogClose();
+          if (!open) onClosed();
         }}
       >
         <PopoverPopup anchor={anchor} side="bottom" align="start" width="sm">
@@ -85,6 +98,7 @@ export function ConfirmDialogHost() {
               {copy.description}
             </p>
           ) : null}
+          {rememberCheckbox ? <div className="mt-3">{rememberCheckbox}</div> : null}
           <div className="mt-4 flex justify-end gap-2">
             <PopoverClose render={<Button variant="outline" size="sm" />}>Cancel</PopoverClose>
             <Button variant={confirmVariant} size="sm" onClick={onConfirm}>
@@ -103,7 +117,7 @@ export function ConfirmDialogHost() {
         if (!open) onCancel();
       }}
       onOpenChangeComplete={(open) => {
-        if (!open) completeConfirmDialogClose();
+        if (!open) onClosed();
       }}
     >
       <AlertDialogPopup>
@@ -114,6 +128,7 @@ export function ConfirmDialogHost() {
               {copy.description}
             </AlertDialogDescription>
           ) : null}
+          {rememberCheckbox}
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
