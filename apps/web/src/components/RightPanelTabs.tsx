@@ -65,6 +65,7 @@ import {
 } from "~/rightPanelStore";
 import { cn } from "~/lib/utils";
 import { resolveShortcutCommand, type ShortcutMatchContext } from "~/keybindings";
+import { showContextMenuFallback } from "~/contextMenuFallback";
 import { readLocalApi } from "~/localApi";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { threadEnvironment } from "~/state/threads";
@@ -1425,7 +1426,8 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       }
       if (items.length === 0) return;
 
-      const action = await api.contextMenu.show(items, { x: event.clientX, y: event.clientY });
+      // The in-app menu rather than the native one, like the chat link menu.
+      const action = await showContextMenuFallback(items, { x: event.clientX, y: event.clientY });
       switch (action) {
         case "rename":
           setRenamingDevice(surface.id);
