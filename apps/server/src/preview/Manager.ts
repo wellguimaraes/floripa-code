@@ -1,5 +1,7 @@
 /**
- * In-memory PreviewManager implementation.
+ * PreviewManager implementation. State lives in memory; desktop tabs are also
+ * saved to the state directory so they reopen after a restart (see
+ * `PersistedTabs`).
  *
  * Sessions are keyed by `tabId` (process-unique) and belong to the opening
  * thread's checkout (`scopeKey`), so every thread in one worktree lists and
@@ -37,6 +39,7 @@ import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Path from "effect/Path";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
@@ -47,9 +50,13 @@ import { PreviewControlRequiredError } from "@t3tools/contracts";
 
 import { worktreeScopeKey } from "@t3tools/shared/worktreeScope";
 
+import * as ServerConfig from "../config.ts";
 import * as WorktreeScopes from "../workspace/WorktreeScopes.ts";
+import * as PersistedTabs from "./PersistedTabs.ts";
 
 const CLIENT_SCOPE_HINT_LIMIT = 256;
+/** Batches the bursts of status reports a page load produces into one save. */
+const PERSIST_DEBOUNCE = "1 second";
 
 export class PreviewManager extends Context.Service<
   PreviewManager,
@@ -117,8 +124,6 @@ interface ManagerState {
   readonly revision: number;
 }
 
-const initialState: ManagerState = { sessions: new Map(), revision: 0 };
-
 type PreviewEventDraft = PreviewEvent extends infer Event
   ? Event extends { readonly revision: number }
     ? Omit<Event, "revision" | "serverEpoch">
@@ -181,12 +186,36 @@ export const make = Effect.gen(function* PreviewManagerMake() {
   const crypto = yield* Crypto.Crypto;
   const worktreeScopes = yield* WorktreeScopes.WorktreeScopes;
   const serverEpoch = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
-  const stateRef = yield* SynchronizedRef.make<ManagerState>(initialState);
+  const { stateDir } = yield* ServerConfig.ServerConfig;
+  const persistedTabsPath = (yield* Path.Path).join(stateDir, "preview-tabs.json");
+  const restoredTabs = yield* PersistedTabs.readPersistedTabs(persistedTabsPath);
+  const stateRef = yield* SynchronizedRef.make<ManagerState>({
+    sessions: new Map(restoredTabs.map((snapshot) => [snapshot.tabId, { snapshot }])),
+    revision: 0,
+  });
   // Unbounded PubSub is fine here — events are tiny and we don't want to
   // block publishers if a subscriber is slow. WS clients backpressure on
   // their own queues downstream.
   const eventsPubSub = yield* PubSub.unbounded<PreviewEvent>();
   const events: Stream.Stream<PreviewEvent> = Stream.fromPubSub(eventsPubSub);
+
+  const persistTabs = SynchronizedRef.get(stateRef).pipe(
+    Effect.flatMap((state) =>
+      PersistedTabs.writePersistedTabs(
+        persistedTabsPath,
+        [...state.sessions.values()].map((session) => session.snapshot),
+      ),
+    ),
+  );
+  // Every state change publishes an event, so a quiet event stream means
+  // nothing new to save. The finalizer catches changes still in the debounce.
+  // Subscribing now, not in the fiber, so no early change can slip past.
+  yield* Stream.fromSubscription(yield* PubSub.subscribe(eventsPubSub)).pipe(
+    Stream.debounce(PERSIST_DEBOUNCE),
+    Stream.runForEach(() => persistTabs),
+    Effect.forkScoped,
+  );
+  yield* Effect.addFinalizer(() => persistTabs);
 
   // Where clients place threads the server cannot resolve yet (drafts). Bounded:
   // a draft that never sends would otherwise keep its entry for the process's life.

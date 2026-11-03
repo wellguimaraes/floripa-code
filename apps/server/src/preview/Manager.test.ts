@@ -4,6 +4,7 @@ import { it } from "@effect/vitest";
 import { type PreviewEvent, ThreadId } from "@t3tools/contracts";
 import { PreviewUrlNormalizationError } from "@t3tools/shared/preview";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
 import { expect } from "vite-plus/test";
@@ -673,3 +674,53 @@ it.layer(layer)("PreviewManager", (it) => {
     }),
   );
 });
+
+it.effect("reopens desktop tabs after a restart", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-preview-restore-" });
+    const runManager = <A, E>(
+      use: (manager: PreviewManager.PreviewManager["Service"]) => Effect.Effect<A, E>,
+    ) =>
+      Effect.scoped(Effect.flatMap(PreviewManager.make, use)).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            ServerConfig.layerTest(process.cwd(), baseDir),
+            WorktreeScopesTestkit.layer({ [scopedThread("a1")]: { scopeKey: SCOPE_A } }),
+            NodeCrypto.layer,
+          ),
+        ),
+      );
+    const threadId = scopedThread("a1");
+
+    const before = yield* runManager((manager) =>
+      Effect.gen(function* () {
+        const kept = yield* manager.open({ threadId, url: "localhost:5173", profileId: "work" });
+        yield* manager.reportStatus({
+          threadId,
+          tabId: kept.tabId,
+          navStatus: { _tag: "Success", url: "http://localhost:5173/docs", title: "Docs" },
+          canGoBack: true,
+          canGoForward: false,
+        });
+        const closed = yield* manager.open({ threadId, url: "localhost:3000" });
+        yield* manager.close({ threadId, tabId: closed.tabId });
+        yield* manager.open({ threadId, url: "localhost:4000", runtime: "server" });
+        return kept;
+      }),
+    );
+
+    const restored = yield* runManager((manager) => manager.list({ threadId }));
+    expect(restored.sessions).toHaveLength(1);
+    const [tab] = restored.sessions;
+    expect(tab?.tabId).not.toBe(before.tabId);
+    expect(tab?.scopeKey).toBe(SCOPE_A);
+    expect(tab?.profileId).toBe("work");
+    expect(tab?.canGoBack).toBe(false);
+    expect(tab?.navStatus).toEqual({
+      _tag: "Loading",
+      url: "http://localhost:5173/docs",
+      title: "Docs",
+    });
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);

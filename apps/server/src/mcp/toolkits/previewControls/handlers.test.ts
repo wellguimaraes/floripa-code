@@ -56,7 +56,7 @@ it.effect.each([
         Effect.provide(
           Layer.mergeAll(
             ServerConfig.layerTest(process.cwd(), { prefix: "t3-preview-controls-" }).pipe(
-              Layer.provide(NodeServices.layer),
+              Layer.provideMerge(NodeServices.layer),
             ),
             NodeCrypto.layer,
             WorktreeScopesTestkit.layer(),
@@ -126,7 +126,7 @@ it.effect("lists tabs other threads opened in the same worktree", () =>
         Effect.provide(
           Layer.mergeAll(
             ServerConfig.layerTest(process.cwd(), { prefix: "t3-preview-controls-" }).pipe(
-              Layer.provide(NodeServices.layer),
+              Layer.provideMerge(NodeServices.layer),
             ),
             NodeCrypto.layer,
             WorktreeScopesTestkit.layer({
