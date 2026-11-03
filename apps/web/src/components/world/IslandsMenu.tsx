@@ -60,8 +60,8 @@ export function IslandsMenu(props: {
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         render={<Button variant="glass" />}
-        aria-label={`Islands, ${shown} of ${total} shown`}
-        title="Islands"
+        aria-label={`Lands, ${shown} of ${total} shown`}
+        title="Lands"
       >
         <IslandIcon />
         <span className="tabular-nums">{count}</span>
@@ -70,7 +70,7 @@ export function IslandsMenu(props: {
         <div className="flex flex-col">
           {/* Rows below pad 6+6, so the title, dots, and toggle all sit 12px from the edges. */}
           <div className="flex items-center gap-2 border-b p-3">
-            <span className="flex-1 text-sm font-medium">Islands</span>
+            <span className="flex-1 text-sm font-medium">Lands</span>
             <ToggleGroup
               aria-label="Arrange islands"
               value={[arrangement]}

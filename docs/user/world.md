@@ -28,7 +28,7 @@ machine that offers threads without a project, and it comes first when you pick 
 for a new agent. Each agent there works in its own folder under `~/FloripaCode`
 (see [Threads without a project](thread-sidebar.md)). Its sign has no branch or
 pull request counts, and its menu has no **Run script…** or **Remove project…**.
-Hide or show it from the island button at the top left, like any island.
+Hide or show it from the **Lands** button at the top left, like any island.
 
 Where a character is and what it does tells you the thread's state at a glance:
 
@@ -115,9 +115,9 @@ agents once. Until that finishes, results show word matches only. **Remove proje
 project and deletes its threads after you confirm; hiding only takes the island off the map, and
 neither touches the files on disk. An island comes in three
 sizes: 8 rock piles and 9 beach spots, 12 and 14, or 16 and 18, plus 4 chairs on
-the pier. The island button at the top left counts the islands, or shows "4 of 6" when some are hidden. Click
+the pier. The **Lands** button at the top left counts the lands, or shows "4 of 6" when some are hidden. Click
 it to line the islands up vertically, in a grid, or horizontally, to show or hide
-a project's island, or to remove a project.
+a project's island or the Mainland, or to remove a project.
 What you hide, how big each island is, and how you arrange the islands are
 remembered in this browser. The **+** button at the top left adds projects:
 **Browse…** (desktop app only) makes the folder you choose a
