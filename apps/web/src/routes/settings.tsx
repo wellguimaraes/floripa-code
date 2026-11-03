@@ -217,8 +217,9 @@ function SettingsDialog({
         aria-label="Settings"
         showCloseButton={false}
         bottomStickOnMobile={false}
-        // A title bar's height clear on every side, so it starts below the window controls.
-        className="h-[calc(100dvh-2*var(--workspace-topbar-height))] w-[calc(100vw-2*var(--workspace-topbar-height))] max-w-none flex-row overflow-hidden"
+        // A title bar's height clear on every side, so it starts below the window controls. As
+        // wide as the nav plus a settings page at its 800px limit, so no empty bands flank it.
+        className="h-[calc(100dvh-2*var(--workspace-topbar-height))] w-[calc(16rem+800px)] max-w-[calc(100vw-2*var(--workspace-topbar-height))] flex-row overflow-hidden"
       >
         {/* Rows tint with the text colour rather than the sidebar's white, which barely shows here. */}
         <nav
