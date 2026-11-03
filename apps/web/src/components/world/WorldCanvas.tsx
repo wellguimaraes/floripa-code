@@ -1645,6 +1645,7 @@ export default function WorldCanvas(props: {
                       branches={signStats.get(island.key)?.branches ?? 0}
                       pullRequests={signStats.get(island.key)?.pullRequests ?? 0}
                       hideCounts={mainland.has(island.key)}
+                      hideIcon={mainland.has(island.key)}
                       onListClick={(point) => {
                         // The sign is on the canvas, so it is not a press outside the bubbles.
                         setBubbleKey(null);

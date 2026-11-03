@@ -96,6 +96,8 @@ export function Sign(props: {
   readonly pullRequests: number;
   /** Leaves both counts off, for land with no repository such as the mainland. */
   readonly hideCounts?: boolean;
+  /** Leaves the project's icon off, so the name stands alone. */
+  readonly hideIcon?: boolean;
   /** Clicking the branch count, at this point on screen, e.g. to list the branches. */
   readonly onListClick: (point: { readonly x: number; readonly y: number }) => void;
   /** Clicking the PR count, at this point on screen, e.g. to list the PRs. */
@@ -115,6 +117,7 @@ export function Sign(props: {
     branches,
     pullRequests,
     hideCounts = false,
+    hideIcon = false,
     onListClick,
     onPullRequestsClick,
     onBoardClick,
@@ -130,7 +133,7 @@ export function Sign(props: {
       signBoard(
         text,
         color,
-        icon,
+        hideIcon ? null : icon,
         hideCounts
           ? []
           : [
@@ -138,7 +141,7 @@ export function Sign(props: {
               { icon: PULL_REQUEST_ICON, count: pullRequests },
             ],
       ),
-    [text, color, icon, branches, pullRequests, hideCounts],
+    [text, color, icon, branches, pullRequests, hideCounts, hideIcon],
   );
   useEffect(() => () => board.texture.dispose(), [board]);
   // The two counts and the preferences button take clicks; the rest of the board opens
@@ -253,7 +256,8 @@ export function Sign(props: {
 function signBoard(
   text: string,
   color: string,
-  icon: SignIcon,
+  /** Null leaves the icon's tile off, and the name takes its room. */
+  icon: SignIcon | null,
   badges: ReadonlyArray<Badge>,
 ): {
   readonly texture: CanvasTexture;
@@ -285,7 +289,7 @@ function signBoard(
   const badgesWidth =
     widths.reduce((sum, width) => sum + width, 0) + betweenBadges * badges.length + pillHeight;
   const badgeSpace = badgesWidth + badgeGap;
-  const iconSpace = pillHeight + badgeGap;
+  const iconSpace = icon === null ? 0 : pillHeight + badgeGap;
   let size = 150;
   measure.font = font(size);
   const maxTextWidth = MAX_BOARD_WIDTH * PIXELS_PER_UNIT - padding * 2 - iconSpace - badgeSpace;
@@ -317,7 +321,7 @@ function signBoard(
   const tileTop = middle - pillHeight / 2;
   // White, so favicons and glyphs read the same on every board colour. An emoji brings its own
   // colours, so it stands on the board bare.
-  if (icon.kind !== "emoji") {
+  if (icon !== null && icon.kind !== "emoji") {
     context.fillStyle = "#ffffff";
     context.beginPath();
     context.roundRect(padding, tileTop, pillHeight, pillHeight, pillHeight / 4);
@@ -325,7 +329,9 @@ function signBoard(
   }
   context.textAlign = "center";
   context.textBaseline = "middle";
-  if (icon.kind === "emoji") {
+  if (icon === null) {
+    // Nothing to draw: the name centres across the board.
+  } else if (icon.kind === "emoji") {
     // As big as the tile it replaces.
     const glyphSize = Math.round(pillHeight * 0.86);
     context.font = font(glyphSize);
