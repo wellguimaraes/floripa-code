@@ -133,6 +133,7 @@ import { IslandRunScriptDialog } from "./IslandRunScriptDialog";
 import { RestoreArchivedDialog } from "./RestoreArchivedDialog";
 import { layoutTags, type ScreenPoint } from "./scene/tagLayout";
 import { isStoppable, WorldBubble } from "./WorldBubble";
+import { BUBBLE_RESIZED_ATTRIBUTE, BubbleResizeFrame } from "./BubbleResizeFrame";
 import { VOICE_INPUT_ENABLED, voiceInputSupported } from "./useVoiceInput";
 
 /**
@@ -158,6 +159,11 @@ export default function WorldCanvas(props: {
   readonly bars: () => { readonly top: HTMLElement | null; readonly bottom: HTMLElement | null };
   /** The top bar spot where the project visibility menu goes. */
   readonly toolbar: HTMLElement | null;
+  /**
+   * A layer over the chat panel, matching the canvas's box, where the chat bubble goes so a
+   * bubble too big for the space beside the panel covers it rather than slipping under it.
+   */
+  readonly overlay: HTMLElement | null;
 }) {
   const {
     definitions,
@@ -169,6 +175,7 @@ export default function WorldCanvas(props: {
     panel,
     bars,
     toolbar,
+    overlay,
   } = props;
   if (import.meta.env.DEV) definitions.forEach(assertValidDefinition);
   // Rules, pacing and the archipelago's settings are the same at every size.
@@ -1753,27 +1760,34 @@ export default function WorldCanvas(props: {
           ))}
         </WorldDaylight>
       </Canvas>
-      {bubble !== null ? (
-        // Positioned by FollowTracker on every drawn frame, above the character's head.
-        <div ref={bubbleRef} className="pointer-events-none absolute top-0 left-0 z-30">
-          <div className="pointer-events-auto -translate-x-1/2 -translate-y-[calc(100%+0.75rem)]">
-            <WorldBubble
-              key={`${bubble.facts.key}:${listenKey === bubble.facts.key}`}
-              facts={bubble.facts}
-              listen={listenKey === bubble.facts.key}
-              hue={bubbleIsland?.hues.get(bubble.facts.lookSeed) ?? 0}
-              onHueChange={(hue) => recolorFamily(bubbleIsland, bubble.facts.lookSeed, hue)}
-              onMainland={bubbleIsland !== undefined && mainland.has(bubbleIsland.key)}
-              onClose={() => setBubbleKey(null)}
-              onExpand={() => openChat(bubble)}
-              onArchived={() => {
-                setBubbleKey(null);
-                abduct([bubble]);
-              }}
-            />
-          </div>
-        </div>
-      ) : null}
+      {bubble !== null && overlay !== null
+        ? createPortal(
+            // Positioned by FollowTracker on every drawn frame, above the character's head.
+            <div ref={bubbleRef} className="pointer-events-none absolute top-0 left-0 z-30">
+              {/* Untouchable itself: resizing shifts the frame inside off this box, and the part
+                  of the box the frame left must not catch clicks meant to close the bubble. */}
+              <div className="-translate-x-1/2 -translate-y-[calc(100%+0.75rem)]">
+                {/* Keyed with the bubble, so another character's bubble opens unresized. */}
+                <BubbleResizeFrame key={`${bubble.facts.key}:${listenKey === bubble.facts.key}`}>
+                  <WorldBubble
+                    facts={bubble.facts}
+                    listen={listenKey === bubble.facts.key}
+                    hue={bubbleIsland?.hues.get(bubble.facts.lookSeed) ?? 0}
+                    onHueChange={(hue) => recolorFamily(bubbleIsland, bubble.facts.lookSeed, hue)}
+                    onMainland={bubbleIsland !== undefined && mainland.has(bubbleIsland.key)}
+                    onClose={() => setBubbleKey(null)}
+                    onExpand={() => openChat(bubble)}
+                    onArchived={() => {
+                      setBubbleKey(null);
+                      abduct([bubble]);
+                    }}
+                  />
+                </BubbleResizeFrame>
+              </div>
+            </div>,
+            overlay,
+          )
+        : null}
       {newAgentSpots.map((spot) => (
         // Positioned by PointTracker on drawn frames, over the empty pile.
         <button
@@ -2551,13 +2565,21 @@ function useBubblePlacement(
 ): (points: ReadonlyArray<ScreenPoint>) => void {
   const last = useRef<ScreenPoint | null>(null);
   const clearCharacter = useRef(false);
+  // The size placement works from. A bubble resized by hand keeps the size it had before, so it
+  // stays put while it grows and shrinks, until it opens again.
+  const size = useRef<{ width: number; height: number } | null>(null);
+  const resizedByHand = (bubble: Element) =>
+    bubble.querySelector(`[${BUBBLE_RESIZED_ATTRIBUTE}]`) !== null;
   const place = () => {
     const element = anchor.current;
     const bubble = element?.firstElementChild as HTMLElement | null | undefined;
     const point = last.current;
     const area = visibleArea();
     if (element == null || bubble == null || point === null || area === null) return;
-    const { offsetWidth: width, offsetHeight: height } = bubble;
+    if (size.current === null || !resizedByHand(bubble)) {
+      size.current = { width: bubble.offsetWidth, height: bubble.offsetHeight };
+    }
+    const { width, height } = size.current;
     const { covered } = area;
     const clamp = (value: number, low: number, high: number) =>
       Math.min(Math.max(value, low), Math.max(low, high));
@@ -2584,6 +2606,8 @@ function useBubblePlacement(
     if (shift >= 1) panBy?.current?.(0, shift);
   };
   const placeOnResize = useEffectEvent(() => {
+    const bubble = anchor.current?.firstElementChild;
+    if (bubble != null && resizedByHand(bubble)) return;
     clearCharacter.current = true;
     place();
   });

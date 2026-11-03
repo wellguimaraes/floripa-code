@@ -109,8 +109,11 @@ export function BubbleComposer(props: {
   /** Open with the text selected, so typing replaces it. Off unless set. */
   readonly selectOnOpen?: boolean;
   readonly header: ReactNode;
-  /** Slimmer for the manager bubble; wider for the new-agent bubble, so its pickers fit one line. */
-  readonly width?: "narrow" | "wide";
+  /**
+   * Slimmer for the manager bubble; wider for the new-agent bubble, so its pickers fit one line.
+   * Resizable takes `--bubble-width` from a surrounding `BubbleResizeFrame`.
+   */
+  readonly width?: "narrow" | "wide" | "resizable";
   /** Shown between the staged files and the status line. */
   readonly children?: ReactNode;
   /**
@@ -503,6 +506,7 @@ export function BubbleComposer(props: {
         "flex w-108 flex-col gap-2 rounded-xl border border-border bg-popover p-2.5 outline-none",
         props.width === "narrow" && "w-96",
         props.width === "wide" && "w-127.5",
+        props.width === "resizable" && "w-(--bubble-width)",
         "text-popover-foreground shadow-lg",
         dropping && "border-primary",
       )}

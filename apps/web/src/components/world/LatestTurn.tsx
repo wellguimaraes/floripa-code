@@ -12,6 +12,7 @@ import {
 } from "react";
 
 import { useDiffPanelStore } from "../../diffPanelStore";
+import { observeResize } from "../../lib/observeResize";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { useTimelineEntries } from "../../hooks/useTimelineEntries";
 import { useTurnDiffSummaries } from "../../hooks/useTurnDiffSummaries";
@@ -139,10 +140,14 @@ export function LatestTurn(props: {
       setEarlierExchanges((count) => count + MORE_EARLIER_EXCHANGES);
     };
     // Nothing to scroll yet means nothing would ever bring in more: fill until it scrolls,
-    // checking again after each load.
-    loadMoreNearTop();
+    // checking again after each load and whenever the box grows, as when it is resized taller.
+    // Observing reports the size at once, which is the first check.
+    const stopObserving = observeResize(element, loadMoreNearTop);
     element.addEventListener("scroll", loadMoreNearTop, { passive: true });
-    return () => element.removeEventListener("scroll", loadMoreNearTop);
+    return () => {
+      stopObserving();
+      element.removeEventListener("scroll", loadMoreNearTop);
+    };
   }, [scrollRef, hasMore, earlierExchanges]);
   // Once the exchanges just loaded are laid out, before they paint.
   useLayoutEffect(() => {

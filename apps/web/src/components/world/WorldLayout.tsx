@@ -108,6 +108,7 @@ export function WorldLayout({
   const topBarRef = useRef<HTMLDivElement>(null);
   const readBars = useCallback(() => ({ top: topBarRef.current, bottom: null }), []);
   const [toolbar, setToolbar] = useState<HTMLDivElement | null>(null);
+  const [overlay, setOverlay] = useState<HTMLDivElement | null>(null);
   // Only real threads open here. A draft (the new-thread creator) never does: the world
   // starts agents from its own bubble, so a draft route shows the world alone.
   const chatTarget = target?.kind === "server" ? target : null;
@@ -286,6 +287,7 @@ export function WorldLayout({
             panel={readPanel}
             bars={readBars}
             toolbar={toolbar}
+            overlay={overlay}
           />
         </Suspense>
       </div>
@@ -373,6 +375,8 @@ export function WorldLayout({
           </div>
         </Activity>
       ) : null}
+      {/* Over the chat panel and the top bar, in the canvas's box: the chat bubble goes here. */}
+      <div ref={setOverlay} className="pointer-events-none absolute inset-0 z-10" />
     </SidebarInset>
   );
 }

@@ -68,7 +68,9 @@ import { worktreeLabel } from "./worktreeLabel";
  */
 export function isStoppable(facts: CharacterFacts): boolean {
   if (facts.kid) return false;
-  if (facts.status === "waiting") return facts.backgroundTask || facts.hasWorkingKids;
+  // A settled turn can still own a background command (a dev server, a watch loop).
+  if (facts.backgroundTask) return true;
+  if (facts.status === "waiting") return facts.hasWorkingKids;
   return ["working", "approval", "input"].includes(facts.status);
 }
 
@@ -348,6 +350,8 @@ export function WorldBubble(props: {
 
   return (
     <BubbleComposer
+      // Sized by the BubbleResizeFrame the world mounts it in.
+      width="resizable"
       environmentId={facts.ref.environmentId}
       cwd={cwd}
       provider={provider}
@@ -487,8 +491,9 @@ export function WorldBubble(props: {
           </div>
           {/* The last exchange as the chat shows it: yours in a bubble on the right, then everything
               the agent did after it, with a few earlier exchanges above that load further as you
-              scroll up. Capped in height: the turn scrolls under your message, which stays pinned on
-              top. Ruled off below, edge to edge, like the header; gone while empty. */}
+              scroll up. As tall as the bubble is resized to: the turn scrolls under your message,
+              which stays pinned on top. Ruled off below, edge to edge, like the header; gone while
+              empty. */}
           <div className="relative">
             <div
               ref={exchange}
@@ -506,9 +511,14 @@ export function WorldBubble(props: {
                   element.scrollHeight - element.scrollTop - element.clientHeight < 4;
                 setAwayFromEnd(!followingEnd.current);
               }}
-              className="-mx-2.5 mt-1 max-h-80 overflow-y-auto border-b border-border px-2.5 pb-2.5 text-bubble has-[>[data-exchange]:empty]:hidden"
+              className="-mx-2.5 mt-1 flex h-(--bubble-exchange-height) flex-col overflow-y-auto border-b border-border px-2.5 pb-2.5 text-bubble has-[>[data-exchange]:empty]:hidden"
             >
-              <div ref={exchangeContent} data-exchange className="flex min-w-0 flex-col gap-2">
+              {/* Sat at the bottom, as the chat reads, while the conversation is shorter than the box. */}
+              <div
+                ref={exchangeContent}
+                data-exchange
+                className="mt-auto flex min-w-0 shrink-0 flex-col gap-2"
+              >
                 <LatestTurn
                   threadRef={facts.ref}
                   sentMessageId={lastSent?.id ?? null}
