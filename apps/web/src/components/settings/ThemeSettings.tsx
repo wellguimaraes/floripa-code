@@ -155,11 +155,12 @@ function ThemeLibraryCard({
           <div
             className={cn(
               "cursor-pointer overflow-hidden rounded-xl border border-border/70 bg-card/60 transition-colors hover:bg-accent/10",
-              isActive && "bg-accent/30",
+              // A real border, not an inset shadow: at fractional zoom a 1px inset shadow can
+              // drop a side, which reads as the card being clipped.
+              isActive && "border-ring bg-accent/30",
             )}
             data-theme-library-card={theme.id}
             onClick={onUse}
-            style={isActive ? { boxShadow: "inset 0 0 0 1px var(--ring)" } : undefined}
           >
             <div className="relative">
               {variantNavigation ? (
@@ -729,12 +730,12 @@ export function ThemeLibrary({
             aria-pressed={isActive}
             className={cn(
               "flex cursor-pointer flex-col items-stretch gap-1.5 rounded-xl border p-2 outline-none transition-colors focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-2 focus-visible:outline-ring",
+              // A real border, for the same reason as the theme cards.
               isActive
-                ? "border-transparent bg-accent/30"
+                ? "border-ring bg-accent/30"
                 : "border-border/70 bg-card/60 hover:bg-accent/10",
             )}
             key={mode}
-            style={isActive ? { boxShadow: "inset 0 0 0 1px var(--ring)" } : undefined}
             onClick={() => setMode(mode)}
             type="button"
           >
