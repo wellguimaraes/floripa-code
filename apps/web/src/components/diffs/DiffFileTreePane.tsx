@@ -7,8 +7,7 @@ import { RESIZABLE_WIDTH_PROPERTY, useResizableWidth } from "~/hooks/useResizabl
 import { cn } from "~/lib/utils";
 
 import { RightPanelResizeHandle } from "../preview/RightPanelResizeHandle";
-import { Toggle } from "../ui/toggle";
-import { ToggleGroup } from "../ui/toggle-group";
+import { Toggle, ToggleGroup } from "../ui/toggle-group";
 
 /** "horizontal" puts the tree beside the diff, "vertical" stacks it above. */
 export type DiffFileTreeLayout = "horizontal" | "vertical";
