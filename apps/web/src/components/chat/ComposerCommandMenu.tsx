@@ -14,6 +14,7 @@ import {
 import {
   BlocksIcon,
   FolderIcon,
+  FolderSymlinkIcon,
   MessagesSquareIcon,
   PackageIcon,
   SettingsIcon,
@@ -40,6 +41,8 @@ export type ComposerCommandItem =
       description: string;
       /** When browsing from `~`: the `@` query that opens this folder instead of inserting it. */
       browseTo?: string;
+      /** When browsing from `~`: the folder being listed, mentioned as itself. */
+      currentFolder?: boolean;
     }
   | {
       id: string;
@@ -192,7 +195,9 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
         props.onSelect(props.item);
       }}
     >
-      {props.item.type === "path" ? (
+      {props.item.type === "path" && props.item.currentFolder ? (
+        <FolderSymlinkIcon aria-hidden="true" className="size-4 shrink-0 text-secondary-label" />
+      ) : props.item.type === "path" ? (
         <PierreEntryIcon
           pathValue={props.item.path}
           kind={props.item.pathKind}

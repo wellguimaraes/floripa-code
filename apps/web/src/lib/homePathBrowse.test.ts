@@ -30,7 +30,7 @@ it("opens folders and inserts files, offering a typed folder itself first", () =
       item.type === "path" ? [item.label, item.path, item.browseTo ?? null] : null,
     ),
   ).toEqual([
-    ["Photos", "/Users/me/Photos", null],
+    [".", "/Users/me/Photos", null],
     ["2026", "/Users/me/Photos/2026", "~/Photos/2026/"],
     ["cat.png", "/Users/me/Photos/cat.png", null],
   ]);

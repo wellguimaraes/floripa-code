@@ -1,5 +1,5 @@
 import type { EnvironmentId, FilesystemBrowseResult } from "@t3tools/contracts";
-import { fileBasename, workspaceRelativeFilePath } from "@t3tools/shared/path";
+import { workspaceRelativeFilePath } from "@t3tools/shared/path";
 import { useMemo } from "react";
 
 import type { ComposerCommandItem } from "../components/chat/ComposerCommandMenu";
@@ -60,8 +60,9 @@ export function homeBrowseItems(
             type: "path",
             path: result.parentPath,
             pathKind: "directory",
-            label: fileBasename(target.folder),
+            label: ".",
             description: "This folder",
+            currentFolder: true,
           },
         ]
       : [];
