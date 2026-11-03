@@ -71,6 +71,8 @@ export function resolveArchipelago(input: {
    * in it, top to bottom in `projectOrder`, e.g. the Scratch project.
    */
   readonly mainland?: ReadonlySet<string>;
+  /** How far down the screen the mainland's first island wants to be, e.g. level with the view's middle. */
+  readonly mainlandDown?: number;
   readonly previous: ArchipelagoMemory;
 }): { readonly islands: WorldIsland[]; readonly memory: ArchipelagoMemory } {
   const { definition, previous } = input;
@@ -126,6 +128,7 @@ export function resolveArchipelago(input: {
     ...(definition.archipelago.wander === undefined
       ? {}
       : { wander: definition.archipelago.wander }),
+    ...(input.mainlandDown === undefined ? {} : { mainlandDown: input.mainlandDown }),
   });
   const placements = new Map<string, Placement>();
   const hues = new Map<string, number>();
@@ -357,7 +360,9 @@ export function islandRadius(definition: WorldDefinition): number {
  * or row, so neighbours' ground circles keep at least `gap` of water between.
  *
  * Negative cells are the mainland: `-1`, `-2`, ... stack down a column of
- * their own left of the grid, level with its first row and never wandering.
+ * their own left of the grid, never wandering. The first sits `mainlandDown`
+ * down the screen, held between the grid's first and last rows so it never
+ * stretches the archipelago; level with the first row when left out.
  */
 export function islandOffsets(input: {
   readonly islands: ReadonlyArray<{
@@ -368,6 +373,7 @@ export function islandOffsets(input: {
   readonly gap: number;
   readonly columns: number;
   readonly wander?: number;
+  readonly mainlandDown?: number;
 }): Vec3[] {
   const { islands, gap, columns } = input;
   const wander = input.wander ?? 0;
@@ -400,7 +406,9 @@ export function islandOffsets(input: {
   return islands.map(({ cell, radius, key }) => {
     if (cell < 0) {
       const gridEdge = columnRadius.length === 0 ? -radius : (columnRadius[0] ?? 0) + gap;
-      return toWorld(-(gridEdge + radius), along(mainland, -1 - cell));
+      const lastRow = along(rowRadius, Math.max(0, rowRadius.length - 1));
+      const first = Math.min(lastRow, Math.max(0, input.mainlandDown ?? 0));
+      return toWorld(-(gridEdge + radius), first + along(mainland, -1 - cell));
     }
     const column = cell % columns;
     const row = Math.floor(cell / columns);

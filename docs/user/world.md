@@ -21,7 +21,9 @@ pill shows over its sign. Click it to point the project at the folder's new
 place, or to remove the project along with its threads.
 
 Threads without a project live on the **Mainland**, a coast on the left of the
-map that stays there however you arrange the islands. It appears once you have
+map that stays there however you arrange the islands. As you pan or zoom, the
+Mainland glides along its coast to stay level with the middle of the view, never
+past the top or bottom island. It appears once you have
 started a thread without a project, and it comes first when you pick an island
 for a new agent. Each agent there works in its own folder under `~/FloripaCode`
 (see [Threads without a project](thread-sidebar.md)). Its sign has no branch or

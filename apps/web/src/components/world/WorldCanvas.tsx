@@ -375,6 +375,8 @@ export default function WorldCanvas(props: {
     [arrangement, laidOut, layout.appearing],
   );
   const [memory] = useState(createArchipelagoMemory);
+  // The mainland glides along its coast to stay level with the middle of the view.
+  const [mainlandDown, setMainlandDown] = useState<number | null>(null);
   // Piles picked for agents started from them, by the thread they will become.
   const [requested, setRequested] = useState<ReadonlyMap<string, SlotRequest>>(new Map());
   const chosenHues = useWorldHueStore((state) => state.chosen);
@@ -407,6 +409,7 @@ export default function WorldCanvas(props: {
           visibleOrder.filter((key) => !mainland.has(key)).length,
         ),
         mainland,
+        mainlandDown,
       }),
     [
       memory,
@@ -419,6 +422,7 @@ export default function WorldCanvas(props: {
       chosenHues,
       arrangement,
       mainland,
+      mainlandDown,
     ],
   );
   // The open chat's header shows its character, so it needs the same look.
@@ -1561,6 +1565,7 @@ export default function WorldCanvas(props: {
             onChange={setHoveredIsland}
           />
           <AmbientTicker fps={ambientFps} />
+          {mainland.size > 0 ? <ViewMiddleTracker onSettle={setMainlandDown} /> : null}
           {/* Far wider than any archipelago, so the water never ends on screen. */}
           {/* Islands and characters stop their clicks, so only open water reaches here. */}
           {/* Its handlers make it a hit, so it takes the clicks onPointerMissed would get. */}
@@ -3363,6 +3368,39 @@ function useClock(intervalMs: number | null): number {
   return now;
 }
 
+/** How long the view holds still before the mainland glides level with its middle. */
+const MAINLAND_FOLLOW_MS = 250;
+const viewDirection = new Vector3();
+
+/**
+ * Reports how far down the screen the middle of the view lies, once the view
+ * has held still for a moment, so the mainland can glide level with it.
+ * Frames only come while the view moves, so this costs nothing at rest.
+ */
+function ViewMiddleTracker({ onSettle }: { readonly onSettle: (down: number) => void }) {
+  const camera = useThree((state) => state.camera);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const reported = useRef<number | null>(null);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  useFrame(() => {
+    camera.getWorldDirection(viewDirection);
+    if (viewDirection.y >= 0) return;
+    // Where the middle of the view meets the sea, as screen "down" (x + z).
+    const reach = -camera.position.y / viewDirection.y;
+    const x = camera.position.x + viewDirection.x * reach;
+    const z = camera.position.z + viewDirection.z * reach;
+    const down = Math.round(((x + z) / Math.SQRT2) * 2) / 2;
+    // Back where it last settled: drop any report from on the way.
+    clearTimeout(timer.current);
+    if (down === reported.current) return;
+    timer.current = setTimeout(() => {
+      reported.current = down;
+      onSettle(down);
+    }, MAINLAND_FOLLOW_MS);
+  });
+  return null;
+}
+
 /** Requests frames for idle animations at a low, fixed rate, and none while hidden. */
 function AmbientTicker({ fps }: { readonly fps: number }) {
   const invalidate = useThree((state) => state.invalidate);
@@ -3406,6 +3444,7 @@ function createArchipelagoMemory() {
       readonly requested: ReadonlyMap<string, SlotRequest>;
       readonly columns: number;
       readonly mainland: ReadonlySet<string>;
+      readonly mainlandDown: number | null;
     }): WorldIsland[] {
       const { movement } = input.definition;
       const now = Math.max(input.checkedAt, Date.now());
@@ -3421,7 +3460,13 @@ function createArchipelagoMemory() {
       const nextLayout = input.projectOrder.join("|");
       if (layout !== null && layout !== nextLayout) previous = { ...previous, cells: new Map() };
       layout = nextLayout;
-      const result = resolveArchipelago({ ...input, facts: paced.facts, previous });
+      const { mainlandDown, ...rest } = input;
+      const result = resolveArchipelago({
+        ...rest,
+        ...(mainlandDown === null ? {} : { mainlandDown }),
+        facts: paced.facts,
+        previous,
+      });
       previous = result.memory;
       return result.islands;
     },
