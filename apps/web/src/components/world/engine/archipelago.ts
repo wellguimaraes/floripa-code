@@ -150,11 +150,14 @@ export function resolveArchipelago(input: {
       previous: previous.hues,
     });
     for (const [seed, hue] of islandHues) hues.set(seed, hue);
-    const islandHats = assignHats({
-      facts: byProject.get(key) ?? [],
-      hatCount: input.hatCount,
-      previous: previous.hats,
-    });
+    // Mainland threads each get a folder of their own, not a worktree, so no hats.
+    const islandHats = mainland.has(key)
+      ? new Map<string, number>()
+      : assignHats({
+          facts: byProject.get(key) ?? [],
+          hatCount: input.hatCount,
+          previous: previous.hats,
+        });
     for (const [path, hat] of islandHats) hats.set(path, hat);
     return {
       key,

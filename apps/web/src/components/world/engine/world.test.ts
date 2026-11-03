@@ -602,6 +602,25 @@ describe("resolveArchipelago", () => {
     expect(island!.hats.get("/wt/one")).not.toBe(island!.hats.get("/wt/two"));
   });
 
+  it("gives no hats on the mainland, where each agent has a folder of its own", () => {
+    const { islands, memory } = resolveArchipelago({
+      facts: [
+        character({ projectKey: "home", worktreePath: "/scratch/one" }),
+        character({ projectKey: "a", worktreePath: "/wt/one" }),
+      ],
+      definition: testWorld,
+      projectOrder: ["home", "a"],
+      hueCount: 3,
+      hatCount: 3,
+      mainland: new Set(["home"]),
+      previous: EMPTY_ARCHIPELAGO_MEMORY,
+    });
+    const hatsOf = (key: string) => [...islands.find((island) => island.key === key)!.hats.keys()];
+    expect(hatsOf("home")).toEqual([]);
+    expect(hatsOf("a")).toEqual(["/wt/one"]);
+    expect(memory.hats.has("/scratch/one")).toBe(false);
+  });
+
   it("never overlaps two islands, whatever their sizes or where they sit in their slots", () => {
     const { gap } = testWorld.archipelago;
     for (const [columns, wander] of [
