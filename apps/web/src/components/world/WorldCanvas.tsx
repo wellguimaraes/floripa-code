@@ -1524,6 +1524,7 @@ export default function WorldCanvas(props: {
         <WorldDaylight>
           <WorldControls
             bounds={bounds}
+            mainlandShown={visibleOrder.some((key) => mainland.has(key))}
             islands={islandSpots}
             panel={panel}
             bars={bars}
@@ -2614,9 +2615,12 @@ function WorldControls({
   panBy,
   reveal,
   layout,
+  mainlandShown,
 }: {
   /** Each island's ground, in the same order as `islands`. */
   readonly bounds: ReadonlyArray<Bounds> | null;
+  /** Whether the mainland is on the map: framing every island then keeps its land to a sliver. */
+  readonly mainlandShown: boolean;
   readonly islands: ReadonlyArray<IslandSpot>;
   readonly panel: () => HTMLElement | null;
   readonly bars: () => { readonly top: HTMLElement | null; readonly bottom: HTMLElement | null };
@@ -2686,11 +2690,12 @@ function WorldControls({
         signs: signsOf(key === undefined ? islands.map((spot) => spot.key) : [key]),
         viewport: size,
         covered: covered(),
+        pinLeft: key === undefined && mainlandShown,
       });
       if (key === undefined) controls.minZoom = view.zoom;
       return view;
     },
-    [bounds, islands, camera, size, covered, signsOf],
+    [bounds, islands, camera, size, covered, signsOf, mainlandShown],
   );
   // A view on or under the zoom floor frames every island instead, centred, whatever moved it.
   const onFloorCentred = useCallback(
@@ -3250,6 +3255,12 @@ function frameView(input: {
   readonly signs: ReadonlyArray<Vector3>;
   readonly viewport: { readonly width: number; readonly height: number };
   readonly covered: Covered;
+  /**
+   * Holds the leftmost ground at the canvas's left, its margin away, rather
+   * than centring: room to spare goes to the sea on the right, not to the
+   * mainland's land, which runs on forever to the left.
+   */
+  readonly pinLeft?: boolean;
 }): View {
   const { bounds, viewport } = input;
   // Keep a usable strip of world even when the panel covers most of the canvas.
@@ -3309,7 +3320,9 @@ function frameView(input: {
   );
   // Slide what was measured onto the middle of the part of the canvas the
   // panel and bars leave visible.
-  const dx = -((left + right) / 2) * zoom - coveredRight / 2;
+  const dx = input.pinLeft
+    ? -viewport.width / 2 + ((right - left) * zoom * (margin - 1)) / 2 - left * zoom
+    : -((left + right) / 2) * zoom - coveredRight / 2;
   const dy = ((bottom + top) / 2) * zoom + (coveredTop - coveredBottom) / 2;
   return { target: target.add(targetShift(probe, dx, dy, zoom)), zoom };
 }
