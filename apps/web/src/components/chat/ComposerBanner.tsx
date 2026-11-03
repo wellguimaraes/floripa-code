@@ -40,7 +40,7 @@ function Surface({
   className,
   ...props
 }: ComponentProps<"div"> & {
-  placement?: "attached" | "floating";
+  placement?: "attached" | "floating" | "docked";
   variant?: ComposerBannerVariant;
 }) {
   return (
@@ -55,14 +55,22 @@ function Surface({
         // drops the last device-pixel row of a filtered backdrop when the cut-off lands
         // off the device-pixel grid, and the composer's surface starts exactly there.
         // The composer's own glass covers the extra row, so the overlap never shows.
-        placement === "attached"
-          ? "[--chat-composer-attachment-overlap:calc(1rem+1px)] before:rounded-t-lg before:mask-t-from-transparent before:mask-t-from-4 before:mask-t-to-black before:mask-t-to-4"
-          : "[--chat-composer-attachment-overlap:0px] before:rounded-lg",
+        placement === "attached" &&
+          "[--chat-composer-attachment-overlap:calc(1rem+1px)] before:rounded-t-lg before:mask-t-from-transparent before:mask-t-from-4 before:mask-t-to-black before:mask-t-to-4",
+        placement === "floating" && "[--chat-composer-attachment-overlap:0px] before:rounded-lg",
+        placement === "docked" && "[--chat-composer-attachment-overlap:0px] before:rounded-t-lg",
         "before:pointer-events-none before:absolute before:inset-0 before:-z-1 before:border before:border-(--chat-composer-attached-outline)",
-        "before:bg-(--chat-composer-attached-surface)/(--glass-opacity) before:bg-linear-to-b before:from-(--chat-composer-attached-tint) before:to-(--chat-composer-attached-tint) before:backdrop-blur-(--glass-blur) before:backdrop-saturate-(--glass-saturation)",
-        "before:shadow-composer dark:before:shadow-composer-dark",
-        "dark:supports-[(backdrop-filter:blur(1px))_or_(-webkit-backdrop-filter:blur(1px))]:before:bg-composer-seam-above",
-        "not-supports-[((backdrop-filter:blur(1px))_or_(-webkit-backdrop-filter:blur(1px)))]:before:bg-(--chat-composer-attached-surface)",
+        placement !== "docked" &&
+          "before:bg-(--chat-composer-attached-surface)/(--glass-opacity) before:bg-linear-to-b before:from-(--chat-composer-attached-tint) before:to-(--chat-composer-attached-tint) before:backdrop-blur-(--glass-blur) before:backdrop-saturate-(--glass-saturation)",
+        placement !== "docked" && "before:shadow-composer dark:before:shadow-composer-dark",
+        placement !== "docked" &&
+          "dark:supports-[(backdrop-filter:blur(1px))_or_(-webkit-backdrop-filter:blur(1px))]:before:bg-composer-seam-above",
+        placement !== "docked" &&
+          "not-supports-[((backdrop-filter:blur(1px))_or_(-webkit-backdrop-filter:blur(1px)))]:before:bg-(--chat-composer-attached-surface)",
+        // Docked sits on a divider, which is its bottom edge: no shadow or seam shading onto it,
+        // and the solid muted fill of the chat composer's header rather than glass.
+        // After the shared border, or the merge drops it as overridden.
+        placement === "docked" && "before:border-b-0 before:bg-muted",
         className,
       )}
       {...props}
@@ -154,7 +162,7 @@ function Root({
   ...props
 }: ComponentProps<"div"> & {
   density?: "default" | "comfortable" | "spacious";
-  placement?: "attached" | "floating";
+  placement?: "attached" | "floating" | "docked";
   variant?: ComposerBannerVariant;
   width?: "fill" | "content";
 }) {

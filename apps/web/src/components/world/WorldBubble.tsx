@@ -133,6 +133,7 @@ export function WorldBubble(props: {
   // work as it grows unless you scrolled up to read.
   const exchange = useRef<HTMLDivElement>(null);
   const exchangeContent = useRef<HTMLDivElement>(null);
+  const exchangeFooter = useRef<HTMLDivElement>(null);
   const followingEnd = useRef(true);
   // Scrolled up away from the latest words: offers a way back down.
   const [awayFromEnd, setAwayFromEnd] = useState(false);
@@ -160,12 +161,14 @@ export function WorldBubble(props: {
   useLayoutEffect(() => {
     const element = exchange.current;
     const content = exchangeContent.current;
-    if (element === null || content === null) return;
+    const footer = exchangeFooter.current;
+    if (element === null || content === null || footer === null) return;
     const toEnd = () => {
       if (followingEnd.current) element.scrollTop = element.scrollHeight;
     };
     toEnd();
-    return observeResize(content, toEnd);
+    // The footer grows when a run banner appears; following the end keeps it off the last lines.
+    return observeResize([content, footer], toEnd);
   }, []);
   const startTurn = useOrchestrationCommand(threadEnvironment.startTurn, {
     reportFailure: false,
@@ -494,83 +497,117 @@ export function WorldBubble(props: {
               scroll up. As tall as the bubble is resized to: the turn scrolls under your message,
               which stays pinned on top. Ruled off below, edge to edge, like the header; gone while
               empty. */}
-          <div className="relative">
+          <div
+            ref={exchange}
+            onScroll={(event) => {
+              const element = event.currentTarget;
+              // A pin heads its exchange's box: it sticks once that box starts above the top,
+              // and what scrolls under it fades. All reads before any writes, for one layout.
+              const top = element.getBoundingClientRect().top;
+              const pins = [...element.querySelectorAll<HTMLElement>("[data-exchange-pin]")];
+              const stuck = pins.map(
+                (pin) => (pin.parentElement?.getBoundingClientRect().top ?? top) < top,
+              );
+              pins.forEach((pin, index) => pin.toggleAttribute("data-stuck", stuck[index]));
+              followingEnd.current =
+                element.scrollHeight - element.scrollTop - element.clientHeight < 4;
+              setAwayFromEnd(!followingEnd.current);
+            }}
+            className="-mx-2.5 mt-1 flex h-(--bubble-exchange-height) flex-col overflow-y-auto border-b border-border px-2.5 text-bubble has-[>[data-exchange]:empty]:hidden"
+          >
+            {/* Sat at the bottom, as the chat reads, while the conversation is shorter than the box. */}
             <div
-              ref={exchange}
-              onScroll={(event) => {
-                const element = event.currentTarget;
-                // A pin heads its exchange's box: it sticks once that box starts above the top,
-                // and what scrolls under it fades. All reads before any writes, for one layout.
-                const top = element.getBoundingClientRect().top;
-                const pins = [...element.querySelectorAll<HTMLElement>("[data-exchange-pin]")];
-                const stuck = pins.map(
-                  (pin) => (pin.parentElement?.getBoundingClientRect().top ?? top) < top,
-                );
-                pins.forEach((pin, index) => pin.toggleAttribute("data-stuck", stuck[index]));
-                followingEnd.current =
-                  element.scrollHeight - element.scrollTop - element.clientHeight < 4;
-                setAwayFromEnd(!followingEnd.current);
-              }}
-              className="-mx-2.5 mt-1 flex h-(--bubble-exchange-height) flex-col overflow-y-auto border-b border-border px-2.5 pb-2.5 text-bubble has-[>[data-exchange]:empty]:hidden"
+              ref={exchangeContent}
+              data-exchange
+              className="mt-auto flex min-w-0 shrink-0 flex-col gap-2 pb-2.5"
             >
-              {/* Sat at the bottom, as the chat reads, while the conversation is shorter than the box. */}
-              <div
-                ref={exchangeContent}
-                data-exchange
-                className="mt-auto flex min-w-0 shrink-0 flex-col gap-2"
-              >
-                <LatestTurn
-                  threadRef={facts.ref}
-                  sentMessageId={lastSent?.id ?? null}
-                  awaitingUser={facts.status === "approval" || facts.status === "input"}
-                  cwd={cwd}
-                  workspaceRoot={project?.workspaceRoot}
-                  resolvedTheme={resolvedTheme}
-                  skills={skills}
-                  providers={providers ?? EMPTY_PROVIDERS}
-                  onOpenFullChat={expand}
-                  scrollRef={exchange}
-                  pinned={
-                    lastSentForPin !== null ? (
-                      <ExchangePin
-                        message={lastSentForPin}
-                        chips={chips}
-                        threadRef={facts.ref}
-                        timestampFormat={timestampFormat}
-                      />
-                    ) : null
-                  }
-                  renderPin={(message) => (
+              <LatestTurn
+                threadRef={facts.ref}
+                sentMessageId={lastSent?.id ?? null}
+                awaitingUser={facts.status === "approval" || facts.status === "input"}
+                cwd={cwd}
+                workspaceRoot={project?.workspaceRoot}
+                resolvedTheme={resolvedTheme}
+                skills={skills}
+                providers={providers ?? EMPTY_PROVIDERS}
+                onOpenFullChat={expand}
+                scrollRef={exchange}
+                pinned={
+                  lastSentForPin !== null ? (
                     <ExchangePin
-                      message={message}
+                      message={lastSentForPin}
                       chips={chips}
                       threadRef={facts.ref}
                       timestampFormat={timestampFormat}
                     />
-                  )}
-                />
-              </div>
+                  ) : null
+                }
+                renderPin={(message) => (
+                  <ExchangePin
+                    message={message}
+                    chips={chips}
+                    threadRef={facts.ref}
+                    timestampFormat={timestampFormat}
+                  />
+                )}
+              />
             </div>
-            {awayFromEnd ? (
-              <div className="pointer-events-none absolute inset-x-0 bottom-2.5 z-20 flex justify-center">
-                <Button
-                  aria-label="Scroll to end"
-                  onPointerDown={(event) => event.preventDefault()}
-                  onClick={() => {
-                    const element = exchange.current;
-                    if (element === null) return;
-                    followingEnd.current = true;
-                    element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
-                  }}
-                  className="pointer-events-auto"
-                  size="xs"
-                  variant="inverted"
-                >
-                  <ChevronDownIcon className="size-3.5" />
-                  Scroll to end
-                </Button>
-              </div>
-            ) : null}
+            {/* Pinned to the rule below while the turn scrolls: what the agent is still running,
+                  sitting on the rule, and the way back to the end just above it. */}
+            <div ref={exchangeFooter} className="sticky bottom-0 z-20 shrink-0">
+              {awayFromEnd ? (
+                <div className="pointer-events-none absolute inset-x-0 bottom-full mb-2.5 flex justify-center">
+                  <Button
+                    aria-label="Scroll to end"
+                    onPointerDown={(event) => event.preventDefault()}
+                    onClick={() => {
+                      const element = exchange.current;
+                      if (element === null) return;
+                      followingEnd.current = true;
+                      element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
+                    }}
+                    className="pointer-events-auto"
+                    size="xs"
+                    variant="inverted"
+                  >
+                    <ChevronDownIcon className="size-3.5" />
+                    Scroll to end
+                  </Button>
+                </div>
+              ) : null}
+              {backgroundWork !== null ? (
+                <ComposerBanner.Root role="status" placement="docked" density="comfortable">
+                  <ComposerBanner.Row>
+                    <ComposerBanner.Icon>
+                      <span className="flex opacity-40" aria-hidden="true">
+                        <Spinner size="xs" />
+                      </span>
+                    </ComposerBanner.Icon>
+                    <ComposerBanner.Content className="whitespace-nowrap">
+                      <span className="min-w-0 truncate font-medium">{backgroundWork.title}</span>
+                      {/* A single item is already named in the title. */}
+                      {backgroundWork.items.length > 1 ? (
+                        <span className="min-w-0 truncate text-muted-foreground">
+                          {backgroundWork.items.map((item) => item.label).join(", ")}
+                        </span>
+                      ) : null}
+                    </ComposerBanner.Content>
+                    {isStoppable(facts) ? (
+                      <ComposerBanner.Actions>
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          disabled={state.phase === "stopping"}
+                          onClick={() => void stop()}
+                        >
+                          {state.phase === "stopping" ? "Stopping..." : "Stop"}
+                        </Button>
+                      </ComposerBanner.Actions>
+                    ) : null}
+                  </ComposerBanner.Row>
+                </ComposerBanner.Root>
+              ) : null}
+            </div>
           </div>
           {/* Messages waiting behind the agent's current run, above the text box as in the chat. */}
           <div className="mt-2 empty:hidden">
@@ -601,43 +638,6 @@ export function WorldBubble(props: {
                 onAdvance={question.advance}
                 onDismiss={question.dismiss}
               />
-            </ComposerBanner.Root>
-          ) : null}
-          {backgroundWork !== null ? (
-            <ComposerBanner.Root
-              role="status"
-              placement="floating"
-              density="comfortable"
-              className="mt-2"
-            >
-              <ComposerBanner.Row>
-                <ComposerBanner.Icon>
-                  <span className="flex opacity-40" aria-hidden="true">
-                    <Spinner size="xs" />
-                  </span>
-                </ComposerBanner.Icon>
-                <ComposerBanner.Content className="whitespace-nowrap">
-                  <span className="min-w-0 truncate font-medium">{backgroundWork.title}</span>
-                  {/* A single item is already named in the title. */}
-                  {backgroundWork.items.length > 1 ? (
-                    <span className="min-w-0 truncate text-muted-foreground">
-                      {backgroundWork.items.map((item) => item.label).join(", ")}
-                    </span>
-                  ) : null}
-                </ComposerBanner.Content>
-                {isStoppable(facts) ? (
-                  <ComposerBanner.Actions>
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      disabled={state.phase === "stopping"}
-                      onClick={() => void stop()}
-                    >
-                      {state.phase === "stopping" ? "Stopping..." : "Stop"}
-                    </Button>
-                  </ComposerBanner.Actions>
-                ) : null}
-              </ComposerBanner.Row>
             </ComposerBanner.Root>
           ) : null}
         </>
