@@ -1756,6 +1756,7 @@ export default function WorldCanvas(props: {
               listen={listenKey === bubble.facts.key}
               hue={bubbleIsland?.hues.get(bubble.facts.lookSeed) ?? 0}
               onHueChange={(hue) => recolorFamily(bubbleIsland, bubble.facts.lookSeed, hue)}
+              onMainland={bubbleIsland !== undefined && mainland.has(bubbleIsland.key)}
               onClose={() => setBubbleKey(null)}
               onExpand={() => openChat(bubble)}
               onArchived={() => {

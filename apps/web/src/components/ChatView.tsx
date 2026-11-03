@@ -10868,6 +10868,7 @@ export default function ChatView(props: ChatViewProps) {
       isServerThread={isServerThread}
       activeThreadTitle={activeThread.title}
       activeProject={activeProject ?? null}
+      activeProjectIsScratch={activeProjectIsScratch}
       activeProjectGroupLabel={activeProjectGroupLabel}
       parentThreadLink={parentThreadLink}
       onOpenThread={onOpenRelatedThread}
@@ -10890,6 +10891,7 @@ export default function ChatView(props: ChatViewProps) {
           (activeProject?.title ?? null)
         }
         project={activeProject ?? null}
+        scratch={activeProjectIsScratch}
         chatCollapsed={rightPanelMaximized}
         onToggleChat={toggleChatCollapsed}
         trailing={

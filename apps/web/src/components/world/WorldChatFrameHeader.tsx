@@ -10,6 +10,7 @@ import GitActionsControl from "../GitActionsControl";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { AppIcon } from "./AppIcon";
 import { useWorldModeStore } from "./worldModeStore";
 
 /**
@@ -22,6 +23,8 @@ export function WorldChatFrameHeader(props: {
   readonly threadRef: ScopedThreadRef;
   readonly projectName: string | null;
   readonly project: ProjectFaviconProject | null;
+  /** The Scratch project, the mainland: it wears the app's icon rather than a project's. */
+  readonly scratch?: boolean;
   readonly chatCollapsed: boolean;
   readonly onToggleChat: () => void;
   readonly trailing?: ReactNode;
@@ -65,8 +68,12 @@ export function WorldChatFrameHeader(props: {
                 />
               }
             >
-              {/* A white tile keeps any icon legible on any background. */}
-              <ProjectFavicon project={props.project} className="size-6" />
+              {props.scratch ? (
+                <AppIcon className="size-6 rounded-sm" />
+              ) : (
+                /* A white tile keeps any icon legible on any background. */
+                <ProjectFavicon project={props.project} className="size-6" />
+              )}
             </TooltipTrigger>
             <TooltipPopup side="bottom">
               Show {props.projectName ?? "the project"} on the map
@@ -75,12 +82,17 @@ export function WorldChatFrameHeader(props: {
         ) : null}
         {/* Baseline-aligned: the mono totals are smaller than the name. */}
         <div className="flex min-w-0 items-baseline gap-2">
-          <WorktreeSwitcher
-            threadRef={props.threadRef}
-            variant="title"
-            className="pointer-events-auto min-w-0"
-          />
-          {scope ? (
+          {/* The mainland has no worktrees to switch between, nor git totals to show. */}
+          {props.scratch ? (
+            <span className="truncate font-medium text-foreground text-sm leading-5">Mainland</span>
+          ) : (
+            <WorktreeSwitcher
+              threadRef={props.threadRef}
+              variant="title"
+              className="pointer-events-auto min-w-0"
+            />
+          )}
+          {scope && !props.scratch ? (
             <div className="pointer-events-auto flex shrink-0">
               <GitActionsControl
                 presentation="diffStat"

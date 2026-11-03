@@ -42,6 +42,7 @@ import { cn } from "~/lib/utils";
 import { useClientSettings } from "../../hooks/useSettings";
 import { useWorldLook } from "../world/worldLookStore";
 import { WorldArchiveButton, WorldRegenerateTitleButton } from "../world/WorldChatActions";
+import { AppIcon } from "../world/AppIcon";
 import { worktreeLabel } from "../world/worktreeLabel";
 import { WorktreeSwitcher } from "./WorktreeSwitcher";
 
@@ -52,6 +53,8 @@ interface ChatHeaderProps {
   /** Drafts have no server thread yet, so the title carries no action menu. */
   isServerThread: boolean;
   activeProject: EnvironmentProject | null;
+  /** The Scratch project: no repository, so the world shows the app's icon and no worktree. */
+  activeProjectIsScratch?: boolean;
   /** The sidebar's label for the project's group, such as "owner/repo". */
   activeProjectGroupLabel: string | null;
   parentThreadLink: { threadId: ThreadId; title: string } | null;
@@ -88,6 +91,7 @@ export const ChatHeader = memo(function ChatHeader({
   activeThreadTitle,
   isServerThread,
   activeProject,
+  activeProjectIsScratch = false,
   activeProjectGroupLabel,
   parentThreadLink,
   onOpenThread,
@@ -325,7 +329,11 @@ export const ChatHeader = memo(function ChatHeader({
       {worldLook !== null && activeProject ? (
         // A white tile keeps any icon legible on any background.
         <span className="flex shrink-0 rounded-md bg-white">
-          <ProjectFavicon project={activeProject} className="size-8" />
+          {activeProjectIsScratch ? (
+            <AppIcon className="size-8 rounded-md" />
+          ) : (
+            <ProjectFavicon project={activeProject} className="size-8" />
+          )}
         </span>
       ) : null}
       <div className="flex min-w-0 flex-1 flex-col">
@@ -495,7 +503,7 @@ export const ChatHeader = memo(function ChatHeader({
             )}
           </WorkspaceBreadcrumbItem>
         </WorkspaceBreadcrumb>
-        {worldThread !== null ? (
+        {worldThread !== null && !activeProjectIsScratch ? (
           <span className="min-w-0 truncate text-muted-foreground text-xs">
             {worktreeLabel(worldThread)}
           </span>

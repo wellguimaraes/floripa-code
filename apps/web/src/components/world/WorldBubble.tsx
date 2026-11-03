@@ -105,6 +105,8 @@ export function WorldBubble(props: {
   readonly hue: number;
   /** Repaint the character's family: it and its subagents (or its parent and siblings). */
   readonly onHueChange: (hue: number) => void;
+  /** The agent lives on the mainland, in a folder of its own rather than a worktree. */
+  readonly onMainland?: boolean;
 }) {
   const { facts, onClose, onExpand, onArchived, listen = false, hue, onHueChange } = props;
   const { archiveThread } = useThreadActions();
@@ -185,7 +187,7 @@ export function WorldBubble(props: {
     [facts.status, thread],
   );
   const regeneratingTitle = thread?.titleRegeneration != null;
-  const worktree = thread === null ? null : worktreeLabel(thread);
+  const worktree = thread === null || props.onMainland ? null : worktreeLabel(thread);
   // The thread's pull request, resolved as the sidebar does.
   const pullRequest = useLinkedThreadPullRequest(
     facts.ref.environmentId,
