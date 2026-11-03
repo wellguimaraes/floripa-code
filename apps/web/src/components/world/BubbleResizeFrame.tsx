@@ -52,12 +52,28 @@ const GRIPS = [
 export const BUBBLE_RESIZED_ATTRIBUTE = "data-bubble-resized";
 
 /**
+ * Set on the frame once the user drags it by its handle. The world's placement then stops moving
+ * the bubble at all, so it stays where it was dropped while the map pans or its character walks;
+ * placement resumes when the bubble opens again.
+ */
+export const BUBBLE_MOVED_ATTRIBUTE = "data-bubble-moved";
+
+/** Marks the part of a bubble that drags it, its header. Controls inside it still click. */
+export const BUBBLE_DRAG_HANDLE_ATTRIBUTE = "data-bubble-drag-handle";
+
+const INTERACTIVE = "button, a, input, textarea, select, [role=button], [contenteditable=true]";
+/** How close a dragged bubble may come to the window's edges. */
+const EDGE_PX = 8;
+
+/**
  * A chat bubble the user can resize from any edge or corner, remembered in this browser. The
  * dragged edge follows the pointer and the opposite one stays put: the frame offsets itself
  * against the centring and bottom anchoring its parent gives it. The children read
  * `--bubble-width` and `--bubble-exchange-height`, the conversation's height. Dragging writes
  * straight to the frame, so the bubble does not re-render per move; the size is saved on
- * release. Double-clicking a grip restores the default size and position.
+ * release. Double-clicking a grip restores the default size and position. Dragging the
+ * element marked with `BUBBLE_DRAG_HANDLE_ATTRIBUTE` moves the whole frame, kept inside the
+ * window; the position is not remembered, so the bubble opens over its character again.
  */
 export function BubbleResizeFrame(props: { readonly children: ReactNode }) {
   const [stored, setStored] = useLocalStorage(STORAGE_KEY, DEFAULT_BUBBLE_SIZE, BubbleSize);
@@ -73,6 +89,13 @@ export function BubbleResizeFrame(props: { readonly children: ReactNode }) {
     readonly start: BubbleSize;
     readonly startOffset: { readonly x: number; readonly y: number };
     current: BubbleSize;
+  } | null>(null);
+  const move = useRef<{
+    readonly pointerId: number;
+    readonly x: number;
+    readonly y: number;
+    readonly startOffset: { readonly x: number; readonly y: number };
+    readonly rect: DOMRect;
   } | null>(null);
 
   const apply = (next: BubbleSize) => {
@@ -130,10 +153,58 @@ export function BubbleResizeFrame(props: { readonly children: ReactNode }) {
     if (active.current !== active.start) setStored(active.current);
   };
 
+  const onMoveStart = (event: PointerEvent<HTMLDivElement>) => {
+    const element = frame.current;
+    if (event.button !== 0 || element === null || !(event.target instanceof Element)) return;
+    const handle = event.target.closest(`[${BUBBLE_DRAG_HANDLE_ATTRIBUTE}]`);
+    if (handle === null || !element.contains(handle)) return;
+    if (event.target.closest(INTERACTIVE) !== null) return;
+    event.preventDefault();
+    event.stopPropagation();
+    element.setPointerCapture(event.pointerId);
+    element.setAttribute(BUBBLE_MOVED_ATTRIBUTE, "");
+    move.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      startOffset: offset.current,
+      rect: element.getBoundingClientRect(),
+    };
+  };
+
+  const onMove = (event: PointerEvent<HTMLDivElement>) => {
+    const active = move.current;
+    if (active === null || active.pointerId !== event.pointerId) return;
+    const { rect } = active;
+    // The far edge wins for a bubble larger than the window, keeping its header in reach.
+    const clamp = (value: number, low: number, high: number) =>
+      Math.max(Math.min(value, high), low);
+    const dx = clamp(
+      event.clientX - active.x,
+      EDGE_PX - rect.left,
+      window.innerWidth - EDGE_PX - rect.right,
+    );
+    const dy = clamp(
+      event.clientY - active.y,
+      EDGE_PX - rect.top,
+      window.innerHeight - EDGE_PX - rect.bottom,
+    );
+    offset.current = { x: active.startOffset.x + dx, y: active.startOffset.y + dy };
+    apply(size);
+  };
+
+  const onMoveEnd = (event: PointerEvent<HTMLDivElement>) => {
+    if (move.current?.pointerId === event.pointerId) move.current = null;
+  };
+
   return (
     <div
       ref={frame}
       className="pointer-events-auto relative"
+      onPointerDown={onMoveStart}
+      onPointerMove={onMove}
+      onPointerUp={onMoveEnd}
+      onPointerCancel={onMoveEnd}
       style={
         {
           "--bubble-width": `${size.width}px`,

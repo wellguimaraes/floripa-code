@@ -401,7 +401,11 @@ export function WorldBubble(props: {
       listenOnOpen={listen}
       header={
         <>
-          <div className="-mx-2.5 flex items-center gap-2 border-b border-border px-2.5 pb-2">
+          {/* Drags the bubble (BubbleResizeFrame); its buttons and link still click. */}
+          <div
+            data-bubble-drag-handle=""
+            className="-mx-2.5 flex cursor-grab touch-none items-center gap-2 border-b border-border px-2.5 pb-2 active:cursor-grabbing"
+          >
             <FamilyHueButton hue={hue} kid={facts.kid} onHueChange={onHueChange} />
             <div className="min-w-0 flex-1">
               <p className={cn("truncate text-sm font-medium", regeneratingTitle && "opacity-55")}>

@@ -134,7 +134,11 @@ import { RestoreArchivedDialog } from "./RestoreArchivedDialog";
 import { layoutTags, type ScreenPoint } from "./scene/tagLayout";
 import { mainlandOffshore } from "./scene/coast";
 import { isStoppable, WorldBubble } from "./WorldBubble";
-import { BUBBLE_RESIZED_ATTRIBUTE, BubbleResizeFrame } from "./BubbleResizeFrame";
+import {
+  BUBBLE_MOVED_ATTRIBUTE,
+  BUBBLE_RESIZED_ATTRIBUTE,
+  BubbleResizeFrame,
+} from "./BubbleResizeFrame";
 import { VOICE_INPUT_ENABLED, voiceInputSupported } from "./useVoiceInput";
 
 /**
@@ -2599,6 +2603,8 @@ function useBubblePlacement(
     const point = last.current;
     const area = visibleArea();
     if (element == null || bubble == null || point === null || area === null) return;
+    // Dragged by hand: it stays where it was dropped until it opens again.
+    if (bubble.querySelector(`[${BUBBLE_MOVED_ATTRIBUTE}]`) !== null) return;
     if (size.current === null || !resizedByHand(bubble)) {
       size.current = { width: bubble.offsetWidth, height: bubble.offsetHeight };
     }
