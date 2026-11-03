@@ -10,7 +10,6 @@ import {
   ChevronDownIcon,
   PanelRightCloseIcon,
   RefreshCwIcon,
-  SquareIcon,
   XIcon,
 } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -465,18 +464,6 @@ export function WorldBubble(props: {
                 onClick={() => void regenerateTitle()}
               >
                 <RefreshCwIcon className={cn(regeneratingTitle && "animate-spin")} />
-              </Button>
-            ) : null}
-            {isStoppable(facts) ? (
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                aria-label="Stop this run"
-                title="Stop this run"
-                disabled={state.phase === "stopping"}
-                onClick={() => void stop()}
-              >
-                <SquareIcon className="fill-destructive text-destructive" />
               </Button>
             ) : null}
             <Tooltip>
