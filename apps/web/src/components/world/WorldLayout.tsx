@@ -92,8 +92,8 @@ function useFrameWidth(
  * The chat layout in world mode. The URL still picks the open thread, so
  * clicking a character navigates to it and its chat floats over the world;
  * everything ChatView does on its own (forks, deletes) keeps working.
- * `covered` is for while Settings sits over the world: the chat hides, and its
- * shortcuts with it, until Settings closes onto it again.
+ * `covered` is for while the Settings dialog sits over the world: the chat stays where it
+ * is behind it, like under any dialog, but the frame's own close shortcut waits.
  */
 export function WorldLayout({
   target,
@@ -213,14 +213,14 @@ export function WorldLayout({
   // Closed surfaces leave only their rail beside the chat.
   const frameOffset = chatShown && !surfaces.isOpen ? RAILS_WIDTH - surfacesWidth.width : 0;
   // A closed chat slides its frame out before it hides. Closing navigates, which holds panel
-  // motion for a frame, so the slide only follows the Motion duration. Settings covers it at once.
-  const frameShown = chatTarget !== null && !covered;
+  // motion for a frame, so the slide only follows the Motion duration.
+  const frameShown = chatTarget !== null;
   const { durationMs: frameMotionMs } = usePanelAnimationSettings();
   const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
   const framePresent = usePanelPresence(
     frameShown,
     true,
-    frameMotionMs > 0 && !reducedMotion && !covered,
+    frameMotionMs > 0 && !reducedMotion,
     null,
     frameMotionMs,
   ).present;
