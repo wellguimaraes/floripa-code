@@ -69,7 +69,7 @@ import {
 import { firstExpandedFileInView } from "../diffs/firstExpandedFileInView";
 import { useCodeViewFileReveal } from "../diffs/useCodeViewFileReveal";
 import { diffFileTreeEntries } from "../diffs/diffFileTree.logic";
-import { StyledDiffCodeView } from "../diffs/StyledDiffCodeView";
+import { SINGLE_FILE_HEADER_CSS, StyledDiffCodeView } from "../diffs/StyledDiffCodeView";
 import { Button } from "../ui/button";
 import { MorphIcon } from "~/components/MorphIcon";
 import { Checkbox } from "../ui/checkbox";
@@ -636,7 +636,8 @@ function PullRequestCodeTab({
       items.filter((item) => resolveFileDiffPath(item.fileDiff) === path);
     const picked = matchingPath(focusedPath);
     const matching = picked.length > 0 ? picked : matchingPath(fileTreeEntries[0]?.path);
-    return matching.length > 0 ? matching : null;
+    // The one file shown cannot fold away, not even when marked viewed.
+    return matching.length > 0 ? matching.map((item) => ({ ...item, collapsed: false })) : null;
   }, [fileTreeEntries, fileTreeOpen, focusedPath, items]);
   const shownPath = focusedItems?.[0] ? resolveFileDiffPath(focusedItems[0].fileDiff) : null;
   const collapsedFileKeys = useMemo(
@@ -845,8 +846,10 @@ function PullRequestCodeTab({
     [nextCursor, focusedItems, diffQuery.error, diffQuery.isPending, diffQuery.refresh],
   );
 
+  const showingOneFile = focusedItems !== null;
   const renderHeaderPrefix = useCallback(
     (item: CodeViewItem<ReviewAnnotationGroup>) => {
+      if (showingOneFile) return null;
       // The item the viewer is drawing already carries the state the memo settled on, so the
       // chevron follows it rather than recomputing the default here.
       const collapsed = item.collapsed === true;
@@ -866,7 +869,7 @@ function PullRequestCodeTab({
         </Button>
       );
     },
-    [toggleFile],
+    [showingOneFile, toggleFile],
   );
 
   // Read through refs rather than closed over. The viewer memoizes each visible file's header
@@ -1411,7 +1414,7 @@ function PullRequestCodeTab({
             </TooltipPopup>
           </Tooltip>
         </div>
-        {fileKeys.length > 0 ? (
+        {fileKeys.length > 0 && !showingOneFile ? (
           <Tooltip>
             <TooltipTrigger
               render={
@@ -1637,6 +1640,7 @@ function PullRequestCodeTab({
           // actually aims for. The header lives in the viewer's shadow tree, so the capture
           // listener walks `composedPath` — the only way to see through the shadow boundary.
           onClickCapture={(event) => {
+            if (showingOneFile) return;
             const composedPath = event.nativeEvent.composedPath?.() ?? [];
             for (const node of composedPath) {
               if (!(node instanceof HTMLElement)) continue;
@@ -1688,7 +1692,11 @@ function PullRequestCodeTab({
                 toggleFileDiffFoldForViewed(item.id, false, effectiveFoldOverride, current),
               )
             }
-            unsafeCSSExtra={REPLACE_FILE_COUNTS_CSS}
+            unsafeCSSExtra={
+              showingOneFile
+                ? `${REPLACE_FILE_COUNTS_CSS}\n${SINGLE_FILE_HEADER_CSS}`
+                : REPLACE_FILE_COUNTS_CSS
+            }
           />
         </div>
       </div>

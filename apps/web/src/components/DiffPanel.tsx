@@ -62,6 +62,7 @@ import {
 } from "./diffs/DiffFileTreePane";
 import { diffFileTreeEntries } from "./diffs/diffFileTree.logic";
 import { firstExpandedFileInView } from "./diffs/firstExpandedFileInView";
+import { SINGLE_FILE_HEADER_CSS } from "./diffs/StyledDiffCodeView";
 import { Button } from "./ui/button";
 import { MorphIcon } from "~/components/MorphIcon";
 import { ToggleGroup, Toggle } from "./ui/toggle-group";
@@ -592,7 +593,13 @@ export default function DiffPanel({
     () =>
       focusedPath === null
         ? codeViewFiles
-        : codeViewFiles.filter((file) => file.filePath === focusedPath),
+        : // The one file shown cannot fold away; only a patch still loading stays shut.
+          codeViewFiles
+            .filter((file) => file.filePath === focusedPath)
+            .map((file) => ({
+              ...file,
+              collapsed: file.fileDiff.cacheKey?.endsWith(":pending") === true,
+            })),
     [codeViewFiles, focusedPath],
   );
   const diffFileKeys = useMemo(
@@ -807,6 +814,95 @@ export default function DiffPanel({
     }
   };
 
+  // With the tree above a single file, these sit in that file's header instead of the toolbar,
+  // beside the diff they affect.
+  const diffPreferencesInFileHeader = focusedPath !== null && fileTreeLayout === "vertical";
+  const refreshControl = canRefreshGitDiff && (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            aria-label={isRefreshingDiff ? "Refreshing diff" : "Refresh diff"}
+            onClick={refreshDiffFromUserAction}
+          />
+        }
+      >
+        <RefreshIcon size="sm" refreshing={isRefreshingDiff} />
+      </TooltipTrigger>
+      <TooltipPopup side="top">
+        {isRefreshingDiff ? "Refreshing diff…" : "Refresh diff"}
+      </TooltipPopup>
+    </Tooltip>
+  );
+  const diffViewControls = (
+    <>
+      <ToggleGroup
+        aria-label="Diff layout"
+        className="shrink-0"
+        variant="segmented"
+        value={[diffLayout]}
+        onValueChange={(value) => {
+          const next = value[0];
+          if (next === "stacked" || next === "split") {
+            updateClientSettings({ diffLayout: next });
+          }
+        }}
+      >
+        <Toggle aria-label="Stacked diff view" value="stacked">
+          <Rows3Icon className="size-3.5" />
+        </Toggle>
+        <Toggle aria-label="Split diff view" value="split">
+          <Columns2Icon className="size-3.5" />
+        </Toggle>
+      </ToggleGroup>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Toggle
+              aria-label={wordWrap ? "Disable diff line wrapping" : "Enable diff line wrapping"}
+              variant="ghost"
+              size="sm"
+              pressed={wordWrap}
+              onPressedChange={(pressed) => {
+                setWordWrap(Boolean(pressed));
+              }}
+            />
+          }
+        >
+          <TextWrapIcon className="size-3.5" />
+        </TooltipTrigger>
+        <TooltipPopup side="top">
+          {wordWrap ? "Disable line wrapping" : "Enable line wrapping"}
+        </TooltipPopup>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Toggle
+              aria-label={
+                diffIgnoreWhitespace ? "Show whitespace changes" : "Hide whitespace changes"
+              }
+              variant="ghost"
+              size="sm"
+              pressed={diffIgnoreWhitespace}
+              onPressedChange={(pressed) => {
+                setDiffIgnoreWhitespace(Boolean(pressed));
+              }}
+            />
+          }
+        >
+          <PilcrowIcon className="size-3.5" />
+        </TooltipTrigger>
+        <TooltipPopup side="top">
+          {diffIgnoreWhitespace ? "Show whitespace changes" : "Hide whitespace changes"}
+        </TooltipPopup>
+      </Tooltip>
+    </>
+  );
+
   const headerRow = (
     <>
       <div className="flex min-w-0 flex-1 items-center gap-3 [-webkit-app-region:no-drag]">
@@ -1006,27 +1102,8 @@ export default function DiffPanel({
             layout="inline"
           />
         ) : null}
-        {canRefreshGitDiff && (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  size="icon-sm"
-                  variant="ghost"
-                  aria-label={isRefreshingDiff ? "Refreshing diff" : "Refresh diff"}
-                  onClick={refreshDiffFromUserAction}
-                />
-              }
-            >
-              <RefreshIcon size="sm" refreshing={isRefreshingDiff} />
-            </TooltipTrigger>
-            <TooltipPopup side="top">
-              {isRefreshingDiff ? "Refreshing diff…" : "Refresh diff"}
-            </TooltipPopup>
-          </Tooltip>
-        )}
-        {diffFileKeys.length > 0 && (
+        {diffPreferencesInFileHeader ? null : refreshControl}
+        {focusedPath === null && diffFileKeys.length > 0 && (
           <Tooltip>
             <TooltipTrigger
               render={
@@ -1049,67 +1126,7 @@ export default function DiffPanel({
             </TooltipPopup>
           </Tooltip>
         )}
-        <ToggleGroup
-          aria-label="Diff layout"
-          className="shrink-0"
-          variant="segmented"
-          value={[diffLayout]}
-          onValueChange={(value) => {
-            const next = value[0];
-            if (next === "stacked" || next === "split") {
-              updateClientSettings({ diffLayout: next });
-            }
-          }}
-        >
-          <Toggle aria-label="Stacked diff view" value="stacked">
-            <Rows3Icon className="size-3.5" />
-          </Toggle>
-          <Toggle aria-label="Split diff view" value="split">
-            <Columns2Icon className="size-3.5" />
-          </Toggle>
-        </ToggleGroup>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Toggle
-                aria-label={wordWrap ? "Disable diff line wrapping" : "Enable diff line wrapping"}
-                variant="ghost"
-                size="sm"
-                pressed={wordWrap}
-                onPressedChange={(pressed) => {
-                  setWordWrap(Boolean(pressed));
-                }}
-              />
-            }
-          >
-            <TextWrapIcon className="size-3.5" />
-          </TooltipTrigger>
-          <TooltipPopup side="top">
-            {wordWrap ? "Disable line wrapping" : "Enable line wrapping"}
-          </TooltipPopup>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Toggle
-                aria-label={
-                  diffIgnoreWhitespace ? "Show whitespace changes" : "Hide whitespace changes"
-                }
-                variant="ghost"
-                size="sm"
-                pressed={diffIgnoreWhitespace}
-                onPressedChange={(pressed) => {
-                  setDiffIgnoreWhitespace(Boolean(pressed));
-                }}
-              />
-            }
-          >
-            <PilcrowIcon className="size-3.5" />
-          </TooltipTrigger>
-          <TooltipPopup side="top">
-            {diffIgnoreWhitespace ? "Show whitespace changes" : "Hide whitespace changes"}
-          </TooltipPopup>
-        </Tooltip>
+        {diffPreferencesInFileHeader ? null : diffViewControls}
       </div>
     </>
   );
@@ -1204,7 +1221,7 @@ export default function DiffPanel({
                         node instanceof HTMLElement && node.hasAttribute("data-diffs-header"),
                     );
                     const headerFilePath = header?.querySelector("[data-title]")?.textContent;
-                    if (!headerFilePath) return;
+                    if (!headerFilePath || focusedPath !== null) return;
                     const file = codeViewFiles.find(
                       (candidate) => candidate.filePath === headerFilePath,
                     );
@@ -1253,23 +1270,47 @@ export default function DiffPanel({
                         />
                       );
                     }}
-                    {...(lazySource
+                    {...(lazySource || focusedPath !== null
                       ? {
-                          unsafeCSSExtra:
-                            "[data-additions-count], [data-deletions-count] { display: none; }",
+                          unsafeCSSExtra: [
+                            lazySource
+                              ? "[data-additions-count], [data-deletions-count] { display: none; }"
+                              : "",
+                            focusedPath !== null ? SINGLE_FILE_HEADER_CSS : "",
+                          ].join("\n"),
+                        }
+                      : {})}
+                    {...(lazySource || diffPreferencesInFileHeader
+                      ? {
                           renderHeaderMetadata: (fileDiff: FileDiffMetadata) => {
-                            const stat = fileStats.get(resolveFileDiffPath(fileDiff));
-                            return stat ? (
-                              <DiffStatLabel
-                                additions={stat.additions}
-                                deletions={stat.deletions}
-                              />
-                            ) : null;
+                            const stat = lazySource
+                              ? fileStats.get(resolveFileDiffPath(fileDiff))
+                              : undefined;
+                            // One row: the slot's own wrapper is a block. The controls stand
+                            // 28px tall in a header the viewer measures at 32px, so they borrow
+                            // the header's padding rather than growing it.
+                            return (
+                              <div className="flex items-center gap-2">
+                                {stat ? (
+                                  <DiffStatLabel
+                                    additions={stat.additions}
+                                    deletions={stat.deletions}
+                                  />
+                                ) : null}
+                                {diffPreferencesInFileHeader ? (
+                                  <div className="-my-1 flex items-center gap-1">
+                                    {refreshControl}
+                                    {diffViewControls}
+                                  </div>
+                                ) : null}
+                              </div>
+                            );
                           },
                         }
                       : {})}
                     onRevealSearchMatch={unfoldDiffFile}
                     renderHeaderPrefix={(fileDiff, fileKey) => {
+                      if (focusedPath !== null) return null;
                       const unavailable = fileDiff.cacheKey?.endsWith(":pending") === true;
                       return (
                         <DiffFileCollapseToggle

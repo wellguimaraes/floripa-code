@@ -267,6 +267,12 @@ export type StyledDiffCodeViewOptions<LAnnotation> = Omit<
   "unsafeCSS" | "itemMetrics" | "layout"
 >;
 
+/** For a view showing one file under a file tree: a line parts the file's header from its code. */
+export const SINGLE_FILE_HEADER_CSS = `
+[data-diffs-header] {
+  border-bottom: 1px solid var(--border) !important;
+}`;
+
 type StyledDiffCodeViewProps<LAnnotation> = (
   | Omit<ControlledCodeViewProps<LAnnotation, undefined>, "options">
   | Omit<UncontrolledCodeViewProps<LAnnotation, undefined>, "options">

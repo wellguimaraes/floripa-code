@@ -170,8 +170,10 @@ export function DiffFileTree({
         className="flex h-10 min-h-10 shrink-0 items-center gap-1 border-b border-border/60 bg-background px-2 text-xs text-muted-foreground"
         data-surface-subheader
       >
-        <span className="px-1 font-medium text-foreground">Files</span>
-        <span className="ml-auto tabular-nums">{entries.length}</span>
+        <span className="mr-auto px-1">
+          <span className="font-medium text-foreground">Files</span>
+          <span className="tabular-nums"> · {entries.length}</span>
+        </span>
         {headerAccessory}
         {directoryPaths.length > 0 ? (
           <Tooltip>
