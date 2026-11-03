@@ -35,6 +35,8 @@ export interface ContextMenuItem<T extends string = string> {
   checked?: boolean;
   /** Muted text at the row's right edge, such as a count. Web fallback only — dropped by desktop native menus. */
   trailing?: string;
+  /** Muted second line under the label. A native sublabel on macOS. */
+  description?: string;
   children?: readonly ContextMenuItem<T>[];
 }
 
@@ -52,6 +54,7 @@ export interface ContextMenuItemSchemaType {
   readonly separatorBefore?: boolean;
   readonly checked?: boolean;
   readonly trailing?: string;
+  readonly description?: string;
   readonly children?: readonly ContextMenuItemSchemaType[];
 }
 
@@ -65,6 +68,7 @@ export const ContextMenuItemSchema: Schema.Codec<ContextMenuItemSchemaType> = Sc
   separatorBefore: Schema.optionalKey(Schema.Boolean),
   checked: Schema.optionalKey(Schema.Boolean),
   trailing: Schema.optionalKey(Schema.String),
+  description: Schema.optionalKey(Schema.String),
   children: Schema.optionalKey(
     Schema.Array(
       Schema.suspend((): Schema.Codec<ContextMenuItemSchemaType> => ContextMenuItemSchema),

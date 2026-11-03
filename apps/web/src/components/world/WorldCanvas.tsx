@@ -972,7 +972,14 @@ export default function WorldCanvas(props: {
             ]
           : []),
         ...(addProject.environmentId !== null
-          ? [{ id: "import-islands", label: "Import from other apps…" }]
+          ? [
+              {
+                id: "import-islands",
+                label: "Import from other apps…",
+                description: "Claude, Codex, Orca…",
+                icon: "download",
+              },
+            ]
           : []),
         {
           id: "arrange",

@@ -82,6 +82,11 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
     { tag: "rect", attrs: { width: "14", height: "14", x: "8", y: "8", rx: "2", ry: "2" } },
     { tag: "path", attrs: { d: "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" } },
   ],
+  download: [
+    { tag: "path", attrs: { d: "M12 15V3" } },
+    { tag: "path", attrs: { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" } },
+    { tag: "path", attrs: { d: "m7 10 5 5 5-5" } },
+  ],
   folder: [
     {
       tag: "path",
@@ -474,7 +479,25 @@ export function showContextMenuFallback<T extends string>(
         const label = document.createElement("span");
         label.className = "min-w-0 flex-1 truncate";
         label.textContent = item.label;
-        button.appendChild(label);
+        if (typeof item.description === "string") {
+          // Two lines: the icon and chevron sit on the label's line, not the row's middle.
+          button.style.alignItems = "flex-start";
+          const iconSlot = button.firstElementChild;
+          if (iconSlot instanceof HTMLElement || iconSlot instanceof SVGElement) {
+            iconSlot.style.marginTop = "0.125rem";
+          }
+          const text = document.createElement("span");
+          text.style.cssText = "display:flex;min-width:0;flex:1;flex-direction:column;";
+          const description = document.createElement("span");
+          description.className = "truncate text-muted-foreground text-xs";
+          description.style.cssText =
+            "color:var(--contrast-muted-foreground);font-size:0.75rem;line-height:1rem;";
+          description.textContent = item.description;
+          text.append(label, description);
+          button.appendChild(text);
+        } else {
+          button.appendChild(label);
+        }
 
         if (typeof item.trailing === "string") {
           const trailing = document.createElement("span");

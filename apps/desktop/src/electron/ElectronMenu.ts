@@ -73,6 +73,7 @@ const SF_SYMBOLS: Readonly<Record<string, string>> = {
   "circle-stop": "stop.circle",
   clock: "clock",
   copy: "doc.on.doc",
+  download: "square.and.arrow.down",
   eye: "eye",
   "eye-off": "eye.slash",
   folder: "folder",
@@ -118,6 +119,9 @@ function normalizeContextMenuItems(source: readonly ContextMenuItem[]): ContextM
       ...(sourceItem.separatorBefore === true ? { separatorBefore: true } : {}),
       ...(typeof sourceItem.checked === "boolean" ? { checked: sourceItem.checked } : {}),
       ...(typeof sourceItem.icon === "string" ? { icon: sourceItem.icon } : {}),
+      ...(typeof sourceItem.description === "string"
+        ? { description: sourceItem.description }
+        : {}),
     };
 
     if (sourceItem.children) {
@@ -208,6 +212,7 @@ export const make = Effect.gen(function* () {
       const itemOption: Electron.MenuItemConstructorOptions = {
         label: item.label,
         enabled: !item.disabled,
+        ...(item.description === undefined ? {} : { sublabel: item.description }),
         ...(typeof item.checked === "boolean" ? { type: "checkbox", checked: item.checked } : {}),
       };
       if (item.children && item.children.length > 0) {

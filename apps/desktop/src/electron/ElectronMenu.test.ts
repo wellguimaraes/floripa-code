@@ -148,6 +148,31 @@ describe("ElectronMenu", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
+  it.effect("shows an item's description as its native sublabel", () =>
+    Effect.gen(function* () {
+      buildFromTemplateMock.mockImplementation(() => ({
+        popup: (options: Electron.PopupOptions) => options.callback?.(),
+      }));
+
+      const electronMenu = yield* ElectronMenu.ElectronMenu;
+      yield* electronMenu.showContextMenu({
+        window: makeWindow(),
+        items: [
+          { id: "import", label: "Import", description: "Claude, Codex" },
+          { id: "plain", label: "Plain" },
+        ],
+        position: Option.none(),
+      });
+
+      assert.deepEqual(
+        buildFromTemplateMock.mock.calls[0]?.[0].map(
+          (item: Electron.MenuItemConstructorOptions) => item.sublabel ?? null,
+        ),
+        ["Claude, Codex", null],
+      );
+    }).pipe(Effect.provide(layerTest)),
+  );
+
   it.effect("shows icon keywords as SF Symbols on macOS, destructive leaves as a trash can", () =>
     Effect.gen(function* () {
       createFromNamedImageMock.mockImplementation((name: string) => {
