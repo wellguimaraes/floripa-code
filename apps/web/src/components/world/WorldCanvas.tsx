@@ -377,8 +377,6 @@ export default function WorldCanvas(props: {
     [arrangement, laidOut, layout.appearing],
   );
   const [memory] = useState(createArchipelagoMemory);
-  // The mainland glides along its coast to stay level with the middle of the view.
-  const [mainlandDown, setMainlandDown] = useState<number | null>(null);
   // Piles picked for agents started from them, by the thread they will become.
   const [requested, setRequested] = useState<ReadonlyMap<string, SlotRequest>>(new Map());
   const chosenHues = useWorldHueStore((state) => state.chosen);
@@ -411,7 +409,6 @@ export default function WorldCanvas(props: {
           visibleOrder.filter((key) => !mainland.has(key)).length,
         ),
         mainland,
-        mainlandDown,
       }),
     [
       memory,
@@ -424,7 +421,6 @@ export default function WorldCanvas(props: {
       chosenHues,
       arrangement,
       mainland,
-      mainlandDown,
     ],
   );
   // The open chat's header shows its character, so it needs the same look.
@@ -1208,12 +1204,7 @@ export default function WorldCanvas(props: {
   });
   // The open chat's island gets wider shallows, so it stands out.
   const chatIsland = chatCharacter?.facts.projectKey ?? null;
-  // Framing measures the mainland at home, level with the middle of the rows, not where it
-  // follows the view: framing would otherwise chase it.
-  const bounds = useMemo(
-    () => archipelagoBounds(islandsAtHome(islands, mainland), chatIsland),
-    [islands, mainland, chatIsland],
-  );
+  const bounds = useMemo(() => archipelagoBounds(islands, chatIsland), [islands, chatIsland]);
   const chatCharacterKey = chatCharacter?.facts.key ?? null;
   useEffect(() => {
     if (chatCharacterKey === null) return;
@@ -1573,9 +1564,6 @@ export default function WorldCanvas(props: {
             onChange={setHoveredIsland}
           />
           <AmbientTicker fps={ambientFps} />
-          {mainland.size > 0 ? (
-            <ViewMiddleTracker current={mainlandDown} onSettle={setMainlandDown} />
-          ) : null}
           {/* Far wider than any archipelago, so the water never ends on screen. */}
           {/* Islands and characters stop their clicks, so only open water reaches here. */}
           {/* Its handlers make it a hit, so it takes the clicks onPointerMissed would get. */}
@@ -2627,10 +2615,7 @@ function WorldControls({
 }: {
   /** Each island's ground, in the same order as `islands`. */
   readonly bounds: ReadonlyArray<Bounds> | null;
-  /**
-   * The mainland's islands. Framing every island then keeps its land to a
-   * sliver, and leaves out their signs, which follow the view.
-   */
+  /** The mainland's islands: framing every island then keeps its land to a sliver. */
   readonly mainland: ReadonlySet<string>;
   readonly islands: ReadonlyArray<IslandSpot>;
   readonly panel: () => HTMLElement | null;
@@ -2698,13 +2683,7 @@ function WorldControls({
         camera,
         maxZoom: controls.maxZoom,
         bounds: picked,
-        signs: signsOf(
-          key === undefined
-            ? islands.flatMap((spot) => (mainland.has(spot.key) ? [] : [spot.key]))
-            : mainland.has(key)
-              ? []
-              : [key],
-        ),
+        signs: signsOf(key === undefined ? islands.map((spot) => spot.key) : [key]),
         viewport: size,
         covered: covered(),
         pinLeft: key === undefined && islands.some((spot) => mainland.has(spot.key)),
@@ -3371,27 +3350,6 @@ function freePiles(
 
 /** Each island's ground in world coordinates. */
 /** Each island's ground, and its shallows' reach: wider round `wideKey`, the open chat's island. */
-/** The islands with the mainland moved down to level with the middle of the grid's rows. */
-function islandsAtHome(
-  islands: ReadonlyArray<WorldIsland>,
-  mainland: ReadonlySet<string>,
-): ReadonlyArray<WorldIsland> {
-  const downOf = (island: WorldIsland) => (island.offset[0] + island.offset[2]) / Math.SQRT2;
-  const grid = islands.filter((island) => !mainland.has(island.key)).map(downOf);
-  const first = islands.find((island) => mainland.has(island.key));
-  if (first === undefined) return islands;
-  const home = grid.length === 0 ? 0 : (Math.min(...grid) + Math.max(...grid)) / 2;
-  const shift = (home - downOf(first)) / Math.SQRT2;
-  return islands.map((island) =>
-    mainland.has(island.key)
-      ? {
-          ...island,
-          offset: [island.offset[0] + shift, island.offset[1], island.offset[2] + shift],
-        }
-      : island,
-  );
-}
-
 function archipelagoBounds(
   islands: ReadonlyArray<WorldIsland>,
   wideKey: string | null,
@@ -3421,46 +3379,6 @@ function useClock(intervalMs: number | null): number {
     return () => window.clearInterval(timer);
   }, [intervalMs]);
   return now;
-}
-
-/** How long the view holds still before the mainland glides level with its middle. */
-const MAINLAND_FOLLOW_MS = 250;
-const viewDirection = new Vector3();
-
-/**
- * Reports how far down the screen the middle of the view lies, once the view
- * has held still for a moment, so the mainland can glide level with it.
- * Frames only come while the view moves, so this costs nothing at rest.
- */
-function ViewMiddleTracker({
-  current,
-  onSettle,
-}: {
-  /** Where the mainland is now, so a reset puts it back however the view last moved. */
-  readonly current: number | null;
-  readonly onSettle: (down: number) => void;
-}) {
-  const camera = useThree((state) => state.camera);
-  const invalidate = useThree((state) => state.invalidate);
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => clearTimeout(timer.current), []);
-  // A frame to measure in, whenever where it stands changes.
-  // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A new spot needs a frame to check it against the view.
-  useEffect(() => invalidate(), [current, invalidate]);
-  useFrame(() => {
-    camera.getWorldDirection(viewDirection);
-    if (viewDirection.y >= 0) return;
-    // Where the middle of the view meets the sea, as screen "down" (x + z).
-    const reach = -camera.position.y / viewDirection.y;
-    const x = camera.position.x + viewDirection.x * reach;
-    const z = camera.position.z + viewDirection.z * reach;
-    const down = Math.round(((x + z) / Math.SQRT2) * 2) / 2;
-    // Back where it stands: drop any report from on the way.
-    clearTimeout(timer.current);
-    if (down === current) return;
-    timer.current = setTimeout(() => onSettle(down), MAINLAND_FOLLOW_MS);
-  });
-  return null;
 }
 
 /** Requests frames for idle animations at a low, fixed rate, and none while hidden. */
@@ -3506,7 +3424,6 @@ function createArchipelagoMemory() {
       readonly requested: ReadonlyMap<string, SlotRequest>;
       readonly columns: number;
       readonly mainland: ReadonlySet<string>;
-      readonly mainlandDown: number | null;
     }): WorldIsland[] {
       const { movement } = input.definition;
       const now = Math.max(input.checkedAt, Date.now());
@@ -3522,13 +3439,7 @@ function createArchipelagoMemory() {
       const nextLayout = input.projectOrder.join("|");
       if (layout !== null && layout !== nextLayout) previous = { ...previous, cells: new Map() };
       layout = nextLayout;
-      const { mainlandDown, ...rest } = input;
-      const result = resolveArchipelago({
-        ...rest,
-        ...(mainlandDown === null ? {} : { mainlandDown }),
-        facts: paced.facts,
-        previous,
-      });
+      const result = resolveArchipelago({ ...input, facts: paced.facts, previous });
       previous = result.memory;
       return result.islands;
     },

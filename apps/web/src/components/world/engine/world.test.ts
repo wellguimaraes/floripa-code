@@ -716,12 +716,11 @@ describe("resolveArchipelago", () => {
       );
       // The grid starts at the origin as if the mainland were not there.
       expect(at.a).toEqual([0, 0]);
-      // The mainland sits a gap left of the first column, level with the first row.
+      // The mainland sits a gap left of the first column.
       const reach = Math.sqrt(34);
-      expect(at.home).toEqual([
+      expect(at.home![0]).toEqual(
         Math.round(-(Math.SQRT2 * (2 * reach + testWorld.archipelago.gap))),
-        0,
-      ]);
+      );
       expect(result.islands.find((island) => island.key === "home")!.cell).toBe(-1);
       // A mainland key never takes a grid cell, even one remembered from before.
       const again = layout(columns, {
@@ -736,26 +735,24 @@ describe("resolveArchipelago", () => {
     }
   });
 
-  it("moves the mainland down to where it is asked, past the rows too", () => {
-    const facts = ["home", "a", "b"].map((projectKey) => character({ projectKey }));
-    const downOf = (mainlandDown?: number) => {
+  it("centres the mainland on the rows", () => {
+    const downOf = (keys: string[]) => {
       const home = resolveArchipelago({
-        facts,
+        facts: keys.map((projectKey) => character({ projectKey })),
         definition: testWorld,
-        projectOrder: ["home", "a", "b"],
+        projectOrder: keys,
         hueCount: 3,
         hatCount: 3,
         columns: 1,
         mainland: new Set(["home"]),
-        ...(mainlandDown === undefined ? {} : { mainlandDown }),
         previous: EMPTY_ARCHIPELAGO_MEMORY,
       }).islands.find((island) => island.key === "home")!;
       return (home.offset[0] + home.offset[2]) / Math.SQRT2;
     };
-    expect(downOf()).toBeCloseTo(0);
-    expect(downOf(5)).toBeCloseTo(5);
-    expect(downOf(-40)).toBeCloseTo(-40);
-    expect(downOf(500)).toBeCloseTo(500);
+    const step = 2 * Math.sqrt(34) + testWorld.archipelago.gap;
+    expect(downOf(["home", "a"])).toBeCloseTo(0);
+    expect(downOf(["home", "a", "b"])).toBeCloseTo(step / 2);
+    expect(downOf(["home", "a", "b", "c"])).toBeCloseTo(step);
   });
 
   it("lines islands up down the screen, along it, or in a square grid", () => {
