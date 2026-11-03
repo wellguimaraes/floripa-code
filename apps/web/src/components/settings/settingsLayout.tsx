@@ -574,11 +574,11 @@ export function SettingsPageContainer({
         className="topbar-scroll-fade scrollbar-gutter-both flex-1 overflow-y-auto"
         data-settings-page-scroll
       >
-        {/* Readable pages stop at 800px, which the world's settings dialog
+        {/* Readable pages stop at 1024px, which the world's settings dialog
             is sized around. Wider pages keep their own limit. */}
         <WorkspacePageContainer
           width={width}
-          className={cn("gap-8", width === "readable" && "max-w-[800px]", className)}
+          className={cn("gap-8", width === "readable" && "max-w-[1024px]", className)}
         >
           <SettingsScopeSentence />
           {children}
