@@ -7,7 +7,7 @@ const testState = vi.hoisted(() => ({
 }));
 
 vi.mock("../ui/toast", () => ({
-  toastManager: { add: testState.addToast },
+  appUpdateToastManager: { add: testState.addToast },
 }));
 
 import { SidebarUpdateReleaseNotes } from "./SidebarUpdateReleaseNotes";

@@ -134,7 +134,7 @@ import {
   resolveActiveThreadRouteRef,
   resolveThreadRouteTarget,
 } from "../threadRoutes";
-import { stackedThreadToast, toastManager } from "./ui/toast";
+import { appUpdateToastManager, stackedThreadToast, toastManager } from "./ui/toast";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import { Kbd } from "./ui/kbd";
 import {
@@ -3764,7 +3764,7 @@ export default function LegacySidebar() {
           if (!shouldToastDesktopUpdateActionResult(result)) return;
           const actionError = getDesktopUpdateActionError(result);
           if (!actionError) return;
-          toastManager.add(
+          appUpdateToastManager.add(
             stackedThreadToast({
               type: "error",
               title: "Could not download update",
@@ -3773,7 +3773,7 @@ export default function LegacySidebar() {
           );
         })
         .catch((error) => {
-          toastManager.add(
+          appUpdateToastManager.add(
             stackedThreadToast({
               type: "error",
               title: "Could not start update download",
@@ -3793,7 +3793,7 @@ export default function LegacySidebar() {
         );
       } catch (error) {
         setDesktopUpdateActionPending(false);
-        toastManager.add(
+        appUpdateToastManager.add(
           stackedThreadToast({
             type: "error",
             title: "Could not confirm update",
@@ -3812,7 +3812,7 @@ export default function LegacySidebar() {
           if (!shouldToastDesktopUpdateActionResult(result)) return;
           const actionError = getDesktopUpdateActionError(result);
           if (!actionError) return;
-          toastManager.add(
+          appUpdateToastManager.add(
             stackedThreadToast({
               type: "error",
               title: "Could not install update",
@@ -3821,7 +3821,7 @@ export default function LegacySidebar() {
           );
         })
         .catch((error) => {
-          toastManager.add(
+          appUpdateToastManager.add(
             stackedThreadToast({
               type: "error",
               title: "Could not install update",

@@ -9,7 +9,7 @@ import {
   getDesktopUpdateReleaseUrl,
   shouldToastDesktopUpdateActionResult,
 } from "./desktopUpdate.logic";
-import { stackedThreadToast, toastManager } from "./ui/toast";
+import { appUpdateToastManager, stackedThreadToast } from "./ui/toast";
 
 type DesktopUpdateShell = Pick<DesktopBridge, "openExternal">;
 
@@ -22,7 +22,7 @@ export async function openDesktopUpdateReleaseNotes(
   } catch {
     // Surface rejected IPC calls through the same user-visible fallback.
   }
-  toastManager.add({ type: "error", title: "Unable to open release notes" });
+  appUpdateToastManager.add({ type: "error", title: "Unable to open release notes" });
 }
 
 function ReleaseNotesLink({
@@ -55,7 +55,7 @@ export function showDesktopUpdateDownloadedToast(
   state: DesktopUpdateState,
 ): void {
   const releaseUrl = getDesktopUpdateReleaseUrl(getDesktopUpdateDownloadedVersion(state));
-  toastManager.add({
+  appUpdateToastManager.add({
     type: "success",
     title: "Update downloaded",
     description: (
@@ -68,7 +68,7 @@ export function showDesktopUpdateDownloadedToast(
 }
 
 function toastUpdateError(title: string, description: string): void {
-  toastManager.add(stackedThreadToast({ type: "error", title, description }));
+  appUpdateToastManager.add(stackedThreadToast({ type: "error", title, description }));
 }
 
 /** Downloads the available update, toasting when it lands or fails. */

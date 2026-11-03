@@ -6,7 +6,7 @@ import { isElectron } from "../../env";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { cn } from "../../lib/utils";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
-import { stackedThreadToast, toastManager } from "../ui/toast";
+import { appUpdateToastManager, stackedThreadToast } from "../ui/toast";
 import {
   canCheckForUpdate,
   getArm64IntelBuildWarningDescription,
@@ -194,7 +194,7 @@ function SidebarUpdateControl() {
       .checkForUpdate()
       .then((result) => {
         if (result.checked) return;
-        toastManager.add(
+        appUpdateToastManager.add(
           stackedThreadToast({
             type: "error",
             title: "Could not check for updates",
@@ -204,7 +204,7 @@ function SidebarUpdateControl() {
         );
       })
       .catch((error) => {
-        toastManager.add(
+        appUpdateToastManager.add(
           stackedThreadToast({
             type: "error",
             title: "Could not check for updates",

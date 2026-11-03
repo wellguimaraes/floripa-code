@@ -70,6 +70,11 @@ export type ThreadToastData = {
 
 const toastManager = Toast.createToastManager<ThreadToastData>();
 const anchoredToastManager = Toast.createToastManager<ThreadToastData>();
+/**
+ * Toasts about updating the app itself. They stack bottom-left, just above the update button
+ * the world and sidebar show there, so the outcome lands next to the control that started it.
+ */
+const appUpdateToastManager = Toast.createToastManager<ThreadToastData>();
 type ToastId = ReturnType<typeof toastManager.add>;
 const threadToastVisibleTimeoutRemainingMs = new Map<ToastId, number>();
 
@@ -522,11 +527,21 @@ function ToastProvider({ children, position = "top-right", ...props }: ToastProv
     <Toast.Provider toastManager={toastManager} {...props}>
       {children}
       <Toasts position={position} />
+      <Toast.Provider toastManager={appUpdateToastManager}>
+        <Toasts position="bottom-left" aboveUpdateButton />
+      </Toast.Provider>
     </Toast.Provider>
   );
 }
 
-function Toasts({ position }: { position: ToastPosition }) {
+function Toasts({
+  position,
+  aboveUpdateButton = false,
+}: {
+  position: ToastPosition;
+  /** Clears the bottom-left update button (bottom-3, up to h-9) with a small gap. */
+  aboveUpdateButton?: boolean;
+}) {
   const { toasts } = Toast.useToastManager<ThreadToastData>();
   const activeThreadRef = useActiveThreadRefFromRoute();
   const isTop = position.startsWith("top");
@@ -556,6 +571,8 @@ function Toasts({ position }: { position: ToastPosition }) {
           "data-[position*=left]:left-(--toast-inset)",
           "data-[position*=right]:right-(--toast-inset)",
           "data-[position*=center]:-translate-x-1/2 data-[position*=center]:left-1/2",
+          aboveUpdateButton &&
+            "[--toast-inset:--spacing(3)] sm:[--toast-inset:--spacing(3)] data-[position*=bottom]:bottom-14",
         )}
         data-position={position}
         data-slot="toast-viewport"
@@ -797,4 +814,5 @@ export {
   toastManager,
   AnchoredToastProvider,
   anchoredToastManager,
+  appUpdateToastManager,
 };
