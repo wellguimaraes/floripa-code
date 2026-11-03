@@ -36,7 +36,7 @@ import {
 } from "./merged";
 import { sceneryGeometry, useNatureModels } from "./nature";
 import { palette } from "./palette";
-import { mainlandShoreline } from "./coast";
+import { mainlandCoastline } from "./coast";
 import { Ripple } from "./Ripple";
 import { castShadows, type Ground, SHADOW_STENCIL, shadowOf } from "./shadows";
 import {
@@ -230,12 +230,11 @@ export function Island(props: {
   );
 }
 
-/** How far the mainland's land runs: off screen to the left, and up and down. */
-const COAST_WIDTH = 400;
+/** How far the mainland's strip runs up and down the screen. */
 const COAST_LENGTH = 1200;
 /**
  * The coast's bands, from the land out, each a flat sheet reaching `reach`
- * past the shoreline. Heights slot under the island's own rings (sand at 0,
+ * past both of the strip's shores. Heights slot under the island's own rings (sand at 0,
  * shallows -0.23, lagoon -0.24) so the island's beach and water run straight
  * on into the coast's, and over the sea at -0.25.
  */
@@ -248,21 +247,22 @@ const COAST_BANDS = [
   { color: palette.lagoon, y: -0.245, reach: LAGOON_REACH },
 ] as const;
 
-/** One flat band: everything left of the wavy line `edgeAt(along)`, in screen units. */
-function coastBandGeometry(edgeAt: (along: number) => number): ShapeGeometry {
+/** One flat band: between the wavy lines `leftAt(along)` and `rightAt(along)`, in screen units. */
+function coastBandGeometry(
+  leftAt: (along: number) => number,
+  rightAt: (along: number) => number,
+): ShapeGeometry {
   const shape = new Shape();
   const half = COAST_LENGTH / 2;
   // The shape's y runs up the screen, so down the screen is -y once laid flat.
-  shape.moveTo(-COAST_WIDTH, half);
-  for (let along = -half; along <= half; along += 0.5) {
-    shape.lineTo(edgeAt(along), -along);
-  }
-  shape.lineTo(-COAST_WIDTH, -half);
+  shape.moveTo(leftAt(-half), half);
+  for (let along = -half; along <= half; along += 0.5) shape.lineTo(rightAt(along), -along);
+  for (let along = half; along >= -half; along -= 0.5) shape.lineTo(leftAt(along), -along);
   return new ShapeGeometry(shape);
 }
 
 /**
- * The mainland's coast: land running off the left of the screen, its beach
+ * The mainland's coast: a strip of land down the left of the map, its beach
  * and shallows meeting the island's so the island reads as a cape of it. It
  * is scenery only; the island's own ground stays what agents walk on and what
  * the camera frames.
@@ -273,10 +273,13 @@ export function MainlandCoast(props: { readonly definition: WorldDefinition }) {
   const [sandX, sandZ] = sand?.center ?? [0, 0];
   const sandDown = (sandX + sandZ) / Math.SQRT2;
   const bands = useMemo(() => {
-    const shoreline = mainlandShoreline(definition);
+    const { shore, back } = mainlandCoastline(definition);
     return COAST_BANDS.map((band) => ({
       ...band,
-      geometry: coastBandGeometry((along) => shoreline(along) + band.reach),
+      geometry: coastBandGeometry(
+        (along) => back(along) - band.reach,
+        (along) => shore(along) + band.reach,
+      ),
     }));
   }, [definition]);
   useEffect(() => () => bands.forEach((band) => band.geometry.dispose()), [bands]);

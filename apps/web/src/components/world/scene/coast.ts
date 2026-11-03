@@ -9,6 +9,34 @@ const COAST_WOBBLE_MAX = 1.15;
 export const PIER_CLEARANCE = 1.2;
 /** How far past a pier, up and down the screen, its bay eases back to the coast. */
 const BAY_EASE = 7;
+/**
+ * How far the land reaches back from its shore: just a strip, enough to read
+ * as the coast of something bigger. Never narrower than `MIN_LAND`, round the bay.
+ */
+const LAND_WIDTH = 11;
+export const MIN_LAND = 8;
+
+/** The back shore wanders on its own rhythm, so the strip doesn't look traced. */
+function backWobble(along: number): number {
+  return 0.6 * Math.sin(along / 6.1 + 0.9) + 0.4 * Math.sin(along / 2.7 + 3.1);
+}
+
+/**
+ * The mainland's strip down the screen, relative to the sand's middle: its
+ * `shore` facing the islands (see `mainlandShoreline`) and its `back` shore
+ * a strip's width behind.
+ */
+export function mainlandCoastline(definition: WorldDefinition): {
+  readonly shore: (along: number) => number;
+  readonly back: (along: number) => number;
+} {
+  // The strip runs straight on behind the bay, a strip's width back from the shore.
+  const { base, shore } = coastShore(definition);
+  return {
+    shore,
+    back: (along) => Math.min(base - LAND_WIDTH + backWobble(along), shore(along) - MIN_LAND),
+  };
+}
 
 /**
  * The mainland's shoreline down the screen, relative to the sand's middle:
@@ -17,6 +45,14 @@ const BAY_EASE = 7;
  * agents fishing there still sit over water.
  */
 export function mainlandShoreline(definition: WorldDefinition): (along: number) => number {
+  return coastShore(definition).shore;
+}
+
+/** The shoreline, and where it runs away from the bay. */
+function coastShore(definition: WorldDefinition): {
+  readonly base: number;
+  readonly shore: (along: number) => number;
+} {
   // The camera looks down the (1, 1) diagonal, so (1, -1) is screen right and (1, 1) down.
   const screen = (x: number, z: number) => [(x - z) / Math.SQRT2, (x + z) / Math.SQRT2] as const;
   const sand = definition.terrain.find((patch) => patch.shape === "disc" && patch.kind === "sand");
@@ -45,7 +81,7 @@ export function mainlandShoreline(definition: WorldDefinition): (along: number) 
         }),
     );
   });
-  if (deck.length === 0) return (along) => base + coastWobble(along);
+  if (deck.length === 0) return { base, shore: (along) => base + coastWobble(along) };
   const top = Math.min(...deck.map((point) => point.along)) - BAY_EASE;
   const bottom = Math.max(...deck.map((point) => point.along)) + BAY_EASE;
   const middle = (top + bottom) / 2;
@@ -63,5 +99,5 @@ export function mainlandShoreline(definition: WorldDefinition): (along: number) 
         Math.max(dent(point.along), 0.05),
     ),
   );
-  return (along) => base + coastWobble(along) - depth * dent(along);
+  return { base, shore: (along) => base + coastWobble(along) - depth * dent(along) };
 }
