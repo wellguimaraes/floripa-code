@@ -1,7 +1,9 @@
 @import "tailwindcss";
 
-@custom-variant dark (&:is(.dark, .dark *));
-@custom-variant light (&:not(.dark, .dark *));
+/* `.theme-light` pins a subtree to the light palette whatever the app theme, for chrome that
+   sits on artwork (the world's top bar). Portaled popovers and dialogs keep the app theme. */
+@custom-variant dark (&:is(.dark, .dark *):where(:not(.theme-light, .theme-light *)));
+@custom-variant light (&:is(:not(.dark, .dark *), .theme-light, .theme-light *));
 /* Window Controls Overlay: active when Electron exposes native titlebar control geometry. */
 @custom-variant wco (&:is(.wco, .wco *));
 
@@ -161,6 +163,12 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     --glass-blur: 16px;
     --glass-saturation: 1.08;
   }
+}
+
+.theme-light {
+  --appearance-contrast-target: black;
+  --glass-blur: 0px;
+  --glass-saturation: 1.14;
 }
 
 .wco {
@@ -1205,7 +1213,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   animation-duration: 0s !important;
 }
 
-:root {
+:root,
+.theme-light {
   color-scheme: light;
   --radius: 0.625rem;
   --background: var(--color-zinc-25);
@@ -1647,7 +1656,8 @@ html[data-theme-id="t3-chat"] [data-app-sidebar] {
 
 /* Recompute contrast wherever a subtree owns its own semantic color palette. */
 :root,
-[data-app-sidebar] {
+[data-app-sidebar],
+.theme-light {
   --contrast-toolbar-foreground: color-mix(
     in oklab,
     color-mix(

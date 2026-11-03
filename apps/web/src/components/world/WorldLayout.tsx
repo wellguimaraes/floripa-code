@@ -292,8 +292,9 @@ export function WorldLayout({
       <div
         ref={topBarRef}
         className={cn(
-          // Stacked over the chat panel so toolbar popovers drop down on top of it.
-          "pointer-events-none absolute inset-x-0 top-0 z-10 flex h-[var(--workspace-topbar-height)] items-center gap-2 pr-3",
+          // Stacked over the chat panel so toolbar popovers drop down on top of it. Light in any
+          // theme, as it sits on the world; its popovers portal out and keep the app theme.
+          "theme-light pointer-events-none absolute inset-x-0 top-0 z-10 flex h-[var(--workspace-topbar-height)] items-center gap-2 pr-3",
           isElectron && "drag-region",
         )}
         // Clears the window controls on the left. The sidebar stays folded here, so no room

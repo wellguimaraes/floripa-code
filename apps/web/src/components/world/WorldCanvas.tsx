@@ -1791,7 +1791,7 @@ export default function WorldCanvas(props: {
             });
           }}
         >
-          <span className="pointer-events-auto flex size-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md ring-2 ring-background transition-transform hover:scale-110">
+          <span className="theme-light pointer-events-auto flex size-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md ring-2 ring-background transition-transform hover:scale-110">
             <PlusIcon className="size-3.5" />
           </span>
         </button>
