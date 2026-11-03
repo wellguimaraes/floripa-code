@@ -41,7 +41,11 @@ import { observeResize } from "~/lib/observeResize";
 import { cn } from "~/lib/utils";
 import { useClientSettings } from "../../hooks/useSettings";
 import { useWorldLook } from "../world/worldLookStore";
-import { WorldArchiveButton, WorldRegenerateTitleButton } from "../world/WorldChatActions";
+import {
+  WorldArchiveButton,
+  WorldRecolorButton,
+  WorldRegenerateTitleButton,
+} from "../world/WorldChatActions";
 import { AppIcon } from "../world/AppIcon";
 import { worktreeLabel } from "../world/worktreeLabel";
 import { WorktreeSwitcher } from "./WorktreeSwitcher";
@@ -511,6 +515,7 @@ export const ChatHeader = memo(function ChatHeader({
       </div>
       {worldLook !== null && isServerThread ? (
         <span className="flex shrink-0 items-center gap-0.5">
+          <WorldRecolorButton threadRef={activeThreadRef} />
           {renamingTitle === null ? (
             <WorldRegenerateTitleButton threadRef={activeThreadRef} />
           ) : null}

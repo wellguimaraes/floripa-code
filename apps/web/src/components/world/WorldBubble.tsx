@@ -34,7 +34,6 @@ import { useTheme } from "../../hooks/useTheme";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { Button } from "../ui/button";
 import { Kbd } from "../ui/kbd";
-import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
@@ -54,8 +53,7 @@ import { QueuedRunsControl } from "../chat/QueuedRunsControl";
 import { BubbleApproval } from "./BubbleApproval";
 import { BubbleComposer } from "./BubbleComposer";
 import type { CharacterFacts } from "./engine/facts";
-import { HuePicker } from "./HuePicker";
-import { type FamilyShades as Shades, palette } from "./scene/palette";
+import { FamilyHueButton } from "./FamilyHueButton";
 import { useBubbleAttachments } from "./useBubbleAttachments";
 import { useBubbleQuestion } from "./useBubbleQuestion";
 import { ARCHIVE_SHORTCUT, confirmArchive, useArchiveShortcut } from "./useArchiveShortcut";
@@ -197,7 +195,6 @@ export function WorldBubble(props: {
   );
   const pr = pullRequest?.pr ?? null;
   const prStatus = prStatusIndicator(pr, pullRequest?.sourceControlProvider);
-  const [pickingHue, setPickingHue] = useState(false);
   // The thread's composer draft, shared with the chat panel: what you type in either shows in both.
   const draftTarget = useMemo(
     () => scopeThreadRef(facts.ref.environmentId, facts.ref.threadId),
@@ -398,31 +395,7 @@ export function WorldBubble(props: {
       header={
         <>
           <div className="-mx-2.5 flex items-center gap-2 border-b border-border px-2.5 pb-2">
-            {/* Subagents share the family colour, so a kid repaints its parent and siblings too. */}
-            <Popover open={pickingHue} onOpenChange={setPickingHue}>
-              <PopoverTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    size="xs"
-                    aria-label="Change color"
-                    title="Change color"
-                  />
-                }
-              >
-                <FamilyShades shades={palette.families[hue]} />
-              </PopoverTrigger>
-              <PopoverPopup side="bottom" align="start" padding="compact">
-                <HuePicker
-                  hue={hue}
-                  onChange={(picked) => {
-                    onHueChange(picked);
-                    setPickingHue(false);
-                  }}
-                  label={facts.kid ? "Color of this agent's family" : "Agent color"}
-                />
-              </PopoverPopup>
-            </Popover>
+            <FamilyHueButton hue={hue} kid={facts.kid} onHueChange={onHueChange} />
             <div className="min-w-0 flex-1">
               <p className={cn("truncate text-sm font-medium", regeneratingTitle && "opacity-55")}>
                 {facts.title || "Untitled thread"}
@@ -713,16 +686,5 @@ function ExchangePin(props: {
         className="max-w-[85%] opacity-50"
       />
     </div>
-  );
-}
-
-function FamilyShades({ shades }: { readonly shades: Shades | undefined }) {
-  if (shades === undefined) return null;
-  return (
-    <span className="flex h-3 w-6 overflow-hidden rounded-full">
-      {[shades.light, shades.base, shades.dark].map((shade) => (
-        <span key={shade} className="flex-1" style={{ backgroundColor: shade }} />
-      ))}
-    </span>
   );
 }

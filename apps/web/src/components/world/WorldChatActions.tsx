@@ -18,7 +18,8 @@ import { Kbd } from "../ui/kbd";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ARCHIVE_SHORTCUT, confirmArchive, useArchiveShortcut } from "./useArchiveShortcut";
-import { useWorldLook } from "./worldLookStore";
+import { FamilyHueButton } from "./FamilyHueButton";
+import { useWorldLook, useWorldLookStore } from "./worldLookStore";
 import { useWorldModeStore } from "./worldModeStore";
 
 /** The world chat's thread, while the world shows it and the user may act on it. */
@@ -152,5 +153,28 @@ export const WorldRegenerateTitleButton = memo(function WorldRegenerateTitleButt
         {regeneratingTitle ? "Regenerating title…" : "Regenerate title"}
       </TooltipPopup>
     </Tooltip>
+  );
+});
+
+/**
+ * The world chat's character colour, before its other actions. The colour is this viewer's
+ * own, so it needs no permission. Renders nothing outside the world.
+ */
+export const WorldRecolorButton = memo(function WorldRecolorButton({
+  threadRef,
+}: {
+  readonly threadRef: ScopedThreadRef;
+}) {
+  const threadKey = scopedThreadKey(threadRef);
+  const worldLook = useWorldLook(threadKey);
+  const recolor = useWorldLookStore((state) => state.recolor);
+  if (worldLook === null || recolor === null) return null;
+  return (
+    <FamilyHueButton
+      hue={worldLook.hue}
+      kid={worldLook.kid}
+      onHueChange={(hue) => recolor(threadKey, hue)}
+      size="sm"
+    />
   );
 });
