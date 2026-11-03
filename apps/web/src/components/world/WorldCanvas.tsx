@@ -1114,6 +1114,9 @@ export default function WorldCanvas(props: {
     const hiddenSubagents = members.filter(
       (fact) => !visibleSubagents.some((c) => c.facts.key === fact.key),
     );
+    const idleVisibleSubagents = visibleSubagents.filter((c) => isResting(c.facts));
+    const idleHiddenSubagents = hiddenSubagents.filter(isResting);
+    const idleSubagentCount = idleVisibleSubagents.length + idleHiddenSubagents.length;
     // The camera looks from +x+z and never turns, so x - z grows to the right of the screen.
     const screenX = (c: WorldCharacter) => c.placement.position[0] - c.placement.position[2];
     const toTheLeft = others.filter((c) => screenX(c) < screenX(character));
@@ -1153,18 +1156,30 @@ export default function WorldCanvas(props: {
           icon: "archive",
           children: [
             { id: "archive", label: "This agent" },
-            {
-              id: "archive-subagents",
-              label: "Subagents",
-              trailing: String(members.length),
-              disabled: members.length === 0,
-              separatorBefore: true,
-            },
+            // A subagent's menu offers no subagents of its own.
+            ...(character.facts.kid
+              ? []
+              : [
+                  {
+                    id: "archive-subagents",
+                    label: "Subagents",
+                    trailing: String(members.length),
+                    disabled: members.length === 0,
+                    separatorBefore: true,
+                  },
+                  {
+                    id: "archive-idle-subagents",
+                    label: "Idle subagents",
+                    trailing: String(idleSubagentCount),
+                    disabled: idleSubagentCount === 0,
+                  },
+                ]),
             {
               id: "archive-others",
               label: "Others",
               trailing: String(others.length),
               disabled: others.length === 0,
+              separatorBefore: character.facts.kid,
             },
             {
               id: "archive-left",
@@ -1181,6 +1196,8 @@ export default function WorldCanvas(props: {
     else if (clicked === "stop") void stopAll([character]);
     else if (clicked === "archive") void archiveAll([character]);
     else if (clicked === "archive-subagents") void archiveAll(visibleSubagents, hiddenSubagents);
+    else if (clicked === "archive-idle-subagents")
+      void archiveAll(idleVisibleSubagents, idleHiddenSubagents);
     else if (clicked === "archive-others") void archiveAll(others);
     else if (clicked === "archive-left") void archiveAll(toTheLeft);
     else if (clicked === "regenerate-title") void regenerateTitle(character);
