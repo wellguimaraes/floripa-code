@@ -25,6 +25,7 @@ import {
 import { fileContextReference, imageContextReference } from "../../lib/composerContextRecords";
 import { ComposerPromptEditor, type ComposerPromptEditorHandle } from "../ComposerPromptEditor";
 import { Button } from "../ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { shouldHandleComposerAttachmentPaste } from "../chat/composerAttachmentFiles";
 import {
   ChipAttachmentRemovalPopover,
@@ -454,36 +455,42 @@ export function BubbleComposer(props: {
         </Button>
       ) : null}
       {/* One solid button for both: it stops a running agent while there is nothing to send. */}
-      <button
-        type="button"
-        className={cn(
-          "flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full shadow-xs transition-colors duration-150 enabled:inset-shadow-control-highlight active:inset-shadow-control-pressed active:shadow-none disabled:pointer-events-none disabled:opacity-64 disabled:shadow-none sm:size-7 [&_svg]:pointer-events-none [&_svg]:size-3.5",
-          stopping
-            ? "bg-destructive text-white shadow-destructive/24 hover:bg-destructive/90"
-            : "bg-message-action text-message-action-foreground shadow-message-action/24 hover:bg-message-action-hover",
-        )}
-        aria-label={stopping ? "Stop this run" : props.submitLabel}
-        title={stopping ? "Stop this run" : props.submitLabel}
-        disabled={
-          stopping
-            ? false
-            : (text.trim() === "" &&
-                attachments.attachments.length === 0 &&
-                props.submitReady !== true) ||
-              attachments.preparing ||
-              busy ||
-              props.submitBlocked === true
-        }
-        onClick={() => (stopping ? props.onStop?.() : onSubmit(text))}
-      >
-        {stopping ? (
-          <SquareIcon className="fill-current" />
-        ) : busy ? (
-          <LoaderIcon className="animate-spin" />
-        ) : (
-          <SendHorizontalIcon />
-        )}
-      </button>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              className={cn(
+                "flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full shadow-xs transition-colors duration-150 enabled:inset-shadow-control-highlight active:inset-shadow-control-pressed active:shadow-none disabled:pointer-events-none disabled:opacity-64 disabled:shadow-none sm:size-7 [&_svg]:pointer-events-none [&_svg]:size-3.5",
+                stopping
+                  ? "bg-destructive text-white shadow-destructive/24 hover:bg-destructive/90"
+                  : "bg-message-action text-message-action-foreground shadow-message-action/24 hover:bg-message-action-hover",
+              )}
+              aria-label={stopping ? "Stop this run" : props.submitLabel}
+              disabled={
+                stopping
+                  ? false
+                  : (text.trim() === "" &&
+                      attachments.attachments.length === 0 &&
+                      props.submitReady !== true) ||
+                    attachments.preparing ||
+                    busy ||
+                    props.submitBlocked === true
+              }
+              onClick={() => (stopping ? props.onStop?.() : onSubmit(text))}
+            >
+              {stopping ? (
+                <SquareIcon className="fill-current" />
+              ) : busy ? (
+                <LoaderIcon className="animate-spin" />
+              ) : (
+                <SendHorizontalIcon />
+              )}
+            </button>
+          }
+        />
+        <TooltipPopup side="top">{stopping ? "Stop this run" : props.submitLabel}</TooltipPopup>
+      </Tooltip>
     </>
   );
 
