@@ -89,7 +89,6 @@ const character = (overrides: Partial<CharacterFacts> = {}): CharacterFacts => {
     kid: false,
     parentKey: null,
     hasWorkingKids: false,
-    parentBusy: false,
     backgroundTask: false,
     subagentCount: 1,
     beat: 0,
@@ -146,14 +145,14 @@ describe("resolveIntent", () => {
     });
   });
 
-  it("brings a done kid along to its busy parent's pile, standing by instead of digging", () => {
+  it("rests a done kid on the beach, and keeps one waiting on its own kid at the pile", () => {
     const [island] = islandWorlds;
-    const kid = { kid: true, parentKey: "env:parent", status: "ready" as const };
-    expect(resolveIntent(character({ ...kid, parentBusy: true }), island!)).toEqual({
-      go: "helpers",
-      do: "idle",
-    });
-    expect(resolveIntent(character(kid), island!).go).toBe("beach");
+    const kid = { kid: true, parentKey: "env:parent" };
+    expect(resolveIntent(character({ ...kid, status: "ready" }), island!).go).toBe("beach");
+    expect(resolveIntent(character({ ...kid, status: "waiting" }), island!).go).toBe("beach");
+    expect(
+      resolveIntent(character({ ...kid, status: "waiting", hasWorkingKids: true }), island!),
+    ).toEqual({ go: "helpers", do: "idle" });
   });
 });
 

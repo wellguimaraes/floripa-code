@@ -288,9 +288,9 @@ function island(size: (typeof ISLAND_SIZES)[number], sizeIndex: number): WorldDe
       { when: { kid: true, status: "input" }, go: "helpers", do: "idle", balloon: "question" },
       { when: { kid: true, status: "working", quiet: true }, go: "helpers", do: "ponder" },
       { when: { kid: true, status: "working" }, go: "helpers", do: "mine" },
-      { when: { kid: true, status: "waiting" }, go: "helpers", do: "idle" },
-      // A finished kid walks back to work with its parent and stands by, without digging.
-      { when: { kid: true, parentBusy: true }, go: "helpers", do: "idle" },
+      // Waiting on its own subagent: standing by at the pile. A kid with nothing left to do
+      // rests on the beach like anyone else, even while its parent keeps working.
+      { when: { kid: true, status: "waiting", hasWorkingKids: true }, go: "helpers", do: "idle" },
       { when: { status: "approval" }, go: "mine", do: "idle", balloon: "approval" },
       { when: { status: "input" }, go: "mine", do: "idle", balloon: "question" },
       // The run ended but a subagent it started is still at it: dig alongside it.

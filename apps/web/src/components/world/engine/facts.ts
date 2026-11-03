@@ -26,8 +26,6 @@ export interface CharacterFacts {
   readonly parentKey: string | null;
   /** A kid is working, or the thread waits on a background subagent. */
   readonly hasWorkingKids: boolean;
-  /** A kid whose parent is busy (see `isBusy`), or follows a parent who is. */
-  readonly parentBusy: boolean;
   /** A background task other than a subagent, such as a long command, is still running. */
   readonly backgroundTask: boolean;
   /**
@@ -191,24 +189,12 @@ export function buildCharacterFacts(input: {
     }
     return current.projectKey;
   };
-  const family = drafts.map((facts) => ({
+  return drafts.map((facts) => ({
     ...facts,
     projectKey: familyProject(facts),
     hasWorkingKids: parentsWithWorkingKids.has(facts.key),
-    parentBusy: false,
     subagentCount: 1,
   }));
-  // A kid goes along with a busy parent, and its own kids with it.
-  const byKey = new Map(family.map((facts) => [facts.key, facts]));
-  const parentBusy = (facts: CharacterFacts) => {
-    let current = facts;
-    for (let depth = 0; depth < 32 && current.parentKey !== null; depth += 1) {
-      current = byKey.get(current.parentKey) ?? current;
-      if (isBusy(current)) return true;
-    }
-    return false;
-  };
-  return family.map((facts) => ({ ...facts, parentBusy: parentBusy(facts) }));
 }
 
 /** Which subagent the single copy should act as. A question beats work beats rest. */
@@ -267,7 +253,6 @@ export function collapseSubagents(facts: ReadonlyArray<CharacterFacts>): {
       ...lead,
       subagentCount: kids.length,
       parentKey: rootKey,
-      parentBusy: busyWithSubagents(root, kids),
     });
   }
 
@@ -301,14 +286,6 @@ function leadSubagent(kids: readonly CharacterFacts[]): CharacterFacts | undefin
     }
   }
   return lead;
-}
-
-function busyWithSubagents(root: CharacterFacts, kids: readonly CharacterFacts[]): boolean {
-  return isBusy({
-    ...root,
-    hasWorkingKids:
-      root.hasWorkingKids || kids.some((kid) => kid.status === "working" || kid.hasWorkingKids),
-  });
 }
 
 function threadKey(thread: EnvironmentThreadShell): string {

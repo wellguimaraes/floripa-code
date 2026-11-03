@@ -133,8 +133,6 @@ export interface CharacterFactMatch {
   readonly unread?: boolean;
   readonly kid?: boolean;
   readonly hasWorkingKids?: boolean;
-  /** A kid whose parent is working or waiting on something, so it tags along. */
-  readonly parentBusy?: boolean;
   /** A background task, such as a long command, is still running. */
   readonly backgroundTask?: boolean;
   /** The thread has produced nothing new for `movement.quietSeconds`. */
