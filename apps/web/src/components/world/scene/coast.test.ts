@@ -44,4 +44,20 @@ describe("mainlandShoreline", () => {
       }
     },
   );
+
+  it.each(islandWorlds.map((definition, size) => [size, definition] as const))(
+    "ends in open sea above and below the island (size %i)",
+    (_, definition) => {
+      const shoreline = mainlandShoreline(definition);
+      const sand = definition.terrain.find(
+        (patch) => patch.kind === "sand" && patch.shape === "disc",
+      );
+      if (sand?.shape !== "disc") throw new Error("no round island");
+      const beside = shoreline(0);
+      // Twelve sand radii up or down the screen, the land has turned well off to the left.
+      for (const along of [-12 * sand.radius, 12 * sand.radius]) {
+        expect(shoreline(along)).toBeLessThan(beside - 4 * sand.radius);
+      }
+    },
+  );
 });

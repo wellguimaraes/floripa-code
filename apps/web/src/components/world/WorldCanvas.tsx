@@ -132,6 +132,7 @@ import { useRemoveIsland } from "./useRemoveIsland";
 import { IslandRunScriptDialog } from "./IslandRunScriptDialog";
 import { RestoreArchivedDialog } from "./RestoreArchivedDialog";
 import { layoutTags, type ScreenPoint } from "./scene/tagLayout";
+import { mainlandOffshore } from "./scene/coast";
 import { isStoppable, WorldBubble } from "./WorldBubble";
 import { BUBBLE_RESIZED_ATTRIBUTE, BubbleResizeFrame } from "./BubbleResizeFrame";
 import { VOICE_INPUT_ENABLED, voiceInputSupported } from "./useVoiceInput";
@@ -489,14 +490,19 @@ export default function WorldCanvas(props: {
     () =>
       islands.map(({ key, offset, definition: sized }) => {
         const island = islandBounds(sized);
+        const coast = mainland.has(key) ? mainlandOffshore(sized) : null;
         return {
           key,
           x: offset[0] + (island.minX + island.maxX) / 2,
           z: offset[2] + (island.minZ + island.maxZ) / 2,
           shoreRadius: Math.max(island.maxX - island.minX, island.maxZ - island.minZ) / 2,
+          offshore:
+            coast === null
+              ? undefined
+              : (x: number, z: number) => coast(x - offset[0], z - offset[2]),
         };
       }),
-    [islands],
+    [islands, mainland],
   );
   // When each snoozed island's idle alarm may go off again, by island key.
   const [idleSnoozedUntil, setIdleSnoozedUntil] = useState<Readonly<Record<string, number>>>({});

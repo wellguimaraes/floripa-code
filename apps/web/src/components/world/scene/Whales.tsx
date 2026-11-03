@@ -54,6 +54,51 @@ function leap(u: number) {
   };
 }
 
+/** An island centre in world space, how far its shore reaches, and the coast it runs on into, if any. */
+interface Shore {
+  readonly x: number;
+  readonly z: number;
+  readonly shoreRadius: number;
+  /** How far a world point lies seaward of the coast's sand; negative on its land. */
+  readonly offshore?: ((x: number, z: number) => number) | undefined;
+}
+
+/** Spots tried per sighting before giving up until the next one. */
+const TRIES = 12;
+
+/**
+ * A leap by a random island whose whole path, nose to tail, keeps `near` clear
+ * of every island's shore and every coast, or null when the spots tried don't.
+ */
+export function pickSighting(
+  islands: ReadonlyArray<Shore>,
+  [near, far]: readonly [number, number],
+  random: () => number = Math.random,
+): Sighting | null {
+  for (let attempt = 0; attempt < TRIES; attempt += 1) {
+    const island = islands[Math.floor(random() * islands.length)]!;
+    const angle = random() * Math.PI * 2;
+    const distance = island.shoreRadius + near + random() * (far - near);
+    // Leap along the shore, one way or the other.
+    const along = angle + (random() < 0.5 ? Math.PI / 2 : -Math.PI / 2);
+    const x = island.x + Math.cos(angle) * distance;
+    const z = island.z + Math.sin(angle) * distance;
+    const heading = Math.atan2(Math.cos(along), Math.sin(along));
+    const reach = (LENGTH * (SPAN + 1)) / 2;
+    const clear = [-1, -0.5, 0, 0.5, 1].every((step) => {
+      const px = x + Math.sin(heading) * reach * step;
+      const pz = z + Math.cos(heading) * reach * step;
+      return islands.every(
+        (other) =>
+          Math.hypot(px - other.x, pz - other.z) >= other.shoreRadius + near &&
+          (other.offshore === undefined || other.offshore(px, pz) >= near),
+      );
+    });
+    if (clear) return { id: Date.now(), x, z, heading, twist: random() < 0.5 ? 1 : -1 };
+  }
+  return null;
+}
+
 /**
  * Now and then a whale leaps out of the water near a random island and
  * splashes back in. Only one is up at a time, frames are drawn only while it
@@ -61,12 +106,7 @@ function leap(u: number) {
  * first leap.
  */
 export function WhaleSightings(props: {
-  /** Island centres in world space and how far their shore reaches. */
-  readonly islands: ReadonlyArray<{
-    readonly x: number;
-    readonly z: number;
-    readonly shoreRadius: number;
-  }>;
+  readonly islands: ReadonlyArray<Shore>;
   readonly config: WorldArchipelago["whales"];
 }) {
   const { islands, config } = props;
@@ -90,19 +130,10 @@ export function WhaleSightings(props: {
         schedule();
         return;
       }
-      const island = candidates[Math.floor(Math.random() * candidates.length)]!;
-      const angle = Math.random() * Math.PI * 2;
-      const [near, far] = config.offshore;
-      const distance = island.shoreRadius + near + Math.random() * (far - near);
-      // Leap along the shore, one way or the other.
-      const along = angle + (Math.random() < 0.5 ? Math.PI / 2 : -Math.PI / 2);
-      setSighting({
-        id: Date.now(),
-        x: island.x + Math.cos(angle) * distance,
-        z: island.z + Math.sin(angle) * distance,
-        heading: Math.atan2(Math.cos(along), Math.sin(along)),
-        twist: Math.random() < 0.5 ? 1 : -1,
-      });
+      const next = pickSighting(candidates, config.offshore);
+      // Every spot tried was too close to land: try again next turn.
+      if (next === null) schedule();
+      else setSighting(next);
     };
     schedule();
     return () => window.clearTimeout(timer);

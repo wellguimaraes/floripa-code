@@ -248,16 +248,32 @@ const COAST_BANDS = [
   { color: palette.lagoon, y: -0.245, reach: LAGOON_REACH },
 ] as const;
 
-/** One flat band: everything left of the wavy line `edgeAt(along)`, in screen units. */
-function coastBandGeometry(edgeAt: (along: number) => number): ShapeGeometry {
-  const shape = new Shape();
+/**
+ * One flat band: the land inside `shoreline`, grown by `reach` straight out
+ * from it so the band keeps its width where the coast turns away. In screen units.
+ */
+function coastBandGeometry(shoreline: (along: number) => number, reach: number): ShapeGeometry {
   const half = COAST_LENGTH / 2;
-  // The shape's y runs up the screen, so down the screen is -y once laid flat.
-  shape.moveTo(-COAST_WIDTH, half);
+  const points: Array<readonly [right: number, along: number]> = [];
   for (let along = -half; along <= half; along += 0.5) {
-    shape.lineTo(edgeAt(along), -along);
+    const right = shoreline(along);
+    if (right > -COAST_WIDTH) points.push([right, along]);
   }
-  shape.lineTo(-COAST_WIDTH, -half);
+  const shape = new Shape();
+  const far = -COAST_WIDTH - 10;
+  points.forEach(([right, along], index) => {
+    const before = points[Math.max(0, index - 1)]!;
+    const after = points[Math.min(points.length - 1, index + 1)]!;
+    const dRight = after[0] - before[0];
+    const dAlong = after[1] - before[1];
+    const length = Math.hypot(dRight, dAlong) || 1;
+    // The shape's y runs up the screen, so down the screen is -y once laid flat.
+    const x = right + (reach * dAlong) / length;
+    const y = -(along - (reach * dRight) / length);
+    if (index === 0) shape.moveTo(far, y);
+    shape.lineTo(x, y);
+    if (index === points.length - 1) shape.lineTo(far, y);
+  });
   return new ShapeGeometry(shape);
 }
 
@@ -276,7 +292,7 @@ export function MainlandCoast(props: { readonly definition: WorldDefinition }) {
     const shoreline = mainlandShoreline(definition);
     return COAST_BANDS.map((band) => ({
       ...band,
-      geometry: coastBandGeometry((along) => shoreline(along) + band.reach),
+      geometry: coastBandGeometry(shoreline, band.reach),
     }));
   }, [definition]);
   useEffect(() => () => bands.forEach((band) => band.geometry.dispose()), [bands]);
