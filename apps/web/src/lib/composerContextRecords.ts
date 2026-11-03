@@ -18,6 +18,7 @@ import type {
   TerminalContextRecord,
   ThreadContextRecord,
   ThreadId,
+  ThreadMentionIntent,
 } from "@t3tools/contracts";
 import { upgradeLegacyContextMessage } from "@t3tools/shared/composerContextLegacy";
 import { encodeComposerContextFragment } from "@t3tools/shared/composerContextClipboard";
@@ -166,7 +167,11 @@ export function threadContextReference(record: ThreadContextRecord): ComposerCon
   return { kind: "thread", contextId: record.contextId, label: record.label };
 }
 
-export function threadContextRecord(ref: ScopedThreadRef, title: string): ThreadContextRecord {
+export function threadContextRecord(
+  ref: ScopedThreadRef,
+  title: string,
+  intent: ThreadMentionIntent = "look",
+): ThreadContextRecord {
   const label = sanitizeComposerContextLabel(title, "thread");
   return {
     version: 1,
@@ -176,6 +181,8 @@ export function threadContextRecord(ref: ScopedThreadRef, title: string): Thread
     environmentId: ref.environmentId,
     threadId: ref.threadId,
     title: label,
+    // `look` is the default and stays implicit, so plain thread chips encode as before.
+    ...(intent === "tell" ? { intent } : {}),
   };
 }
 

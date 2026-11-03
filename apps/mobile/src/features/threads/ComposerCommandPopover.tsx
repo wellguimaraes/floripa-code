@@ -7,6 +7,7 @@ import type {
   ScopedThreadRef,
   ServerProviderSkill,
   ServerProviderSlashCommand,
+  ThreadMentionIntent,
 } from "@t3tools/contracts";
 import type { ComposerTriggerKind } from "@t3tools/shared/composerTrigger";
 import { memo } from "react";
@@ -38,6 +39,7 @@ export type ComposerCommandItem =
       readonly thread: ScopedThreadRef;
       readonly label: string;
       readonly description: string;
+      readonly fixedIntent: ThreadMentionIntent | null;
     }
   | {
       readonly id: string;
@@ -66,7 +68,8 @@ interface ComposerCommandPopoverProps {
   readonly triggerKind: ComposerTriggerKind | null;
   readonly isLoading: boolean;
   readonly error?: string | null;
-  readonly onSelect: (item: ComposerCommandItem) => void;
+  /** A thread row inserts a look mention on tap and a tell mention on long-press. */
+  readonly onSelect: (item: ComposerCommandItem, threadIntent?: ThreadMentionIntent) => void;
 }
 
 function PopoverSurface(props: { readonly children: React.ReactNode; readonly style?: ViewStyle }) {
@@ -112,6 +115,12 @@ function itemIcon(item: ComposerCommandItem): AppSymbolName | null {
   }
 }
 
+function threadRowHint(fixedIntent: ThreadMentionIntent | null): string {
+  if (fixedIntent === "tell") return "Tap to tell";
+  if (fixedIntent === "look") return "Tap to look";
+  return "Tap to look · hold to tell";
+}
+
 function groupLabel(triggerKind: ComposerTriggerKind | null): string | null {
   switch (triggerKind) {
     case "pull-request":
@@ -148,6 +157,7 @@ function emptyText(triggerKind: ComposerTriggerKind | null, isLoading: boolean):
 const CommandRow = memo(function CommandRow(props: {
   readonly item: ComposerCommandItem;
   readonly onPress: () => void;
+  readonly onLongPress?: () => void;
   readonly isLast: boolean;
   readonly isSlashSkill: boolean;
 }) {
@@ -157,6 +167,7 @@ const CommandRow = memo(function CommandRow(props: {
     <Pressable
       accessibilityRole="button"
       onPress={props.onPress}
+      onLongPress={props.onLongPress}
       className="flex-row items-center gap-2.5 border-border px-3.5 py-2.5 active:opacity-60"
       style={{ borderBottomWidth: props.isLast ? 0 : StyleSheet.hairlineWidth }}
     >
@@ -182,7 +193,9 @@ const CommandRow = memo(function CommandRow(props: {
       </Text>
       {props.item.description ? (
         <Text className="min-w-0 flex-1 text-xs text-foreground-muted" numberOfLines={1}>
-          {props.item.description}
+          {props.item.type === "thread"
+            ? threadRowHint(props.item.fixedIntent)
+            : props.item.description}
         </Text>
       ) : null}
     </Pressable>
@@ -214,6 +227,9 @@ export const ComposerCommandPopover = memo(function ComposerCommandPopover(
               key={item.id}
               item={item}
               onPress={() => props.onSelect(item)}
+              {...(item.type === "thread" && item.fixedIntent === null
+                ? { onLongPress: () => props.onSelect(item, "tell") }
+                : {})}
               isLast={index === props.items.length - 1}
               isSlashSkill={props.triggerKind === "slash-command" && item.type === "skill"}
             />

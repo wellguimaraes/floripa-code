@@ -172,6 +172,12 @@ describe("ComposerContextRecord", () => {
     expect(Option.isNone(decodeRecord({ ...knownRecords.skill, version: 2 }))).toBe(true);
     expect(Option.isNone(decodeRecord({ ...knownRecords.skill, kind: "Bad Kind" }))).toBe(true);
   });
+
+  it("keeps a thread mention's intent and rejects unknown ones", () => {
+    const told = { ...knownRecords.thread, intent: "tell" };
+    expect(Option.getOrThrow(decodeRecord(told))).toEqual(told);
+    expect(Option.isNone(decodeRecord({ ...knownRecords.thread, intent: "shout" }))).toBe(true);
+  });
 });
 
 describe("OrchestrationMessageContext", () => {

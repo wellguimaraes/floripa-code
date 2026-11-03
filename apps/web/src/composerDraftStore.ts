@@ -19,6 +19,7 @@ import {
   type PreviewAnnotationPayload,
   RuntimeMode,
   ThreadContextRecord,
+  type ThreadMentionIntent,
   type ServerProvider,
   type ScopedProjectRef,
   type ScopedThreadRef,
@@ -708,6 +709,12 @@ interface ComposerDraftStoreState {
   setThreadContexts: (
     threadRef: ComposerThreadTarget,
     records: ReadonlyArray<ThreadContextRecord>,
+  ) => void;
+  /** Switches an attached thread between being read (`look`) and messaged (`tell`). */
+  setThreadContextIntent: (
+    threadRef: ComposerThreadTarget,
+    contextId: string,
+    intent: ThreadMentionIntent,
   ) => void;
   clearPersistedAttachments: (threadRef: ComposerThreadTarget) => void;
   syncPersistedAttachments: (
@@ -4077,6 +4084,28 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                           accepted.map(threadContextReference),
                         ),
                   threadContexts: [...existing.threadContexts, ...accepted],
+                },
+              },
+            };
+          });
+        },
+        setThreadContextIntent: (threadRef, contextId, intent) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef);
+          if (!threadKey) return;
+          set((state) => {
+            const existing = state.draftsByThreadKey[threadKey];
+            const current = existing?.threadContexts.find(
+              (record) => record.contextId === contextId,
+            );
+            if (!existing || !current || (current.intent ?? "look") === intent) return state;
+            return {
+              draftsByThreadKey: {
+                ...state.draftsByThreadKey,
+                [threadKey]: {
+                  ...existing,
+                  threadContexts: existing.threadContexts.map((record) =>
+                    record === current ? { ...record, intent } : record,
+                  ),
                 },
               },
             };

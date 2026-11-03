@@ -4,7 +4,7 @@ import { AsyncResult } from "effect/reactivity";
 import { useNavigation } from "@react-navigation/native";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert } from "react-native";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId, ThreadMentionIntent } from "@t3tools/contracts";
 import { encodeComposerContextFragment } from "@t3tools/shared/composerContextClipboard";
 import { collectComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import { ComposerEditor as NativeComposerEditor } from "../native/T3ComposerEditor";
@@ -238,6 +238,22 @@ export function ComposerEditor({
               threadId: String(thread.threadId),
             });
           }}
+          {...(draftKey && !props.readOnly && props.editable !== false
+            ? {
+                onSetThreadIntent: (contextId: string, intent: ThreadMentionIntent) => {
+                  const context = getComposerDraftSnapshot(draftKey).context;
+                  if (!context) return;
+                  setComposerDraftContext(draftKey, {
+                    ...context,
+                    records: context.records.map((entry) =>
+                      entry.contextId === contextId && entry.kind === "thread"
+                        ? { ...entry, intent }
+                        : entry,
+                    ),
+                  });
+                },
+              }
+            : {})}
           environmentId={environmentId}
           records={draft.context?.records}
           attachments={draft.attachments}

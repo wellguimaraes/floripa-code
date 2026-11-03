@@ -4,8 +4,12 @@ import type {
   ProviderInteractionMode,
   ServerProvider,
   ThreadId,
+  ThreadMentionIntent,
 } from "@t3tools/contracts";
-import { matchComposerThreadItems } from "@t3tools/client-runtime/composerThreadItems";
+import {
+  matchComposerThreadItems,
+  parseThreadMentionQuery,
+} from "@t3tools/client-runtime/composerThreadItems";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 
 const EMPTY_THREAD_SHELLS: ReadonlyArray<EnvironmentThreadShell> = [];
@@ -176,6 +180,7 @@ export function useComposerCommandMenu({
   environmentId,
   threadShells = EMPTY_THREAD_SHELLS,
   currentThreadId = null,
+  projectId = null,
   projectCwd,
   pullRequestProjectId = null,
   pullRequestRepository = null,
@@ -195,6 +200,8 @@ export function useComposerCommandMenu({
   readonly threadShells?: ReadonlyArray<EnvironmentThreadShell>;
   /** Left out of `@` thread suggestions: a thread is never context for itself. */
   readonly currentThreadId?: ThreadId | null;
+  /** The project `@` thread suggestions are drawn from. */
+  readonly projectId?: ProjectId | null;
   readonly projectCwd: string | null;
   readonly pullRequestProjectId?: ProjectId | null;
   readonly pullRequestRepository?: string | null;
@@ -348,10 +355,13 @@ export function useComposerCommandMenu({
     }
     return detectComposerTrigger(draftMessage, selection.end);
   }, [draftMessage, enabled, selection]);
+  // `@tell:` and `@look:` pick threads only, so they never search paths.
+  const searchesPaths =
+    trigger?.kind === "path" && parseThreadMentionQuery(trigger.query).intent === null;
   const pathSearch = useComposerPathSearch({
     environmentId,
-    cwd: trigger?.kind === "path" ? projectCwd : null,
-    query: trigger?.kind === "path" ? trigger.query : null,
+    cwd: searchesPaths ? projectCwd : null,
+    query: searchesPaths ? trigger.query : null,
   });
   const pullRequestSearch = useComposerPullRequestSearch({
     environmentId,
@@ -503,6 +513,7 @@ export function useComposerCommandMenu({
         ? matchComposerThreadItems({
             shells: threadShells,
             environmentId,
+            projectId,
             excludeThreadId: currentThreadId,
             query: trigger.query,
           })
@@ -527,6 +538,7 @@ export function useComposerCommandMenu({
   }, [
     currentThreadId,
     environmentId,
+    projectId,
     threadShells,
     hasThread,
     hasCompactableConversation,
@@ -541,7 +553,7 @@ export function useComposerCommandMenu({
   ]);
 
   const onSelect = useCallback(
-    (item: ComposerCommandItem) => {
+    (item: ComposerCommandItem, threadIntent?: ThreadMentionIntent) => {
       if (!trigger) return;
       if (item.type === "thread") {
         if (!ownerKey || trigger.kind !== "path") return;
@@ -551,7 +563,11 @@ export function useComposerCommandMenu({
             candidate.id === item.thread.threadId,
         );
         if (!shell) return;
-        const record = threadComposerContext(item.thread, shell.title);
+        const record = threadComposerContext(
+          item.thread,
+          shell.title,
+          item.fixedIntent ?? threadIntent ?? "look",
+        );
         const existing = getComposerDraftSnapshot(ownerKey).context?.records ?? [];
         const alreadyAttached = existing.some((entry) => entry.contextId === record.contextId);
         if (!alreadyAttached && existing.length >= COMPOSER_CONTEXT_MAX_RECORDS) {
@@ -568,13 +584,15 @@ export function useComposerCommandMenu({
           `${formatComposerContextReference(record)} `,
         );
         onChangeDraftMessage(result.text);
-        if (!alreadyAttached) {
-          const draft = getComposerDraftSnapshot(ownerKey);
-          setComposerDraftContext(ownerKey, {
-            version: 1,
-            records: [...(draft.context?.records ?? []), record],
-          });
-        }
+        // One record per thread: mentioning it again with the other intent switches it.
+        const draft = getComposerDraftSnapshot(ownerKey);
+        const records = draft.context?.records ?? [];
+        setComposerDraftContext(ownerKey, {
+          version: 1,
+          records: alreadyAttached
+            ? records.map((entry) => (entry.contextId === record.contextId ? record : entry))
+            : [...records, record],
+        });
         setSelection({ start: result.cursor, end: result.cursor });
         return;
       }

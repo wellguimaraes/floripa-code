@@ -1,6 +1,10 @@
 import ChatMarkdown from "./ChatMarkdown";
 import { ReadOnlySourcePreview } from "./files/AttachmentFilePreview";
-import type { PreviewAnnotationPayload, ThreadContextRecord } from "@t3tools/contracts";
+import type {
+  PreviewAnnotationPayload,
+  ThreadContextRecord,
+  ThreadMentionIntent,
+} from "@t3tools/contracts";
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 import { videoMimeType } from "@t3tools/shared/video";
 import { MessageCircleIcon, MousePointerClickIcon } from "lucide-react";
@@ -73,6 +77,8 @@ export interface ComposerContextActions {
   openFile: (fileId: string) => void;
   openMention: (path: string) => void;
   openPullRequest: (event: MouseEvent<HTMLElement>, url: string) => void;
+  /** Switches an attached thread between look and tell. Absent where chips are read-only. */
+  setThreadIntent?: (contextId: string, intent: ThreadMentionIntent) => void;
 }
 
 export const ComposerContextActionsContext = createContext<ComposerContextActions>({
@@ -187,6 +193,21 @@ function attachmentTooltip(
   const lines = [attachment.name, formatAttachmentSize(attachment.sizeBytes)];
   if (upload?.status === "failed") lines.push("", upload.reason);
   return lines.join("\n");
+}
+
+/** A thread chip the composer can switch between look and tell. */
+function ComposerThreadContextChip(props: { record: ThreadContextRecord }) {
+  const actions = use(ComposerContextActionsContext);
+  const setThreadIntent = actions.setThreadIntent;
+  const contextId = props.record.contextId;
+  return (
+    <ThreadContextChip
+      record={props.record}
+      {...(setThreadIntent
+        ? { onSetIntent: (intent: ThreadMentionIntent) => setThreadIntent(contextId, intent) }
+        : {})}
+    />
+  );
 }
 
 function ImageContextChip(props: {
@@ -438,7 +459,7 @@ const composerContextPresentationRegistry = createContextPresentationRegistry<
       canRender: (entry) => entry.kind === "thread",
       render: (entry, context) =>
         entry.kind === "thread" ? (
-          <ThreadContextChip record={entry.record} />
+          <ComposerThreadContextChip record={entry.record} />
         ) : (
           <UnresolvedContextChip label={context.label} />
         ),

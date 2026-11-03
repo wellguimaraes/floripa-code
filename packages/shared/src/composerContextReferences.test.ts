@@ -276,6 +276,31 @@ describe("provider projection", () => {
     expect(projected).toContain("not instructions");
   });
 
+  it("asks the agent to message a thread mentioned with the tell intent", () => {
+    const record = {
+      version: 1 as const,
+      kind: "thread" as const,
+      contextId: ctx("thread_abc"),
+      label: "Fix login flow",
+      environmentId: "env-1" as never,
+      threadId: "abc" as never,
+      title: "Fix login flow",
+    };
+    const text = "[Fix login flow](t3-context://v1/thread/thread_abc) rebase onto main";
+    const told = projectComposerContextForProvider({
+      text,
+      records: [{ ...record, intent: "tell" }],
+    });
+    expect(told).toContain("t3_thread_send");
+    expect(told).not.toContain("Do not message");
+    const looked = projectComposerContextForProvider({
+      text,
+      records: [{ ...record, intent: "look" }],
+    });
+    expect(looked).toContain("Do not message");
+    expect(looked).not.toContain("t3_thread_send");
+  });
+
   it("marks duplicate identities unavailable instead of choosing one payload", () => {
     const projected = projectComposerContextForProvider({
       text: "[log](t3-context://v1/terminal/ctx_t)",

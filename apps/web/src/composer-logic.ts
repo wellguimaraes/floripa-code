@@ -36,6 +36,29 @@ function composerRequiresModifier(
   );
 }
 
+/**
+ * `⌘Enter` (`Ctrl+Enter` off macOS) on a highlighted thread row inserts a tell mention instead
+ * of sending. Plain `Enter` and `Tab` keep inserting the look mention.
+ */
+export function isThreadTellKey(
+  key: string,
+  event: {
+    metaKey: boolean;
+    ctrlKey: boolean;
+    shiftKey: boolean;
+    altKey: boolean;
+    isComposing?: boolean;
+  },
+): boolean {
+  return (
+    key === "Enter" &&
+    (event.metaKey || event.ctrlKey) &&
+    !event.shiftKey &&
+    !event.altKey &&
+    !event.isComposing
+  );
+}
+
 export function composerSubmissionIntentForKey(input: {
   event: ShortcutEventLike & { isComposing?: boolean; keyCode?: number; repeat?: boolean };
   keybindings: ResolvedKeybindingsConfig;

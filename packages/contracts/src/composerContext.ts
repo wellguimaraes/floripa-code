@@ -222,8 +222,16 @@ export const SkillContextRecord = Schema.Struct({
 export type SkillContextRecord = typeof SkillContextRecord.Type;
 
 /**
+ * What the user wants done with a mentioned thread: `look` reads it as reference material,
+ * `tell` asks the agent to message it through `t3_thread_send`. Absent means `look`.
+ */
+export const ThreadMentionIntent = Schema.Literals(["look", "tell"]);
+export type ThreadMentionIntent = typeof ThreadMentionIntent.Type;
+
+/**
  * Another thread on the same server, attached so the agent can read its history through
- * `t3_thread_read`. Only identity travels; the title is a display snapshot.
+ * `t3_thread_read`, or message it when `intent` is `tell`. Only identity travels; the title
+ * is a display snapshot.
  */
 export const ThreadContextRecord = Schema.Struct({
   ...recordBase,
@@ -231,6 +239,7 @@ export const ThreadContextRecord = Schema.Struct({
   environmentId: EnvironmentId,
   threadId: ThreadId,
   title: ContextLabel,
+  intent: Schema.optionalKey(ThreadMentionIntent),
 });
 export type ThreadContextRecord = typeof ThreadContextRecord.Type;
 

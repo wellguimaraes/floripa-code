@@ -10,6 +10,7 @@ import {
   type ReviewCommentContextRecord,
   type ScopedThreadRef,
   type ThreadContextRecord,
+  type ThreadMentionIntent,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import {
@@ -102,7 +103,11 @@ export function createComposerContextHistory() {
 }
 
 /** Same identity as web: one record per thread, so re-attaching reuses the chip. */
-export function threadComposerContext(ref: ScopedThreadRef, title: string): ThreadContextRecord {
+export function threadComposerContext(
+  ref: ScopedThreadRef,
+  title: string,
+  intent: ThreadMentionIntent = "look",
+): ThreadContextRecord {
   const label = sanitizeComposerContextLabel(title, "thread");
   return {
     version: 1,
@@ -112,6 +117,8 @@ export function threadComposerContext(ref: ScopedThreadRef, title: string): Thre
     environmentId: ref.environmentId,
     threadId: ref.threadId,
     title: label,
+    // `look` is the default and stays implicit, so plain thread chips encode as before.
+    ...(intent === "tell" ? { intent } : {}),
   };
 }
 

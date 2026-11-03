@@ -241,12 +241,21 @@ by any part of its pull request numbers. A complete number is also resolved dire
 pull request is older than the recent list. Type a single word after `#` to search pull requests in
 the repository by text. Choose a result to insert it as a chip.
 
-Another thread can be context too. Type `@` followed by part of its title to pick one from
-the same server, or on web and desktop drag a thread out of the sidebar and drop it on the
-composer; a multi-selection drops together. The chip shows the thread's current title and
-opens it when selected. Your prompt only carries a reference: the agent reads the thread's
-history on demand, so attaching a long thread costs nothing until the agent looks. Attaching a
-thread does not change it, and the agent cannot send messages to it unless you ask.
+You can mention another thread of the same project. Type `@` followed by part of its title,
+then choose what the agent does with it:
+
+- **Look** (`Enter`, or tap on mobile) attaches the thread as context. The agent reads its
+  history on demand, so a long thread costs nothing until the agent looks, and it does not
+  change or message the thread.
+- **Tell** (`⌘Enter` or `Ctrl+Enter`, or press and hold on mobile) asks the agent to send that
+  thread the part of your message meant for it. The message waits in that thread's queue if it
+  is busy, and the agent tells you what it sent. Tell needs a provider that can use Floripa
+  Code's tools.
+
+Type `@look:` or `@tell:` to list only threads, already set to that choice. On web and desktop
+the chip reads `@look:title` or `@tell:title`; click it to switch, or ⌘-click or Ctrl-click to
+open the thread. On mobile, tap the chip to see which one it is and switch it. On web and
+desktop you can also drag threads out of the sidebar onto the composer to attach them as look.
 
 In a thread without a project, `@` browses the environment's machine from your home folder
 instead of searching a workspace. `@` alone lists your home folder, and each `/` you type

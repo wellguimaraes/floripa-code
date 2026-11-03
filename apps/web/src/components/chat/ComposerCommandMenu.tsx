@@ -10,6 +10,7 @@ import {
   type ScopedThreadRef,
   type ServerProviderSkill,
   type ServerProviderSlashCommand,
+  type ThreadMentionIntent,
 } from "@t3tools/contracts";
 import {
   BlocksIcon,
@@ -24,8 +25,9 @@ import {
 import { memo, useLayoutEffect, useRef } from "react";
 
 import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../composer-logic";
-import { cn } from "~/lib/utils";
+import { cn, isMacPlatform } from "~/lib/utils";
 import { Badge } from "../ui/badge";
+import { Kbd } from "../ui/kbd";
 import { Command, CommandGroup, CommandItem, CommandList } from "../ui/command";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import { ComposerBanner } from "./ComposerBanner";
@@ -80,6 +82,7 @@ export type ComposerCommandItem =
       thread: ScopedThreadRef;
       label: string;
       description: string;
+      fixedIntent: ThreadMentionIntent | null;
     };
 
 export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
@@ -91,7 +94,7 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
   emptyStateText?: string;
   activeItemId: string | null;
   onHighlightedItemChange: (itemId: string | null) => void;
-  onSelect: (item: ComposerCommandItem) => void;
+  onSelect: (item: ComposerCommandItem, threadIntent?: ThreadMentionIntent) => void;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -169,7 +172,7 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
   resolvedTheme: "light" | "dark";
   isActive: boolean;
   onHighlight: (itemId: string | null) => void;
-  onSelect: (item: ComposerCommandItem) => void;
+  onSelect: (item: ComposerCommandItem, threadIntent?: ThreadMentionIntent) => void;
 }) {
   const skillSourceKind =
     props.item.type === "skill" ? resolveProviderSkillSourceKind(props.item.skill) : null;
@@ -191,8 +194,8 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
       onMouseDown={(event) => {
         event.preventDefault();
       }}
-      onClick={() => {
-        props.onSelect(props.item);
+      onClick={(event) => {
+        props.onSelect(props.item, event.metaKey || event.ctrlKey ? "tell" : undefined);
       }}
     >
       {props.item.type === "path" && props.item.currentFolder ? (
@@ -228,6 +231,9 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
         <span className="min-w-0 flex-1 truncate text-left text-secondary-label text-xs">
           {props.item.description}
         </span>
+        {props.item.type === "thread" && props.isActive ? (
+          <ThreadIntentHint fixedIntent={props.item.fixedIntent} />
+        ) : null}
         {skillSourceKind ? (
           <SkillSourceBadge
             kind={skillSourceKind}
@@ -268,6 +274,24 @@ const SKILL_SOURCE_LABEL_BY_KIND: Record<ProviderSkillSourceKind, string> = {
   system: "System",
   other: "Provider",
 };
+
+/** The keys that insert the highlighted thread as a look or a tell mention. */
+function ThreadIntentHint(props: { fixedIntent: ThreadMentionIntent | null }) {
+  const mod = isMacPlatform(navigator.platform) ? "⌘" : "Ctrl";
+  return (
+    <span className="ms-auto flex shrink-0 items-center gap-1 text-secondary-label text-xs">
+      {props.fixedIntent === null ? (
+        <>
+          <Kbd>↵</Kbd> look <Kbd>{mod}↵</Kbd> tell
+        </>
+      ) : (
+        <>
+          <Kbd>↵</Kbd> {props.fixedIntent}
+        </>
+      )}
+    </span>
+  );
+}
 
 function SkillSourceBadge(props: { kind: ProviderSkillSourceKind; showSkillSuffix: boolean }) {
   const Icon = SKILL_SOURCE_ICON_BY_KIND[props.kind];

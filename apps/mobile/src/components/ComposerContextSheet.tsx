@@ -5,6 +5,7 @@ import type {
   ElementContextSource,
   EnvironmentId,
   ScopedThreadRef,
+  ThreadMentionIntent,
 } from "@t3tools/contracts";
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 import { videoMimeType } from "@t3tools/shared/video";
@@ -91,6 +92,8 @@ export function ComposerContextSheet(props: {
   readonly skillDescription?: string;
   readonly onOpenSkill?: () => void;
   readonly onOpenThread?: (thread: ScopedThreadRef) => void;
+  /** Switches a thread mention between look and tell. Absent where the chip is read-only. */
+  readonly onSetThreadIntent?: (contextId: string, intent: ThreadMentionIntent) => void;
   readonly environmentId?: EnvironmentId;
   readonly records?: ReadonlyArray<ComposerContextRecord>;
   readonly attachments?: ReadonlyArray<DraftComposerAttachment>;
@@ -354,6 +357,30 @@ export function ComposerContextSheet(props: {
                 {record.kind === "thread" ? (
                   <View className="gap-3">
                     <ContextField label="Thread" value={record.title} />
+                    <ContextField
+                      label="Mention"
+                      value={
+                        record.intent === "tell"
+                          ? "Tell: the agent sends this thread a message"
+                          : "Look: the agent reads this thread"
+                      }
+                    />
+                    {props.onSetThreadIntent ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={() =>
+                          props.onSetThreadIntent?.(
+                            record.contextId,
+                            record.intent === "tell" ? "look" : "tell",
+                          )
+                        }
+                        className="rounded-xl bg-subtle p-4"
+                      >
+                        <Text className="text-foreground">
+                          {record.intent === "tell" ? "Switch to look" : "Switch to tell"}
+                        </Text>
+                      </Pressable>
+                    ) : null}
                     {props.onOpenThread ? (
                       <Pressable
                         accessibilityRole="button"

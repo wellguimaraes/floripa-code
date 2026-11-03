@@ -37,6 +37,7 @@ import type {
   ScopedThreadRef,
   ServerProvider,
   ThreadId,
+  ThreadMentionIntent,
   SnapShotSource,
 } from "@t3tools/contracts";
 import {
@@ -80,6 +81,7 @@ import {
   type ComposerSubmissionIntent,
   collapseExpandedComposerCursor,
   composerSubmissionIntentForKey,
+  isThreadTellKey,
   composerStateAtPromptEnd,
   detectComposerTrigger,
   expandCollapsedComposerCursor,
@@ -245,7 +247,10 @@ import {
   threadContextRecord,
   threadContextReference,
 } from "~/lib/composerContextRecords";
-import { matchComposerThreadItems } from "@t3tools/client-runtime/composerThreadItems";
+import {
+  matchComposerThreadItems,
+  parseThreadMentionQuery,
+} from "@t3tools/client-runtime/composerThreadItems";
 import { THREAD_CONTEXT_DROP_EVENT, threadContextDropTargetProps } from "./threadContextDrag";
 import { readThreadShell, useThreadShells } from "~/state/entities";
 import { requestConfirmDialog } from "~/confirmDialog";
@@ -1457,6 +1462,8 @@ export interface ChatComposerProps {
 
   // Thread context
   activeThreadId: ThreadId | null;
+  /** The project `@` thread mentions are drawn from. */
+  activeProjectId: ProjectId | null;
   activeThreadEnvironmentId: EnvironmentId | undefined;
   activeThread: Thread | undefined;
   /** The routed server thread's shell, present before its detail loads. */
@@ -1649,6 +1656,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     supportsMultipleModels,
     onMultipleModelSelectionsChange: setMultipleModelSelections,
     activeThreadId,
+    activeProjectId,
     activeThreadEnvironmentId: _activeThreadEnvironmentId,
     activeThread,
     promptHistoryMessages,
@@ -1874,8 +1882,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       openPullRequest: (event: React.MouseEvent<HTMLElement>, url: string) => {
         openPrLink(event, url);
       },
+      setThreadIntent: (contextId: string, intent: ThreadMentionIntent) => {
+        useComposerDraftStore
+          .getState()
+          .setThreadContextIntent(composerDraftTarget, contextId, intent);
+      },
     }),
-    [composerFiles, composerImages, environmentId, onExpandImage, openPrLink, routeThreadRef],
+    [
+      composerDraftTarget,
+      composerFiles,
+      composerImages,
+      environmentId,
+      onExpandImage,
+      openPrLink,
+      routeThreadRef,
+    ],
   );
   const composerContextRecords = useMemo(
     () =>
@@ -2520,14 +2541,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // Threads without a project have no workspace worth searching, so `@`
   // walks the machine from `~` instead.
   const browsesHome = useBrowsesHome(environmentId, gitCwd);
+  // `@tell:` and `@look:` pick threads only, so they never search paths.
+  const searchesPaths = isPathTrigger && parseThreadMentionQuery(pathTriggerQuery).intent === null;
   const workspaceEntries = useComposerPathSearch({
     environmentId,
-    cwd: isPathTrigger && !browsesHome ? gitCwd : null,
-    query: isPathTrigger && !browsesHome ? pathTriggerQuery : null,
+    cwd: searchesPaths && !browsesHome ? gitCwd : null,
+    query: searchesPaths && !browsesHome ? pathTriggerQuery : null,
   });
   const homeBrowse = useHomePathBrowse({
     environmentId,
-    query: isPathTrigger && browsesHome ? pathTriggerQuery : null,
+    query: searchesPaths && browsesHome ? pathTriggerQuery : null,
   });
   const compactSlashCommandAvailable =
     composerTrigger?.kind === "slash-command" &&
@@ -2611,6 +2634,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         ...matchComposerThreadItems({
           shells: environmentThreadShells,
           environmentId,
+          projectId: activeProjectId,
           excludeThreadId: activeThreadId,
           query: composerTrigger.query,
         }),
@@ -2755,6 +2779,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
     return [];
   }, [
+    activeProjectId,
     activeThreadId,
     compactSlashCommandAvailable,
     composerTrigger,
@@ -3063,6 +3088,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   const addComposerDraftThreadContexts = useComposerDraftStore((store) => store.addThreadContexts);
   const setComposerDraftThreadContexts = useComposerDraftStore((store) => store.setThreadContexts);
+  const setComposerDraftThreadContextIntent = useComposerDraftStore(
+    (store) => store.setThreadContextIntent,
+  );
   const buildContextClipboardFragment = useCallback(
     (contextIds: ReadonlyArray<string>): string | null => {
       const wanted = new Set(contextIds);
@@ -3314,6 +3342,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             addComposerDraftThreadContexts(composerDraftTarget, [record], {
               appendReference: false,
             });
+            // One record per thread: a pasted mention's intent wins, as a picked one does.
+            setComposerDraftThreadContextIntent(
+              composerDraftTarget,
+              record.contextId,
+              record.intent ?? "look",
+            );
             rewritten.set(record.contextId, record.contextId);
             break;
           }
@@ -3347,6 +3381,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       composerDraftTarget,
       environmentId,
       importAttachmentRecord,
+      setComposerDraftThreadContextIntent,
     ],
   );
   const importContextFragment = useCallback(
@@ -3957,7 +3992,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const { onUsageLimitsCommand } = props;
   const onSelectComposerItem = useCallback(
-    (item: ComposerCommandItem) => {
+    (item: ComposerCommandItem, requestedThreadIntent?: ThreadMentionIntent) => {
       if (composerSelectLockRef.current) return;
       composerSelectLockRef.current = true;
       window.requestAnimationFrame(() => {
@@ -4099,7 +4134,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         if (trigger.kind !== "path") return;
         const shell = readThreadShell(item.thread);
         if (!shell) return;
-        const record = threadContextRecord(item.thread, shell.title);
+        const record = threadContextRecord(
+          item.thread,
+          shell.title,
+          item.fixedIntent ?? requestedThreadIntent ?? "look",
+        );
         const replacement = `${formatInlineContextReference(threadContextReference(record))} `;
         const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
           snapshot.value,
@@ -4116,6 +4155,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           addComposerDraftThreadContexts(composerDraftTarget, [record], {
             appendReference: false,
           });
+          // One record per thread: mentioning it again with the other intent switches it.
+          setComposerDraftThreadContextIntent(
+            composerDraftTarget,
+            record.contextId,
+            record.intent ?? "look",
+          );
           setComposerHighlightedItemId(null);
         }
         return;
@@ -4130,6 +4175,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       planModeUiEnabled,
       onUsageLimitsCommand,
       resolveActiveComposerTrigger,
+      setComposerDraftThreadContextIntent,
     ],
   );
 
@@ -4469,6 +4515,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       if (!menuIsActive || event.isComposing || event.keyCode === 229) return false;
       dismissComposerTrigger(trigger);
       composerMenuOpenRef.current = false;
+      return true;
+    }
+    if (
+      menuIsActive &&
+      isThreadTellKey(key, event) &&
+      (activeComposerMenuItemRef.current ?? composerMenuItemsRef.current[0])?.type === "thread"
+    ) {
+      onSelectComposerItem(
+        activeComposerMenuItemRef.current ?? composerMenuItemsRef.current[0]!,
+        "tell",
+      );
       return true;
     }
     if (menuIsActive && (submissionIntent === null || submissionIntent === "foreground")) {

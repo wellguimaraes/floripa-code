@@ -1232,6 +1232,33 @@ describe("composerDraftStore thread contexts", () => {
     expect(hydrated.draftsByThreadKey[scopedThreadKey(threadRef)]?.prompt).toBe(draft?.prompt);
   });
 
+  it("switches a thread between look and tell without touching the prompt", () => {
+    const store = useComposerDraftStore.getState();
+    store.addThreadContexts(threadRef, [attached]);
+    const prompt = draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt;
+    store.setThreadContextIntent(threadRef, attached.contextId, "tell");
+
+    const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
+    expect(draft?.threadContexts).toEqual([{ ...attached, intent: "tell" }]);
+    expect(draft?.prompt).toBe(prompt);
+
+    const merge = useComposerDraftStore.persist.getOptions().merge!;
+    const hydrated = merge(
+      JSON.parse(
+        JSON.stringify(partializeComposerDraftStoreState(useComposerDraftStore.getState())),
+      ),
+      useComposerDraftStore.getInitialState(),
+    );
+    expect(hydrated.draftsByThreadKey[scopedThreadKey(threadRef)]?.threadContexts).toEqual([
+      { ...attached, intent: "tell" },
+    ]);
+
+    store.setThreadContextIntent(threadRef, attached.contextId, "look");
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.threadContexts).toEqual([
+      { ...attached, intent: "look" },
+    ]);
+  });
+
   it("drops the chip with the record and removes an otherwise empty draft", () => {
     const store = useComposerDraftStore.getState();
     store.addThreadContexts(threadRef, [attached]);
