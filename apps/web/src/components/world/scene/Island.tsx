@@ -9,6 +9,8 @@ import {
   IcosahedronGeometry,
   Matrix4,
   type Mesh,
+  Shape,
+  ShapeGeometry,
   SRGBColorSpace,
   Vector3,
 } from "three";
@@ -34,6 +36,7 @@ import {
 } from "./merged";
 import { sceneryGeometry, useNatureModels } from "./nature";
 import { palette } from "./palette";
+import { mainlandShoreline } from "./coast";
 import { Ripple } from "./Ripple";
 import { castShadows, type Ground, SHADOW_STENCIL, shadowOf } from "./shadows";
 import {
@@ -230,43 +233,67 @@ export function Island(props: {
 /** How far the mainland's land runs: off screen to the left, and up and down. */
 const COAST_WIDTH = 400;
 const COAST_LENGTH = 1200;
-/** Bands from the water up, each starting this much further left than the last. */
+/**
+ * The coast's bands, from the land out, each a flat sheet reaching `reach`
+ * past the shoreline. Heights slot under the island's own rings (sand at 0,
+ * shallows -0.23, lagoon -0.24) so the island's beach and water run straight
+ * on into the coast's, and over the sea at -0.25.
+ */
 const COAST_BANDS = [
-  { color: palette.shallows, top: -0.24, inset: -3 },
-  { color: palette.foam, top: -0.215, inset: -0.35 },
-  { color: palette.sand, top: TERRAIN_TOP.sand - 0.005, inset: 0 },
-  { color: palette.grass, top: TERRAIN_TOP.grass - 0.005, inset: 2.4 },
+  { color: palette.grass, y: TERRAIN_TOP.grass - 0.01, reach: -2.6 },
+  { color: palette.grassBank, y: TERRAIN_TOP.grass - 0.06, reach: -2.3 },
+  { color: palette.sand, y: -0.02, reach: 0 },
+  { color: palette.foam, y: -0.228, reach: 0.3 },
+  { color: palette.shallows, y: -0.235, reach: 0.9 },
+  { color: palette.lagoon, y: -0.245, reach: LAGOON_REACH },
 ] as const;
 
+/** One flat band: everything left of the wavy line `edgeAt(along)`, in screen units. */
+function coastBandGeometry(edgeAt: (along: number) => number): ShapeGeometry {
+  const shape = new Shape();
+  const half = COAST_LENGTH / 2;
+  // The shape's y runs up the screen, so down the screen is -y once laid flat.
+  shape.moveTo(-COAST_WIDTH, half);
+  for (let along = -half; along <= half; along += 0.5) {
+    shape.lineTo(edgeAt(along), -along);
+  }
+  shape.lineTo(-COAST_WIDTH, -half);
+  return new ShapeGeometry(shape);
+}
+
 /**
- * The mainland's coast: land running from just left of the island's middle
- * off the left of the screen, so the island reads as a cape of it. It is
- * scenery only; the island's own ground stays what agents walk on and what
- * the camera frames. Its tops sit a hair under the island's so they never fight.
+ * The mainland's coast: land running off the left of the screen, its beach
+ * and shallows meeting the island's so the island reads as a cape of it. It
+ * is scenery only; the island's own ground stays what agents walk on and what
+ * the camera frames.
  */
 export function MainlandCoast(props: { readonly definition: WorldDefinition }) {
   const { definition } = props;
-  const { minX, minZ, maxX, maxZ } = islandBounds(definition);
-  const [centerX, centerZ] = [(minX + maxX) / 2, (minZ + maxZ) / 2];
-  // The camera looks down the (1, 1) diagonal, so (1, -1) is screen right.
-  const centerRight = (centerX - centerZ) / Math.SQRT2;
-  const centerDown = (centerX + centerZ) / Math.SQRT2;
-  const shore = centerRight - (maxX - minX) * 0.15;
+  const sand = definition.terrain.find((patch) => patch.shape === "disc" && patch.kind === "sand");
+  const [sandX, sandZ] = sand?.center ?? [0, 0];
+  const sandDown = (sandX + sandZ) / Math.SQRT2;
+  const bands = useMemo(() => {
+    const shoreline = mainlandShoreline(definition);
+    return COAST_BANDS.map((band) => ({
+      ...band,
+      geometry: coastBandGeometry((along) => shoreline(along) + band.reach),
+    }));
+  }, [definition]);
+  useEffect(() => () => bands.forEach((band) => band.geometry.dispose()), [bands]);
   return (
     <group rotation-y={Math.PI / 4}>
-      {COAST_BANDS.map((band) => {
-        const right = shore - band.inset;
-        return (
+      <group position={[0, 0, sandDown]}>
+        {bands.map((band) => (
           <mesh
             key={band.color}
-            geometry={geometry.box}
-            position={[right - COAST_WIDTH / 2, band.top - TERRAIN_DEPTH / 2, centerDown]}
-            scale={[COAST_WIDTH, TERRAIN_DEPTH, COAST_LENGTH]}
+            geometry={band.geometry}
+            rotation-x={-Math.PI / 2}
+            position-y={band.y}
           >
             <LitMaterial color={band.color} />
           </mesh>
-        );
-      })}
+        ))}
+      </group>
     </group>
   );
 }

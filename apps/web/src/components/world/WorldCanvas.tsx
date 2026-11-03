@@ -1581,8 +1581,11 @@ export default function WorldCanvas(props: {
           <WhaleSightings islands={islandSpots} config={definition.archipelago.whales} />
           {islands.map((island) => {
             // Everyone there archived: once the saucer has left, the island stays
-            // washed out until new work lands.
-            const faded = island.characters.length === 0 && !leaving.has(island.key);
+            // washed out until new work lands. The mainland is land either way.
+            const faded =
+              island.characters.length === 0 &&
+              !leaving.has(island.key) &&
+              !mainland.has(island.key);
             const plate = islandPlate(island.key, islandPrefs[island.key]);
             return (
               <FadedContext key={island.key} value={faded}>
