@@ -1,3 +1,4 @@
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { formatProviderSkillDisplayName } from "@t3tools/shared/inlineSkills";
 import {
   resolveProviderSkillSourceKind,
@@ -28,6 +29,7 @@ import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../compo
 import { cn, isMacPlatform } from "~/lib/utils";
 import { Badge } from "../ui/badge";
 import { Kbd } from "../ui/kbd";
+import { useWorldAgentColor } from "../world/worldLookStore";
 import { Command, CommandGroup, CommandItem, CommandList } from "../ui/command";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import { ComposerBanner } from "./ComposerBanner";
@@ -207,9 +209,7 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
           theme={props.resolvedTheme}
         />
       ) : null}
-      {props.item.type === "thread" ? (
-        <MessagesSquareIcon aria-hidden="true" className="size-4 shrink-0 text-secondary-label" />
-      ) : null}
+      {props.item.type === "thread" ? <ThreadRowIcon thread={props.item.thread} /> : null}
       {pullRequestPresentation ? (
         <pullRequestPresentation.Icon
           role="img"
@@ -274,6 +274,18 @@ const SKILL_SOURCE_LABEL_BY_KIND: Record<ProviderSkillSourceKind, string> = {
   system: "System",
   other: "Provider",
 };
+
+/** A thread row's icon, in the agent's world colour when the world shows it. */
+function ThreadRowIcon(props: { thread: ScopedThreadRef }) {
+  const agentColor = useWorldAgentColor(scopedThreadKey(props.thread));
+  return (
+    <MessagesSquareIcon
+      aria-hidden="true"
+      className="size-4 shrink-0 text-secondary-label"
+      style={agentColor ? { color: agentColor } : undefined}
+    />
+  );
+}
 
 /** The keys that insert the highlighted thread as a look or a tell mention. */
 function ThreadIntentHint(props: { fixedIntent: ThreadMentionIntent | null }) {

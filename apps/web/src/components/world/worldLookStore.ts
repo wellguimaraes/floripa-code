@@ -1,5 +1,7 @@
 import { create } from "zustand";
 
+import { palette } from "./scene/palette";
+
 export interface WorldLook {
   /** Index into `palette.families`. */
   readonly hue: number;
@@ -28,6 +30,12 @@ export const useWorldLookStore = create<WorldLookState>()((set) => ({
   recolor: null,
   setLooks: (looks, recolor) => set({ looks, recolor }),
 }));
+
+/** The base colour of the thread's character, or null when the world doesn't show it. */
+export function useWorldAgentColor(threadKey: string): string | null {
+  const hue = useWorldLookStore((state) => state.looks.get(threadKey)?.hue);
+  return hue === undefined ? null : (palette.families[hue]?.base ?? null);
+}
 
 /** The thread's character look, or null when the world doesn't show it. */
 export function useWorldLook(threadKey: string): WorldLook | null {

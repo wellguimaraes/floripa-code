@@ -1,11 +1,14 @@
 import type { ThreadContextRecord, ThreadMentionIntent } from "@t3tools/contracts";
 import { threadMentionChipLabel } from "@t3tools/client-runtime/composerThreadItems";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { MessagesSquareIcon, SendIcon } from "lucide-react";
+import type { CSSProperties } from "react";
 
 import { isMacPlatform } from "~/lib/utils";
 import { useThreadShell } from "~/state/entities";
 import { ContextChip, ContextChipLabel } from "./ContextChip";
+import { useWorldAgentColor } from "./world/worldLookStore";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
 /**
@@ -22,6 +25,9 @@ export function ThreadContextChip(props: {
   const { environmentId, threadId } = props.record;
   const intent = props.record.intent ?? "look";
   const shell = useThreadShell({ environmentId, threadId });
+  // In the world, a look chip wears the mentioned agent's colour so it reads as that character.
+  // A tell chip keeps the tell accent: it marks the mention that makes another agent act.
+  const agentColor = useWorldAgentColor(scopedThreadKey({ environmentId, threadId }));
   const navigate = useNavigate();
   const title = shell?.title?.trim() || props.record.title;
   const onSetIntent = props.onSetIntent;
@@ -58,6 +64,9 @@ export function ThreadContextChip(props: {
             aria-label={`Thread to ${intent === "tell" ? "message" : "read"}, ${title}`}
             data-markdown-copy={props.copyMarkdown}
             className="no-underline"
+            {...(agentColor && intent === "look"
+              ? { style: { "--context-chip-accent": agentColor } as CSSProperties }
+              : {})}
           >
             {intent === "tell" ? <SendIcon /> : <MessagesSquareIcon />}
             <ContextChipLabel>{threadMentionChipLabel(intent, title)}</ContextChipLabel>
