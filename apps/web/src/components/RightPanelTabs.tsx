@@ -173,6 +173,8 @@ interface RightPanelTabsProps {
   deviceAvailable: boolean;
   neverAvailable?: readonly RightPanelSurfaceType[];
   pullRequestStatusSeeds?: Readonly<Record<string, PullRequestTabStatusSeed>>;
+  /** Some of the thread's pull requests build on each other, which the All PRs list shows. */
+  hasStackedPullRequests?: boolean;
   children: ReactNode;
 }
 
@@ -643,7 +645,7 @@ function surfaceTitle(
     case "pull-request":
       return `#${surface.number}`;
     case "pull-requests":
-      return "Pull requests";
+      return "All PRs";
     case "device":
       return surface.title ?? surface.target?.name ?? "Device";
     case "preview": {
@@ -1057,17 +1059,29 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   if (props.open === false && addSurfaceMenuOpen) setAddSurfaceMenuOpen(false);
 
   const activeType = props.activeType ?? null;
-  const visibleSurfaces = useMemo(
-    () =>
-      activeType === null
-        ? props.surfaces
-        : props.surfaces.filter(
-            // The files tree is the type's backdrop rather than a tab of its own.
-            (surface) =>
-              rightPanelSurfaceType(surface.kind) === activeType && surface.kind !== "files",
-          ),
-    [activeType, props.surfaces],
-  );
+  const visibleSurfaces = useMemo(() => {
+    if (activeType === null) return props.surfaces;
+    const ofType = props.surfaces.filter(
+      // The files tree is the type's backdrop rather than a tab of its own.
+      (surface) => rightPanelSurfaceType(surface.kind) === activeType && surface.kind !== "files",
+    );
+    const list = ofType.find((surface) => surface.kind === "pull-requests");
+    if (!list) return ofType;
+    // All PRs leads the pull requests, and only earns its tab when the tabs no longer fit, the
+    // thread has a stack to show, or it is the one open.
+    const rest = ofType.filter((surface) => surface !== list);
+    return props.hasStackedPullRequests ||
+      tabScrollState.hasOverflow ||
+      list.id === props.activeSurfaceId
+      ? [list, ...rest]
+      : rest;
+  }, [
+    activeType,
+    props.activeSurfaceId,
+    props.hasStackedPullRequests,
+    props.surfaces,
+    tabScrollState.hasOverflow,
+  ]);
   const activeTypeAvailable = activeType !== null && surfaceTypeAvailable(activeType, props);
   // Diff is one view per worktree that opens with its type, and Files shows its tree until a
   // file opens, so neither shows tabs then. A single pull request has no other to switch to.
@@ -1555,7 +1569,12 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                       <SortableTab
                         key={surface.id}
                         surfaceId={surface.id}
-                        disabled={!moveVisibleSurface || renamingDevice === surface.id}
+                        disabled={
+                          !moveVisibleSurface ||
+                          renamingDevice === surface.id ||
+                          // Pinned first.
+                          surface.kind === "pull-requests"
+                        }
                         data-active-tab={active}
                         onMouseDown={handleTabMouseDown}
                         onAuxClick={(event) => handleTabAuxClick(event, surface)}

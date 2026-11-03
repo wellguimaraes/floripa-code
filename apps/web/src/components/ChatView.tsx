@@ -25,7 +25,10 @@ import {
 import { useLoadBalancedEnvironment } from "../hooks/useLoadBalancedEnvironment";
 import { useScratchProject } from "../hooks/useScratchProject";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
-import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
+import {
+  resolveThreadPullRequestChains,
+  visibleThreadPullRequests,
+} from "@t3tools/shared/threadPullRequests";
 import {
   latestExecutedRun,
   latestRootProviderFailure,
@@ -4847,10 +4850,16 @@ export default function ChatView(props: ChatViewProps) {
   }, [activeProject, activeThreadRef]);
   const supportsThreadPullRequests =
     serverConfig?.environment.capabilities.threadPullRequests === true;
-  const visiblePullRequests = visibleThreadPullRequests(
-    (activeThreadShell ?? activeThread)?.pullRequests ?? [],
-  );
+  const threadPullRequestLinks = (activeThreadShell ?? activeThread)?.pullRequests;
+  const visiblePullRequests = visibleThreadPullRequests(threadPullRequestLinks ?? []);
   const visiblePullRequestCount = visiblePullRequests.length;
+  const hasStackedPullRequests = useMemo(
+    () =>
+      resolveThreadPullRequestChains(threadPullRequestLinks ?? []).some(
+        (chain) => chain.layers.length > 1,
+      ),
+    [threadPullRequestLinks],
+  );
   const pullRequestsSurfaceAvailable =
     isServerThread && supportsThreadPullRequests && visiblePullRequestCount > 0;
   const addPullRequestsSurface = useCallback(() => {
@@ -11690,6 +11699,7 @@ export default function ChatView(props: ChatViewProps) {
             onAddPullRequests={addPullRequestsSurface}
             onAddDevice={addDeviceSurface}
             {...rightPanelTypeAvailability}
+            hasStackedPullRequests={hasStackedPullRequests}
             activeType={activeRightPanelType}
             onActivateType={activateRightPanelType}
           >
@@ -11759,6 +11769,7 @@ export default function ChatView(props: ChatViewProps) {
               onAddPullRequests={addPullRequestsSurface}
               onAddDevice={addDeviceSurface}
               {...rightPanelTypeAvailability}
+              hasStackedPullRequests={hasStackedPullRequests}
               activeType={activeRightPanelType}
               onActivateType={activateRightPanelType}
             >
