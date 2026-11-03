@@ -1208,7 +1208,12 @@ export default function WorldCanvas(props: {
   });
   // The open chat's island gets wider shallows, so it stands out.
   const chatIsland = chatCharacter?.facts.projectKey ?? null;
-  const bounds = useMemo(() => archipelagoBounds(islands, chatIsland), [islands, chatIsland]);
+  // Framing measures the mainland at home, level with the middle of the rows, not where it
+  // follows the view: framing would otherwise chase it.
+  const bounds = useMemo(
+    () => archipelagoBounds(islandsAtHome(islands, mainland), chatIsland),
+    [islands, mainland, chatIsland],
+  );
   const chatCharacterKey = chatCharacter?.facts.key ?? null;
   useEffect(() => {
     if (chatCharacterKey === null) return;
@@ -1524,7 +1529,7 @@ export default function WorldCanvas(props: {
         <WorldDaylight>
           <WorldControls
             bounds={bounds}
-            mainlandShown={visibleOrder.some((key) => mainland.has(key))}
+            mainland={mainland}
             islands={islandSpots}
             panel={panel}
             bars={bars}
@@ -1568,7 +1573,9 @@ export default function WorldCanvas(props: {
             onChange={setHoveredIsland}
           />
           <AmbientTicker fps={ambientFps} />
-          {mainland.size > 0 ? <ViewMiddleTracker onSettle={setMainlandDown} /> : null}
+          {mainland.size > 0 ? (
+            <ViewMiddleTracker current={mainlandDown} onSettle={setMainlandDown} />
+          ) : null}
           {/* Far wider than any archipelago, so the water never ends on screen. */}
           {/* Islands and characters stop their clicks, so only open water reaches here. */}
           {/* Its handlers make it a hit, so it takes the clicks onPointerMissed would get. */}
@@ -2615,12 +2622,15 @@ function WorldControls({
   panBy,
   reveal,
   layout,
-  mainlandShown,
+  mainland,
 }: {
   /** Each island's ground, in the same order as `islands`. */
   readonly bounds: ReadonlyArray<Bounds> | null;
-  /** Whether the mainland is on the map: framing every island then keeps its land to a sliver. */
-  readonly mainlandShown: boolean;
+  /**
+   * The mainland's islands. Framing every island then keeps its land to a
+   * sliver, and leaves out their signs, which follow the view.
+   */
+  readonly mainland: ReadonlySet<string>;
   readonly islands: ReadonlyArray<IslandSpot>;
   readonly panel: () => HTMLElement | null;
   readonly bars: () => { readonly top: HTMLElement | null; readonly bottom: HTMLElement | null };
@@ -2687,15 +2697,21 @@ function WorldControls({
         camera,
         maxZoom: controls.maxZoom,
         bounds: picked,
-        signs: signsOf(key === undefined ? islands.map((spot) => spot.key) : [key]),
+        signs: signsOf(
+          key === undefined
+            ? islands.flatMap((spot) => (mainland.has(spot.key) ? [] : [spot.key]))
+            : mainland.has(key)
+              ? []
+              : [key],
+        ),
         viewport: size,
         covered: covered(),
-        pinLeft: key === undefined && mainlandShown,
+        pinLeft: key === undefined && islands.some((spot) => mainland.has(spot.key)),
       });
       if (key === undefined) controls.minZoom = view.zoom;
       return view;
     },
-    [bounds, islands, camera, size, covered, signsOf, mainlandShown],
+    [bounds, islands, camera, size, covered, signsOf, mainland],
   );
   // A view on or under the zoom floor frames every island instead, centred, whatever moved it.
   const onFloorCentred = useCallback(
@@ -3354,6 +3370,27 @@ function freePiles(
 
 /** Each island's ground in world coordinates. */
 /** Each island's ground, and its shallows' reach: wider round `wideKey`, the open chat's island. */
+/** The islands with the mainland moved down to level with the middle of the grid's rows. */
+function islandsAtHome(
+  islands: ReadonlyArray<WorldIsland>,
+  mainland: ReadonlySet<string>,
+): ReadonlyArray<WorldIsland> {
+  const downOf = (island: WorldIsland) => (island.offset[0] + island.offset[2]) / Math.SQRT2;
+  const grid = islands.filter((island) => !mainland.has(island.key)).map(downOf);
+  const first = islands.find((island) => mainland.has(island.key));
+  if (first === undefined) return islands;
+  const home = grid.length === 0 ? 0 : (Math.min(...grid) + Math.max(...grid)) / 2;
+  const shift = (home - downOf(first)) / Math.SQRT2;
+  return islands.map((island) =>
+    mainland.has(island.key)
+      ? {
+          ...island,
+          offset: [island.offset[0] + shift, island.offset[1], island.offset[2] + shift],
+        }
+      : island,
+  );
+}
+
 function archipelagoBounds(
   islands: ReadonlyArray<WorldIsland>,
   wideKey: string | null,
@@ -3394,11 +3431,21 @@ const viewDirection = new Vector3();
  * has held still for a moment, so the mainland can glide level with it.
  * Frames only come while the view moves, so this costs nothing at rest.
  */
-function ViewMiddleTracker({ onSettle }: { readonly onSettle: (down: number) => void }) {
+function ViewMiddleTracker({
+  current,
+  onSettle,
+}: {
+  /** Where the mainland is now, so a reset puts it back however the view last moved. */
+  readonly current: number | null;
+  readonly onSettle: (down: number) => void;
+}) {
   const camera = useThree((state) => state.camera);
+  const invalidate = useThree((state) => state.invalidate);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const reported = useRef<number | null>(null);
   useEffect(() => () => clearTimeout(timer.current), []);
+  // A frame to measure in, whenever where it stands changes.
+  // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A new spot needs a frame to check it against the view.
+  useEffect(() => invalidate(), [current, invalidate]);
   useFrame(() => {
     camera.getWorldDirection(viewDirection);
     if (viewDirection.y >= 0) return;
@@ -3407,13 +3454,10 @@ function ViewMiddleTracker({ onSettle }: { readonly onSettle: (down: number) => 
     const x = camera.position.x + viewDirection.x * reach;
     const z = camera.position.z + viewDirection.z * reach;
     const down = Math.round(((x + z) / Math.SQRT2) * 2) / 2;
-    // Back where it last settled: drop any report from on the way.
+    // Back where it stands: drop any report from on the way.
     clearTimeout(timer.current);
-    if (down === reported.current) return;
-    timer.current = setTimeout(() => {
-      reported.current = down;
-      onSettle(down);
-    }, MAINLAND_FOLLOW_MS);
+    if (down === current) return;
+    timer.current = setTimeout(() => onSettle(down), MAINLAND_FOLLOW_MS);
   });
   return null;
 }

@@ -736,13 +736,13 @@ describe("resolveArchipelago", () => {
     }
   });
 
-  it("moves the mainland down to where it is asked, between the first and last rows", () => {
-    const facts = ["home", "a", "b", "c"].map((projectKey) => character({ projectKey }));
+  it("moves the mainland down to where it is asked, past the rows too", () => {
+    const facts = ["home", "a", "b"].map((projectKey) => character({ projectKey }));
     const downOf = (mainlandDown?: number) => {
       const home = resolveArchipelago({
         facts,
         definition: testWorld,
-        projectOrder: ["home", "a", "b", "c"],
+        projectOrder: ["home", "a", "b"],
         hueCount: 3,
         hatCount: 3,
         columns: 1,
@@ -752,12 +752,10 @@ describe("resolveArchipelago", () => {
       }).islands.find((island) => island.key === "home")!;
       return (home.offset[0] + home.offset[2]) / Math.SQRT2;
     };
-    // Three rows, each 2 * sqrt(34) + gap apart: the last row's middle is two of those down.
-    const lastRow = 2 * (2 * Math.sqrt(34) + testWorld.archipelago.gap);
     expect(downOf()).toBeCloseTo(0);
     expect(downOf(5)).toBeCloseTo(5);
-    expect(downOf(-40)).toBeCloseTo(0);
-    expect(downOf(500)).toBeCloseTo(lastRow);
+    expect(downOf(-40)).toBeCloseTo(-40);
+    expect(downOf(500)).toBeCloseTo(500);
   });
 
   it("lines islands up down the screen, along it, or in a square grid", () => {

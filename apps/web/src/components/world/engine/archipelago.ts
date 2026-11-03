@@ -361,8 +361,7 @@ export function islandRadius(definition: WorldDefinition): number {
  *
  * Negative cells are the mainland: `-1`, `-2`, ... stack down a column of
  * their own left of the grid, never wandering. The first sits `mainlandDown`
- * down the screen, held between the grid's first and last rows so it never
- * stretches the archipelago; level with the first row when left out.
+ * down the screen, or level with the first row when left out.
  */
 export function islandOffsets(input: {
   readonly islands: ReadonlyArray<{
@@ -406,9 +405,7 @@ export function islandOffsets(input: {
   return islands.map(({ cell, radius, key }) => {
     if (cell < 0) {
       const gridEdge = columnRadius.length === 0 ? -radius : (columnRadius[0] ?? 0) + gap;
-      const lastRow = along(rowRadius, Math.max(0, rowRadius.length - 1));
-      const first = Math.min(lastRow, Math.max(0, input.mainlandDown ?? 0));
-      return toWorld(-(gridEdge + radius), first + along(mainland, -1 - cell));
+      return toWorld(-(gridEdge + radius), (input.mainlandDown ?? 0) + along(mainland, -1 - cell));
     }
     const column = cell % columns;
     const row = Math.floor(cell / columns);
