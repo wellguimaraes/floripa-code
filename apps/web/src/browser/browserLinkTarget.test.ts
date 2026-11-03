@@ -1,15 +1,25 @@
 import type { BrowserLinkTarget } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { ensureClientSettingsHydrated } from "~/hooks/useSettings";
+import { showContextMenuFallback } from "~/contextMenuFallback";
+import { ensureClientSettingsHydrated, persistClientSettingsPatch } from "~/hooks/useSettings";
 
-import { resolveBrowserLinkTargetPreference, resolveLinkTarget } from "./browserLinkTarget";
+import {
+  askLinkTarget,
+  resolveBrowserLinkTargetPreference,
+  resolveLinkTarget,
+} from "./browserLinkTarget";
 
 const settings = vi.hoisted(() => ({ browserLinkTarget: "system" as BrowserLinkTarget }));
 
 vi.mock("~/hooks/useSettings", () => ({
   ensureClientSettingsHydrated: vi.fn(async () => undefined),
   getClientSettings: () => settings,
+  persistClientSettingsPatch: vi.fn(async () => undefined),
+}));
+
+vi.mock("~/contextMenuFallback", () => ({
+  showContextMenuFallback: vi.fn(),
 }));
 
 const click = { metaKey: false, ctrlKey: false };
@@ -35,6 +45,32 @@ describe("resolveLinkTarget", () => {
         canOpenInApp: true,
       }),
     ).toBe("app");
+  });
+
+  it("asks when set to, unless a modifier or the runtime already decides", () => {
+    const url = "https://example.com/";
+    expect(resolveLinkTarget({ url, event: click, preference: "ask", canOpenInApp: true })).toBe(
+      "ask",
+    );
+    expect(
+      resolveLinkTarget({
+        url,
+        event: { metaKey: true, ctrlKey: false },
+        preference: "ask",
+        canOpenInApp: true,
+      }),
+    ).toBe("system");
+    expect(resolveLinkTarget({ url, event: click, preference: "ask", canOpenInApp: false })).toBe(
+      "system",
+    );
+    expect(
+      resolveLinkTarget({
+        url: "mailto:someone@example.com",
+        event: click,
+        preference: "ask",
+        canOpenInApp: true,
+      }),
+    ).toBe("system");
   });
 
   it("falls back to the system browser where there is no in-app browser", () => {
@@ -90,4 +126,31 @@ describe("resolveBrowserLinkTargetPreference", () => {
       await expect(resolveBrowserLinkTargetPreference()).resolves.toBe(preference);
     },
   );
+});
+
+describe("askLinkTarget", () => {
+  const position = { x: 1, y: 2 };
+
+  it.each([
+    ["app", "app"],
+    ["system", "system"],
+    [null, null],
+  ] as const)("answers %s for this click only", async (choice, target) => {
+    vi.mocked(persistClientSettingsPatch).mockClear();
+    vi.mocked(showContextMenuFallback).mockResolvedValueOnce(choice);
+
+    await expect(askLinkTarget(position)).resolves.toBe(target);
+    expect(persistClientSettingsPatch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["always-app", "app"],
+    ["always-system", "system"],
+  ] as const)("remembers %s as the setting", async (choice, target) => {
+    vi.mocked(persistClientSettingsPatch).mockClear();
+    vi.mocked(showContextMenuFallback).mockResolvedValueOnce(choice);
+
+    await expect(askLinkTarget(position)).resolves.toBe(target);
+    expect(persistClientSettingsPatch).toHaveBeenCalledWith({ browserLinkTarget: target });
+  });
 });

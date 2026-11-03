@@ -101,6 +101,7 @@ vi.mock("../hooks/useCopyToClipboard", () => ({
   writeTextToClipboard: state.copy,
   useCopyToClipboard: () => ({ copyToClipboard: state.copy, isCopied: false }),
 }));
+vi.mock("../contextMenuFallback", () => ({ showContextMenuFallback: state.choose }));
 vi.mock("../localApi", () => ({
   readLocalApi: () => ({
     contextMenu: { show: state.choose },
@@ -261,7 +262,7 @@ it.each([false, true])(
 );
 
 it.each(["link-to-thread", "unlink-from-thread"])(
-  "rechecks %s after a native context menu returns",
+  "rechecks %s after the link context menu returns",
   async (action) => {
     state.linkedPullRequest = action === "unlink-from-thread" ? linkedPullRequest : null;
     let choose: (action: string) => void = () => {

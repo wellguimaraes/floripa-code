@@ -208,7 +208,12 @@ import {
   BrowserPreviewUnavailableError,
   BrowserSettingsReadError,
 } from "../browser/openFileInPreview";
-import { resolveLinkTarget } from "../browser/browserLinkTarget";
+import {
+  askLinkTarget,
+  linkTargetPromptPosition,
+  resolveLinkTarget,
+} from "../browser/browserLinkTarget";
+import { showContextMenuFallback } from "../contextMenuFallback";
 import { PullRequestLinkPreview } from "./pullRequest/PullRequestLinkPreview";
 
 interface ChatMarkdownProps {
@@ -3018,31 +3023,38 @@ const CHAT_MARKDOWN_COMPONENTS = {
               return;
             }
             // Anything else follows the "Open links in" setting. The system browser
-            // keeps the `_blank` the shell already handles; the in-app browser needs
-            // the click intercepted here. A modifier click is the way out of the
-            // in-app default, so it is left to the shell too.
-            if (
-              event.defaultPrevented ||
-              resolveLinkTarget({
-                url: href,
-                event,
-                preference: linkTargetPreference,
-                canOpenInApp: canOpenInPreview,
-              }) !== "app"
-            ) {
-              return;
-            }
+            // keeps the `_blank` the shell already handles; the in-app browser and
+            // the ask prompt need the click intercepted here. A modifier click is the
+            // way out of either, so it is left to the shell too.
+            if (event.defaultPrevented) return;
+            const target = resolveLinkTarget({
+              url: href,
+              event,
+              preference: linkTargetPreference,
+              canOpenInApp: canOpenInPreview,
+            });
+            if (target === "system") return;
             event.preventDefault();
             event.stopPropagation();
-            // Keep the link here if saved settings could not be read.
-            void openExternalLinkInPreview(href).then((result) => {
-              if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
-              reportMarkdownActionFailure(
-                { operation: "open-link-in-preview", target: href },
-                result.cause,
-              );
-              if (squashAtomCommandFailure(result) instanceof BrowserSettingsReadError) return;
-              void readLocalApi()?.shell.openExternal(href);
+            const openInApp = () => {
+              // Keep the link here if saved settings could not be read.
+              void openExternalLinkInPreview(href).then((result) => {
+                if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
+                reportMarkdownActionFailure(
+                  { operation: "open-link-in-preview", target: href },
+                  result.cause,
+                );
+                if (squashAtomCommandFailure(result) instanceof BrowserSettingsReadError) return;
+                void readLocalApi()?.shell.openExternal(href);
+              });
+            };
+            if (target === "app") {
+              openInApp();
+              return;
+            }
+            void askLinkTarget(linkTargetPromptPosition(event)).then((choice) => {
+              if (choice === "app") openInApp();
+              else if (choice === "system") void readLocalApi()?.shell.openExternal(href);
             });
           }}
           onContextMenu={(event) => {
@@ -3063,7 +3075,8 @@ const CHAT_MARKDOWN_COMPONENTS = {
               canOpenInPreview,
               threadLinkAction,
               position: { x: event.clientX, y: event.clientY },
-              showContextMenu: (items, position) => api.contextMenu.show(items, position),
+              // The in-app menu rather than the native one, matching the click prompt.
+              showContextMenu: showContextMenuFallback,
               openInPreview: async (target) => {
                 const result = await openExternalLinkInPreview(target);
                 if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {

@@ -782,7 +782,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "browser-link-target",
     title: "Open links in",
     to: "/settings/integrations",
-    searchTerms: ["links default browser in-app browser external open"],
+    searchTerms: ["links default browser in-app browser external open ask every time remember"],
   },
   {
     id: "browser-auto-show-floating-preview",

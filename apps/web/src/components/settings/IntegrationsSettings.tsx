@@ -576,6 +576,7 @@ function BrowserRecordingFrameRateSetting({ disabled }: { readonly disabled: boo
 }
 
 const LINK_TARGET_LABELS: Readonly<Record<BrowserLinkTarget, string>> = {
+  ask: "Ask every time",
   system: "Your default browser",
   app: "Floripa Code",
 };
@@ -601,7 +602,7 @@ function BrowserLinkTargetSetting({ disabled }: { readonly disabled: boolean }) 
           disabled={disabled}
           value={linkTarget}
           onValueChange={(value) => {
-            if (value === "system" || value === "app") {
+            if (value === "system" || value === "app" || value === "ask") {
               updateSettings({ browserLinkTarget: value });
             }
           }}

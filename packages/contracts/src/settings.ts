@@ -271,13 +271,14 @@ export const BrowserRecordingFrameRate = Schema.Literals(BROWSER_RECORDING_FRAME
 export type BrowserRecordingFrameRate = typeof BrowserRecordingFrameRate.Type;
 export const DEFAULT_BROWSER_RECORDING_FRAME_RATE: BrowserRecordingFrameRate = 30;
 /**
- * Where a clicked link goes: the OS default browser, or a tab in the in-app
- * browser beside the thread. "system" is the default because that is what
- * every link did before the setting existed.
+ * Where a clicked link goes: the OS default browser, a tab in the in-app
+ * browser beside the thread, or "ask" to choose per click. "ask" is the
+ * default so the in-app browser is discoverable; choosing "Always…" in the
+ * prompt saves one of the other two.
  */
-export const BrowserLinkTarget = Schema.Literals(["system", "app"]);
+export const BrowserLinkTarget = Schema.Literals(["system", "app", "ask"]);
 export type BrowserLinkTarget = typeof BrowserLinkTarget.Type;
-export const DEFAULT_BROWSER_LINK_TARGET: BrowserLinkTarget = "system";
+export const DEFAULT_BROWSER_LINK_TARGET: BrowserLinkTarget = "ask";
 
 export const LoadBalancingWeights = Schema.Record(
   TrimmedNonEmptyString,
@@ -329,7 +330,7 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   /**
    * Where links clicked in a thread (chat markdown, terminal output) open.
-   * Only the desktop app has an in-app browser, so other clients ignore "app".
+   * Clients without an in-app browser treat "app" and "ask" as "system".
    */
   browserLinkTarget: BrowserLinkTarget.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_BROWSER_LINK_TARGET)),

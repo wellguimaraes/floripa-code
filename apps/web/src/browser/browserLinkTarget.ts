@@ -2,15 +2,21 @@
  * Where a link clicked inside a thread should open.
  *
  * Settings → Integrations → Browser lets the user choose between the OS
- * default browser and a tab in the in-app browser. This module turns that
- * preference plus the click itself into one answer, so chat markdown and the
- * terminal drawer make the same decision and offer the same escape hatch.
+ * default browser, a tab in the in-app browser, or being asked on each click.
+ * This module turns that preference plus the click itself into one answer, so
+ * chat markdown and the terminal drawer make the same decision and offer the
+ * same escape hatch.
  *
  * @module browserLinkTarget
  */
-import type { BrowserLinkTarget, ScopedThreadRef } from "@t3tools/contracts";
+import type { BrowserLinkTarget, ContextMenuItem, ScopedThreadRef } from "@t3tools/contracts";
 
-import { ensureClientSettingsHydrated, getClientSettings } from "~/hooks/useSettings";
+import { showContextMenuFallback } from "~/contextMenuFallback";
+import {
+  ensureClientSettingsHydrated,
+  getClientSettings,
+  persistClientSettingsPatch,
+} from "~/hooks/useSettings";
 import { isPreviewAvailableFor } from "./previewRuntime";
 
 export interface ResolveLinkTargetInput {
@@ -23,18 +29,63 @@ export interface ResolveLinkTargetInput {
 }
 
 /**
- * The target a click resolves to. "app" only comes back when the preference
- * asks for it, the runtime can honour it, the URL is one the in-app browser
- * can load, and the click carried no modifier — the modifier is the one-gesture
- * way out when the default is in-app, mirroring how change-request links
- * already treat it.
+ * The target a click resolves to. "app" or "ask" only comes back when the
+ * preference says so, the runtime can honour it, the URL is one the in-app
+ * browser can load, and the click carried no modifier — the modifier is the
+ * one-gesture way out, mirroring how change-request links already treat it.
+ * "ask" means the caller should settle it with `askLinkTarget`.
  */
 export function resolveLinkTarget(input: ResolveLinkTargetInput): BrowserLinkTarget {
   if (input.event.metaKey || input.event.ctrlKey) return "system";
-  if (input.preference !== "app") return "system";
+  if (input.preference === "system") return "system";
   if (!input.canOpenInApp) return "system";
   if (!isWebUrl(input.url)) return "system";
-  return "app";
+  return input.preference;
+}
+
+type LinkTargetChoice = "app" | "system" | "always-app" | "always-system";
+
+const LINK_TARGET_CHOICES = [
+  { id: "app", label: "Open in Floripa Code" },
+  { id: "system", label: "Open in default browser" },
+  { id: "always-app", label: "Always open in Floripa Code", separatorBefore: true },
+  { id: "always-system", label: "Always open in default browser" },
+] as const satisfies readonly ContextMenuItem<LinkTargetChoice>[];
+
+/**
+ * Asks where one link should open, at the click. The "Always…" rows save the
+ * answer as the "Open links in" setting, so the prompt stops once the user
+ * has made up their mind; Settings is where they change it back to asking.
+ * Resolves null when the menu is dismissed, which means the click does nothing.
+ */
+export async function askLinkTarget(position: {
+  readonly x: number;
+  readonly y: number;
+}): Promise<"app" | "system" | null> {
+  const choice = await showContextMenuFallback(LINK_TARGET_CHOICES, position);
+  if (choice === "always-app" || choice === "always-system") {
+    const target = choice === "always-app" ? "app" : "system";
+    void persistClientSettingsPatch({ browserLinkTarget: target });
+    return target;
+  }
+  return choice;
+}
+
+/**
+ * Where to put the prompt for a click. Keyboard activation (detail 0) carries
+ * no pointer position, so the prompt sits under the link instead.
+ */
+export function linkTargetPromptPosition(event: {
+  readonly clientX: number;
+  readonly clientY: number;
+  readonly detail: number;
+  readonly currentTarget: EventTarget | null;
+}): { readonly x: number; readonly y: number } {
+  if (event.detail === 0 && event.currentTarget instanceof Element) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return { x: rect.left, y: rect.bottom + 4 };
+  }
+  return { x: event.clientX, y: event.clientY };
 }
 
 /**

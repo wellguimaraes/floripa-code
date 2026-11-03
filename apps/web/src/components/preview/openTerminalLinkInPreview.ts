@@ -7,7 +7,11 @@ import {
   browserDefaultOpenViewport,
   resolveBrowserDefaults,
 } from "~/browser/browserDefaults";
-import { isWebUrl, resolveBrowserLinkTargetPreference } from "~/browser/browserLinkTarget";
+import {
+  askLinkTarget,
+  isWebUrl,
+  resolveBrowserLinkTargetPreference,
+} from "~/browser/browserLinkTarget";
 import type { OpenPreviewMutation } from "~/browser/openFileInPreview";
 import { isPreviewAvailableFor, previewRuntimeFor } from "~/browser/previewRuntime";
 import { recordVisitForThread } from "~/browserHistoryStore";
@@ -37,6 +41,8 @@ interface OpenTerminalLinkInPreviewInput<E> {
   readonly fallbackToBrowser: () => void;
   /** Cmd/Ctrl-click bypasses the preference and opens in the system browser. */
   readonly forceBrowser: boolean;
+  /** Where the click landed, for the prompt when the setting is "ask". */
+  readonly position: { readonly x: number; readonly y: number };
 }
 
 /**
@@ -50,10 +56,12 @@ export async function openTerminalLinkInPreview<E>(
     !input.forceBrowser &&
     isWebUrl(input.url) &&
     isPreviewAvailableFor(input.threadRef.environmentId) &&
-    input.threadRef.threadId.length > 0 &&
-    (await resolveBrowserLinkTargetPreference()) === "app";
+    input.threadRef.threadId.length > 0;
+  const preference = supportsPreview ? await resolveBrowserLinkTargetPreference() : "system";
+  const target = preference === "ask" ? await askLinkTarget(input.position) : preference;
+  if (target === null) return;
 
-  if (!supportsPreview) {
+  if (target === "system") {
     input.fallbackToBrowser();
     return;
   }

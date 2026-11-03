@@ -31,11 +31,13 @@ vi.mock("~/browser/browserDefaults", () => ({
 }));
 
 const linkTargetMocks = vi.hoisted(() => ({
-  preference: vi.fn<() => "system" | "app">(),
+  preference: vi.fn<() => "system" | "app" | "ask">(),
+  ask: vi.fn<() => Promise<"system" | "app" | null>>(),
 }));
 
 vi.mock("~/browser/browserLinkTarget", () => ({
   resolveBrowserLinkTargetPreference: async () => linkTargetMocks.preference(),
+  askLinkTarget: () => linkTargetMocks.ask(),
   isWebUrl: (url: string) => /^https?:/u.test(url),
 }));
 
@@ -43,6 +45,8 @@ const hydratedDefaults = {
   viewport: { _tag: "fixed", width: 1280, height: 720 } as const,
   profileId: "work",
 };
+
+const position = { x: 10, y: 20 };
 
 const threadRef = {
   environmentId: "local" as ScopedThreadRef["environmentId"],
@@ -62,6 +66,7 @@ beforeEach(() => {
   browserDefaultsMocks.resolve.mockReset();
   browserDefaultsMocks.resolve.mockResolvedValue(hydratedDefaults);
   linkTargetMocks.preference.mockReturnValue("app");
+  linkTargetMocks.ask.mockReset();
 });
 
 afterEach(() => {
@@ -90,6 +95,7 @@ describe("openTerminalLinkInPreview", () => {
           openPreview,
           fallbackToBrowser,
           forceBrowser: false,
+          position,
         }),
       ).rejects.toBe(failure);
       expect(fallbackToBrowser).not.toHaveBeenCalled();
@@ -108,6 +114,7 @@ describe("openTerminalLinkInPreview", () => {
       openPreview,
       fallbackToBrowser,
       forceBrowser: false,
+      position,
     });
 
     expect(fallbackToBrowser).toHaveBeenCalledOnce();
@@ -124,6 +131,7 @@ describe("openTerminalLinkInPreview", () => {
       openPreview,
       fallbackToBrowser,
       forceBrowser: false,
+      position,
     });
 
     expect(openPreview).toHaveBeenCalledOnce();
@@ -146,6 +154,7 @@ describe("openTerminalLinkInPreview", () => {
       openPreview,
       fallbackToBrowser: vi.fn(),
       forceBrowser: false,
+      position,
     });
 
     await vi.waitFor(() => expect(browserDefaultsMocks.resolve).toHaveBeenCalledOnce());
@@ -176,6 +185,7 @@ describe("openTerminalLinkInPreview", () => {
       openPreview: async () => AsyncResult.failure(cause),
       fallbackToBrowser,
       forceBrowser: false,
+      position,
     });
 
     expect(fallbackToBrowser).toHaveBeenCalledOnce();
@@ -201,11 +211,38 @@ describe("openTerminalLinkInPreview", () => {
       openPreview: async () => AsyncResult.failure(Cause.interrupt()),
       fallbackToBrowser,
       forceBrowser: false,
+      position,
     });
 
     expect(reportError).not.toHaveBeenCalled();
     expect(fallbackToBrowser).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ["app", 1, 0],
+    ["system", 0, 1],
+    [null, 0, 0],
+  ] as const)(
+    "follows the prompt's answer (%s) when the setting is ask",
+    async (answer, previewOpens, browserOpens) => {
+      linkTargetMocks.preference.mockReturnValue("ask");
+      linkTargetMocks.ask.mockResolvedValue(answer);
+      const fallbackToBrowser = vi.fn();
+      const openPreview = vi.fn(async () => AsyncResult.success(snapshot));
+
+      await openTerminalLinkInPreview({
+        url: "https://example.com/docs",
+        threadRef,
+        openPreview,
+        fallbackToBrowser,
+        forceBrowser: false,
+        position,
+      });
+
+      expect(openPreview).toHaveBeenCalledTimes(previewOpens);
+      expect(fallbackToBrowser).toHaveBeenCalledTimes(browserOpens);
+    },
+  );
 
   it("opens in the system browser when Ctrl or Command is held", async () => {
     const fallbackToBrowser = vi.fn();
@@ -217,6 +254,7 @@ describe("openTerminalLinkInPreview", () => {
       openPreview,
       fallbackToBrowser,
       forceBrowser: true,
+      position,
     });
 
     expect(fallbackToBrowser).toHaveBeenCalledOnce();

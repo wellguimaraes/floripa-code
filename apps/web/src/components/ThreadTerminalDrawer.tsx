@@ -875,6 +875,7 @@ export function TerminalViewport({
             openPreview,
             fallbackToBrowser,
             forceBrowser: event.metaKey || event.ctrlKey,
+            position: { x: event.clientX, y: event.clientY },
           }).catch((error: unknown) => {
             toastManager.add(
               stackedThreadToast({
