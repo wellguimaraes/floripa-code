@@ -102,6 +102,7 @@ import { MissingFolderPill, useMissingProjects } from "./MissingFolderPill";
 import { NewAgentBubble } from "./NewAgentBubble";
 import { useNewAgentDraftStore } from "./newAgentDraftStore";
 import { NewAgentProjectPicker } from "./NewAgentProjectPicker";
+import { useEnsureMainland } from "./useEnsureMainland";
 import { useIslandSignStats } from "./useIslandSignStats";
 import { useWorldHueStore } from "./worldHueStore";
 import { islandPlate, islandStaleDays, useWorldIslandPrefsStore } from "./worldIslandPrefsStore";
@@ -176,6 +177,7 @@ export default function WorldCanvas(props: {
   const threads = useThreadShells();
   const projects = useProjects();
   const serverConfigs = useServerConfigs();
+  useEnsureMainland(projects);
   const localVisits = useUiStateStore((state) => state.threadLastVisitedAtById);
   const facts = useMemo(
     () => buildCharacterFacts({ threads, localLastVisitedAt: (key) => localVisits[key] }),
@@ -2043,7 +2045,9 @@ export default function WorldCanvas(props: {
                   key,
                   title: projectTitles.get(key) ?? "Project",
                   color: islandPlate(key, islandPrefs[key]),
-                  removable: canOperateIsland(projectCheckouts.get(key) ?? []),
+                  // The mainland is not a project you added, so it can only be hidden.
+                  removable:
+                    !mainland.has(key) && canOperateIsland(projectCheckouts.get(key) ?? []),
                 }))}
                 onRemove={(key) =>
                   void removeIsland(
