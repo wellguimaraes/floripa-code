@@ -376,17 +376,50 @@ export default function WorldCanvas(props: {
   const missingProjects = useMissingProjects(projects);
   const arrangement = useWorldArrangementStore((state) => state.arrangement);
   const setArrangement = useWorldArrangementStore((state) => state.setArrangement);
+  // Islands of projects just added, from any device or agent, ripple a moment while the
+  // map zooms out to show them. Each batch is a new layout; the ripple stops FRESH_RIPPLE_MS
+  // after the latest.
+  const [freshIslands, setFreshIslands] = useState({ keys: NO_KEYS, batch: 0 });
+  const seenIslands = useRef<ReadonlySet<string>>(new Set(projectOrder));
+  useEffect(() => {
+    const seen = seenIslands.current;
+    seenIslands.current = new Set(projectOrder);
+    // Islands showing up as an environment connects are not new; only recently created ones are.
+    const now = Date.now();
+    const added = projectOrder.filter(
+      (key) =>
+        !seen.has(key) &&
+        !mainland.has(key) &&
+        (projectCheckouts.get(key) ?? []).some(
+          (project) => now - Date.parse(project.createdAt) < FRESH_PROJECT_MS,
+        ),
+    );
+    if (added.length === 0) return;
+    setFreshIslands((current) => ({
+      keys: new Set([...current.keys, ...added]),
+      batch: current.batch + 1,
+    }));
+  }, [projectOrder, projectCheckouts, mainland]);
+  useEffect(() => {
+    if (freshIslands.batch === 0) return;
+    const timer = setTimeout(
+      () => setFreshIslands((current) => ({ ...current, keys: NO_KEYS })),
+      FRESH_RIPPLE_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [freshIslands.batch]);
   // A new one makes the camera frame every island where they settle.
   // Rising islands come last, once the rest have moved aside.
   const islandLayout = useMemo(
     () => ({
       arrangement,
       laidOut,
+      added: freshIslands.batch,
       settleMs: reducedMotion()
         ? 0
         : ISLAND_MOVE_MS + (layout.appearing.size > 0 ? ISLAND_SINK_MS : 0),
     }),
-    [arrangement, laidOut, layout.appearing],
+    [arrangement, laidOut, freshIslands.batch, layout.appearing],
   );
   const [memory] = useState(createArchipelagoMemory);
   // Piles picked for agents started from them, by the thread they will become.
@@ -532,7 +565,9 @@ export default function WorldCanvas(props: {
   const ambientFps = Math.max(
     0,
     ...islands.flatMap((island) => island.characters.map((c) => c.activity.ambientFps ?? 0)),
-    islands.some((island) => island.ripple || idleAlarmed.has(island.key))
+    islands.some(
+      (island) => island.ripple || idleAlarmed.has(island.key) || freshIslands.keys.has(island.key),
+    )
       ? definition.archipelago.ripple.fps
       : 0,
   );
@@ -1661,7 +1696,13 @@ export default function WorldCanvas(props: {
                   <Island
                     definition={island.definition}
                     furniture={buildFurniture(island.definition, island.characters)}
-                    ripple={island.ripple ? "plain" : idleAlarmed.has(island.key) ? "wavy" : null}
+                    ripple={
+                      island.ripple || freshIslands.keys.has(island.key)
+                        ? "plain"
+                        : idleAlarmed.has(island.key)
+                          ? "wavy"
+                          : null
+                    }
                     wide={island.key === chatIsland}
                   />
                   {/* The sign names the project, so it keeps its colours on an empty island. */}
@@ -2275,6 +2316,10 @@ const MANAGER_CALL_MS = 3000;
 /** The manager wears no hat. */
 const NO_HATS: ReadonlySet<string> = new Set();
 const NO_KEYS: ReadonlySet<string> = new Set();
+/** How long a just-added project's island ripples. */
+const FRESH_RIPPLE_MS = 2000;
+/** How recently a project must have been created for its island to count as just added. */
+const FRESH_PROJECT_MS = 60_000;
 /** Extra height over a hatted head: the tallest hats rise about this far. */
 const HAT_LIFT = 0.35;
 /** How long the island menu can snooze an idle alarm for. */
@@ -2697,7 +2742,7 @@ function WorldControls({
   /** A spot that must show with room above it for the new-agent bubble; a new object checks again. */
   readonly reveal: { readonly islandKey: string; readonly position: Vec3 } | null;
   /**
-   * Which islands show and how they line up; a new object, on rearranging, showing or
+   * Which islands show and how they line up; a new object, on rearranging, adding, showing or
    * hiding, frames them all once they have stopped moving, `settleMs` later.
    */
   readonly layout: { readonly settleMs: number };
