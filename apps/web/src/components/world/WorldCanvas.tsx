@@ -2721,7 +2721,7 @@ function WorldControls({
 }: {
   /** Each island's ground, in the same order as `islands`. */
   readonly bounds: ReadonlyArray<Bounds> | null;
-  /** The mainland's islands: framing every island then keeps its land to a sliver. */
+  /** The mainland's islands: framing every island centres the rest, with the mainland in view. */
   readonly mainland: ReadonlySet<string>;
   readonly islands: ReadonlyArray<IslandSpot>;
   readonly panel: () => HTMLElement | null;
@@ -2792,7 +2792,11 @@ function WorldControls({
         signs: signsOf(key === undefined ? islands.map((spot) => spot.key) : [key]),
         viewport: size,
         covered: covered(),
-        pinLeft: key === undefined && islands.some((spot) => mainland.has(spot.key)),
+        // Framing them all centres the islands, not the mainland beside them.
+        center:
+          key === undefined
+            ? bounds.filter((_, index) => !mainland.has(islands[index]?.key ?? ""))
+            : [],
       });
       if (key === undefined) controls.minZoom = view.zoom;
       return view;
@@ -3358,11 +3362,11 @@ function frameView(input: {
   readonly viewport: { readonly width: number; readonly height: number };
   readonly covered: Covered;
   /**
-   * Holds the leftmost ground at the canvas's left, its margin away, rather
-   * than centring: room to spare goes to the sea on the right, not to the
-   * mainland's land, which runs on forever to the left.
+   * The ground to centre on, when not all of `bounds`: the view zooms out evenly
+   * round it until the rest fits too, so the islands sit in the middle with the
+   * mainland still in view beside them. Empty centres on all of `bounds`.
    */
-  readonly pinLeft?: boolean;
+  readonly center: ReadonlyArray<Bounds>;
 }): View {
   const { bounds, viewport } = input;
   // Keep a usable strip of world even when the panel covers most of the canvas.
@@ -3373,10 +3377,36 @@ function frameView(input: {
   const target = new Vector3((first.minX + first.maxX) / 2, 0, (first.minZ + first.maxZ) / 2);
   // Measured on a copy, so the real camera only moves when the view is applied.
   const probe = probeAt(input.camera, { target, zoom: 1 });
-  // Measure every island on screen at zoom 1 (one unit per pixel). Islands are
-  // round, so trace a ring inside each box rather than its corners, which
-  // would stick out on every side of the tilted view. At sea level the ring
-  // takes in the shallows around the sand; up high, it is the island's own.
+  const all = screenExtent(probe, bounds, input.signs);
+  const middle = input.center.length === 0 ? all : screenExtent(probe, input.center, []);
+  const middleX = (middle.left + middle.right) / 2;
+  const middleY = (middle.bottom + middle.top) / 2;
+  const width = 2 * Math.max(middleX - all.left, all.right - middleX);
+  const height = 2 * Math.max(middleY - all.bottom, all.top - middleY);
+  const margin = 1.15;
+  // Not held to a minimum: framing every island is what sets the zoom floor.
+  const zoom = Math.min(
+    input.maxZoom,
+    (viewport.width - coveredRight) / (width * margin),
+    (viewport.height - coveredTop - coveredBottom) / (height * margin),
+  );
+  // Slide the middle onto the middle of the part of the canvas the panel and bars leave visible.
+  const dx = -middleX * zoom - coveredRight / 2;
+  const dy = middleY * zoom + (coveredTop - coveredBottom) / 2;
+  return { target: target.add(targetShift(probe, dx, dy, zoom)), zoom };
+}
+
+/**
+ * How far `bounds` and `extra` points reach on `probe`'s screen at zoom 1 (one unit per
+ * pixel). Islands are round, so this traces a ring inside each box rather than its
+ * corners, which would stick out on every side of the tilted view. At sea level the ring
+ * takes in the shallows around the sand; up high, it is the island's own.
+ */
+function screenExtent(
+  probe: OrthographicCamera,
+  bounds: ReadonlyArray<Bounds>,
+  extra: ReadonlyArray<Vector3>,
+) {
   let left = Infinity;
   let right = -Infinity;
   let bottom = Infinity;
@@ -3409,24 +3439,11 @@ function frameView(input: {
       }
     }
   }
-  for (const corner of input.signs) {
+  for (const corner of extra) {
     point.copy(corner);
     measure();
   }
-  const margin = 1.15;
-  // Not held to a minimum: framing every island is what sets the zoom floor.
-  const zoom = Math.min(
-    input.maxZoom,
-    (viewport.width - coveredRight) / ((right - left) * margin),
-    (viewport.height - coveredTop - coveredBottom) / ((top - bottom) * margin),
-  );
-  // Slide what was measured onto the middle of the part of the canvas the
-  // panel and bars leave visible.
-  const dx = input.pinLeft
-    ? -viewport.width / 2 + ((right - left) * zoom * (margin - 1)) / 2 - left * zoom
-    : -((left + right) / 2) * zoom - coveredRight / 2;
-  const dy = ((bottom + top) / 2) * zoom + (coveredTop - coveredBottom) / 2;
-  return { target: target.add(targetShift(probe, dx, dy, zoom)), zoom };
+  return { left, right, bottom, top };
 }
 
 /** The new-agent piles on an island nobody works at, with where their buttons sit in the world. */
