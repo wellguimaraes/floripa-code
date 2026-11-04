@@ -2,40 +2,47 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   claimWorkspaceBasenameLookup,
-  needsWorkspaceBasenameLookup,
-  pickWorkspaceBasenameMatch,
+  needsWorkspacePathLookup,
+  pickWorkspacePathMatch,
 } from "./workspaceBasenameLookup";
 
-describe("needsWorkspaceBasenameLookup", () => {
+describe("needsWorkspacePathLookup", () => {
   it("flags bare filenames", () => {
-    expect(needsWorkspaceBasenameLookup("ChatView.tsx")).toBe(true);
-    expect(needsWorkspaceBasenameLookup("Makefile")).toBe(true);
+    expect(needsWorkspacePathLookup("ChatView.tsx")).toBe(true);
+    expect(needsWorkspacePathLookup("Makefile")).toBe(true);
   });
 
-  it("leaves anything with a directory alone", () => {
-    expect(needsWorkspaceBasenameLookup("apps/web/src/components/ChatView.tsx")).toBe(false);
-    expect(needsWorkspaceBasenameLookup("apps\\web\\ChatView.tsx")).toBe(false);
-    expect(needsWorkspaceBasenameLookup(".")).toBe(false);
-    expect(needsWorkspaceBasenameLookup("..")).toBe(false);
-    expect(needsWorkspaceBasenameLookup("   ")).toBe(false);
+  it("flags relative paths that may start inside a package", () => {
+    expect(needsWorkspacePathLookup("src/specs/maintenance-api.yaml")).toBe(true);
+  });
+
+  it("leaves anchored paths alone", () => {
+    expect(needsWorkspacePathLookup("/repo/src/ChatView.tsx")).toBe(false);
+    expect(needsWorkspacePathLookup("C:/repo/ChatView.tsx")).toBe(false);
+    expect(needsWorkspacePathLookup("~/notes.md")).toBe(false);
+    expect(needsWorkspacePathLookup("./ChatView.tsx")).toBe(false);
+    expect(needsWorkspacePathLookup("apps\\web\\ChatView.tsx")).toBe(false);
+    expect(needsWorkspacePathLookup(".")).toBe(false);
+    expect(needsWorkspacePathLookup("..")).toBe(false);
+    expect(needsWorkspacePathLookup("   ")).toBe(false);
   });
 });
 
-describe("pickWorkspaceBasenameMatch", () => {
+describe("pickWorkspacePathMatch", () => {
   const entries = [
     { path: "apps/web/src/components/ChatView.test.tsx", kind: "file" as const },
     { path: "apps/web/src/components/ChatView.tsx", kind: "file" as const },
   ];
 
   it("takes the first exact filename match, not the closest fuzzy one", () => {
-    expect(pickWorkspaceBasenameMatch("ChatView.tsx", entries)).toBe(
+    expect(pickWorkspacePathMatch("ChatView.tsx", entries)).toBe(
       "apps/web/src/components/ChatView.tsx",
     );
   });
 
   it("ignores directories", () => {
     expect(
-      pickWorkspaceBasenameMatch("components", [
+      pickWorkspacePathMatch("components", [
         { path: "apps/web/src/components", kind: "directory" },
         { path: "apps/web/src/components/components", kind: "file" },
       ]),
@@ -44,7 +51,7 @@ describe("pickWorkspaceBasenameMatch", () => {
 
   it("prefers the exactly-cased file over a case-only twin", () => {
     expect(
-      pickWorkspaceBasenameMatch("foo.ts", [
+      pickWorkspacePathMatch("foo.ts", [
         { path: "src/Foo.ts", kind: "file" },
         { path: "src/foo.ts", kind: "file" },
       ]),
@@ -52,24 +59,52 @@ describe("pickWorkspaceBasenameMatch", () => {
   });
 
   it("falls back to case-insensitive when only the casing differs", () => {
-    expect(pickWorkspaceBasenameMatch("chatview.tsx", entries)).toBe(
+    expect(pickWorkspacePathMatch("chatview.tsx", entries)).toBe(
       "apps/web/src/components/ChatView.tsx",
     );
   });
 
   it("returns null when the case-insensitive fallback is ambiguous", () => {
     expect(
-      pickWorkspaceBasenameMatch("FOO.ts", [
+      pickWorkspacePathMatch("FOO.ts", [
         { path: "src/Foo.ts", kind: "file" },
         { path: "src/foo.ts", kind: "file" },
       ]),
     ).toBeNull();
   });
 
-  it("returns null when nothing matches the name", () => {
-    expect(pickWorkspaceBasenameMatch("ChatView.tsx", [])).toBeNull();
+  it("keeps a path that is already workspace-relative", () => {
     expect(
-      pickWorkspaceBasenameMatch("ChatView.tsx", [
+      pickWorkspacePathMatch("src/index.ts", [
+        { path: "packages/a/src/index.ts", kind: "file" },
+        { path: "src/index.ts", kind: "file" },
+      ]),
+    ).toBe("src/index.ts");
+  });
+
+  it("finds the one file a package-relative path ends", () => {
+    expect(
+      pickWorkspacePathMatch("src/specs/maintenance-api.yaml", [
+        { path: "frontend/api-client/src/specs/maintenance-api.yaml", kind: "file" },
+        { path: "frontend/api-client/src/xspecs/maintenance-api.yaml", kind: "file" },
+        { path: "backend/maintenance/src/maintenance-api.ts", kind: "file" },
+      ]),
+    ).toBe("frontend/api-client/src/specs/maintenance-api.yaml");
+  });
+
+  it("returns null when several packages end in the path", () => {
+    expect(
+      pickWorkspacePathMatch("src/index.ts", [
+        { path: "packages/a/src/index.ts", kind: "file" },
+        { path: "packages/b/src/index.ts", kind: "file" },
+      ]),
+    ).toBeNull();
+  });
+
+  it("returns null when nothing matches the name", () => {
+    expect(pickWorkspacePathMatch("ChatView.tsx", [])).toBeNull();
+    expect(
+      pickWorkspacePathMatch("ChatView.tsx", [
         { path: "apps/web/src/components/ChatHeader.tsx", kind: "file" },
       ]),
     ).toBeNull();

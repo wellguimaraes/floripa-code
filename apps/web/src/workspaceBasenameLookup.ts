@@ -23,24 +23,34 @@ function basenameOfPath(path: string): string {
   return separatorIndex >= 0 ? path.slice(separatorIndex + 1) : path;
 }
 
-export function needsWorkspaceBasenameLookup(relativePath: string): boolean {
+/**
+ * Relative paths an agent writes may not start at the workspace root: a bare name
+ * (`design.md`) or a path from inside a package (`src/specs/api.yaml` for
+ * `frontend/api-client/src/specs/api.yaml`). Explicitly anchored paths open as written.
+ */
+export function needsWorkspacePathLookup(relativePath: string): boolean {
   const trimmed = relativePath.trim();
   return (
-    trimmed !== "." &&
-    trimmed !== ".." &&
     trimmed.length > 0 &&
-    !trimmed.includes("/") &&
-    !trimmed.includes("\\")
+    !trimmed.includes("\\") &&
+    !/^(?:\/|~|\.{1,2}(?:\/|$)|[A-Za-z]:)/.test(trimmed)
   );
 }
 
-export function pickWorkspaceBasenameMatch(
-  basename: string,
+/** The indexed file a relative path names: the path itself, else the one file it ends. */
+export function pickWorkspacePathMatch(
+  relativePath: string,
   entries: ReadonlyArray<WorkspaceEntryCandidate>,
 ): string | null {
-  const target = basename.trim();
+  const target = relativePath.trim();
   if (!target) return null;
   const files = entries.filter((entry) => entry.kind === "file");
+  if (target.includes("/")) {
+    if (files.some((entry) => entry.path === target)) return target;
+    // Two packages with the same `src/index.ts` have no right answer.
+    const nested = files.filter((entry) => entry.path.endsWith(`/${target}`));
+    return nested.length === 1 ? (nested[0]?.path ?? null) : null;
+  }
   const exact = files.find((entry) => basenameOfPath(entry.path) === target);
   if (exact) return exact.path;
   // Folded matching covers casing that drifted from disk, but `FOO.ts` against

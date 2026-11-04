@@ -188,8 +188,8 @@ import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { projectEnvironment } from "../state/projects";
 import {
   claimWorkspaceBasenameLookup,
-  needsWorkspaceBasenameLookup,
-  pickWorkspaceBasenameMatch,
+  needsWorkspacePathLookup,
+  pickWorkspacePathMatch,
   WORKSPACE_BASENAME_LOOKUP_LIMIT,
 } from "../workspaceBasenameLookup";
 import {
@@ -2576,13 +2576,13 @@ function useChatMarkdownState({
     },
     [canOperatePreview, createAssetUrl, cwd, openPreview, preparedConnection, threadRef],
   );
-  const findWorkspaceBasenameMatch = useCallback(
+  const findWorkspacePathMatch = useCallback(
     async (workspaceRelativePath: string) => {
       if (
         !cwd ||
         environmentId === null ||
         !readEnvironmentScope(environmentId, AuthFilesystemReadScope) ||
-        !needsWorkspaceBasenameLookup(workspaceRelativePath)
+        !needsWorkspacePathLookup(workspaceRelativePath)
       ) {
         return null;
       }
@@ -2596,13 +2596,14 @@ function useChatMarkdownState({
         },
       });
       return result._tag === "Success"
-        ? pickWorkspaceBasenameMatch(workspaceRelativePath, result.value.entries)
+        ? pickWorkspacePathMatch(workspaceRelativePath, result.value.entries)
         : null;
     },
     [cwd, environmentId, searchProjectEntries],
   );
-  // A bare filename resolves to the workspace root, which is rarely where the
-  // file is, so ask the index before opening. Absolute host paths open as-is.
+  // A bare filename or a package-relative path resolves to the workspace root,
+  // which is often not where the file is, so ask the index before opening.
+  // Absolute host paths open as-is.
   const openFileInPanel = useCallback(
     (panelPath: string, line: number | undefined) => {
       if (!threadRef) return;
@@ -2611,28 +2612,28 @@ function useChatMarkdownState({
       const isLatestLookup = claimWorkspaceBasenameLookup();
       const openAt = (path: string) =>
         useRightPanelStore.getState().openFile(threadRef, path, line);
-      if (!cwd || !needsWorkspaceBasenameLookup(panelPath)) {
+      if (!cwd || !needsWorkspacePathLookup(panelPath)) {
         openAt(panelPath);
         return;
       }
       void (async () => {
-        const match = await findWorkspaceBasenameMatch(panelPath);
+        const match = await findWorkspacePathMatch(panelPath);
         if (!isLatestLookup()) return;
         openAt(match ?? panelPath);
       })();
     },
-    [cwd, findWorkspaceBasenameMatch, threadRef],
+    [cwd, findWorkspacePathMatch, threadRef],
   );
   const revealMarkdownFileInFileManager = useCallback(
     async (fileLinkMeta: MarkdownFileLinkMeta) => {
       const workspaceRelativePath = fileLinkMeta.workspaceRelativePath;
       const match = workspaceRelativePath
-        ? await findWorkspaceBasenameMatch(workspaceRelativePath)
+        ? await findWorkspacePathMatch(workspaceRelativePath)
         : null;
       const filePath = match && cwd ? resolvePathLinkTarget(match, cwd) : fileLinkMeta.filePath;
       return revealFileInFileManager(filePath);
     },
-    [cwd, findWorkspaceBasenameMatch, revealFileInFileManager],
+    [cwd, findWorkspacePathMatch, revealFileInFileManager],
   );
   const fileLinkChip = useCallback(
     (fileLinkMeta: MarkdownFileLinkMeta, copyMarkdown: string, mediaSource?: string) => {
