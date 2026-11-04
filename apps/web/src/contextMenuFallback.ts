@@ -406,6 +406,8 @@ export function showContextMenuFallback<T extends string>(
       menu.style.left = `${preferredLeft}px`;
       menu.style.top = `${preferredTop}px`;
       menu.dataset.level = String(level);
+      // Lets popovers that close on an outside press tell this menu apart from the page.
+      menu.dataset.contextMenu = "true";
 
       const inner = document.createElement("div");
       inner.className =

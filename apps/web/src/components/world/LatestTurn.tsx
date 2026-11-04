@@ -16,7 +16,11 @@ import { observeResize } from "../../lib/observeResize";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { useTimelineEntries } from "../../hooks/useTimelineEntries";
 import { useTurnDiffSummaries } from "../../hooks/useTurnDiffSummaries";
-import { useRightPanelStore } from "../../rightPanelStore";
+import {
+  rightPanelKey,
+  selectThreadRightPanelState,
+  useRightPanelStore,
+} from "../../rightPanelStore";
 import {
   deriveThreadRunState,
   deriveTimelineActivity,
@@ -173,10 +177,21 @@ export function LatestTurn(props: {
     (runId: RunId, filePath?: string) => {
       useDiffPanelStore.getState().selectTurn(threadRef, runId, filePath);
       useRightPanelStore.getState().open(threadRef, "diff");
-      openFullChatRef.current();
     },
     [threadRef],
   );
+  // A link, file or diff opened from here lands in the thread's surfaces, which only show in
+  // the chat frame: anything you do here that leaves them open opens the full chat with them.
+  useEffect(() => {
+    const panelKey = rightPanelKey(threadRef);
+    return useRightPanelStore.subscribe((state, previous) => {
+      const revisions = state.userActionRevisionByPanelKey;
+      if (revisions[panelKey] === previous.userActionRevisionByPanelKey[panelKey]) return;
+      if (selectThreadRightPanelState(state.byPanelKey, threadRef).isOpen) {
+        openFullChatRef.current();
+      }
+    });
+  }, [threadRef]);
 
   const sharedRowProps = {
     threadRef,

@@ -2309,6 +2309,8 @@ const PORTALED_LAYERS = [
   '[data-slot="popover-positioner"]',
   '[data-slot="dialog-viewport"]',
   '[data-slot="dialog-backdrop"]',
+  // The DOM context menu links and paths open, which appends itself to the body.
+  "[data-context-menu]",
   "[data-base-ui-inert]",
 ].join(", ");
 /** How long the manager holds up his megaphone after you send a message. */
