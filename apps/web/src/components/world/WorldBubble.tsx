@@ -556,8 +556,8 @@ export function WorldBubble(props: {
                 )}
               />
             </div>
-            {/* Pinned to the rule below while the turn scrolls: what the agent is still running,
-                  sitting on the rule, and the way back to the end just above it. */}
+            {/* Pinned to the rule below while the turn scrolls: what the agent is still running and
+                  what is queued behind it, sitting on the rule, and the way back to the end above. */}
             <div ref={exchangeFooter} className="sticky bottom-0 z-20 shrink-0">
               {awayFromEnd ? (
                 <div className="pointer-events-none absolute inset-x-0 bottom-full mb-2.5 flex justify-center">
@@ -611,15 +611,13 @@ export function WorldBubble(props: {
                   </ComposerBanner.Row>
                 </ComposerBanner.Root>
               ) : null}
+              {/* Messages waiting behind the agent's current run, on the rule above the text box. */}
+              <QueuedRunsControl
+                environmentId={facts.ref.environmentId}
+                threadId={facts.ref.threadId}
+                placement="docked"
+              />
             </div>
-          </div>
-          {/* Messages waiting behind the agent's current run, above the text box as in the chat. */}
-          <div className="mt-2 empty:hidden">
-            <QueuedRunsControl
-              environmentId={facts.ref.environmentId}
-              threadId={facts.ref.threadId}
-              placement="floating"
-            />
           </div>
           {approval !== null ? (
             <BubbleApproval

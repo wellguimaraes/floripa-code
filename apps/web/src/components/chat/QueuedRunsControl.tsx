@@ -65,8 +65,8 @@ export function QueuedRunsControl({
   /** Without it, queued messages can be steered, reordered and removed, but not edited. */
   readonly onEditQueuedRun?: (request: EditQueuedRunRequest) => void;
   readonly onCancelEdit?: () => void;
-  /** Attached to the chat composer's top edge, or a card of its own, as in a world bubble. */
-  readonly placement?: "attached" | "floating";
+  /** Attached to the chat composer's top edge, or docked on a divider, as in a world bubble. */
+  readonly placement?: "attached" | "docked";
 }) {
   const { editingRunId = null, onEditQueuedRun, placement = "attached" } = props;
   const projection = useThreadProjection(
@@ -281,7 +281,12 @@ export function QueuedRunsControl({
       aria-live="polite"
       data-chat-composer-collapsed-controls="true"
       placement={placement}
-      className="relative z-0"
+      className={cn(
+        "relative z-0",
+        // A shade off the docked run banner it can sit under, so the two read apart. The bubble's
+        // fill underneath keeps the scrolling turn from showing through a translucent accent.
+        placement === "docked" && "bg-popover before:bg-accent",
+      )}
     >
       <ComposerBanner.Row
         render={<button type="button" />}

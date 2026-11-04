@@ -71,6 +71,8 @@ function Surface({
         // and the solid muted fill of the chat composer's header rather than glass.
         // After the shared border, or the merge drops it as overridden.
         placement === "docked" && "before:border-b-0 before:bg-muted",
+        // Stacked docked banners share one outline: the lower one squares off under the upper.
+        placement === "docked" && "[[data-composer-banner-surface=docked]+&]:before:rounded-t-none",
         className,
       )}
       {...props}
