@@ -1947,6 +1947,11 @@ export function InlineTimelineRows({
     scrollPositions: new Map(),
     expandedEntries: new Set(),
   }));
+  const openAttachment = useCallback(
+    (attachment: ChatFileAttachment) =>
+      useRightPanelStore.getState().openAttachment(threadRef, attachment),
+    [threadRef],
+  );
   const sharedState = useTimelineRowSharedState({
     citationRequest: null,
     listRef,
@@ -1964,7 +1969,7 @@ export function InlineTimelineRows({
     onRunShellCommand: undefined,
     findActive: false,
     onImageExpand,
-    onFileOpen: NOOP_OPEN_ATTACHMENT,
+    onFileOpen: openAttachment,
     onUseArtifactTemplate: NOOP_USE_ARTIFACT_TEMPLATE,
     onSendAppMessage: undefined,
     onAppFullscreenChange: NOOP_APP_FULLSCREEN,
