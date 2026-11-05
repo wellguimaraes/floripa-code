@@ -112,7 +112,7 @@ import { useWorldManagerStore, WORLD_MANAGERS_AVAILABLE } from "./worldManagerSt
 import { useWorldModeStore } from "./worldModeStore";
 import { useWorldVisibilityStore } from "./worldVisibilityStore";
 import { AddProjectButton, useAddProject } from "./AddProjectButton";
-import { ARRANGEMENTS, IslandsMenu } from "./IslandsMenu";
+import { IslandsMenu } from "./IslandsMenu";
 
 // The onboarding wizard module is heavy and only needed once the dialog opens.
 const ImportHistoryDialog = lazy(() =>
@@ -295,6 +295,7 @@ export default function WorldCanvas(props: {
   // Islands hidden from the projects menu leave the map; the rest close up.
   const hideIsland = useWorldVisibilityStore((state) => state.toggleHidden);
   const showOnlyIsland = useWorldVisibilityStore((state) => state.showOnly);
+  const openIslandsMenuAt = useWorldVisibilityStore((state) => state.openMenuAt);
   // What the layout has caught up to: islands being hidden sink first and only then
   // leave it, so the rest close up after; islands being shown join it at once, and rise
   // once the rest have moved aside.
@@ -375,7 +376,6 @@ export default function WorldCanvas(props: {
   const signStats = useIslandSignStats(visibleMembers, projects);
   const missingProjects = useMissingProjects(projects);
   const arrangement = useWorldArrangementStore((state) => state.arrangement);
-  const setArrangement = useWorldArrangementStore((state) => state.setArrangement);
   // Islands of projects just added, from any device or agent, ripple a moment while the
   // map zooms out to show them. Each batch is a new layout; the ripple stops FRESH_RIPPLE_MS
   // after the latest.
@@ -1033,26 +1033,13 @@ export default function WorldCanvas(props: {
               },
             ]
           : []),
-        {
-          id: "arrange",
-          label: "Arrange islands",
-          icon: "layout-grid",
-          children: ARRANGEMENTS.map((option) => ({
-            id: `arrange:${option.value}`,
-            label: option.label,
-            checked: option.value === arrangement,
-          })),
-        },
+        { id: "islands", label: "Manage islands…", icon: "layout-grid" },
       ],
       awayFromPointer(point),
     );
     if (clicked === "add-island") void addProject.addProject();
     else if (clicked === "import-islands") setImportOpen(true);
-    else if (clicked?.startsWith("arrange:")) {
-      const value = clicked.slice("arrange:".length);
-      const option = ARRANGEMENTS.find((candidate) => candidate.value === value);
-      if (option !== undefined) setArrangement(option.value);
-    }
+    else if (clicked === "islands") openIslandsMenuAt(awayFromPointer(point));
   };
 
   const interruptTurn = useOrchestrationCommand(threadEnvironment.interruptTurn, {

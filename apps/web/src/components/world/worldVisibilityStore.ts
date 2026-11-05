@@ -8,10 +8,13 @@ interface WorldVisibilityState {
   readonly hidden: Readonly<Record<string, true>>;
   /** Whether the projects menu is expanded. */
   readonly menuOpen: boolean;
+  /** Where the ocean menu opened it, so it shows there; null shows it under its pill. */
+  readonly menuAt: { readonly x: number; readonly y: number } | null;
   readonly toggleHidden: (key: string) => void;
   /** Hides every island in `all` but `key`. */
   readonly showOnly: (key: string, all: ReadonlyArray<string>) => void;
   readonly setMenuOpen: (open: boolean) => void;
+  readonly openMenuAt: (point: { readonly x: number; readonly y: number }) => void;
 }
 
 /** Which projects the world shows. Per viewer, so it lives in this browser only. */
@@ -20,6 +23,7 @@ export const useWorldVisibilityStore = create<WorldVisibilityState>()(
     (set) => ({
       hidden: {},
       menuOpen: false,
+      menuAt: null,
       toggleHidden: (key) =>
         set((state) => {
           const { [key]: wasHidden, ...rest } = state.hidden;
@@ -31,7 +35,8 @@ export const useWorldVisibilityStore = create<WorldVisibilityState>()(
             all.filter((other) => other !== key).map((other) => [other, true as const]),
           ),
         }),
-      setMenuOpen: (menuOpen) => set({ menuOpen }),
+      setMenuOpen: (menuOpen) => set({ menuOpen, menuAt: null }),
+      openMenuAt: (menuAt) => set({ menuOpen: true, menuAt }),
     }),
     {
       name: "floripacode:world-visibility:v1",

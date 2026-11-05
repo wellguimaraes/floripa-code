@@ -18,7 +18,7 @@ import type { IslandArrangement } from "./engine/archipelago";
 import { useWorldArrangementStore } from "./worldArrangementStore";
 import { useWorldVisibilityStore } from "./worldVisibilityStore";
 
-export const ARRANGEMENTS: ReadonlyArray<{
+const ARRANGEMENTS: ReadonlyArray<{
   readonly value: IslandArrangement;
   readonly label: string;
   readonly icon: LucideIcon;
@@ -45,6 +45,7 @@ export function IslandsMenu(props: {
   const hidden = useWorldVisibilityStore((state) => state.hidden);
   const open = useWorldVisibilityStore((state) => state.menuOpen);
   const setOpen = useWorldVisibilityStore((state) => state.setMenuOpen);
+  const menuAt = useWorldVisibilityStore((state) => state.menuAt);
   const toggleHidden = useWorldVisibilityStore((state) => state.toggleHidden);
   const arrangement = useWorldArrangementStore((state) => state.arrangement);
   const setArrangement = useWorldArrangementStore((state) => state.setArrangement);
@@ -66,7 +67,17 @@ export function IslandsMenu(props: {
         <IslandIcon />
         <span className="tabular-nums">{count}</span>
       </PopoverTrigger>
-      <PopoverPopup align="start" sideOffset={8} padding="none" width="sm">
+      <PopoverPopup
+        align="start"
+        sideOffset={menuAt === null ? 8 : 0}
+        anchor={
+          menuAt === null
+            ? undefined
+            : { getBoundingClientRect: () => new DOMRect(menuAt.x, menuAt.y, 0, 0) }
+        }
+        padding="none"
+        width="sm"
+      >
         <div className="flex flex-col">
           {/* Rows below pad 6+6, so the title, dots, and toggle all sit 12px from the edges. */}
           <div className="flex items-center gap-2 border-b p-3">
