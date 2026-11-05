@@ -254,11 +254,11 @@ export function WorldLayout({
 
   useEffect(() => {
     if (chatTarget === null || covered) return;
-    // Cmd+Escape (Ctrl+Escape) closes the panel unless something in it (a menu, picker,
-    // dialog) took it first. Plain Escape is left to the chat, so it can't close it by accident.
+    // Shift+Escape closes the panel unless something in it (a menu, picker, dialog) took it
+    // first. Plain Escape is left to the chat, so it can't close it by accident.
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.isComposing || event.repeat) return;
-      if (!event.metaKey && !event.ctrlKey) return;
+      if (!event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) return;
       // The message editor (ProseMirror) prevents every Escape; its menus also stop the event,
       // so one that gets here from the editor was not used.
       const fromEditor = event.target instanceof Element && event.target.closest(".ProseMirror");
