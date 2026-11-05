@@ -2050,6 +2050,7 @@ export default function WorldCanvas(props: {
         <IslandPrefsDialog
           islandKey={prefsOn}
           title={projectTitles.get(prefsOn) ?? "Project"}
+          checkouts={projectCheckouts.get(prefsOn) ?? []}
           onClose={() => setPrefsOn(null)}
         />
       ) : null}

@@ -13,8 +13,8 @@ checked out in, its last commit, and whether that worktree has uncommitted
 changes. Delete removes a branch along with its worktree and archives the agents
 that worked there; it asks for a second click, and once more if the branch isn't
 merged. Click the pull request count to list the open pull requests. Click the
-sign anywhere else, or right-click it, for the island's menu. The project's icon
-on the sign changes in Settings only; see
+sign anywhere else, or right-click it, for the island's menu. Change the project's
+icon from **Island preferences…** in that menu, or in Settings; see
 [Project icons](project-settings.md#project-icons).
 If a project's folder was moved or deleted outside the app, a **Folder not found**
 pill shows over its sign. Click it to point the project at the folder's new
