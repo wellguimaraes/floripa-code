@@ -18,7 +18,7 @@ import { Kbd } from "../ui/kbd";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ARCHIVE_SHORTCUT, confirmArchive, useArchiveShortcut } from "./useArchiveShortcut";
-import { FamilyHueButton } from "./FamilyHueButton";
+import { CharacterHueButton } from "./CharacterHueButton";
 import { useWorldLook, useWorldLookStore } from "./worldLookStore";
 import { useWorldModeStore } from "./worldModeStore";
 
@@ -157,24 +157,28 @@ export const WorldRegenerateTitleButton = memo(function WorldRegenerateTitleButt
 });
 
 /**
- * The world chat's character colour, before its other actions. The colour is this viewer's
- * own, so it needs no permission. Renders nothing outside the world.
+ * The world chat's character, leading its header; clicking it repaints the character. The
+ * colour is this viewer's own, so it needs no permission. Renders nothing outside the world.
  */
 export const WorldRecolorButton = memo(function WorldRecolorButton({
   threadRef,
+  className,
 }: {
   readonly threadRef: ScopedThreadRef;
+  readonly className?: string;
 }) {
   const threadKey = scopedThreadKey(threadRef);
   const worldLook = useWorldLook(threadKey);
   const recolor = useWorldLookStore((state) => state.recolor);
   if (worldLook === null || recolor === null) return null;
   return (
-    <FamilyHueButton
+    <CharacterHueButton
       hue={worldLook.hue}
+      hat={worldLook.hat}
       kid={worldLook.kid}
       onHueChange={(hue) => recolor(threadKey, hue)}
-      size="sm"
+      side="bottom"
+      {...(className === undefined ? {} : { className })}
     />
   );
 });

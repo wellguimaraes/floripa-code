@@ -15,9 +15,7 @@ import { Select as SelectPrimitive } from "@base-ui/react/select";
 import { TriangleAlertIcon, XIcon } from "lucide-react";
 import {
   type ComponentProps,
-  lazy,
   type ReactNode,
-  Suspense,
   useEffect,
   useEffectEvent,
   useMemo,
@@ -53,13 +51,12 @@ import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { shouldRenderTraitsControls, TraitsMenuContent, TraitsPicker } from "../chat/TraitsPicker";
 import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
-import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Select, SelectItem, SelectPopup, SelectValue } from "../ui/select";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { WorktreeBaseBranchPicker } from "../WorktreeBaseBranchPicker";
 import { BubbleComposer } from "./BubbleComposer";
-import { HuePicker } from "./HuePicker";
+import { CharacterHueButton } from "./CharacterHueButton";
 import type { NewAgentDraft } from "./newAgentDraftStore";
 import {
   NewAgentWorkspacePicker,
@@ -76,8 +73,6 @@ import {
 } from "./useStartWorldAgent";
 import type { WorldIsland } from "./engine/archipelago";
 import { worktreesByRecency } from "./worktreesByRecency";
-
-const CharacterPortrait = lazy(() => import("./scene/CharacterPortrait"));
 
 const workspaceValue = (workspace: WorldAgentWorkspace) =>
   workspace.kind === "worktree" ? `worktree:${workspace.path}` : workspace.kind;
@@ -380,7 +375,7 @@ export function NewAgentBubble(props: {
       header={
         // Ruled off below, edge to edge, like the other bubbles' headers.
         <div className="-mx-2.5 flex items-stretch gap-1.5 border-b border-border px-2.5 pb-3">
-          <NewAgentCharacter hue={hue} onHueChange={setHue} />
+          <CharacterHueButton hue={hue} hat={null} onHueChange={setHue} className="w-10" />
           <div className="flex min-w-0 flex-1 flex-col items-start">
             <span className="max-w-full truncate text-base font-medium">Start New Agent</span>
             {workspaces.isRepo && selectedWorkspace.kind === "new-worktree" ? (
@@ -597,50 +592,5 @@ function NewAgentControls(props: {
         )}
       />
     </div>
-  );
-}
-
-/** The new agent's portrait, in the colour it will arrive in; clicking it picks another. */
-function NewAgentCharacter(props: {
-  readonly hue: number;
-  readonly onHueChange: (hue: number) => void;
-}) {
-  const { hue, onHueChange } = props;
-  const [picking, setPicking] = useState(false);
-  return (
-    <Popover open={picking} onOpenChange={setPicking}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <PopoverTrigger
-              render={
-                <button
-                  type="button"
-                  aria-label="Change color"
-                  className={cn(
-                    "w-10 shrink-0 cursor-pointer rounded-md outline-none",
-                    "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-                  )}
-                />
-              }
-            />
-          }
-        >
-          <Suspense fallback={<div className="size-full" />}>
-            <CharacterPortrait hue={hue} hat={null} className="size-full" />
-          </Suspense>
-        </TooltipTrigger>
-        <TooltipPopup side="top">Change color</TooltipPopup>
-      </Tooltip>
-      <PopoverPopup side="top" align="start" padding="compact">
-        <HuePicker
-          hue={hue}
-          onChange={(picked) => {
-            onHueChange(picked);
-            setPicking(false);
-          }}
-        />
-      </PopoverPopup>
-    </Popover>
   );
 }

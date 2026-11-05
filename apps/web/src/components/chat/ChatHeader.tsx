@@ -334,11 +334,15 @@ export const ChatHeader = memo(function ChatHeader({
         // A white tile keeps any icon legible on any background.
         <span className="flex shrink-0 rounded-md bg-white">
           {activeProjectIsScratch ? (
-            <AppIcon className="size-8 rounded-md" />
+            <AppIcon className="size-10 rounded-md" />
           ) : (
-            <ProjectFavicon project={activeProject} className="size-8" />
+            <ProjectFavicon project={activeProject} className="size-10" />
           )}
         </span>
+      ) : null}
+      {worldLook !== null ? (
+        // As tall as the project icon and the title and worktree beside it.
+        <WorldRecolorButton threadRef={activeThreadRef} className="w-8 self-stretch" />
       ) : null}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* The project title is often just a folder name, so the sidebar's
@@ -515,7 +519,6 @@ export const ChatHeader = memo(function ChatHeader({
       </div>
       {worldLook !== null && isServerThread ? (
         <span className="flex shrink-0 items-center gap-0.5">
-          <WorldRecolorButton threadRef={activeThreadRef} />
           {renamingTitle === null ? (
             <WorldRegenerateTitleButton threadRef={activeThreadRef} />
           ) : null}
