@@ -2152,16 +2152,22 @@ function TimelinePinnedPrompt({
  * prompt, and the world's agent bubble. Chips render as labels only. The pinned prompt is
  * one jump target, so its body is inert; `interactive` keeps links clickable where the
  * preview isn't a target itself. Goes inside the padded bubble, never on it, so a third
- * line can't peek through the padding.
+ * line can't peek through the padding. `expanded` lifts the clip where the preview offers
+ * a way to read the rest. `onImageExpand` makes image chips open their picture; without it
+ * chips stay labels.
  */
 export const ClampedUserMessage = memo(function ClampedUserMessage({
   message,
   chips,
   interactive = false,
+  expanded = false,
+  onImageExpand,
 }: {
   message: Pick<ChatMessage, "text" | "context" | "attachments">;
   chips: UserMessageChipState;
   interactive?: boolean;
+  expanded?: boolean;
+  onImageExpand?: (preview: ExpandedImagePreview) => void;
 }) {
   const resolvedContext = useMemo(() => resolveUserMessageContext(message), [message]);
   const renderContextReference = useCallback(
@@ -2175,26 +2181,31 @@ export const ClampedUserMessage = memo(function ClampedUserMessage({
                 (isImageAttachment(candidate) || isFileAttachment(candidate)),
             ) ?? null)
           : null;
+      const expandable = onImageExpand !== undefined && record?.kind === "image";
       return (
-        <span inert>
+        <span inert={!expandable}>
           <UserMessageContextReferenceChip
             reference={reference}
             record={record}
             annotationImage={null}
             attachment={attachment}
-            onExpandImage={NOOP_PINNED_PROMPT_ACTION}
+            onExpandImage={(image) => {
+              const images = (message.attachments ?? []).filter(isImageAttachment);
+              const preview = buildExpandedImagePreview(images, image.id);
+              if (preview) onImageExpand?.(preview);
+            }}
             onExpandVideo={NOOP_PINNED_PROMPT_ACTION}
             onOpenFile={NOOP_PINNED_PROMPT_ACTION}
           />
         </span>
       );
     },
-    [resolvedContext, message.attachments],
+    [resolvedContext, message.attachments, onImageExpand],
   );
   const attachmentCount = message.attachments?.length ?? 0;
   return (
     <UserMessageChipCtx value={chips}>
-      <div inert={!interactive} className="clamped-message line-clamp-2">
+      <div inert={!interactive} className={cn("clamped-message", !expanded && "line-clamp-2")}>
         {resolvedContext.text.trim().length > 0 ? (
           <UserMessageBody
             text={resolvedContext.text}
@@ -2704,25 +2715,79 @@ function MessageAuthorHeading({ children }: { children: string }) {
   return <h3 className="sr-only select-none">{children}</h3>;
 }
 
-function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
-  const ctx = use(TimelineRowCtx);
-  const { onImageExpand, onFileOpen } = ctx;
-  const senderThreadId = row.message.senderThreadId;
+/** The message with its stored images' `previewUrl`s resolved, for thumbnails and chips. */
+export function useMessageWithImagePreviews<M extends Pick<ChatMessage, "attachments">>(
+  environmentId: EnvironmentId,
+  message: M,
+): M {
   const resources = useMemo(
-    () => selectMessageImageResources(row.message.attachments),
-    [row.message.attachments],
+    () => selectMessageImageResources(message.attachments),
+    [message.attachments],
   );
-  const previewUrls = useAssetUrls(ctx.activeThreadEnvironmentId, resources);
-  const [projectPreviews] = useState(createMessageAttachmentPreviewProjector);
-  const messageWithPreviews = useMemo(() => {
+  const previewUrls = useAssetUrls(environmentId, resources);
+  const [projectPreviews] = useState(() => createMessageAttachmentPreviewProjector<M>());
+  return useMemo(() => {
     const urlsById = new Map(
       resources.flatMap((resource, index) => {
         const url = previewUrls[index];
         return url ? [[resource.attachmentId, url] as const] : [];
       }),
     );
-    return projectPreviews(row.message, (attachment) => urlsById.get(attachment.id));
-  }, [previewUrls, projectPreviews, resources, row.message]);
+    return projectPreviews(message, (attachment) => urlsById.get(attachment.id));
+  }, [previewUrls, projectPreviews, resources, message]);
+}
+
+/** A sent image in a message's media grid; opens the full picture among `images`. */
+export function UserImageThumbnail({
+  image,
+  images,
+  onImageExpand,
+}: {
+  image: ChatImageAttachment;
+  images: ReadonlyArray<ChatImageAttachment>;
+  onImageExpand: (preview: ExpandedImagePreview) => void;
+}) {
+  return (
+    <div
+      className={cn(
+        "bg-background/70",
+        image.source?.kind === "snap-shot" && image.previewUrl
+          ? cn(SNAP_SHOT_ATTACHMENT_FRAME_CLASS, "col-span-2")
+          : "aspect-[4/3] overflow-hidden rounded-lg border border-border/80",
+      )}
+    >
+      {image.previewUrl ? (
+        <button
+          type="button"
+          className="block h-full w-full cursor-zoom-in"
+          aria-label={`Preview ${image.name}`}
+          onClick={() => {
+            const preview = buildExpandedImagePreview(images, image.id);
+            if (preview) onImageExpand(preview);
+          }}
+        >
+          <img src={image.previewUrl} alt={image.name} className="block size-full object-cover" />
+        </button>
+      ) : (
+        <div className="flex min-h-[72px] items-center justify-center px-2 py-3 text-center text-2xs text-muted-foreground/70">
+          {image.name}
+        </div>
+      )}
+      {image.previewUrl && image.source?.kind === "snap-shot" ? (
+        <SnapShotAttachmentDetails source={image.source} />
+      ) : null}
+    </div>
+  );
+}
+
+function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
+  const ctx = use(TimelineRowCtx);
+  const { onImageExpand, onFileOpen } = ctx;
+  const senderThreadId = row.message.senderThreadId;
+  const messageWithPreviews = useMessageWithImagePreviews(
+    ctx.activeThreadEnvironmentId,
+    row.message,
+  );
   // The attachment union has an open member, so guards (not literal type
   // comparisons) split it. Unknown types render as inert rows below the files.
   const userImages = useMemo(
@@ -2904,41 +2969,12 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         {(regularImages.length > 0 || userVideos.length > 0) && (
           <div className="mb-2 grid max-w-[210px] grid-cols-2 gap-2">
             {regularImages.map((image) => (
-              <div
+              <UserImageThumbnail
                 key={image.id}
-                className={cn(
-                  "bg-background/70",
-                  image.source?.kind === "snap-shot" && image.previewUrl
-                    ? cn(SNAP_SHOT_ATTACHMENT_FRAME_CLASS, "col-span-2")
-                    : "aspect-[4/3] overflow-hidden rounded-lg border border-border/80",
-                )}
-              >
-                {image.previewUrl ? (
-                  <button
-                    type="button"
-                    className="block h-full w-full cursor-zoom-in"
-                    aria-label={`Preview ${image.name}`}
-                    onClick={() => {
-                      const preview = buildExpandedImagePreview(regularImages, image.id);
-                      if (!preview) return;
-                      ctx.onImageExpand(preview);
-                    }}
-                  >
-                    <img
-                      src={image.previewUrl}
-                      alt={image.name}
-                      className="block size-full object-cover"
-                    />
-                  </button>
-                ) : (
-                  <div className="flex min-h-[72px] items-center justify-center px-2 py-3 text-center text-2xs text-muted-foreground/70">
-                    {image.name}
-                  </div>
-                )}
-                {image.previewUrl && image.source?.kind === "snap-shot" ? (
-                  <SnapShotAttachmentDetails source={image.source} />
-                ) : null}
-              </div>
+                image={image}
+                images={regularImages}
+                onImageExpand={ctx.onImageExpand}
+              />
             ))}
             {userVideos.map((file) => (
               <UserVideoAttachment key={file.id} file={file} />

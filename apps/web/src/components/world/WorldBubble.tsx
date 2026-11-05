@@ -8,6 +8,7 @@ import * as DateTime from "effect/DateTime";
 import {
   ArchiveIcon,
   ChevronDownIcon,
+  ChevronUpIcon,
   PanelRightCloseIcon,
   RefreshCwIcon,
   XIcon,
@@ -28,7 +29,7 @@ import {
   useThreadShell,
 } from "../../state/entities";
 import { derivePendingApprovals, derivePendingUserInputs } from "../../session-logic";
-import type { ChatMessage } from "../../types";
+import { isImageAttachment, type ChatMessage } from "../../types";
 import { threadEnvironment } from "../../state/threads";
 import { useTheme } from "../../hooks/useTheme";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
@@ -43,10 +44,14 @@ import {
 } from "../ThreadStatusIndicators";
 import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "../chat/composerPromptHistory";
 import { ComposerBanner } from "../chat/ComposerBanner";
+import { ExpandedImageDialog } from "../chat/ExpandedImageDialog";
+import { expandedImageKey, type ExpandedImagePreview } from "../chat/ExpandedImagePreview";
 import {
   ClampedUserMessage,
   type UserMessageChipState,
+  UserImageThumbnail,
   UserMessageActions,
+  useMessageWithImagePreviews,
 } from "../chat/MessagesTimeline";
 import { ComposerPendingUserInputPanel } from "../chat/ComposerPendingUserInputPanel";
 import { QueuedRunsControl } from "../chat/QueuedRunsControl";
@@ -659,14 +664,41 @@ function ExchangePin(props: {
   readonly threadRef: ScopedThreadRef;
   readonly timestampFormat: TimestampFormat;
 }) {
-  const { message } = props;
+  const message = useMessageWithImagePreviews(props.threadRef.environmentId, props.message);
   // An attachment-only message was sent with a stand-in prompt: there is no text of yours to copy.
   const attachmentOnly = message.text === ATTACHMENT_ONLY_BOOTSTRAP_PROMPT;
   const attachmentCount = message.attachments?.length ?? 0;
+  // As the chat shows them: annotation captures belong to their chip, not the grid.
+  const images = useMemo(
+    () =>
+      (message.attachments ?? [])
+        .filter(isImageAttachment)
+        .filter((image) => !image.name.startsWith("preview-annotation-")),
+    [message.attachments],
+  );
+  const [expandedImage, setExpandedImage] = useState<ExpandedImagePreview | null>(null);
   const forActions = useMemo(
     () => (attachmentOnly ? { ...message, text: "" } : message),
     [attachmentOnly, message],
   );
+  // Keyed by message, so the next message you send starts clipped again.
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const expanded = expandedId === message.id;
+  const [clipped, setClipped] = useState(false);
+  const bubble = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (expanded) return;
+    const clip = bubble.current?.querySelector<HTMLElement>(".clamped-message") ?? null;
+    if (clip === null) {
+      setClipped(false);
+      return;
+    }
+    const measure = () => setClipped(clip.scrollHeight > clip.clientHeight + 1);
+    measure();
+    return observeResize(clip, measure);
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A new message renders a new clip to measure.
+  }, [expanded, message]);
+  const toggleLabel = expanded ? "Show less" : "Show full message";
   return (
     <div
       data-exchange-pin
@@ -676,17 +708,40 @@ function ExchangePin(props: {
       <div className="pointer-events-none absolute inset-x-0 bottom-full h-1 bg-popover" />
       <div className="pointer-events-none absolute inset-x-0 top-full hidden h-10 bg-linear-to-b from-popover to-transparent group-data-[stuck]/pin:block" />
       <div
-        className="max-w-[85%] rounded-lg bg-message px-3 py-2 break-words text-message-foreground"
+        ref={bubble}
+        className={cn(
+          "max-w-[85%] rounded-lg bg-message px-3 py-2 break-words text-message-foreground",
+          // A long message stays a pin, not a wall over the reply.
+          expanded && "max-h-72 overflow-y-auto",
+        )}
         aria-label="Your message"
       >
         <RollingSwap swapKey={message.id}>
-          {attachmentOnly ? (
+          {images.length > 0 ? (
+            <div className="mb-2 grid max-w-[210px] grid-cols-2 gap-2 last:mb-0">
+              {images.map((image) => (
+                <UserImageThumbnail
+                  key={image.id}
+                  image={image}
+                  images={images}
+                  onImageExpand={setExpandedImage}
+                />
+              ))}
+            </div>
+          ) : null}
+          {!attachmentOnly ? (
+            <ClampedUserMessage
+              message={message}
+              chips={props.chips}
+              interactive
+              expanded={expanded}
+              onImageExpand={setExpandedImage}
+            />
+          ) : images.length < attachmentCount ? (
             <span className="line-clamp-2">
               {`${attachmentCount} ${attachmentCount === 1 ? "attachment" : "attachments"}`}
             </span>
-          ) : (
-            <ClampedUserMessage message={message} chips={props.chips} interactive />
-          )}
+          ) : null}
         </RollingSwap>
       </div>
       <UserMessageActions
@@ -696,7 +751,38 @@ function ExchangePin(props: {
         timestampFormat={props.timestampFormat}
         // Faint rather than hidden, so the pin shows it has actions.
         className="max-w-[85%] opacity-50"
-      />
+      >
+        {clipped || expanded ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="ghost"
+                  aria-expanded={expanded}
+                  aria-label={toggleLabel}
+                  onClick={() => setExpandedId(expanded ? null : message.id)}
+                />
+              }
+            >
+              {expanded ? (
+                <ChevronUpIcon className="size-3" />
+              ) : (
+                <ChevronDownIcon className="size-3" />
+              )}
+            </TooltipTrigger>
+            <TooltipPopup side="top">{toggleLabel}</TooltipPopup>
+          </Tooltip>
+        ) : null}
+      </UserMessageActions>
+      {expandedImage !== null ? (
+        <ExpandedImageDialog
+          key={expandedImageKey(expandedImage)}
+          preview={expandedImage}
+          onClose={() => setExpandedImage(null)}
+        />
+      ) : null}
     </div>
   );
 }

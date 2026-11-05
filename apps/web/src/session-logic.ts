@@ -904,16 +904,15 @@ export function selectHandoffImageResources(
 }
 
 /** Own one mapper per preview stage. Immutable messages retain unchanged preview objects. */
-export function createMessageAttachmentPreviewProjector() {
+export function createMessageAttachmentPreviewProjector<
+  M extends Pick<ChatMessage, "attachments"> = ChatMessage,
+>() {
   const attachmentsBySource = new WeakMap<
     ReadonlyArray<ChatAttachment>,
     ReadonlyArray<ChatAttachment>
   >();
-  const messagesBySource = new WeakMap<ChatMessage, ChatMessage>();
-  return (
-    message: ChatMessage,
-    previewUrlFor: (attachment: ChatAttachment) => string | undefined,
-  ): ChatMessage => {
+  const messagesBySource = new WeakMap<M, M>();
+  return (message: M, previewUrlFor: (attachment: ChatAttachment) => string | undefined): M => {
     const source = message.attachments;
     if (!source || source.length === 0) return message;
     const previous = attachmentsBySource.get(source) ?? source;
