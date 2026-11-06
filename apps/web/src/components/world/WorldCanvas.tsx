@@ -138,6 +138,7 @@ import {
   BUBBLE_MOVED_ATTRIBUTE,
   BUBBLE_RESIZED_ATTRIBUTE,
   BubbleResizeFrame,
+  CHAT_BUBBLE_SIZING,
 } from "./BubbleResizeFrame";
 import { VOICE_INPUT_ENABLED, voiceInputSupported } from "./useVoiceInput";
 
@@ -917,11 +918,12 @@ export default function WorldCanvas(props: {
       .toSorted((a, b) => b.facts.lastReplyAt.localeCompare(a.facts.lastReplyAt));
     const scriptAgent = agents.find((c) => c.facts.worktreePath === null) ?? agents[0];
     const onMainland = mainland.has(key);
+    const place = onMainland ? "the mainland" : "this island";
     const clicked = await showContextMenuFallback(
       [
-        { id: "only", label: "Show only this island", icon: "eye" },
-        { id: "hide", label: "Hide this island", icon: "eye-off" },
-        { id: "zoom", label: "Zoom to this island", icon: "zoom-in" },
+        { id: "only", label: `Show only ${place}`, icon: "eye" },
+        { id: "hide", label: `Hide ${place}`, icon: "eye-off" },
+        { id: "zoom", label: `Zoom to ${place}`, icon: "zoom-in" },
         // The mainland has no project to script or remove.
         ...(onMainland
           ? []
@@ -971,7 +973,12 @@ export default function WorldCanvas(props: {
           separatorBefore: true,
         },
         { id: "restore-archived", label: "Restore archived agent…", icon: "archive-restore" },
-        { id: "prefs", label: "Island preferences…", icon: "settings", separatorBefore: true },
+        {
+          id: "prefs",
+          label: onMainland ? "Mainland preferences…" : "Island preferences…",
+          icon: "settings",
+          separatorBefore: true,
+        },
         // Hiding keeps the project; removing it drops the project and its threads.
         ...(onMainland
           ? []
@@ -1213,6 +1220,11 @@ export default function WorldCanvas(props: {
               trailing: String(toTheLeft.length),
               disabled: toTheLeft.length === 0,
             },
+            {
+              id: "archive-all",
+              label: "All agents",
+              trailing: String(others.length + 1),
+            },
           ],
         },
       ],
@@ -1226,6 +1238,7 @@ export default function WorldCanvas(props: {
       void archiveAll(idleVisibleSubagents, idleHiddenSubagents);
     else if (clicked === "archive-others") void archiveAll(others);
     else if (clicked === "archive-left") void archiveAll(toTheLeft);
+    else if (clicked === "archive-all") void archiveAll([character, ...others]);
     else if (clicked === "regenerate-title") void regenerateTitle(character);
     else if (clicked === "voice") {
       setPicked(new Set());
@@ -1500,14 +1513,16 @@ export default function WorldCanvas(props: {
     return () => document.removeEventListener("pointerdown", closeOutside, true);
   }, [bubbleOpen]);
   // Same for the new-agent bubble, which leaves a typed task as the island's draft.
-  // Presses on the canvas go through clickGround, so dragging the map keeps it open.
+  // Presses on the canvas go through clickGround, so dragging the map keeps it open, and
+  // presses in the chat and surfaces frame leave it be: only the world closes it.
   const newAgentOpen = newAgent !== null;
   useEffect(() => {
     if (!newAgentOpen) return;
     const closeOutside = (event: PointerEvent) => {
       const target = event.target as Node | null;
       if (target === null || newAgentRef.current?.contains(target)) return;
-      if (target instanceof Element && target.closest(PORTALED_LAYERS)) return;
+      if (target instanceof Element && target.closest(`${PORTALED_LAYERS}, [data-world-frame]`))
+        return;
       if (containerRef.current?.querySelector("canvas")?.contains(target)) return;
       setNewAgent(null);
     };
@@ -1822,7 +1837,10 @@ export default function WorldCanvas(props: {
                   of the box the frame left must not catch clicks meant to close the bubble. */}
               <div className="-translate-x-1/2 -translate-y-[calc(100%+0.75rem)]">
                 {/* Keyed with the bubble, so another character's bubble opens unresized. */}
-                <BubbleResizeFrame key={`${bubble.facts.key}:${listenKey === bubble.facts.key}`}>
+                <BubbleResizeFrame
+                  key={`${bubble.facts.key}:${listenKey === bubble.facts.key}`}
+                  sizing={CHAT_BUBBLE_SIZING}
+                >
                   <WorldBubble
                     facts={bubble.facts}
                     listen={listenKey === bubble.facts.key}
@@ -1911,7 +1929,8 @@ export default function WorldCanvas(props: {
       ))}
       {newAgent !== null ? (
         <div ref={newAgentRef} className="pointer-events-none absolute top-0 left-0 z-30">
-          <div className="pointer-events-auto -translate-x-1/2 -translate-y-[calc(100%+0.75rem)]">
+          {/* Untouchable itself, like the chat bubble's: its bubble takes the pointer. */}
+          <div className="-translate-x-1/2 -translate-y-[calc(100%+0.75rem)]">
             <NewAgentBubble
               key={`${newAgent.islandKey}#${newAgent.slotIndex}`}
               islandName={projectTitles.get(newAgent.islandKey) ?? "this island"}
@@ -2049,6 +2068,7 @@ export default function WorldCanvas(props: {
         <IslandPrefsDialog
           islandKey={prefsOn}
           title={projectTitles.get(prefsOn) ?? "Project"}
+          onMainland={mainland.has(prefsOn)}
           checkouts={projectCheckouts.get(prefsOn) ?? []}
           onClose={() => setPrefsOn(null)}
         />

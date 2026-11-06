@@ -324,6 +324,8 @@ export function WorldLayout({
         <Activity mode={framePresent ? "visible" : "hidden"}>
           <div
             ref={panelRef}
+            // The new-agent bubble stays open while you work in the chat beside it.
+            data-world-frame=""
             inert={!frameShown}
             className={cn(
               "absolute top-[calc(var(--workspace-topbar-height)+0.25rem)] right-3 bottom-3 w-[min(calc(var(--resizable-width)+var(--world-frame-offset)),calc(100%-4rem))]",

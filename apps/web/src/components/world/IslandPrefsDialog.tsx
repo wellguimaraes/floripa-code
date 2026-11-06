@@ -73,11 +73,13 @@ const ProjectIconPickerDialog = lazy(() =>
 export function IslandPrefsDialog(props: {
   readonly islandKey: string;
   readonly title: string;
+  /** The Scratch project's land, named the mainland rather than an island. */
+  readonly onMainland: boolean;
   /** The island's checkouts, the main one first; the icon is saved on each, as Settings does. */
   readonly checkouts: ReadonlyArray<EnvironmentProject>;
   readonly onClose: () => void;
 }) {
-  const { islandKey, title, checkouts, onClose } = props;
+  const { islandKey, title, onMainland, checkouts, onClose } = props;
   const id = useId();
   const prefs = useWorldIslandPrefsStore((state) => state.prefs[islandKey]);
   const update = useWorldIslandPrefsStore((state) => state.update);
@@ -94,7 +96,7 @@ export function IslandPrefsDialog(props: {
     >
       <DialogPopup className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Island preferences</DialogTitle>
+          <DialogTitle>{onMainland ? "Mainland preferences" : "Island preferences"}</DialogTitle>
           <DialogDescription>{title}</DialogDescription>
         </DialogHeader>
         <DialogPanel>

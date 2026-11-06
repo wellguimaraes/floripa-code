@@ -8,7 +8,6 @@ import * as DateTime from "effect/DateTime";
 import {
   ArchiveIcon,
   ChevronDownIcon,
-  ChevronUpIcon,
   PanelRightCloseIcon,
   RefreshCwIcon,
   XIcon,
@@ -33,7 +32,7 @@ import { isImageAttachment, type ChatMessage } from "../../types";
 import { threadEnvironment } from "../../state/threads";
 import { useTheme } from "../../hooks/useTheme";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
-import { Button } from "../ui/button";
+import { Button, InlineButton } from "../ui/button";
 import { Kbd } from "../ui/kbd";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -522,7 +521,7 @@ export function WorldBubble(props: {
                 element.scrollHeight - element.scrollTop - element.clientHeight < 4;
               setAwayFromEnd(!followingEnd.current);
             }}
-            className="-mx-2.5 mt-1 flex h-(--bubble-exchange-height) flex-col overflow-y-auto border-b border-border px-2.5 text-bubble has-[>[data-exchange]:empty]:hidden"
+            className="-mx-2.5 mt-1 flex h-(--bubble-body-height) flex-col overflow-y-auto border-b border-border px-2.5 text-bubble has-[>[data-exchange]:empty]:hidden"
           >
             {/* Sat at the bottom, as the chat reads, while the conversation is shorter than the box. */}
             <div
@@ -698,7 +697,6 @@ function ExchangePin(props: {
     return observeResize(clip, measure);
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A new message renders a new clip to measure.
   }, [expanded, message]);
-  const toggleLabel = expanded ? "Show less" : "Show full message";
   return (
     <div
       data-exchange-pin
@@ -709,40 +707,51 @@ function ExchangePin(props: {
       <div className="pointer-events-none absolute inset-x-0 top-full hidden h-10 bg-linear-to-b from-popover to-transparent group-data-[stuck]/pin:block" />
       <div
         ref={bubble}
-        className={cn(
-          "max-w-[85%] rounded-lg bg-message px-3 py-2 break-words text-message-foreground",
-          // A long message stays a pin, not a wall over the reply.
-          expanded && "max-h-72 overflow-y-auto",
-        )}
+        className="max-w-[85%] rounded-lg bg-message px-3 py-2 break-words text-message-foreground"
         aria-label="Your message"
       >
-        <RollingSwap swapKey={message.id}>
-          {images.length > 0 ? (
-            <div className="mb-2 grid max-w-[210px] grid-cols-2 gap-2 last:mb-0">
-              {images.map((image) => (
-                <UserImageThumbnail
-                  key={image.id}
-                  image={image}
-                  images={images}
-                  onImageExpand={setExpandedImage}
-                />
-              ))}
-            </div>
-          ) : null}
-          {!attachmentOnly ? (
-            <ClampedUserMessage
-              message={message}
-              chips={props.chips}
-              interactive
-              expanded={expanded}
-              onImageExpand={setExpandedImage}
-            />
-          ) : images.length < attachmentCount ? (
-            <span className="line-clamp-2">
-              {`${attachmentCount} ${attachmentCount === 1 ? "attachment" : "attachments"}`}
-            </span>
-          ) : null}
-        </RollingSwap>
+        {/* A long message stays a pin, not a wall over the reply. */}
+        <div className={cn(expanded && "max-h-64 overflow-y-auto")}>
+          <RollingSwap swapKey={message.id}>
+            {images.length > 0 ? (
+              <div className="mb-2 grid max-w-[210px] grid-cols-2 gap-2 last:mb-0">
+                {images.map((image) => (
+                  <UserImageThumbnail
+                    key={image.id}
+                    image={image}
+                    images={images}
+                    onImageExpand={setExpandedImage}
+                  />
+                ))}
+              </div>
+            ) : null}
+            {!attachmentOnly ? (
+              <ClampedUserMessage
+                message={message}
+                chips={props.chips}
+                interactive
+                lines={3}
+                expanded={expanded}
+                onImageExpand={setExpandedImage}
+              />
+            ) : images.length < attachmentCount ? (
+              <span className="line-clamp-2">
+                {`${attachmentCount} ${attachmentCount === 1 ? "attachment" : "attachments"}`}
+              </span>
+            ) : null}
+          </RollingSwap>
+        </div>
+        {clipped || expanded ? (
+          <div className="mt-1 text-xs">
+            <InlineButton
+              tone="muted"
+              aria-expanded={expanded}
+              onClick={() => setExpandedId(expanded ? null : message.id)}
+            >
+              {expanded ? "Show less" : "Show more"}
+            </InlineButton>
+          </div>
+        ) : null}
       </div>
       <UserMessageActions
         message={forActions}
@@ -751,31 +760,7 @@ function ExchangePin(props: {
         timestampFormat={props.timestampFormat}
         // Faint rather than hidden, so the pin shows it has actions.
         className="max-w-[85%] opacity-50"
-      >
-        {clipped || expanded ? (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  size="xs"
-                  variant="ghost"
-                  aria-expanded={expanded}
-                  aria-label={toggleLabel}
-                  onClick={() => setExpandedId(expanded ? null : message.id)}
-                />
-              }
-            >
-              {expanded ? (
-                <ChevronUpIcon className="size-3" />
-              ) : (
-                <ChevronDownIcon className="size-3" />
-              )}
-            </TooltipTrigger>
-            <TooltipPopup side="top">{toggleLabel}</TooltipPopup>
-          </Tooltip>
-        ) : null}
-      </UserMessageActions>
+      />
       {expandedImage !== null ? (
         <ExpandedImageDialog
           key={expandedImageKey(expandedImage)}

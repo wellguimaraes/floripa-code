@@ -2148,7 +2148,7 @@ function TimelinePinnedPrompt({
 }
 
 /**
- * A sent message clipped to two lines, with the timeline's body and chips: the pinned
+ * A sent message clipped to `lines` lines (two by default), with the timeline's body and chips: the pinned
  * prompt, and the world's agent bubble. Chips render as labels only. The pinned prompt is
  * one jump target, so its body is inert; `interactive` keeps links clickable where the
  * preview isn't a target itself. Goes inside the padded bubble, never on it, so a third
@@ -2160,12 +2160,14 @@ export const ClampedUserMessage = memo(function ClampedUserMessage({
   message,
   chips,
   interactive = false,
+  lines = 2,
   expanded = false,
   onImageExpand,
 }: {
   message: Pick<ChatMessage, "text" | "context" | "attachments">;
   chips: UserMessageChipState;
   interactive?: boolean;
+  lines?: 2 | 3;
   expanded?: boolean;
   onImageExpand?: (preview: ExpandedImagePreview) => void;
 }) {
@@ -2205,7 +2207,14 @@ export const ClampedUserMessage = memo(function ClampedUserMessage({
   const attachmentCount = message.attachments?.length ?? 0;
   return (
     <UserMessageChipCtx value={chips}>
-      <div inert={!interactive} className={cn("clamped-message", !expanded && "line-clamp-2")}>
+      <div
+        inert={!interactive}
+        className={cn(
+          "clamped-message",
+          !expanded && lines === 2 && "line-clamp-2",
+          !expanded && lines === 3 && "line-clamp-3",
+        )}
+      >
         {resolvedContext.text.trim().length > 0 ? (
           <UserMessageBody
             text={resolvedContext.text}

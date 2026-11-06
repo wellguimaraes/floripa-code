@@ -7,14 +7,37 @@ import { cn } from "../../lib/utils";
 const BubbleSize = Schema.Struct({ width: Schema.Number, height: Schema.Number });
 type BubbleSize = typeof BubbleSize.Type;
 
-const STORAGE_KEY = "floripacode:world-bubble-size:v1";
-/** The bubble's width and its conversation's height before anyone drags it. */
-export const DEFAULT_BUBBLE_SIZE: BubbleSize = { width: 432, height: 320 };
+/** How a kind of bubble sizes: what it starts at, how far it gives, and where it is remembered. */
+export interface BubbleSizing {
+  readonly storageKey: string;
+  /** The bubble's width and its body's height before anyone drags it. */
+  readonly defaultSize: BubbleSize;
+  readonly minHeight: number;
+  /** Room the rest of the bubble keeps around its body when the body is tallest. */
+  readonly chromeHeight: number;
+}
+
+/** A character's chat bubble, whose body is its conversation. */
+export const CHAT_BUBBLE_SIZING: BubbleSizing = {
+  storageKey: "floripacode:world-bubble-size:v1",
+  defaultSize: { width: 432, height: 320 },
+  minHeight: 120,
+  chromeHeight: 320,
+};
+
+/**
+ * The new-agent bubble, whose body is its text box. Its default is the box's resting height:
+ * until dragged taller, it still grows with the text as before.
+ */
+export const NEW_AGENT_BUBBLE_SIZING: BubbleSizing = {
+  storageKey: "floripacode:world-new-agent-bubble-size:v1",
+  defaultSize: { width: 510, height: 56 },
+  minHeight: 56,
+  chromeHeight: 200,
+};
+
 const MIN_WIDTH = 360;
 const MAX_WIDTH = 960;
-const MIN_HEIGHT = 120;
-/** Room the header and composer keep around the conversation when it is tallest. */
-const CHROME_HEIGHT = 320;
 
 /**
  * Keeps a dragged size inside what the window can show. `window` is the viewport size: a size
@@ -23,12 +46,13 @@ const CHROME_HEIGHT = 320;
 export function clampBubbleSize(
   size: BubbleSize,
   window: { width: number; height: number },
+  sizing: BubbleSizing,
 ): BubbleSize {
   const clamp = (value: number, low: number, high: number) =>
     Math.round(Math.min(Math.max(value, low), Math.max(low, high)));
   return {
     width: clamp(size.width, MIN_WIDTH, Math.min(MAX_WIDTH, window.width - 32)),
-    height: clamp(size.height, MIN_HEIGHT, window.height - CHROME_HEIGHT),
+    height: clamp(size.height, sizing.minHeight, window.height - sizing.chromeHeight),
   };
 }
 
@@ -61,6 +85,12 @@ export const BUBBLE_MOVED_ATTRIBUTE = "data-bubble-moved";
 /** Marks the part of a bubble that drags it, its header. Controls inside it still click. */
 export const BUBBLE_DRAG_HANDLE_ATTRIBUTE = "data-bubble-drag-handle";
 
+/**
+ * Marks a body whose drawn height can differ from `--bubble-body-height`, such as a text box
+ * that grows with its text: a drag starts from the height it is drawn at, not the saved one.
+ */
+export const BUBBLE_BODY_ATTRIBUTE = "data-bubble-body";
+
 const INTERACTIVE = "button, a, input, textarea, select, [role=button], [contenteditable=true]";
 /** How close a dragged bubble may come to the window's edges. */
 const EDGE_PX = 8;
@@ -69,15 +99,20 @@ const EDGE_PX = 8;
  * A chat bubble the user can resize from any edge or corner, remembered in this browser. The
  * dragged edge follows the pointer and the opposite one stays put: the frame offsets itself
  * against the centring and bottom anchoring its parent gives it. The children read
- * `--bubble-width` and `--bubble-exchange-height`, the conversation's height. Dragging writes
+ * `--bubble-width` and `--bubble-body-height`, the height of the part that grows. Dragging writes
  * straight to the frame, so the bubble does not re-render per move; the size is saved on
  * release. Double-clicking a grip restores the default size and position. Dragging the
  * element marked with `BUBBLE_DRAG_HANDLE_ATTRIBUTE` moves the whole frame, kept inside the
  * window; the position is not remembered, so the bubble opens over its character again.
  */
-export function BubbleResizeFrame(props: { readonly children: ReactNode }) {
-  const [stored, setStored] = useLocalStorage(STORAGE_KEY, DEFAULT_BUBBLE_SIZE, BubbleSize);
-  const size = clampBubbleSize(stored, { width: window.innerWidth, height: window.innerHeight });
+export function BubbleResizeFrame(props: {
+  readonly sizing: BubbleSizing;
+  readonly children: ReactNode;
+}) {
+  const { sizing } = props;
+  const [stored, setStored] = useLocalStorage(sizing.storageKey, sizing.defaultSize, BubbleSize);
+  const viewport = () => ({ width: window.innerWidth, height: window.innerHeight });
+  const size = clampBubbleSize(stored, viewport(), sizing);
   const frame = useRef<HTMLDivElement>(null);
   // How far resizing has moved the frame from where its parent puts it; kept until it closes.
   const offset = useRef({ x: 0, y: 0 });
@@ -102,7 +137,7 @@ export function BubbleResizeFrame(props: { readonly children: ReactNode }) {
     const element = frame.current;
     if (element === null) return;
     element.style.setProperty("--bubble-width", `${next.width}px`);
-    element.style.setProperty("--bubble-exchange-height", `${next.height}px`);
+    element.style.setProperty("--bubble-body-height", `${next.height}px`);
     element.style.translate = `${offset.current.x}px ${offset.current.y}px`;
   };
 
@@ -112,14 +147,19 @@ export function BubbleResizeFrame(props: { readonly children: ReactNode }) {
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
     frame.current.setAttribute(BUBBLE_RESIZED_ATTRIBUTE, "");
+    const body = frame.current.querySelector<HTMLElement>(`[${BUBBLE_BODY_ATTRIBUTE}]`);
+    const start =
+      grip.y !== 0 && body !== null && body.offsetHeight > 0
+        ? clampBubbleSize({ ...size, height: body.offsetHeight }, viewport(), sizing)
+        : size;
     drag.current = {
       pointerId: event.pointerId,
       x: event.clientX,
       y: event.clientY,
       grip,
-      start: size,
+      start,
       startOffset: offset.current,
-      current: size,
+      current: start,
     };
   };
 
@@ -132,7 +172,8 @@ export function BubbleResizeFrame(props: { readonly children: ReactNode }) {
         width: start.width + grip.x * (event.clientX - active.x),
         height: start.height + grip.y * (event.clientY - active.y),
       },
-      { width: window.innerWidth, height: window.innerHeight },
+      viewport(),
+      sizing,
     );
     // The parent centres the frame and hangs it from its bottom: half the width it gains goes
     // to each side, and all the height it gains goes on top. Shift it back so only the dragged
@@ -208,7 +249,7 @@ export function BubbleResizeFrame(props: { readonly children: ReactNode }) {
       style={
         {
           "--bubble-width": `${size.width}px`,
-          "--bubble-exchange-height": `${size.height}px`,
+          "--bubble-body-height": `${size.height}px`,
         } as CSSProperties
       }
     >
@@ -225,8 +266,8 @@ export function BubbleResizeFrame(props: { readonly children: ReactNode }) {
           onPointerCancel={onPointerEnd}
           onDoubleClick={() => {
             offset.current = { x: 0, y: 0 };
-            apply(DEFAULT_BUBBLE_SIZE);
-            setStored(DEFAULT_BUBBLE_SIZE);
+            apply(sizing.defaultSize);
+            setStored(sizing.defaultSize);
           }}
         />
       ))}

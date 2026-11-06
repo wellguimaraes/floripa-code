@@ -37,6 +37,7 @@ import {
   composerSuggestionOptionId,
 } from "../chat/ComposerCommandMenu";
 import { BubbleAttachmentList } from "./BubbleAttachmentList";
+import { BUBBLE_BODY_ATTRIBUTE } from "./BubbleResizeFrame";
 import type { useBubbleAttachments } from "./useBubbleAttachments";
 import { type BubbleSlashCommand, useBubbleSuggestions } from "./useBubbleSuggestions";
 import { useVoiceInput, VOICE_INPUT_ENABLED, voiceInputSupported } from "./useVoiceInput";
@@ -110,10 +111,15 @@ export function BubbleComposer(props: {
   readonly selectOnOpen?: boolean;
   readonly header: ReactNode;
   /**
-   * Slimmer for the manager bubble; wider for the new-agent bubble, so its pickers fit one line.
-   * Resizable takes `--bubble-width` from a surrounding `BubbleResizeFrame`.
+   * Slimmer for the manager bubble. Resizable takes `--bubble-width` from a surrounding
+   * `BubbleResizeFrame`.
    */
-  readonly width?: "narrow" | "wide" | "resizable";
+  readonly width?: "narrow" | "resizable";
+  /**
+   * Resizable makes the text box the frame's body: at least `--bubble-body-height` tall, and
+   * still growing with its text up to the usual cap until dragged past it.
+   */
+  readonly inputHeight?: "fit" | "resizable";
   /** Shown between the staged files and the status line. */
   readonly children?: ReactNode;
   /**
@@ -505,7 +511,6 @@ export function BubbleComposer(props: {
       className={cn(
         "flex w-108 flex-col gap-2 rounded-xl border border-border bg-popover p-2.5 outline-none",
         props.width === "narrow" && "w-96",
-        props.width === "wide" && "w-127.5",
         props.width === "resizable" && "w-(--bubble-width)",
         "text-popover-foreground shadow-lg",
         dropping && "border-primary",
@@ -567,7 +572,21 @@ export function BubbleComposer(props: {
       <div ref={field} className="relative z-40">
         {/* Unframed: the bubble is the field, and its text lines up with the hints below, both
             inset a little from the bubble's edge. */}
-        <div className="py-1 pl-1.5">
+        {/* Resizable, this box scrolls the text instead of the editor, so it can stand taller
+            than its text; a press in the empty part below the text still lands in the editor. */}
+        <div
+          {...(props.inputHeight === "resizable" && { [BUBBLE_BODY_ATTRIBUTE]: "" })}
+          className={cn(
+            "py-1 pl-1.5",
+            props.inputHeight === "resizable" &&
+              "min-h-(--bubble-body-height) max-h-[max(10.5rem,var(--bubble-body-height))] cursor-text overflow-y-auto",
+          )}
+          onMouseDown={(event) => {
+            if (props.inputHeight !== "resizable" || event.target !== event.currentTarget) return;
+            event.preventDefault();
+            editor.current?.focusAtEnd();
+          }}
+        >
           <ComposerPromptEditor
             editorRef={editor}
             value={text}
@@ -584,7 +603,10 @@ export function BubbleComposer(props: {
                 ? undefined
                 : composerSuggestionOptionId(suggestionListId, suggestions.activeItem.id)
             }
-            className="max-h-40 min-h-12 overflow-y-auto"
+            className={cn(
+              "min-h-12",
+              props.inputHeight === "resizable" ? "max-h-none" : "max-h-40 overflow-y-auto",
+            )}
             onChange={(nextValue, nextCursor, expandedCursor, besideChip, contextIds) => {
               const previouslyReferenced = new Set(collectInlineContextIds(latestText.current));
               latestText.current = nextValue;

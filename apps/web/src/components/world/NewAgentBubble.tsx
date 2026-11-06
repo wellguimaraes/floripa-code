@@ -56,6 +56,7 @@ import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { WorktreeBaseBranchPicker } from "../WorktreeBaseBranchPicker";
 import { BubbleComposer } from "./BubbleComposer";
+import { BubbleResizeFrame, NEW_AGENT_BUBBLE_SIZING } from "./BubbleResizeFrame";
 import { CharacterHueButton } from "./CharacterHueButton";
 import type { NewAgentDraft } from "./newAgentDraftStore";
 import {
@@ -346,171 +347,185 @@ export function NewAgentBubble(props: {
     );
 
   return (
-    <BubbleComposer
-      cwd={selectedWorkspace.kind === "worktree" ? selectedWorkspace.path : workspaceRoot}
-      provider={providerEntry?.snapshot ?? null}
-      slashCommands={slashCommands}
-      onSlashCommand={(command) => {
-        if (command === "model") setModelPickerOpen(true);
-        else setPicked((current) => ({ ...current, interactionMode: command }));
-      }}
-      environmentId={project.environmentId}
-      attachments={attachments}
-      text={text}
-      onTextChange={setText}
-      // A draft comes back whole, so typing replaces it and a click keeps it.
-      selectOnOpen={draft !== null && draft.text !== ""}
-      onSubmit={() => void start()}
-      onClose={onClose}
-      placeholder="What should it work on?"
-      inputLabel={`Task for a new agent on ${islandName}`}
-      submitLabel="Start"
-      speakLabel="Speak the task"
-      width="wide"
-      error={state.phase === "error" ? state.message : null}
-      onError={showError}
-      busy={state.phase === "starting"}
-      // The send button spins; only a new worktree's slower setup gets a line.
-      busyStatus={selectedWorkspace.kind === "new-worktree" ? "Preparing the new worktree…" : null}
-      header={
-        // Ruled off below, edge to edge, like the other bubbles' headers.
-        <div className="-mx-2.5 flex items-stretch gap-1.5 border-b border-border px-2.5 pb-3">
-          <CharacterHueButton hue={hue} hat={null} onHueChange={setHue} className="w-10" />
-          <div className="flex min-w-0 flex-1 flex-col items-start">
-            <span className="max-w-full truncate text-base font-medium">Start New Agent</span>
-            {workspaces.isRepo && selectedWorkspace.kind === "new-worktree" ? (
-              <div className="flex max-w-full min-w-0 items-center gap-1">
-                <WorktreeBaseBranchPicker
-                  environmentId={project.environmentId}
-                  cwd={workspaceRoot}
-                  value={selectedWorkspace.baseBranch ?? workspaces.worktreeBaseBranch ?? ""}
-                  onValueChange={(baseBranch) => setWorkspace({ ...selectedWorkspace, baseBranch })}
-                  startFromOrigin={behindOrigin > 0}
-                  disabled={state.phase === "starting"}
-                  size="xs"
-                  prefix={
-                    <span className="inline-flex shrink-0 items-center gap-2 pl-1 text-muted-foreground">
-                      <WorkspaceIcon workspace={selectedWorkspace} className="size-3 shrink-0" />
-                      New worktree from
-                    </span>
-                  }
-                />
-                {behindOrigin > 0 && baseBranch !== null ? (
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={<span aria-label="Starting from origin" className="flex shrink-0" />}
-                    >
-                      <TriangleAlertIcon aria-hidden className="size-3.5 text-warning" />
-                    </TooltipTrigger>
-                    <TooltipPopup side="top" className="max-w-64 whitespace-normal">
-                      Local {baseBranch} is {behindOrigin}{" "}
-                      {behindOrigin === 1 ? "commit" : "commits"} behind origin, so the new worktree
-                      starts from origin/{baseBranch}.
-                    </TooltipPopup>
-                  </Tooltip>
-                ) : null}
-              </div>
-            ) : workspaces.isRepo ? (
-              <Select
-                modal={false}
-                value={workspaceValue(selectedWorkspace)}
-                items={workspaceItems}
-                disabled={state.phase === "starting"}
-                onValueChange={(value: string | null) => {
-                  const item = workspaceItems.find((candidate) => candidate.value === value);
-                  if (item !== undefined) setWorkspace(item.workspace);
-                }}
-              >
-                <SelectPrimitive.Trigger
-                  aria-label="Workspace"
-                  className={cn(
-                    "flex max-w-full min-w-0 cursor-pointer items-center gap-1 rounded-sm",
-                    "text-xs leading-4 text-muted-foreground outline-none hover:text-foreground",
-                    "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-                    "data-disabled:pointer-events-none data-disabled:opacity-64",
-                  )}
-                >
-                  <WorkspaceIcon workspace={selectedWorkspace} className="size-3 shrink-0" />
-                  <SelectValue />
-                </SelectPrimitive.Trigger>
-                <SelectPopup alignItemWithTrigger={false}>
-                  {workspaceItems.map((item) => (
-                    <SelectItem key={item.value} value={item.value}>
-                      <span className="inline-flex min-w-0 items-center gap-1.5">
-                        <WorkspaceIcon workspace={item.workspace} className="size-3" />
-                        <span className="truncate">{item.label}</span>
+    // Only this step resizes and moves: the workspace list keeps its own width.
+    <BubbleResizeFrame sizing={NEW_AGENT_BUBBLE_SIZING}>
+      <BubbleComposer
+        cwd={selectedWorkspace.kind === "worktree" ? selectedWorkspace.path : workspaceRoot}
+        provider={providerEntry?.snapshot ?? null}
+        slashCommands={slashCommands}
+        onSlashCommand={(command) => {
+          if (command === "model") setModelPickerOpen(true);
+          else setPicked((current) => ({ ...current, interactionMode: command }));
+        }}
+        environmentId={project.environmentId}
+        attachments={attachments}
+        text={text}
+        onTextChange={setText}
+        // A draft comes back whole, so typing replaces it and a click keeps it.
+        selectOnOpen={draft !== null && draft.text !== ""}
+        onSubmit={() => void start()}
+        onClose={onClose}
+        placeholder="What should it work on?"
+        inputLabel={`Task for a new agent on ${islandName}`}
+        submitLabel="Start"
+        speakLabel="Speak the task"
+        width="resizable"
+        inputHeight="resizable"
+        error={state.phase === "error" ? state.message : null}
+        onError={showError}
+        busy={state.phase === "starting"}
+        // The send button spins; only a new worktree's slower setup gets a line.
+        busyStatus={
+          selectedWorkspace.kind === "new-worktree" ? "Preparing the new worktree…" : null
+        }
+        header={
+          // Ruled off below, edge to edge, like the other bubbles' headers. Drags the bubble
+          // (BubbleResizeFrame); its pickers and buttons still click.
+          <div
+            data-bubble-drag-handle=""
+            className="-mx-2.5 flex cursor-grab touch-none items-stretch gap-1.5 border-b border-border px-2.5 pb-3 active:cursor-grabbing"
+          >
+            <CharacterHueButton hue={hue} hat={null} onHueChange={setHue} className="w-10" />
+            <div className="flex min-w-0 flex-1 flex-col items-start">
+              <span className="max-w-full truncate text-base font-medium">Start New Agent</span>
+              {workspaces.isRepo && selectedWorkspace.kind === "new-worktree" ? (
+                <div className="flex max-w-full min-w-0 items-center gap-1">
+                  <WorktreeBaseBranchPicker
+                    environmentId={project.environmentId}
+                    cwd={workspaceRoot}
+                    value={selectedWorkspace.baseBranch ?? workspaces.worktreeBaseBranch ?? ""}
+                    onValueChange={(baseBranch) =>
+                      setWorkspace({ ...selectedWorkspace, baseBranch })
+                    }
+                    startFromOrigin={behindOrigin > 0}
+                    disabled={state.phase === "starting"}
+                    size="xs"
+                    prefix={
+                      <span className="inline-flex shrink-0 items-center gap-2 pl-1 text-muted-foreground">
+                        <WorkspaceIcon workspace={selectedWorkspace} className="size-3 shrink-0" />
+                        New worktree from
                       </span>
-                    </SelectItem>
-                  ))}
-                </SelectPopup>
-              </Select>
-            ) : null}
+                    }
+                  />
+                  {behindOrigin > 0 && baseBranch !== null ? (
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <span aria-label="Starting from origin" className="flex shrink-0" />
+                        }
+                      >
+                        <TriangleAlertIcon aria-hidden className="size-3.5 text-warning" />
+                      </TooltipTrigger>
+                      <TooltipPopup side="top" className="max-w-64 whitespace-normal">
+                        Local {baseBranch} is {behindOrigin}{" "}
+                        {behindOrigin === 1 ? "commit" : "commits"} behind origin, so the new
+                        worktree starts from origin/{baseBranch}.
+                      </TooltipPopup>
+                    </Tooltip>
+                  ) : null}
+                </div>
+              ) : workspaces.isRepo ? (
+                <Select
+                  modal={false}
+                  value={workspaceValue(selectedWorkspace)}
+                  items={workspaceItems}
+                  disabled={state.phase === "starting"}
+                  onValueChange={(value: string | null) => {
+                    const item = workspaceItems.find((candidate) => candidate.value === value);
+                    if (item !== undefined) setWorkspace(item.workspace);
+                  }}
+                >
+                  <SelectPrimitive.Trigger
+                    aria-label="Workspace"
+                    className={cn(
+                      "flex max-w-full min-w-0 cursor-pointer items-center gap-1 rounded-sm",
+                      "text-xs leading-4 text-muted-foreground outline-none hover:text-foreground",
+                      "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+                      "data-disabled:pointer-events-none data-disabled:opacity-64",
+                    )}
+                  >
+                    <WorkspaceIcon workspace={selectedWorkspace} className="size-3 shrink-0" />
+                    <SelectValue />
+                  </SelectPrimitive.Trigger>
+                  <SelectPopup alignItemWithTrigger={false}>
+                    {workspaceItems.map((item) => (
+                      <SelectItem key={item.value} value={item.value}>
+                        <span className="inline-flex min-w-0 items-center gap-1.5">
+                          <WorkspaceIcon workspace={item.workspace} className="size-3" />
+                          <span className="truncate">{item.label}</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
+              ) : null}
+            </div>
+            <Button variant="ghost" size="icon-xs" aria-label="Close" onClick={onClose}>
+              <XIcon />
+            </Button>
           </div>
-          <Button variant="ghost" size="icon-xs" aria-label="Close" onClick={onClose}>
-            <XIcon />
-          </Button>
-        </div>
-      }
-      toolbar={
-        setup !== null && providerEntry !== undefined && runtimeMode !== undefined ? (
-          <NewAgentControls
-            modelPicker={
-              <ProviderModelPicker
-                activeInstanceId={setup.modelSelection.instanceId}
-                model={setup.modelSelection.model}
-                lockedProvider={null}
-                instanceEntries={providerEntries}
-                modelOptionsByInstance={getCustomModelOptionsByInstance(
-                  settings,
-                  providers,
-                  setup.modelSelection.instanceId,
-                  setup.modelSelection.model,
-                )}
-                size="sm"
-                triggerClassName="min-w-13 shrink"
-                open={modelPickerOpen}
-                onOpenChange={setModelPickerOpen}
-                disabled={state.phase === "starting"}
-                onInstanceModelChange={pickModel}
-              />
-            }
-            traits={{
-              provider: providerEntry.driverKind,
-              instanceId: setup.modelSelection.instanceId,
-              models: providerEntry.models,
-              model: setup.modelSelection.model,
-              prompt: text,
-              onPromptChange: setText,
-              modelOptions: setup.modelSelection.options ?? [],
-              planModeEnabled: settings.planModeEnabled,
-              onModelOptionsChange: (options) =>
-                setPicked((current) => ({
-                  ...current,
-                  modelSelection: createModelSelection(
+        }
+        toolbar={
+          setup !== null && providerEntry !== undefined && runtimeMode !== undefined ? (
+            <NewAgentControls
+              modelPicker={
+                <ProviderModelPicker
+                  activeInstanceId={setup.modelSelection.instanceId}
+                  model={setup.modelSelection.model}
+                  lockedProvider={null}
+                  instanceEntries={providerEntries}
+                  modelOptionsByInstance={getCustomModelOptionsByInstance(
+                    settings,
+                    providers,
                     setup.modelSelection.instanceId,
                     setup.modelSelection.model,
-                    options,
-                  ),
-                })),
-            }}
-            disabled={state.phase === "starting"}
-            showInteractionModeToggle={planModeAvailable}
-            interactionMode={planModeAvailable ? setup.interactionMode : "default"}
-            runtimeMode={runtimeMode}
-            runtimeModeOptions={compatibleRuntimeModeOptions}
-            onToggleInteractionMode={() =>
-              setPicked((current) => ({
-                ...current,
-                interactionMode: setup.interactionMode === "plan" ? "default" : "plan",
-              }))
-            }
-            onRuntimeModeChange={(mode) =>
-              setPicked((current) => ({ ...current, runtimeMode: mode }))
-            }
-          />
-        ) : null
-      }
-    />
+                  )}
+                  size="sm"
+                  triggerClassName="min-w-13 shrink"
+                  open={modelPickerOpen}
+                  onOpenChange={setModelPickerOpen}
+                  disabled={state.phase === "starting"}
+                  onInstanceModelChange={pickModel}
+                />
+              }
+              traits={{
+                provider: providerEntry.driverKind,
+                instanceId: setup.modelSelection.instanceId,
+                models: providerEntry.models,
+                model: setup.modelSelection.model,
+                prompt: text,
+                onPromptChange: setText,
+                modelOptions: setup.modelSelection.options ?? [],
+                planModeEnabled: settings.planModeEnabled,
+                onModelOptionsChange: (options) =>
+                  setPicked((current) => ({
+                    ...current,
+                    modelSelection: createModelSelection(
+                      setup.modelSelection.instanceId,
+                      setup.modelSelection.model,
+                      options,
+                    ),
+                  })),
+              }}
+              disabled={state.phase === "starting"}
+              showInteractionModeToggle={planModeAvailable}
+              interactionMode={planModeAvailable ? setup.interactionMode : "default"}
+              runtimeMode={runtimeMode}
+              runtimeModeOptions={compatibleRuntimeModeOptions}
+              onToggleInteractionMode={() =>
+                setPicked((current) => ({
+                  ...current,
+                  interactionMode: setup.interactionMode === "plan" ? "default" : "plan",
+                }))
+              }
+              onRuntimeModeChange={(mode) =>
+                setPicked((current) => ({ ...current, runtimeMode: mode }))
+              }
+            />
+          ) : null
+        }
+      />
+    </BubbleResizeFrame>
   );
 }
 
