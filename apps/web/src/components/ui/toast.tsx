@@ -349,7 +349,7 @@ function ToastBodyContent({
           <Toast.Title className="min-w-0 wrap-break-word font-medium" data-slot="toast-title" />
           {leadingIcon ? (
             <div
-              className="flex h-lh w-4 shrink-0 items-center justify-center"
+              className="flex h-lh min-w-4 shrink-0 items-center justify-center"
               data-slot="toast-icon"
             >
               {leadingIcon}

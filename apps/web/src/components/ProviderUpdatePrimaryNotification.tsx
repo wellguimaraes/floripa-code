@@ -47,16 +47,14 @@ type ActiveProviderUpdateToast =
 
 function ProviderUpdateToastIcon({ provider }: { provider: ServerProvider }) {
   return (
-    <span className="relative inline-flex size-4 shrink-0 items-center justify-center">
+    <span className="inline-flex shrink-0 items-center gap-1">
       <ProviderInstanceIcon
         driverKind={provider.driver}
         displayName={provider.displayName ?? provider.driver}
         acpRegistryIconUrl={provider.iconUrl}
         iconClassName="size-4"
       />
-      <span className="absolute -right-0.5 -bottom-0.5 inline-flex size-3 items-center justify-center rounded-full bg-popover">
-        <DownloadIcon aria-hidden="true" className="size-2.5 text-success" strokeWidth={2.5} />
-      </span>
+      <DownloadIcon aria-hidden="true" className="size-3.5 text-success" />
     </span>
   );
 }
