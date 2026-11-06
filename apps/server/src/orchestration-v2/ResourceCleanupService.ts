@@ -6,6 +6,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import { resolveAttachmentPathById } from "../attachmentStore.ts";
+import * as CodeIntelligence from "../codeIntelligence/CodeIntelligence.ts";
 import * as ServerConfig from "../config.ts";
 import * as PreviewManager from "../preview/Manager.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
@@ -24,7 +25,8 @@ export class ResourceCleanupError extends Schema.TaggedError<ResourceCleanupErro
 export class ResourceCleanupService extends Context.Reference<{
   /**
    * Closes the thread's own terminals and, when no other live thread works in
-   * its checkout, the checkout's shared terminals, deleting their history.
+   * its checkout, the checkout's shared terminals, deleting their history, and
+   * its language servers.
    */
   readonly cleanupTerminals: (threadId: string) => Effect.Effect<void, ResourceCleanupError>;
   /**
@@ -51,6 +53,7 @@ export const layer = Layer.effect(
     const fileSystem = yield* FileSystem.FileSystem;
     const config = yield* ServerConfig.ServerConfig;
     const worktreeScopes = yield* WorktreeScopes.WorktreeScopes;
+    const codeIntelligence = yield* CodeIntelligence.CodeIntelligence;
     /** The thread's checkout once no other live thread works there; undefined while one does. */
     const abandonedScope = (threadId: string) =>
       Effect.gen(function* () {
@@ -68,6 +71,7 @@ export const layer = Layer.effect(
           const scopeKey = yield* abandonedScope(threadId);
           if (scopeKey !== undefined) {
             yield* terminals.close({ threadId, scopeKey, deleteHistory: true });
+            yield* codeIntelligence.releaseRoot(scopeKey);
           }
         }).pipe(
           Effect.mapError(

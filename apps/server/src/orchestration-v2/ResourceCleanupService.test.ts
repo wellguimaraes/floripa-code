@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 
+import * as CodeIntelligence from "../codeIntelligence/CodeIntelligence.ts";
 import * as ServerConfig from "../config.ts";
 import * as PreviewManager from "../preview/Manager.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
@@ -18,6 +19,7 @@ const makeCleanup = (threads: Readonly<Record<string, WorktreeScopesTestkit.Test
     const previewCloses = yield* Ref.make<
       ReadonlyArray<Parameters<PreviewManager.PreviewManager["Service"]["closeForThread"]>[0]>
     >([]);
+    const releasedRoots = yield* Ref.make<ReadonlyArray<string>>([]);
     const cleanup = yield* Effect.service(ResourceCleanupService.ResourceCleanupService).pipe(
       Effect.provide(
         ResourceCleanupService.layer.pipe(
@@ -29,6 +31,9 @@ const makeCleanup = (threads: Readonly<Record<string, WorktreeScopesTestkit.Test
               Layer.mock(PreviewManager.PreviewManager)({
                 closeForThread: (input) => Ref.update(previewCloses, (calls) => [...calls, input]),
               }),
+              Layer.mock(CodeIntelligence.CodeIntelligence)({
+                releaseRoot: (root) => Ref.update(releasedRoots, (roots) => [...roots, root]),
+              }),
               WorktreeScopesTestkit.layer(threads),
               ServerConfig.layerTest(process.cwd(), { prefix: "resource-cleanup-" }),
               NodeServices.layer,
@@ -37,50 +42,56 @@ const makeCleanup = (threads: Readonly<Record<string, WorktreeScopesTestkit.Test
         ),
       ),
     );
-    return { cleanup, terminalCloses, previewCloses };
+    return { cleanup, terminalCloses, previewCloses, releasedRoots };
   });
 
 it.layer(NodeServices.layer)("ResourceCleanupService", (it) => {
-  it.effect("closes a checkout's terminals and tabs with its last live thread", () =>
-    Effect.gen(function* () {
-      const { cleanup, terminalCloses, previewCloses } = yield* makeCleanup({
-        "thread-1": { scopeKey: "/repo/.worktrees/feature" },
-        // Archived and deleted threads no longer hold the checkout.
-        "thread-2": { scopeKey: "/repo/.worktrees/feature", live: false },
-      });
+  it.effect(
+    "closes a checkout's terminals, tabs and language servers with its last live thread",
+    () =>
+      Effect.gen(function* () {
+        const { cleanup, terminalCloses, previewCloses, releasedRoots } = yield* makeCleanup({
+          "thread-1": { scopeKey: "/repo/.worktrees/feature" },
+          // Archived and deleted threads no longer hold the checkout.
+          "thread-2": { scopeKey: "/repo/.worktrees/feature", live: false },
+        });
 
-      yield* cleanup.cleanupTerminals("thread-1");
-      yield* cleanup.cleanupPreviews("thread-1");
+        yield* cleanup.cleanupTerminals("thread-1");
+        yield* cleanup.cleanupPreviews("thread-1");
 
-      assert.deepStrictEqual(yield* Ref.get(terminalCloses), [
-        { threadId: "thread-1", deleteHistory: true },
-        { threadId: "thread-1", scopeKey: "/repo/.worktrees/feature", deleteHistory: true },
-      ]);
-      assert.deepStrictEqual(yield* Ref.get(previewCloses), [
-        { threadId: "thread-1", scopeKey: "/repo/.worktrees/feature" },
-      ]);
-    }),
+        assert.deepStrictEqual(yield* Ref.get(terminalCloses), [
+          { threadId: "thread-1", deleteHistory: true },
+          { threadId: "thread-1", scopeKey: "/repo/.worktrees/feature", deleteHistory: true },
+        ]);
+        assert.deepStrictEqual(yield* Ref.get(previewCloses), [
+          { threadId: "thread-1", scopeKey: "/repo/.worktrees/feature" },
+        ]);
+        assert.deepStrictEqual(yield* Ref.get(releasedRoots), ["/repo/.worktrees/feature"]);
+      }),
   );
 
-  it.effect("keeps shared terminals and tabs while another thread works in the checkout", () =>
-    Effect.gen(function* () {
-      const { cleanup, terminalCloses, previewCloses } = yield* makeCleanup({
-        "thread-1": { scopeKey: "/repo" },
-        // A settled thread can still be reopened, so it keeps the shared shells.
-        "thread-2": { scopeKey: "/repo", settled: true },
-      });
+  it.effect(
+    "keeps shared terminals, tabs and language servers while another thread works in the checkout",
+    () =>
+      Effect.gen(function* () {
+        const { cleanup, terminalCloses, previewCloses, releasedRoots } = yield* makeCleanup({
+          "thread-1": { scopeKey: "/repo" },
+          // A settled thread can still be reopened, so it keeps the shared shells.
+          "thread-2": { scopeKey: "/repo", settled: true },
+        });
 
-      yield* cleanup.cleanupTerminals("thread-1");
-      yield* cleanup.cleanupPreviews("thread-1");
+        yield* cleanup.cleanupTerminals("thread-1");
+        yield* cleanup.cleanupPreviews("thread-1");
 
-      // Only what the thread opened before checkouts were shared goes away.
-      assert.deepStrictEqual(yield* Ref.get(terminalCloses), [
-        { threadId: "thread-1", deleteHistory: true },
-      ]);
-      assert.deepStrictEqual(yield* Ref.get(previewCloses), [
-        { threadId: "thread-1", scopeKey: undefined },
-      ]);
-    }),
+        // Only what the thread opened before checkouts were shared goes away.
+        assert.deepStrictEqual(yield* Ref.get(terminalCloses), [
+          { threadId: "thread-1", deleteHistory: true },
+        ]);
+        assert.deepStrictEqual(yield* Ref.get(previewCloses), [
+          { threadId: "thread-1", scopeKey: undefined },
+        ]);
+        assert.deepStrictEqual(yield* Ref.get(releasedRoots), []);
+      }),
   );
 
   it.effect("closes only the thread's own surfaces when its checkout is unknown", () =>
