@@ -16,6 +16,21 @@ type on screen. Closing a type's last tab keeps that type open, empty, with a
 button to open another. Diff is a single view with no tabs; it opens when you
 choose its type. Files shows the worktree's file tree until you open a file.
 
+## Jump to definitions in files
+
+In a TypeScript, JavaScript, or Go file, hover a symbol to see its type and
+documentation, and `Cmd`+click (`Ctrl`+click on Windows and Linux) it to open
+where it is defined. When there are several definitions, pick one from the
+list. Definitions in dependencies, such as `node_modules` typings or the Go
+module cache, open read-only.
+
+The server reads saved files, so lookups pause while a file has unsaved
+changes. The first lookup in a project starts a language server and can take a
+few seconds in a large repository; it stops again after ten idle minutes.
+TypeScript uses the project's own TypeScript 7 when it has one, otherwise the
+copy that ships with Floripa Code. Go needs `gopls` on the server's machine:
+`go install golang.org/x/tools/gopls@latest`.
+
 ## Agents in the worktree
 
 The rail on the chat's left edge lists the agents working in the same
