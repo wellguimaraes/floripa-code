@@ -1583,7 +1583,6 @@ export default function WorldCanvas(props: {
         <WorldDaylight>
           <WorldControls
             bounds={bounds}
-            mainland={mainland}
             islands={islandSpots}
             panel={panel}
             bars={bars}
@@ -2707,12 +2706,9 @@ function WorldControls({
   panBy,
   reveal,
   layout,
-  mainland,
 }: {
   /** Each island's ground, in the same order as `islands`. */
   readonly bounds: ReadonlyArray<Bounds> | null;
-  /** The mainland's islands: framing every island centres the rest, with the mainland in view. */
-  readonly mainland: ReadonlySet<string>;
   readonly islands: ReadonlyArray<IslandSpot>;
   readonly panel: () => HTMLElement | null;
   readonly bars: () => { readonly top: HTMLElement | null; readonly bottom: HTMLElement | null };
@@ -2782,16 +2778,15 @@ function WorldControls({
         signs: signsOf(key === undefined ? islands.map((spot) => spot.key) : [key]),
         viewport: size,
         covered: covered(),
-        // Framing them all centres the islands, not the mainland beside them.
-        center:
+        gutter:
           key === undefined
-            ? bounds.filter((_, index) => !mainland.has(islands[index]?.key ?? ""))
-            : [],
+            ? { sides: FRAME_ALL_GUTTER, right: FRAME_ALL_GUTTER + FRAME_ALL_RIGHT_EXTRA }
+            : undefined,
       });
       if (key === undefined) controls.minZoom = view.zoom;
       return view;
     },
-    [bounds, islands, camera, size, covered, signsOf, mainland],
+    [bounds, islands, camera, size, covered, signsOf],
   );
   // A view on or under the zoom floor frames every island instead, centred, whatever moved it.
   const onFloorCentred = useCallback(
@@ -3189,6 +3184,10 @@ function bubbleRoom(
 
 /** Room kept between points brought into view and the edges of the visible canvas. */
 const KEEP_IN_VIEW_MARGIN = 48;
+/** Room kept round every island when framing them all, at the edge of the visible canvas. */
+const FRAME_ALL_GUTTER = 40;
+/** Added to `FRAME_ALL_GUTTER` on the right when framing every island. */
+const FRAME_ALL_RIGHT_EXTRA = -40;
 
 /**
  * The view nearest `view` that shows every point in the part of the canvas the
@@ -3351,14 +3350,10 @@ function frameView(input: {
   readonly signs: ReadonlyArray<Vector3>;
   readonly viewport: { readonly width: number; readonly height: number };
   readonly covered: Covered;
-  /**
-   * The ground to centre on, when not all of `bounds`: the view zooms out evenly
-   * round it until the rest fits too, so the islands sit in the middle with the
-   * mainland still in view beside them. Empty centres on all of `bounds`.
-   */
-  readonly center: ReadonlyArray<Bounds>;
+  /** Pixels kept at the right and on the other sides; without it, the ground fills 1/1.15 of each side. */
+  readonly gutter: { readonly sides: number; readonly right: number } | undefined;
 }): View {
-  const { bounds, viewport } = input;
+  const { bounds, viewport, gutter } = input;
   // Keep a usable strip of world even when the panel covers most of the canvas.
   const coveredRight = Math.max(0, Math.min(input.covered.right, viewport.width - 320));
   const coveredTop = Math.max(0, Math.min(input.covered.top, viewport.height / 4));
@@ -3367,21 +3362,27 @@ function frameView(input: {
   const target = new Vector3((first.minX + first.maxX) / 2, 0, (first.minZ + first.maxZ) / 2);
   // Measured on a copy, so the real camera only moves when the view is applied.
   const probe = probeAt(input.camera, { target, zoom: 1 });
-  const all = screenExtent(probe, bounds, input.signs);
-  const middle = input.center.length === 0 ? all : screenExtent(probe, input.center, []);
-  const middleX = (middle.left + middle.right) / 2;
-  const middleY = (middle.bottom + middle.top) / 2;
-  const width = 2 * Math.max(middleX - all.left, all.right - middleX);
-  const height = 2 * Math.max(middleY - all.bottom, all.top - middleY);
-  const margin = 1.15;
+  const { left, right, bottom, top } = screenExtent(probe, bounds, input.signs);
+  const middleX = (left + right) / 2;
+  const middleY = (bottom + top) / 2;
+  const width = right - left;
+  const height = top - bottom;
+  const shownWidth = viewport.width - coveredRight;
+  const shownHeight = viewport.height - coveredTop - coveredBottom;
   // Not held to a minimum: framing every island is what sets the zoom floor.
   const zoom = Math.min(
     input.maxZoom,
-    (viewport.width - coveredRight) / (width * margin),
-    (viewport.height - coveredTop - coveredBottom) / (height * margin),
+    gutter === undefined
+      ? shownWidth / (width * 1.15)
+      : Math.max(1, shownWidth - gutter.sides - gutter.right) / width,
+    gutter === undefined
+      ? shownHeight / (height * 1.15)
+      : Math.max(1, shownHeight - 2 * gutter.sides) / height,
   );
   // Slide the middle onto the middle of the part of the canvas the panel and bars leave visible.
-  const dx = -middleX * zoom - coveredRight / 2;
+  // A wider right gutter moves the middle left by half the difference, a narrower one right.
+  const rightExtra = gutter === undefined ? 0 : gutter.right - gutter.sides;
+  const dx = -middleX * zoom - (rightExtra + coveredRight) / 2;
   const dy = middleY * zoom + (coveredTop - coveredBottom) / 2;
   return { target: target.add(targetShift(probe, dx, dy, zoom)), zoom };
 }
