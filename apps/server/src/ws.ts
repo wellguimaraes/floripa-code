@@ -192,6 +192,7 @@ import { deletePendingAttachment, issueAttachmentUploadUrl } from "./assets/Atta
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
+import * as CodeIntelligence from "./codeIntelligence/CodeIntelligence.ts";
 import { readWorkflowScript } from "./orchestration-v2/workflowScriptQuery.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
@@ -1289,6 +1290,7 @@ const layerWsRpc = (
       const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
       const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+      const codeIntelligence = yield* CodeIntelligence.CodeIntelligence;
       const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
       const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
       const restartContinuationOffer = yield* RestartContinuationOffer.RestartContinuationOffer;
@@ -2693,6 +2695,8 @@ const layerWsRpc = (
                 }),
             ),
           ),
+        [WS_METHODS.codeIntelligenceDefinition]: (input) => codeIntelligence.definition(input),
+        [WS_METHODS.codeIntelligenceHover]: (input) => codeIntelligence.hover(input),
         [WS_METHODS.projectsWriteFile]: (input) =>
           workspaceFileSystem.writeFile(input).pipe(
             Effect.mapError(

@@ -216,6 +216,12 @@ import {
   OrchestrationV2ThreadLaunchError,
 } from "./orchestrationV2.ts";
 import {
+  CodeIntelligenceDefinitionResult,
+  CodeIntelligenceError,
+  CodeIntelligenceHoverResult,
+  CodeIntelligencePositionInput,
+} from "./codeIntelligence.ts";
+import {
   ProjectCreateNewInput,
   ProjectCreateNewResult,
   ProjectEnsureScratchResult,
@@ -391,6 +397,10 @@ export const WS_METHODS = {
   projectsEnsureScratch: "projects.ensureScratch",
   projectsCreateNew: "projects.createNew",
   projectsListMissingRoots: "projects.listMissingRoots",
+
+  // Language server reads on saved files
+  codeIntelligenceDefinition: "codeIntelligence.definition",
+  codeIntelligenceHover: "codeIntelligence.hover",
 
   // Shell methods
   shellOpenInEditor: "shell.openInEditor",
@@ -1249,6 +1259,18 @@ const WsProjectsReadFileRpc = Rpc.make(WS_METHODS.projectsReadFile, {
   error: Schema.Union([ProjectReadFileError, EnvironmentAuthorizationError]),
 });
 
+const WsCodeIntelligenceDefinitionRpc = Rpc.make(WS_METHODS.codeIntelligenceDefinition, {
+  payload: CodeIntelligencePositionInput,
+  success: CodeIntelligenceDefinitionResult,
+  error: Schema.Union([CodeIntelligenceError, EnvironmentAuthorizationError]),
+});
+
+const WsCodeIntelligenceHoverRpc = Rpc.make(WS_METHODS.codeIntelligenceHover, {
+  payload: CodeIntelligencePositionInput,
+  success: CodeIntelligenceHoverResult,
+  error: Schema.Union([CodeIntelligenceError, EnvironmentAuthorizationError]),
+});
+
 const WsProjectsWriteFileRpc = Rpc.make(WS_METHODS.projectsWriteFile, {
   payload: ProjectWriteFileInput,
   success: ProjectWriteFileResult,
@@ -2029,6 +2051,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeProjectClonesRpc,
   WsProjectsListEntriesRpc,
   WsProjectsReadFileRpc,
+  WsCodeIntelligenceDefinitionRpc,
+  WsCodeIntelligenceHoverRpc,
   WsProjectsSearchContentsRpc,
   WsProjectsSearchEntriesRpc,
   WsProjectsEnsureScratchRpc,

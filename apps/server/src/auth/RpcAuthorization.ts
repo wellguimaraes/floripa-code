@@ -154,6 +154,9 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.subscribeProjectClones]: AuthOrchestrationReadScope,
   [WS_METHODS.projectsListEntries]: AuthFilesystemReadScope,
   [WS_METHODS.projectsReadFile]: AuthFilesystemReadScope,
+  // Reads like opening the file: the language server it may start only analyzes the project.
+  [WS_METHODS.codeIntelligenceDefinition]: AuthFilesystemReadScope,
+  [WS_METHODS.codeIntelligenceHover]: AuthFilesystemReadScope,
   [WS_METHODS.projectsSearchContents]: AuthFilesystemReadScope,
   [WS_METHODS.projectsSearchEntries]: AuthFilesystemReadScope,
   [WS_METHODS.projectsWriteFile]: AuthFilesystemWriteScope,
