@@ -106,6 +106,20 @@ export function createProjectEnvironmentAtoms<R, E>(
       staleTimeMs: 30_000,
       idleTtlMs: 5 * 60_000,
     }),
+    // Language server answers about a saved file. Kept briefly: an agent can
+    // change the file under them at any time.
+    codeDefinition: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:projects:code-definition",
+      tag: WS_METHODS.codeIntelligenceDefinition,
+      staleTimeMs: 5_000,
+      idleTtlMs: 30_000,
+    }),
+    codeHover: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:projects:code-hover",
+      tag: WS_METHODS.codeIntelligenceHover,
+      staleTimeMs: 5_000,
+      idleTtlMs: 30_000,
+    }),
     optimisticFile: (target: OptimisticProjectFileTarget) =>
       optimisticFileFamily(optimisticProjectFileKey(target)),
     create: createEnvironmentCommand(runtime, {

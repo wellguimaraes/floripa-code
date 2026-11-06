@@ -115,6 +115,12 @@ import {
 } from "./filePreviewMode";
 import { useFileSaveCoordinator } from "./useFileSaveCoordinator";
 import {
+  CODE_LINK_UNSAFE_CSS,
+  type CodeIntelligenceTokenOptions,
+  useCodeIntelligence,
+} from "./useCodeIntelligence";
+import { useRightPanelStore } from "~/rightPanelStore";
+import {
   getOptimisticProjectFileQueryData,
   getProjectFileContents,
   setProjectFileQueryData,
@@ -673,6 +679,7 @@ interface EditableFileSurfaceProps {
   wordWrap: boolean;
   onPostRender: FilePostRender;
   onPendingChange: (relativePath: string, pending: boolean) => void;
+  tokenOptions: CodeIntelligenceTokenOptions;
 }
 
 interface FileSelectionOverride {
@@ -691,6 +698,7 @@ function EditableFileSurface({
   wordWrap,
   onPostRender,
   onPendingChange,
+  tokenOptions,
 }: EditableFileSurfaceProps) {
   const addReviewComment = useComposerDraftStore((store) => store.addReviewComment);
   const removeReviewComment = useComposerDraftStore((store) => store.removeReviewComment);
@@ -936,8 +944,9 @@ function EditableFileSurface({
               theme: resolveDiffThemeName(resolvedTheme),
               preferredHighlighter: PREFERRED_HIGHLIGHTER,
               themeType: resolvedTheme,
-              unsafeCSS: FILE_LINK_REVEAL_UNSAFE_CSS,
+              unsafeCSS: `${FILE_LINK_REVEAL_UNSAFE_CSS}${CODE_LINK_UNSAFE_CSS}`,
               onPostRender: handlePostRender,
+              ...tokenOptions,
             }}
             selectedLines={selectedRange}
             lineAnnotations={lineAnnotations}
@@ -980,6 +989,7 @@ function RenderedMarkdownSurface({
   | "revealRequestId"
   | "wordWrap"
   | "onPostRender"
+  | "tokenOptions"
 > & {
   threadRef: ScopedThreadRef;
   readOnly: boolean;
@@ -1183,6 +1193,15 @@ export default function FilePreviewPanel({
   const absolutePath =
     relativePath && attachment === undefined ? resolvePathLinkTarget(relativePath, cwd) : null;
   const onFilePostRender = useFileLineReveal(relativePath, revealLine, revealRequestId);
+  const codeIntelligence = useCodeIntelligence({
+    environmentId,
+    cwd,
+    relativePath: attachment === undefined && file.data !== null ? previewPath : null,
+    enabled: canReadFiles && attachment === undefined,
+    // The language server reads the saved file, so unsaved edits would mislead it.
+    dirty: selectedFilePending,
+    onOpenLocation: (path, line) => useRightPanelStore.getState().openFile(threadRef, path, line),
+  });
   useWorkspaceMutationRefresh({
     enabled:
       attachment === undefined &&
@@ -1487,6 +1506,7 @@ export default function FilePreviewPanel({
                 text={file.data.contents}
                 cacheKey={projectFileCacheKey(cwd, relativePath, file.data.contents)}
                 onPostRender={onFilePostRender}
+                tokenOptions={codeIntelligence.tokenOptions}
               />
             ) : (
               <DiffWorkerPoolProvider>
@@ -1502,6 +1522,7 @@ export default function FilePreviewPanel({
                   wordWrap={wordWrap}
                   onPostRender={onFilePostRender}
                   onPendingChange={onPendingChange}
+                  tokenOptions={codeIntelligence.tokenOptions}
                 />
               </DiffWorkerPoolProvider>
             )
@@ -1543,6 +1564,7 @@ export default function FilePreviewPanel({
           </aside>
         ) : null}
       </div>
+      {codeIntelligence.popover}
     </div>
   );
 }

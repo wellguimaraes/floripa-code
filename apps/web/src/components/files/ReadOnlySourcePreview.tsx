@@ -7,6 +7,7 @@ import { resolveDiffThemeName } from "~/lib/diffRendering";
 import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 
 import { FILE_LINK_REVEAL_UNSAFE_CSS } from "./fileSurfaceChrome";
+import { CODE_LINK_UNSAFE_CSS, type CodeIntelligenceTokenOptions } from "./useCodeIntelligence";
 
 /**
  * Highlighted source for files that cannot be edited: captured attachments,
@@ -18,6 +19,8 @@ export default function ReadOnlySourcePreview(props: {
   readonly text: string;
   readonly cacheKey?: string;
   readonly onPostRender?: FileOptions<unknown, undefined>["onPostRender"];
+  /** Go-to-definition and hover; attachments have no workspace to ask about. */
+  readonly tokenOptions?: CodeIntelligenceTokenOptions;
 }) {
   const { resolvedTheme } = useTheme();
   const wordWrap = useClientSettings((settings) => settings.wordWrap);
@@ -40,8 +43,9 @@ export default function ReadOnlySourcePreview(props: {
             theme: resolveDiffThemeName(resolvedTheme),
             preferredHighlighter: PREFERRED_HIGHLIGHTER,
             themeType: resolvedTheme,
-            unsafeCSS: FILE_LINK_REVEAL_UNSAFE_CSS,
+            unsafeCSS: `${FILE_LINK_REVEAL_UNSAFE_CSS}${CODE_LINK_UNSAFE_CSS}`,
             ...(props.onPostRender ? { onPostRender: props.onPostRender } : {}),
+            ...props.tokenOptions,
           }}
           className="min-h-full"
         />
