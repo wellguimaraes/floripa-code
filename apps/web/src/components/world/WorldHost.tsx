@@ -3,6 +3,7 @@ import { lazy, Suspense, useLayoutEffect, useState } from "react";
 
 import { useIsMobile } from "../../hooks/useMediaQuery";
 import type { ThreadRouteTarget } from "../../threadRoutes";
+import { PopupsBelowDialogsContext } from "../ui/popupLayer";
 import { threadRouteTargetKey, useWorldRoute } from "./worldRoute";
 import { palette } from "./scene/palette";
 import { useWorldModeStore } from "./worldModeStore";
@@ -47,7 +48,10 @@ export function WorldHost() {
     <Suspense
       fallback={<div className="fixed inset-0" style={{ backgroundColor: palette.loadingSea }} />}
     >
-      <WorldLayout target={shown.target} covered={!worldMode} />
+      {/* Settings and other dialogs open over the world, so its popups sit under them. */}
+      <PopupsBelowDialogsContext value>
+        <WorldLayout target={shown.target} covered={!worldMode} />
+      </PopupsBelowDialogsContext>
     </Suspense>
   );
 }

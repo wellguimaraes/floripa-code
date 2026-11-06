@@ -17,6 +17,7 @@ import {
 } from "~/components/ui/autocomplete";
 import { DIALOG_BACKDROP_CLASS, DIALOG_POPUP_CLASS } from "~/components/ui/dialog-styles";
 import { Button } from "~/components/ui/button";
+import { PopupsBelowDialogsContext } from "./popupLayer";
 
 const CommandDialog = CommandDialogPrimitive.Root;
 
@@ -58,22 +59,24 @@ function CommandDialogPopup({
   onBackdropPointerDown?: React.PointerEventHandler<HTMLDivElement>;
 }) {
   return (
-    <CommandDialogPortal>
-      <CommandDialogBackdrop onPointerDown={onBackdropPointerDown} />
-      <CommandDialogViewport>
-        <CommandDialogPrimitive.Popup
-          className={cn(
-            DIALOG_POPUP_CLASS,
-            "pointer-events-auto max-h-105 max-w-xl text-foreground",
-            className,
-          )}
-          data-slot="command-dialog-popup"
-          {...props}
-        >
-          {children}
-        </CommandDialogPrimitive.Popup>
-      </CommandDialogViewport>
-    </CommandDialogPortal>
+    <PopupsBelowDialogsContext value={false}>
+      <CommandDialogPortal>
+        <CommandDialogBackdrop onPointerDown={onBackdropPointerDown} />
+        <CommandDialogViewport>
+          <CommandDialogPrimitive.Popup
+            className={cn(
+              DIALOG_POPUP_CLASS,
+              "pointer-events-auto max-h-105 max-w-xl text-foreground",
+              className,
+            )}
+            data-slot="command-dialog-popup"
+            {...props}
+          >
+            {children}
+          </CommandDialogPrimitive.Popup>
+        </CommandDialogViewport>
+      </CommandDialogPortal>
+    </PopupsBelowDialogsContext>
   );
 }
 

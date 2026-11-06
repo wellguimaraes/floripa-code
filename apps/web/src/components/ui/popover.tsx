@@ -5,6 +5,7 @@ import { Popover as PopoverPrimitive } from "@base-ui/react/popover";
 import { isElectron } from "~/env";
 import { cn } from "~/lib/utils";
 import { renderPositionerByOffsets } from "./menu";
+import { usePopupLayerClassName } from "./popupLayer";
 
 const PopoverCreateHandle = PopoverPrimitive.createHandle;
 
@@ -67,6 +68,7 @@ function PopoverPopup({
   // Viewport rekeys its children when the active trigger clears on close. Persistent
   // single-trigger forms need a stable container to retain drafts and submit guards.
   const Viewport = keepMounted ? "div" : PopoverPrimitive.Viewport;
+  const layer = usePopupLayerClassName();
   return (
     <PopoverPrimitive.Portal keepMounted={keepMounted}>
       <PopoverPrimitive.Positioner
@@ -78,7 +80,7 @@ function PopoverPopup({
           "h-(--positioner-height) w-(--positioner-width) max-w-(--available-width) transition-transform data-instant:transition-none",
           variant === "panel"
             ? "z-(--z-sheet) w-[min(var(--thread-details-panel-width),var(--anchor-width))] transition-none"
-            : "z-[130]",
+            : layer,
         )}
         data-slot="popover-positioner"
         render={isElectron ? renderPositionerByOffsets : undefined}

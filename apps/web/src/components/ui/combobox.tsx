@@ -7,6 +7,7 @@ import * as React from "react";
 import { cn } from "~/lib/utils";
 import { Input } from "~/components/ui/input";
 import { ScrollArea } from "~/components/ui/scroll-area";
+import { usePopupLayerClassName } from "./popupLayer";
 
 const ComboboxContext = React.createContext<{
   chipsRef: React.RefObject<Element | null> | null;
@@ -152,6 +153,7 @@ function ComboboxPopup({
 }) {
   const { chipsRef, multiple } = React.use(ComboboxContext);
   const anchor = anchorProp ?? (multiple ? chipsRef : undefined);
+  const layer = usePopupLayerClassName();
 
   return (
     <ComboboxPrimitive.Portal>
@@ -159,7 +161,7 @@ function ComboboxPopup({
         align={align}
         alignOffset={alignOffset}
         anchor={anchor}
-        className="z-[130] select-none"
+        className={cn(layer, "select-none")}
         data-slot="combobox-positioner"
         side={side}
         sideOffset={sideOffset}

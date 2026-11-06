@@ -7,6 +7,7 @@ import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
 import type * as React from "react";
 
 import { cn } from "~/lib/utils";
+import { usePopupLayerClassName } from "./popupLayer";
 
 const Select = SelectPrimitive.Root;
 
@@ -120,6 +121,7 @@ function SelectPopup({
   matchTriggerWidth?: boolean;
   anchor?: SelectPrimitive.Positioner.Props["anchor"];
 }) {
+  const layer = usePopupLayerClassName();
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Positioner
@@ -127,7 +129,7 @@ function SelectPopup({
         alignItemWithTrigger={alignItemWithTrigger}
         alignOffset={alignOffset}
         anchor={anchor}
-        className="z-[130] select-none"
+        className={cn(layer, "select-none")}
         data-slot="select-positioner"
         side={side}
         sideOffset={sideOffset}

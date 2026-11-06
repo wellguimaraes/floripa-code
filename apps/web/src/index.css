@@ -128,7 +128,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --command-content-inset: 1rem;
   --floating-content-inset: 0.75rem;
   /* App layer order: docked sheets, then the floating preview player (47–49, see
-     previewMiniPlayerLayout.ts), then dialogs and popovers (50 and up). */
+     previewMiniPlayerLayout.ts) and the world's popups (49, see popupLayer.ts), then dialogs
+     and popovers (50 and up). */
   --z-sheet: 46;
   --glass-blur: 0px;
   --glass-opacity: 100%;

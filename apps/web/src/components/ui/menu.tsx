@@ -7,6 +7,7 @@ import type * as React from "react";
 import { isElectron } from "~/env";
 import { cn } from "~/lib/utils";
 import { buttonVariants } from "./button";
+import { usePopupLayerClassName } from "./popupLayer";
 
 const Menu = MenuPrimitive.Root;
 
@@ -61,13 +62,14 @@ function MenuPopup({
   anchor?: MenuPrimitive.Positioner.Props["anchor"];
   keepMounted?: boolean;
 }) {
+  const layer = usePopupLayerClassName();
   return (
     <MenuPrimitive.Portal keepMounted={keepMounted}>
       <MenuPrimitive.Positioner
         align={align}
         alignOffset={alignOffset}
         anchor={anchor}
-        className="z-[130]"
+        className={layer}
         data-slot="menu-positioner"
         render={isElectron ? renderPositionerByOffsets : undefined}
         side={side}

@@ -8,6 +8,7 @@ import {
   DIALOG_MOBILE_SHEET_CLASS,
   DIALOG_POPUP_CLASS,
 } from "~/components/ui/dialog-styles";
+import { PopupsBelowDialogsContext } from "./popupLayer";
 
 const AlertDialog = AlertDialogPrimitive.Root;
 
@@ -47,23 +48,27 @@ function AlertDialogPopup({
   portalContainer?: AlertDialogPrimitive.Portal.Props["container"];
 }) {
   return (
-    <AlertDialogPortal container={portalContainer}>
-      <AlertDialogBackdrop />
-      <AlertDialogViewport
-        className={cn(bottomStickOnMobile && "max-sm:grid-rows-[1fr_auto] max-sm:p-0 max-sm:pt-12")}
-      >
-        <AlertDialogPrimitive.Popup
+    <PopupsBelowDialogsContext value={false}>
+      <AlertDialogPortal container={portalContainer}>
+        <AlertDialogBackdrop />
+        <AlertDialogViewport
           className={cn(
-            DIALOG_POPUP_CLASS,
-            "row-start-2 max-h-full max-w-lg text-popover-foreground",
-            bottomStickOnMobile && DIALOG_MOBILE_SHEET_CLASS,
-            className,
+            bottomStickOnMobile && "max-sm:grid-rows-[1fr_auto] max-sm:p-0 max-sm:pt-12",
           )}
-          data-slot="alert-dialog-popup"
-          {...props}
-        />
-      </AlertDialogViewport>
-    </AlertDialogPortal>
+        >
+          <AlertDialogPrimitive.Popup
+            className={cn(
+              DIALOG_POPUP_CLASS,
+              "row-start-2 max-h-full max-w-lg text-popover-foreground",
+              bottomStickOnMobile && DIALOG_MOBILE_SHEET_CLASS,
+              className,
+            )}
+            data-slot="alert-dialog-popup"
+            {...props}
+          />
+        </AlertDialogViewport>
+      </AlertDialogPortal>
+    </PopupsBelowDialogsContext>
   );
 }
 

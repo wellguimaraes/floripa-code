@@ -6,6 +6,7 @@ import { ChevronsUpDownIcon, XIcon } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { Input } from "~/components/ui/input";
 import { ScrollArea } from "~/components/ui/scroll-area";
+import { usePopupLayerClassName } from "./popupLayer";
 
 const Autocomplete = AutocompletePrimitive.Root;
 
@@ -91,13 +92,14 @@ function AutocompletePopup({
   side?: AutocompletePrimitive.Positioner.Props["side"];
   anchor?: AutocompletePrimitive.Positioner.Props["anchor"];
 }) {
+  const layer = usePopupLayerClassName();
   return (
     <AutocompletePrimitive.Portal>
       <AutocompletePrimitive.Positioner
         align={align}
         alignOffset={alignOffset}
         anchor={anchor}
-        className="z-[130] select-none"
+        className={cn(layer, "select-none")}
         data-slot="autocomplete-positioner"
         side={side}
         sideOffset={sideOffset}
