@@ -104,7 +104,6 @@ describe("renderWebhookPrompt", () => {
           reviewers: [{ login: "ada" }, { name: "no login" }, { login: "bob" }],
         }),
       },
-      "id",
       true,
     );
     assert.equal(rendered.prompt, 'Labels: [\n  "bug",\n  "ui"\n] Names: [\n  "ada",\n  "bob"\n]');
