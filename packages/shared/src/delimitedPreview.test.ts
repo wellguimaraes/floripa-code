@@ -21,6 +21,19 @@ describe("delimited file previews", () => {
       ["", "three"],
     ]);
   });
+  it("honors custom row, column and cell limits without splitting a surrogate pair", () => {
+    const limits = { maxRows: 2, maxColumns: 2, maxCellLength: 3 };
+    expect(parseDelimitedPreview("a,b,c\nd,e,f\ng,h,i", ",", limits)).toEqual({
+      rows: [
+        ["a", "b"],
+        ["d", "e"],
+      ],
+      truncated: true,
+    });
+    const cut = parseDelimitedPreview("ab\u{1F600}cd", ",", limits);
+    expect(cut.rows).toEqual([["ab"]]);
+    expect(cut.truncated).toBe(true);
+  });
   describe.each([",", "\t"] as const)("with delimiter %j", (delimiter) => {
     it("preserves a final quoted empty record without requiring a line ending", () => {
       for (const ending of ["", "\n", "\r\n"]) {

@@ -18,7 +18,7 @@ import { cn } from "~/lib/utils";
 
 import { AudioPreview } from "./AudioPreview";
 import { BrowserDocumentFrame } from "./BrowserDocumentFrame";
-import { DelimitedTablePreview } from "./DelimitedTablePreview";
+import { DelimitedTablePreview, LargeTextPreview } from "./DelimitedTablePreview";
 import { BinaryFilePreview } from "./BinaryFilePreview";
 import { PreviewImage } from "./PreviewImage";
 import {
@@ -171,8 +171,19 @@ export function AttachmentFilePreview(props: {
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Retry must reauthorize the remote file.
   }, [props.file, refresh, revision]);
   const url = props.file ? localUrl : remoteUrl;
+  // A large remote text file is paged by byte range instead of read whole into memory.
+  const streamsLarge =
+    kind === "text" &&
+    !props.file &&
+    props.sizeBytes > FILE_TEXT_PREVIEW_MAX_BYTES &&
+    (delimiter === null || rendered);
+  const copyLarge = useRef<(() => Promise<string>) | null>(null);
   const needsText =
-    kind === "text" || kind === "markdown" || kind === "mermaid" || (kind === "html" && !rendered);
+    !streamsLarge &&
+    (kind === "text" ||
+      kind === "markdown" ||
+      kind === "mermaid" ||
+      (kind === "html" && !rendered));
   useEffect(() => {
     if (!needsText || !url) return;
     const controller = new AbortController();
@@ -270,6 +281,15 @@ export function AttachmentFilePreview(props: {
     />
   ) : !url || (needsText && !content) ? (
     <FileSurfaceLoading />
+  ) : streamsLarge ? (
+    <LargeTextPreview
+      name={props.name}
+      src={url}
+      sizeBytes={props.sizeBytes}
+      delimiter={delimiter}
+      copyContents={copyLarge}
+      onRetry={() => setRevision((value) => value + 1)}
+    />
   ) : needsText && content ? (
     delimiter && rendered ? (
       <DelimitedTablePreview name={props.name} text={content.text} delimiter={delimiter} />
@@ -369,6 +389,24 @@ export function AttachmentFilePreview(props: {
             onPress={() => updateClientSettings({ wordWrap: !wordWrap })}
           >
             <WrapTextIcon className="size-3.5" />
+          </FileSurfaceAction>
+        ) : null}
+        {streamsLarge && url ? (
+          <FileSurfaceAction
+            label={isCopied ? "Copied" : "Copy contents"}
+            onPress={() =>
+              void copyLarge.current?.().then(
+                (text) => copyToClipboard(text, undefined),
+                (cause: unknown) =>
+                  toastManager.add({
+                    type: "error",
+                    title: "Could not copy file",
+                    description: cause instanceof Error ? cause.message : "Please try again.",
+                  }),
+              )
+            }
+          >
+            <MorphIcon className="size-3.5" icon={isCopied ? Check : Copy} />
           </FileSurfaceAction>
         ) : null}
         {content ? (
