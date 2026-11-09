@@ -1402,6 +1402,19 @@ function deriveTimelineTurnFolds(
   });
 }
 
+/** A prompt that only asks the provider to compact, so its turn is the compaction itself. */
+function isCompactCommand(message: {
+  readonly role: string;
+  readonly text: string;
+  readonly attachments?: ReadonlyArray<unknown> | undefined;
+}): boolean {
+  return (
+    message.role === "user" &&
+    message.text.trim().toLowerCase() === "/compact" &&
+    (message.attachments?.length ?? 0) === 0
+  );
+}
+
 export function deriveMessagesTimelineRows(input: {
   timelineEntries: ReadonlyArray<TimelineEntry>;
   latestRun?: TimelineLatestRun | null;
@@ -1570,7 +1583,34 @@ export function deriveMessagesTimelineRows(input: {
   const activeWorkEntryIds = new Set(
     activeWorkRow !== null || latestToolFailed ? activeToolEntries.map((entry) => entry.id) : [],
   );
+  // A bare `/compact` turn is the compaction itself: one compaction row stands in for its prompt
+  // and for the working indicator, from the moment the turn starts.
+  const compactionCommandRunIds = new Set<RunId>();
+  const compactedRunIds = new Set<RunId>();
+  for (const entry of timelineEntries) {
+    if (
+      entry.kind === "message" &&
+      entry.message.runId !== null &&
+      isCompactCommand(entry.message)
+    ) {
+      compactionCommandRunIds.add(entry.message.runId);
+    } else if (
+      entry.kind === "work" &&
+      entry.entry.runId != null &&
+      entry.entry.sourceActivityKind === "context-compaction"
+    ) {
+      compactedRunIds.add(entry.entry.runId);
+    }
+  }
+  const runningCompactionRunId =
+    input.isWorking &&
+    unsettledRunId !== null &&
+    compactionCommandRunIds.has(unsettledRunId) &&
+    !compactedRunIds.has(unsettledRunId)
+      ? unsettledRunId
+      : null;
   const appendWorkingRow = () => {
+    if (runningCompactionRunId !== null) return;
     nextRows.push({
       kind: "working",
       id: "working-indicator-row",
@@ -1578,7 +1618,7 @@ export function deriveMessagesTimelineRows(input: {
     });
   };
   let hasActivityRow = false;
-  let hasActiveCompaction = false;
+  let hasActiveCompaction = runningCompactionRunId !== null;
   const appendActiveWorkRows = () => {
     if (activeWorkRow === null) return;
     nextRows.push(activeWorkRow);
@@ -1877,6 +1917,22 @@ export function deriveMessagesTimelineRows(input: {
         createdAt: timelineEntry.createdAt,
         projectedItem: timelineEntry.projectedItem,
       });
+      continue;
+    }
+
+    const compactionRunId = timelineEntry.message.runId;
+    if (compactionRunId !== null && isCompactCommand(timelineEntry.message)) {
+      // Once the provider records the compaction, its own row replaces this one.
+      if (!compactedRunIds.has(compactionRunId)) {
+        const pending = compactionRunId === runningCompactionRunId;
+        nextRows.push({
+          kind: "context-compaction",
+          id: `compaction:${compactionRunId}`,
+          createdAt: timelineEntry.createdAt,
+          label: pending ? "Compacting context" : "Context compaction",
+          active: pending,
+        });
+      }
       continue;
     }
 
