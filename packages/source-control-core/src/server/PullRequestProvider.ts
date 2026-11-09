@@ -284,6 +284,16 @@ export interface ProviderDiffFileContents {
   readonly newContents: string;
 }
 
+export interface ProviderFileStats {
+  readonly files: ReadonlyArray<{
+    readonly path: string;
+    readonly additions: number;
+    readonly deletions: number;
+  }>;
+  /** The host has more files than were read. */
+  readonly truncated: boolean;
+}
+
 export interface ProviderFilesViewed {
   readonly files: ReadonlyArray<PullRequestFileViewed>;
   /** The host has more files than were read, so the ones missing here are not "unviewed". */
@@ -548,6 +558,11 @@ export interface PullRequestProviderApi {
   readonly getFilesViewed?: (
     input: ProviderRepositoryRef & { readonly number: number },
   ) => Effect.Effect<ProviderFilesViewed, PullRequestProviderError>;
+
+  /** Line counts for every changed file. Optional: a host without one shows no breakdown. */
+  readonly getFileStats?: (
+    input: ProviderRepositoryRef & { readonly number: number },
+  ) => Effect.Effect<ProviderFileStats, PullRequestProviderError>;
 
   /**
    * Clears files, or puts them back. Only called when `capabilities.viewedFiles` is `"host"`.

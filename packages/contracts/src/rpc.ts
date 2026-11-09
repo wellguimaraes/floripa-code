@@ -172,6 +172,7 @@ import {
   PullRequestChecks,
   PullRequestDiffFileContentsInput,
   PullRequestDiffFileContentsResult,
+  PullRequestChangeBreakdown,
   PullRequestFilesViewedResult,
   PullRequestInvalidateInput,
   PullRequestReportStateInput,
@@ -569,6 +570,7 @@ export const WS_METHODS = {
   pullRequestsThreadComments: "pullRequests.threadComments",
   pullRequestsDiffFileContents: "pullRequests.diffFileContents",
   pullRequestsFilesViewed: "pullRequests.filesViewed",
+  pullRequestsChangeBreakdown: "pullRequests.changeBreakdown",
   pullRequestsSetFilesViewed: "pullRequests.setFilesViewed",
   pullRequestsRunAction: "pullRequests.runAction",
   pullRequestsUpdate: "pullRequests.update",
@@ -1080,6 +1082,12 @@ const WsPullRequestsDiffFileContentsRpc = Rpc.make(WS_METHODS.pullRequestsDiffFi
 const WsPullRequestsFilesViewedRpc = Rpc.make(WS_METHODS.pullRequestsFilesViewed, {
   payload: PullRequestRef,
   success: PullRequestFilesViewedResult,
+  error: PullRequestRpcError,
+});
+
+const WsPullRequestsChangeBreakdownRpc = Rpc.make(WS_METHODS.pullRequestsChangeBreakdown, {
+  payload: PullRequestRef,
+  success: PullRequestChangeBreakdown,
   error: PullRequestRpcError,
 });
 
@@ -2026,6 +2034,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsPullRequestsThreadCommentsRpc,
   WsPullRequestsDiffFileContentsRpc,
   WsPullRequestsFilesViewedRpc,
+  WsPullRequestsChangeBreakdownRpc,
   WsPullRequestsSetFilesViewedRpc,
   WsPullRequestsRunActionRpc,
   WsPullRequestsUpdateRpc,

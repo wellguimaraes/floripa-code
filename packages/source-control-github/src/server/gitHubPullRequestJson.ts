@@ -558,6 +558,19 @@ const RawViewerFieldsSchema = Schema.Struct({
   viewerDidAuthor: Schema.optional(Schema.Boolean),
 });
 
+/** What deleting the source branch needs: write on the head repository, and a branch still there. */
+const RawHeadBranchAccessSchema = Schema.Struct({
+  headRepository: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        nameWithOwner: Schema.optional(Schema.NullOr(Schema.String)),
+        viewerPermission: Schema.optional(Schema.NullOr(Schema.String)),
+      }),
+    ),
+  ),
+  headRef: Schema.optional(Schema.NullOr(Schema.Struct({ id: Schema.String }))),
+});
+
 const RawThreadCommentsSchema = Schema.Struct({
   totalCount: Schema.optional(Schema.Int),
   pageInfo: Schema.optional(RawPageInfoSchema),
@@ -722,6 +735,7 @@ const RawCoreSchema = Schema.Struct({
       pullRequest: Schema.Struct({
         ...RawDetailSchema.fields,
         ...RawViewerFieldsSchema.fields,
+        ...RawHeadBranchAccessSchema.fields,
         viewerCanUpdateBranch: Schema.Boolean,
         baseRef: Schema.NullOr(
           Schema.Struct({
@@ -842,6 +856,8 @@ export const pullRequestCoreGraphQlQuery = (host: string) => {
       additions deletions changedFiles createdAt updatedAt mergedAt closedAt
       headRefName baseRefName headRefOid isCrossRepository
       headRepositoryOwner { login }
+      headRepository { nameWithOwner viewerPermission }
+      headRef { id }
       author { login avatarUrl ... on User { id name } }
       autoMergeRequest { mergeMethod }
       viewerCanUpdate viewerDidAuthor viewerCanUpdateBranch
@@ -1353,6 +1369,8 @@ export interface GitHubPullRequestDetail extends GitHubPullRequestListItem {
   readonly isCrossRepository?: boolean;
   /** The owner of the head branch's repository; null where `gh` did not say. */
   readonly headRepositoryOwner: string | null;
+  /** The repository the source branch lives in, which is a fork for a cross-repository change. */
+  readonly headRepositoryNameWithOwner?: string | null;
   readonly headSha?: string | null;
   readonly body: string;
   readonly changedFiles: number;
@@ -2358,8 +2376,10 @@ export function decodePullRequestCoreJson(
       labels: pr.labels.nodes,
       statusCheckRollup: toCheckContexts(contexts?.nodes ?? []),
     }),
+    headRepositoryNameWithOwner: trimmed(pr.headRepository?.nameWithOwner),
     viewerAccess: {
       canWrite: toCanWrite(repository.viewerPermission),
+      canDeleteBranch: toCanWrite(pr.headRepository?.viewerPermission) && pr.headRef != null,
       canTriage: toCanTriage(repository.viewerPermission),
       ...toPullRequestViewerFields(pr),
       mergeCapabilities: {
@@ -3176,6 +3196,8 @@ export function buildLabelRequest(labels: ReadonlyArray<string>): {
  */
 export interface GitHubViewerAccess {
   readonly canWrite: boolean;
+  /** Write on the repository the source branch lives in, which may be a fork. */
+  readonly canDeleteBranch?: boolean;
   /**
    * The viewer's role reaches triage, which is the least that may label. Everyone who can write
    * can triage; a triager is the one role that can label without being able to merge.
@@ -3196,7 +3218,10 @@ export interface GitHubViewerAccess {
 export const VIEWER_PERMISSIONS_GRAPHQL_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed viewerPermission
-    pullRequest(number: $number) { viewerCanUpdate viewerDidAuthor }
+    pullRequest(number: $number) {
+      viewerCanUpdate viewerDidAuthor
+      headRepository { viewerPermission }
+    }
   }
 }`;
 
@@ -3205,7 +3230,9 @@ const RawViewerPermissionsSchema = Schema.Struct({
     repository: Schema.Struct({
       ...RawRepositoryAccessSchema.fields,
       /** Null for a number that names no pull request the viewer can see. */
-      pullRequest: Schema.NullOr(RawViewerFieldsSchema),
+      pullRequest: Schema.NullOr(
+        Schema.Struct({ ...RawViewerFieldsSchema.fields, ...RawHeadBranchAccessSchema.fields }),
+      ),
     }),
   }),
 });
@@ -3227,6 +3254,7 @@ export function decodeViewerPermissionsJson(
       rebase: repository.rebaseMergeAllowed,
     },
     canWrite: toCanWrite(repository.viewerPermission),
+    canDeleteBranch: toCanWrite(repository.pullRequest?.headRepository?.viewerPermission),
     canTriage: toCanTriage(repository.viewerPermission),
     ...toPullRequestViewerFields(repository.pullRequest),
   });
@@ -3400,6 +3428,78 @@ export function decodePullRequestFilesViewedJson(
       node === null || node.path.length === 0
         ? []
         : [{ path: node.path, state: toFileViewedState(node.viewerViewedState) }],
+    ),
+    nextCursor: files.pageInfo.hasNextPage ? files.pageInfo.endCursor : null,
+  });
+}
+
+/** Per-file line counts, which the change breakdown sorts by path. */
+export const PULL_REQUEST_FILE_STATS_GRAPHQL_QUERY = `query($owner: String!, $name: String!, $number: Int!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      files(first: 100, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes { path additions deletions }
+      }
+    }
+  }
+}`;
+
+const RawPullRequestFileStatsSchema = Schema.Struct({
+  data: Schema.Struct({
+    repository: Schema.NullOr(
+      Schema.Struct({
+        pullRequest: Schema.NullOr(
+          Schema.Struct({
+            files: Schema.Struct({
+              pageInfo: Schema.Struct({
+                hasNextPage: Schema.Boolean,
+                endCursor: Schema.NullOr(Schema.String),
+              }),
+              nodes: Schema.NullOr(
+                Schema.Array(
+                  Schema.NullOr(
+                    Schema.Struct({
+                      path: Schema.String,
+                      additions: Schema.Int,
+                      deletions: Schema.Int,
+                    }),
+                  ),
+                ),
+              ),
+            }),
+          }),
+        ),
+      }),
+    ),
+  }),
+});
+
+const decodePullRequestFileStats = decodeJsonResult(RawPullRequestFileStatsSchema);
+
+export interface GitHubPullRequestFileStat {
+  readonly path: string;
+  readonly additions: number;
+  readonly deletions: number;
+}
+
+export interface GitHubPullRequestFileStatsPage {
+  readonly files: ReadonlyArray<GitHubPullRequestFileStat>;
+  readonly nextCursor: string | null;
+}
+
+export function decodePullRequestFileStatsJson(
+  raw: string,
+): Result.Result<GitHubPullRequestFileStatsPage, DecodeFailure> {
+  const decoded = decodePullRequestFileStats(raw);
+  if (!Result.isSuccess(decoded)) return Result.fail(decoded.failure);
+  const files = decoded.success.data.repository?.pullRequest?.files;
+  if (files === undefined) return Result.succeed({ files: [], nextCursor: null });
+  return Result.succeed({
+    files: (files.nodes ?? []).flatMap((node) =>
+      node === null || node.path.length === 0
+        ? []
+        : [{ path: node.path, additions: node.additions, deletions: node.deletions }],
     ),
     nextCursor: files.pageInfo.hasNextPage ? files.pageInfo.endCursor : null,
   });

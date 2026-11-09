@@ -2526,6 +2526,8 @@ const layerWsRpc = (
           withPullRequestViewer(input, pullRequests.diffFileContents(input)),
         [WS_METHODS.pullRequestsFilesViewed]: (input) =>
           withPullRequestViewer(input, pullRequests.filesViewed(input)),
+        [WS_METHODS.pullRequestsChangeBreakdown]: (input) =>
+          withPullRequestViewer(input, pullRequests.changeBreakdown(input)),
         [WS_METHODS.pullRequestsSetFilesViewed]: (input) =>
           withPullRequestViewer(input, pullRequests.setFilesViewed(input)),
         [WS_METHODS.pullRequestsRunAction]: (input) =>
