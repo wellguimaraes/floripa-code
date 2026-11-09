@@ -24,6 +24,7 @@ import {
   type RuntimeMode,
   type RuntimeRequestId,
   type ThreadId,
+  ThreadTag,
   type ThreadEnvMode,
   type UploadChatAttachment,
 } from "@t3tools/contracts";
@@ -60,6 +61,8 @@ export interface UpdateProjectInput extends CommandMetadata {
   readonly faviconPath?: string | null;
   readonly defaultThreadEnvMode?: ThreadEnvMode | null;
   readonly scripts?: ReadonlyArray<ProjectScript>;
+  readonly pinned?: boolean;
+  readonly archived?: boolean;
 }
 
 export interface DeleteProjectInput extends CommandMetadata {
@@ -180,6 +183,8 @@ export interface StartThreadTurnInput extends ThreadCommandInput {
   readonly bootstrap?: StartThreadBootstrap;
   readonly sourceProposedPlan?: { readonly threadId: ThreadId; readonly planId: PlanId };
   readonly dispatchMode?: "auto" | "queue" | "steer" | "restart" | "start";
+  /** Start a new provider session; needs the server's `freshContext` capability. */
+  readonly freshContext?: boolean;
 }
 
 export interface InterruptThreadTurnInput extends ThreadCommandInput {
@@ -384,6 +389,8 @@ export const updateProject = Effect.fn("EnvironmentCommands.updateProject")(func
       ? {}
       : { defaultThreadEnvMode: input.defaultThreadEnvMode }),
     ...(input.scripts === undefined ? {} : { scripts: input.scripts }),
+    ...(input.pinned === undefined ? {} : { pinned: input.pinned }),
+    ...(input.archived === undefined ? {} : { archived: input.archived }),
   });
 });
 
@@ -479,6 +486,22 @@ export const setThreadAutoSettle = Effect.fn("EnvironmentCommands.setThreadAutoS
     commandId: yield* allocateCommandId(input),
     threadId: input.threadId,
     enabled: input.enabled,
+  });
+});
+
+export interface SetThreadTagInput extends ThreadCommandInput {
+  readonly tag: string;
+  readonly tagged: boolean;
+}
+export const setThreadTag = Effect.fn("EnvironmentCommands.setThreadTag")(function* (
+  input: SetThreadTagInput,
+) {
+  return yield* dispatch({
+    type: "thread.tag.set",
+    commandId: yield* allocateCommandId(input),
+    threadId: input.threadId,
+    tag: ThreadTag.make(input.tag),
+    tagged: input.tagged,
   });
 });
 
@@ -713,6 +736,7 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
       ...(input.sourceProposedPlan === undefined
         ? {}
         : { sourcePlanRef: input.sourceProposedPlan }),
+      ...(input.freshContext ? { freshContext: true } : {}),
       dispatchMode: { type: "start_immediately" },
     });
   }
@@ -773,6 +797,7 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
     ...(shouldSendTitleSeed ? { titleSeed: input.titleSeed } : {}),
     ...(input.modelSelection === undefined ? {} : { modelSelection: input.modelSelection }),
     ...(input.sourceProposedPlan === undefined ? {} : { sourcePlanRef: input.sourceProposedPlan }),
+    ...(input.freshContext ? { freshContext: true } : {}),
     ...(serverResolvesCommandContext && requestedMode !== "queue"
       ? { deliveryIntent: requestedMode }
       : {}),

@@ -1495,6 +1495,8 @@ export interface ChatComposerProps {
   resumeCompactionTokens: number | null;
   /** The Compact chip is off, so the next send keeps full history. */
   keepFullHistory: boolean;
+  /** Arms a fresh session for the next message; absent where `/clear` is unavailable. */
+  onFreshSession?: (() => void) | undefined;
   /** Flips the Compact chip for the active thread. */
   onToggleKeepFullHistory: () => void;
   /** Picking /usage-limits from the menu is the action itself; the draft keeps nothing of it. */
@@ -2663,6 +2665,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           label: "/model",
           description: "Switch response model for this thread",
         },
+        ...(props.onFreshSession !== undefined
+          ? ([
+              {
+                id: "slash:clear",
+                type: "slash-command",
+                command: "clear",
+                label: "/clear",
+                description: "Start a fresh session; earlier messages stay visible",
+              },
+            ] as const)
+          : []),
         ...(planModeUiEnabled
           ? ([
               {
@@ -2709,8 +2722,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           skill.description ??
           (skill.scope ? `${skill.scope} skill` : ""),
       }));
+      // The built-in `/clear` replaces the provider's, which would clear a session still live here.
+      const freshSessionAvailable = props.onFreshSession !== undefined;
       const visibleProviderSlashCommandItems = providerSlashCommandItems.filter(
-        (item) => item.command.name !== "compact" || compactSlashCommandAvailable,
+        (item) =>
+          (item.command.name !== "compact" || compactSlashCommandAvailable) &&
+          (item.command.name !== "clear" || !freshSessionAvailable),
       );
       const slashCommandItems = slashCommandItemsForPromptPosition(
         [...builtInSlashCommandItems, ...visibleProviderSlashCommandItems, ...skillItems],
@@ -2792,6 +2809,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     environmentThreadShells,
     exactPullRequestLookup.data,
     planModeUiEnabled,
+    props.onFreshSession,
     pullRequestLookup.data,
     pullRequestProjectId,
     pullRequestRepository,
@@ -4039,6 +4057,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           }
           return;
         }
+        if (item.command === "clear") {
+          const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
+            expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
+          });
+          if (applied) {
+            setComposerHighlightedItemId(null);
+            props.onFreshSession?.();
+          }
+          return;
+        }
         if (!planModeUiEnabled) return;
         void handleInteractionModeChange(item.command === "plan" ? "plan" : "default");
         const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
@@ -4170,6 +4198,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       handleInteractionModeChange,
       planModeUiEnabled,
       onUsageLimitsCommand,
+      props.onFreshSession,
       resolveActiveComposerTrigger,
       setComposerDraftThreadContextIntent,
     ],

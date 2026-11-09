@@ -142,6 +142,7 @@ import { T3Wordmark } from "../T3Wordmark";
 import { ThreadContextChip } from "../ThreadContextChip";
 import {
   BotIcon,
+  EraserIcon,
   BrainIcon,
   CheckIcon,
   CalendarClockIcon,
@@ -3024,6 +3025,9 @@ function UserMessageContent({ row }: { row: Extract<TimelineRow, { kind: "messag
         >
           Sent by Floripa Code
         </p>
+      ) : null}
+      {row.message.freshContext ? (
+        <TimelineSystemDivider label="New session" icon={EraserIcon} />
       ) : null}
       {row.message.inputIntent && row.message.inputIntent !== "turn_start" ? (
         <UserMessageIntentMarker intent={row.message.inputIntent} />

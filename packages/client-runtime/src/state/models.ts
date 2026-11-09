@@ -132,6 +132,8 @@ export interface EnvironmentThreadShell {
   readonly pinOrderKey: string | null;
   /** Slot in the user-arranged active order; null for keyless active threads. */
   readonly activeOrderKey: string | null;
+  /** Absent when the thread has no tags. */
+  readonly tags?: ReadonlyArray<string>;
   readonly pullRequests: ReadonlyArray<import("@t3tools/contracts").ThreadPullRequestLink>;
   readonly linkedPullRequest?: ThreadLinkedPullRequest | null;
   readonly branchPullRequest?: ThreadLinkedPullRequest | null;
@@ -276,6 +278,7 @@ export function presentThreadShell(
     autoSettleDisabledAt: nullableIso(thread.autoSettleDisabledAt ?? null),
     pinOrderKey: thread.pinOrderKey ?? null,
     activeOrderKey: thread.activeOrderKey ?? null,
+    ...(thread.tags?.length ? { tags: thread.tags } : {}),
     ...(thread.lastVisitedAt === undefined
       ? {}
       : { lastVisitedAt: nullableIso(thread.lastVisitedAt) }),

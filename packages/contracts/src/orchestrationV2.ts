@@ -1,4 +1,5 @@
 import { OrchestrationMessageContext } from "./composerContext.ts";
+import { StoredThreadTags, ThreadTag } from "./threadTags.ts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SchemaAST from "effect/SchemaAST";
@@ -414,6 +415,8 @@ export const OrchestrationV2AppThread = Schema.Struct({
   pinOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   /** Fractional-index slot in the user-arranged active order. */
   activeOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  /** Absent on threads written before tags existed; read as empty. */
+  tags: Schema.optional(StoredThreadTags),
   lastVisitedAt: Schema.NullOr(Schema.DateTimeUtc).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
@@ -587,6 +590,8 @@ export const OrchestrationV2Run = Schema.Struct({
   delegatedCompletion: Schema.optional(OrchestrationV2DelegatedCompletionCohort),
   /** How a launch prepares this run's workspace; prepared-run.retry repeats it. */
   workspacePreparation: Schema.optional(OrchestrationV2ThreadLaunchWorkspaceStrategy),
+  /** Starts a new provider conversation; earlier runs stay visible but never reach the provider. */
+  freshContext: Schema.optional(Schema.Boolean),
 });
 export type OrchestrationV2Run = typeof OrchestrationV2Run.Type;
 
@@ -1402,6 +1407,7 @@ export const OrchestrationV2TurnItem = Schema.Union([
     messageId: MessageId,
     scheduledTaskId: Schema.optional(ScheduledTaskId),
     senderThreadId: Schema.optional(ThreadId),
+    freshContext: OrchestrationV2Run.fields.freshContext,
     inputIntent: OrchestrationV2UserMessageInputIntent,
     text: Schema.String,
     context: Schema.optional(OrchestrationMessageContext),
@@ -1684,6 +1690,7 @@ export const OrchestrationV2DomainEvent = Schema.Union([
       "thread.unpinned",
       "thread.pin-reordered",
       "thread.active-reordered",
+      "thread.tags-updated",
       "thread.visited",
       "thread.marked-unread",
       "thread.metadata-updated",
@@ -1931,6 +1938,8 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   pinOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   /** Slot in the user-arranged active order; omitted by pre-reorder servers. */
   activeOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  /** Absent on threads written before tags existed; read as empty. */
+  tags: Schema.optional(StoredThreadTags),
   /**
    * Omitted by servers that predate server-side visited tracking; clients fall
    * back to their local visited state when the field is absent.
@@ -2182,6 +2191,7 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     messageId: MessageId,
     scheduledTaskId: Schema.optional(ScheduledTaskId),
     senderThreadId: Schema.optional(ThreadId),
+    freshContext: OrchestrationV2Run.fields.freshContext,
     inputIntent: OrchestrationV2UserMessageInputIntent,
     text: Schema.String,
     context: Schema.optional(OrchestrationMessageContext),
@@ -2505,6 +2515,7 @@ export const OrchestrationV2DomainEventJson = Schema.Union([
       "thread.unpinned",
       "thread.pin-reordered",
       "thread.active-reordered",
+      "thread.tags-updated",
       "thread.visited",
       "thread.marked-unread",
       "thread.pull-request-synced",
@@ -2728,6 +2739,13 @@ export const OrchestrationV2Command = Schema.Union([
     threadId: ThreadId,
   }),
   Schema.Struct({
+    type: Schema.Literal("thread.tag.set"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    tag: ThreadTag,
+    tagged: Schema.Boolean,
+  }),
+  Schema.Struct({
     type: Schema.Literal("thread.pin.reorder"),
     commandId: CommandId,
     threadId: ThreadId,
@@ -2867,6 +2885,8 @@ export const OrchestrationV2Command = Schema.Union([
     ...OrchestrationV2CreationFields,
     scheduledTaskId: Schema.optional(ScheduledTaskId),
     senderThreadId: Schema.optional(ThreadId),
+    /** Start a new provider session without the thread's earlier context. Never steers. */
+    freshContext: Schema.optional(Schema.Boolean),
     commandId: CommandId,
     threadId: ThreadId,
     messageId: MessageId,
@@ -3095,6 +3115,13 @@ export type OrchestrationV2Command = typeof OrchestrationV2Command.Type;
  * send them.
  */
 const OrchestrationV2InternalCommand = Schema.Union([
+  /** Moves a thread to a project rooted at the folder it already works in, so its cwd never changes. */
+  Schema.Struct({
+    type: Schema.Literal("thread.project.adopt-folder"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    projectId: ProjectId,
+  }),
   /**
    * Records what a pull request watch saw, and wakes the agent in the same transaction when
    * `wake` is set. Rejected once the watch started at `startedAt` has ended, and a wake is

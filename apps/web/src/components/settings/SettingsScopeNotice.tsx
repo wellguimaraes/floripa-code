@@ -41,7 +41,7 @@ export function SettingsScopeNotice({
           )
       : target === "project"
         ? groups.map((group) => ({
-            label: group.displayName,
+            label: group.archived ? `${group.displayName} · Archived` : group.displayName,
             search: { project: group.projectKey },
           }))
         : target === "environment"

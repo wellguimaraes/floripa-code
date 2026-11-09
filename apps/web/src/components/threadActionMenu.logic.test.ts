@@ -39,6 +39,13 @@ function allIds(state: ThreadActionMenuState): string[] {
 }
 
 describe("buildThreadActionMenuItems", () => {
+  it("offers turn into project only when the thread qualifies", () => {
+    const ids = (canTurnIntoProject: boolean) =>
+      buildThreadActionMenuItems({ ...baseState, canTurnIntoProject }).map((item) => item.id);
+    expect(ids(true)).toContain("turn-into-project");
+    expect(ids(false)).not.toContain("turn-into-project");
+  });
+
   it.each([false, true])(
     "disables both lifecycle directions without permission (reversed: %s)",
     (reversed) => {

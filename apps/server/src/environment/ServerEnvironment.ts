@@ -264,6 +264,10 @@ export const make = Effect.gen(function* () {
         : {}),
       ...(desktopAppUpdate ? { desktopAppUpdate: true } : {}),
       serverBrowser: true,
+      freshContext: true,
+      threadProjectFromScratch: true,
+      threadTags: true,
+      projectOrganization: true,
     },
   };
 

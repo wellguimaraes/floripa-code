@@ -336,6 +336,26 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["claude context compaction idle cache tokens usage summary resume beta"],
   },
   {
+    id: "snooze-options",
+    title: "Snooze options",
+    to: "/settings/general",
+    searchTerms: ["snooze presets times later tonight tomorrow next week remind"],
+    environmentOnly: true,
+    scope: "environment-defaults",
+  },
+  {
+    id: "hide-tagged-threads",
+    title: "Hide tagged threads",
+    to: "/settings/general",
+    searchTerms: ["tag private recording demo screen share streaming hide threads"],
+  },
+  {
+    id: "hidden-thread-tags",
+    title: "Hidden thread tags",
+    to: "/settings/general",
+    searchTerms: ["tag private recording demo screen share streaming hide threads"],
+  },
+  {
     id: "auto-resume-limited-threads",
     title: "Auto-resume limited threads",
     to: "/settings/general",

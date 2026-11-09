@@ -175,6 +175,13 @@ export function createProjectEnvironmentAtoms<R, E>(
       scheduler: projectScheduler,
       concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
     }),
+    // Turns a No project thread's folder into a project and moves its threads in.
+    createFromThread: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:projects:create-from-thread",
+      tag: WS_METHODS.projectsCreateFromThread,
+      scheduler: projectScheduler,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+    }),
     writeFile: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:projects:write-file",
       tag: WS_METHODS.projectsWriteFile,
