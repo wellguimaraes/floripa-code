@@ -58,6 +58,10 @@ describe("AcpMcpStdioBridge", () => {
         arguments: {},
         fetchImplementation: async (_url, init) => {
           const headers = new Headers(init?.headers);
+          if (init?.method === "DELETE") {
+            requests.push({ body: { method: "DELETE" }, headers });
+            return new Response(null, { status: 204 });
+          }
           const body: unknown = JSON.parse(String(init?.body ?? "{}"));
           requests.push({ body, headers });
           const request = body as { readonly id?: unknown; readonly method?: unknown };
@@ -81,7 +85,7 @@ describe("AcpMcpStdioBridge", () => {
       });
 
       expect(result).toEqual({ structuredContent: { providers: ["codex"] } });
-      expect(requests).toHaveLength(3);
+      expect(requests).toHaveLength(4);
       expect(requests[0]?.headers.get("authorization")).toBe("Bearer bridge-test");
       expect(requests[1]?.headers.get("mcp-session-id")).toBe("session-42");
       expect(requests[2]?.headers.get("mcp-protocol-version")).toBe("2025-06-18");
@@ -89,6 +93,9 @@ describe("AcpMcpStdioBridge", () => {
         method: "tools/call",
         params: { name: "orchestrator_capabilities", arguments: {} },
       });
+      // The session ends when the call returns.
+      expect(requests[3]?.body).toEqual({ method: "DELETE" });
+      expect(requests[3]?.headers.get("mcp-session-id")).toBe("session-42");
     }),
   );
 
