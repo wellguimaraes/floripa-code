@@ -2737,6 +2737,160 @@ describe("orchestration v2 provider switching", () => {
       }),
     );
 
+  it.live.each(["immediately", "behind a running turn"] as const)(
+    "starts a fresh provider session %s and never hands earlier runs to a later provider",
+    (variant) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const queued = variant !== "immediately";
+          const key = queued ? "queued" : "immediate";
+          const cwd = yield* checkpointWorkspace(`fresh-context-${key}`);
+          const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
+          const started = yield* Deferred.make<void>();
+          const release = yield* Deferred.make<void>();
+          const layerRegistry = ProviderAdapterRegistry.layerFromAdapters([
+            makeTestAdapter({
+              instanceId: CLAUDE_MODEL_SELECTION.instanceId,
+              driver: CLAUDE_DRIVER,
+              capabilities: ClaudeProviderCapabilitiesV2,
+              modelSelection: CLAUDE_MODEL_SELECTION,
+              responseByRunOrdinal: {},
+              capturedTurns,
+              nativeThreadGeneration: yield* Ref.make(0),
+              ...(queued
+                ? { holdFirstTurn: started, releaseFirstTurn: release, holdRunOrdinal: 2 }
+                : {}),
+            }),
+            makeTestAdapter({
+              instanceId: CODEX_MODEL_SELECTION.instanceId,
+              driver: CODEX_DRIVER,
+              capabilities: CodexProviderCapabilitiesV2,
+              modelSelection: CODEX_MODEL_SELECTION,
+              responseByRunOrdinal: {},
+              capturedTurns,
+            }),
+          ]);
+          const freshThreadId = ThreadId.make(`thread:fresh-context:${key}`);
+          yield* Effect.gen(function* () {
+            const orchestrator = yield* Orchestrator.OrchestratorV2;
+            const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+            const send = (
+              name: string,
+              modelSelection: ModelSelection,
+              options: { readonly freshContext?: boolean; readonly queue?: boolean } = {},
+            ) =>
+              orchestrator.dispatch({
+                type: "message.dispatch",
+                createdBy: "user",
+                creationSource: "web",
+                commandId: CommandId.make(`command:fresh-context:${key}:${name}`),
+                threadId: freshThreadId,
+                messageId: MessageId.make(`message:fresh-context:${key}:${name}`),
+                text: `Prompt ${name}`,
+                attachments: [],
+                modelSelection,
+                ...(options.freshContext ? { freshContext: true } : {}),
+                // A fresh send must never steer the running turn.
+                ...(options.queue ? {} : { deliveryIntent: "auto" as const }),
+                dispatchMode: {
+                  type: options.queue ? "queue_after_active" : "start_immediately",
+                },
+              });
+            yield* orchestrator.dispatch({
+              type: "thread.create",
+              createdBy: "user",
+              creationSource: "web",
+              commandId: CommandId.make(`command:fresh-context:${key}:create`),
+              threadId: freshThreadId,
+              projectId: ProjectId.make(`project:fresh-context:${key}`),
+              title: "Fresh context",
+              modelSelection: CLAUDE_MODEL_SELECTION,
+              runtimeMode: "full-access",
+              interactionMode: "default",
+              branch: null,
+              worktreePath: cwd,
+            });
+            // Codex keeps a native thread from before the fresh run that must not resume.
+            yield* send("zero", CODEX_MODEL_SELECTION);
+            yield* worker.drain();
+            yield* waitForIdle(freshThreadId);
+            yield* send("alpha", CLAUDE_MODEL_SELECTION);
+            if (queued) {
+              yield* Deferred.await(started);
+              yield* worker.drain();
+            } else {
+              yield* worker.drain();
+              yield* waitForIdle(freshThreadId);
+            }
+            yield* send("beta", CLAUDE_MODEL_SELECTION, { freshContext: true });
+            if (queued) {
+              // Queued behind the fresh run, so it joins the conversation that run starts.
+              yield* send("gamma", CLAUDE_MODEL_SELECTION, { queue: true });
+              const waiting = yield* orchestrator.getThreadProjection(freshThreadId);
+              assert.deepEqual(
+                waiting.runs.map((run) => run.status),
+                ["completed", "running", "queued", "queued"],
+              );
+              yield* Deferred.succeed(release, undefined);
+            }
+            yield* worker.drain();
+            yield* waitForIdle(freshThreadId);
+            yield* send("delta", CODEX_MODEL_SELECTION);
+            yield* worker.drain();
+            yield* waitForIdle(freshThreadId);
+            yield* worker.drain();
+            const projection = yield* orchestrator.getThreadProjection(freshThreadId);
+            const turns = yield* Ref.get(capturedTurns);
+            const turnFor = (name: string) =>
+              turns.find((turn) => turn.text.endsWith(`Prompt ${name}`))!;
+
+            const freshRun = projection.runs.find(
+              (run) => run.userMessageId === `message:fresh-context:${key}:beta`,
+            )!;
+            assert.isTrue(freshRun.freshContext);
+            assert.equal(freshRun.contextHandoffId, null);
+            assert.isTrue(
+              projection.turnItems.some(
+                (item) =>
+                  item.type === "user_message" &&
+                  item.messageId === freshRun.userMessageId &&
+                  item.freshContext === true,
+              ),
+            );
+            assert.notEqual(turnFor("beta").providerThreadId, turnFor("alpha").providerThreadId);
+            assert.notEqual(turnFor("beta").nativeThreadId, turnFor("alpha").nativeThreadId);
+            assert.equal(turnFor("beta").text, "Prompt beta");
+            if (queued) {
+              assert.equal(turnFor("gamma").providerThreadId, turnFor("beta").providerThreadId);
+            }
+            const codexTurn = turnFor("delta");
+            assert.notEqual(codexTurn.providerThreadId, turnFor("zero").providerThreadId);
+            assert.include(codexTurn.text, "Prompt beta");
+            assert.notInclude(codexTurn.text, "Prompt alpha");
+            assert.notInclude(codexTurn.text, "Prompt zero");
+          }).pipe(
+            Effect.provide(
+              ProviderReplayHarness.layerWithRegistry(
+                {
+                  name: `fresh-context-${key}`,
+                  runtimePolicyOverride: {
+                    cwd,
+                    approvalPolicy: "never",
+                    sandboxPolicy: {
+                      type: "readOnly",
+                      access: { type: "fullAccess" },
+                      networkAccess: false,
+                    },
+                  },
+                },
+                layerRegistry,
+              ),
+            ),
+          );
+        }),
+      ),
+  );
+
   it.live("reissues imported v1 context when switching after the first provider fails", () =>
     importedFailureScenario(false),
   );
