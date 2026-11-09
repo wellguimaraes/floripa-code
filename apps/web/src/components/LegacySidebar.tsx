@@ -91,6 +91,7 @@ import {
   readThreadShell,
   useProjects,
   useThreadShells,
+  useVisibleThreadShells,
   useThreadShellsForProjectRefs,
 } from "../state/entities";
 import { useRightPanelStore } from "../rightPanelStore";
@@ -3223,7 +3224,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
 
 export default function LegacySidebar() {
   const projects = useProjects();
-  const sidebarThreads = useThreadShells();
+  const sidebarThreads = useVisibleThreadShells();
   const projectExpandedById = useUiStateStore((store) => store.projectExpandedById);
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const reorderProjects = useUiStateStore((store) => store.reorderProjects);

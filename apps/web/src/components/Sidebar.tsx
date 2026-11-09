@@ -136,6 +136,7 @@ import {
 } from "../threadSelectionStore";
 import {
   canTurnThreadIntoProject,
+  threadTagMenuState,
   useAcknowledgeThreadWoke,
   useThreadActions,
 } from "../hooks/useThreadActions";
@@ -158,6 +159,7 @@ import {
   useAllEnvironmentProjectSnapshotsReady,
   useProjects,
   useThreadShells,
+  useVisibleThreadShells,
 } from "../state/entities";
 import { environmentServerConfigsAtom, primaryServerKeybindingsAtom } from "../state/server";
 import { vcsEnvironment } from "../state/vcs";
@@ -2388,7 +2390,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
 export default function Sidebar() {
   const projects = useProjects();
   const projectOrder = useUiStateStore((store) => store.projectOrder);
-  const threads = useThreadShells();
+  const threads = useVisibleThreadShells();
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -2408,6 +2410,7 @@ export default function Sidebar() {
     confirmAndUnpinThread,
     setThreadAutoSettle,
     turnThreadIntoProject,
+    setThreadTag,
     reorderPinnedThread,
     reorderActiveThread,
     markThreadUnread,
@@ -4615,6 +4618,7 @@ export default function Sidebar() {
                 projectRef.projectId === thread.projectId,
             ),
           ) ?? null;
+        const tagState = threadTagMenuState(threadRef);
         const clicked = await settlePromise(() =>
           api.contextMenu.show(
             buildThreadActionMenuItems({
@@ -4644,6 +4648,7 @@ export default function Sidebar() {
               },
               snoozePresets,
               canTurnIntoProject: canTurnThreadIntoProject(threadRef),
+              ...(tagState ? { tags: tagState } : {}),
             }),
             position,
           ),
@@ -4656,6 +4661,21 @@ export default function Sidebar() {
               ? await requestCustomSnooze()
               : snoozePresets.find((candidate) => `snooze:${candidate.id}` === clicked.value);
           if (preset) attemptSnooze(threadRef, preset);
+          return;
+        }
+        if (clicked.value.startsWith("tag:")) {
+          const tag = clicked.value.slice("tag:".length);
+          const result = await setThreadTag(threadRef, tag, thread.tags?.includes(tag) !== true);
+          if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+            const error = squashAtomCommandFailure(result);
+            toastManager.add(
+              stackedThreadToast({
+                type: "error",
+                title: "Could not update thread tags",
+                description: error instanceof Error ? error.message : "An error occurred.",
+              }),
+            );
+          }
           return;
         }
         switch (clicked.value) {
@@ -4877,6 +4897,7 @@ export default function Sidebar() {
       setProjectScopeKey,
       setThreadAutoSettle,
       startThreadRename,
+      setThreadTag,
       turnThreadIntoProject,
       updateThreadMetadata,
       timestampFormat,

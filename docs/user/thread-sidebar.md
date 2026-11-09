@@ -251,6 +251,14 @@ Expand a tool call in the conversation to see its full command and output.
 Summaries shorten shell wrappers and can still describe the latest call after it
 finishes; the call's own result shows its status.
 
+## Tag threads and hide them
+
+Name the tags you use in **Settings → General → Hidden thread tags**, then pick
+**Tags** from a thread's menu to add or remove one. Turn on **Hide tagged threads**
+to leave every thread with one of those tags out of the sidebar, world, palette
+and thread links, for example while recording a demo. Subagents and forks follow
+their parent. Turn it off to bring them back. Tagging the open thread closes it.
+
 ## Snooze until later
 
 Choose **Snooze → Custom…** from a thread's menu to pick a date and time in your

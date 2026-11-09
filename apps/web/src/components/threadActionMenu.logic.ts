@@ -10,6 +10,8 @@ export type ThreadActionMenuId =
   | "new-thread-on-branch"
   | "filter-by-project"
   | "turn-into-project"
+  | "tags"
+  | `tag:${string}`
   | "project-settings"
   | "pin"
   | "unpin"
@@ -100,6 +102,11 @@ export interface ThreadActionMenuState {
   readonly snoozePresets: ReadonlyArray<SnoozePreset>;
   /** A No project thread with its own folder, on a server that can promote it. */
   readonly canTurnIntoProject?: boolean;
+  /** Present when the server supports tags: every tag worth offering, and the thread's own. */
+  readonly tags?: {
+    readonly known: ReadonlyArray<string>;
+    readonly applied: ReadonlyArray<string>;
+  };
 }
 
 /** Local navigation, read markers, and copying remain available to read-only clients. */
@@ -189,6 +196,21 @@ export function buildThreadActionMenuItems(
               ? "Show all projects"
               : `Filter by ${state.projectFilter.label}`,
             icon: "folder-tree",
+          },
+        ]
+      : []),
+    ...(state.tags && state.tags.known.length > 0
+      ? [
+          {
+            id: "tags" as const,
+            label: "Tags",
+            icon: "tag",
+            // Each entry toggles; a checked tag is on this thread.
+            children: state.tags.known.map((tag) => ({
+              id: `tag:${tag}` as const,
+              label: tag,
+              checked: state.tags?.applied.includes(tag) === true,
+            })),
           },
         ]
       : []),

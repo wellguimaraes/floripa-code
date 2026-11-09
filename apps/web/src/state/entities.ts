@@ -94,6 +94,17 @@ export function useThreadShells(enabled = true): ReadonlyArray<EnvironmentThread
   );
 }
 
+/** Thread shells without the ones the "hide tagged threads" setting hides. Display lists use
+    this; code that must know whether a thread exists keeps `useThreadShells`. */
+export function useVisibleThreadShells(): ReadonlyArray<EnvironmentThreadShell> {
+  return useAtomValue(environmentThreadShells.visibleThreadShellsAtom);
+}
+
+/** Keys (`threadKey`) of threads the tag filter hides right now. */
+export function useHiddenThreadKeys(): ReadonlySet<string> {
+  return useAtomValue(environmentThreadShells.hiddenThreadKeysAtom);
+}
+
 export function useAllEnvironmentShellsBootstrapped(): boolean {
   return useAtomValue(allEnvironmentShellsBootstrappedAtom);
 }

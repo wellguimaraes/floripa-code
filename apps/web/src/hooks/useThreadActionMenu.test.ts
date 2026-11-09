@@ -123,6 +123,7 @@ vi.mock("./useSettings", () => ({
 }));
 vi.mock("./useThreadActions", () => ({
   canTurnThreadIntoProject: () => false,
+  threadTagMenuState: () => undefined,
   useThreadActions: () =>
     Object.fromEntries(
       [

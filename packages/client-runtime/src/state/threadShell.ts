@@ -13,6 +13,7 @@ import { Atom } from "effect/reactivity";
 import type { EnvironmentThreadShell } from "./models.ts";
 import { presentThreadShell } from "./models.ts";
 import { type EnvironmentCatalogState, enabledEnvironmentIds } from "./connections.ts";
+import { hiddenThreadKeys, NO_HIDDEN_THREADS } from "./threadTagFilter.ts";
 import {
   arrayElementsEqual,
   parseProjectRefCollectionKey,
@@ -35,6 +36,10 @@ export function createEnvironmentThreadShellAtoms(input: {
   readonly snapshotAtom: (
     environmentId: EnvironmentId,
   ) => Atom.Atom<OrchestrationV2ShellSnapshot | null>;
+  /** Tags whose threads display lists leave out; null while the filter is off. */
+  readonly hiddenThreadTagsAtom?: (
+    environmentId: EnvironmentId,
+  ) => Atom.Atom<ReadonlyArray<string> | null>;
 }) {
   // Point reads and aggregate lists share values without keeping an atom alive
   // for every listed thread. Replaced source objects can be collected.
@@ -189,6 +194,7 @@ export function createEnvironmentThreadShellAtoms(input: {
     return Atom.make((get) => {
       const next: EnvironmentThreadShell[] = [];
       const seen = new Set<string>();
+      const hidden = get(hiddenThreadKeysAtom);
       for (const projectRef of projectRefs) {
         const refs =
           get(environmentThreadRefsByProjectAtom(projectRef.environmentId)).get(
@@ -198,7 +204,7 @@ export function createEnvironmentThreadShellAtoms(input: {
         const threads = get(environmentThreadIndexAtom(projectRef.environmentId));
         for (const ref of refs) {
           const key = threadKey(ref);
-          if (seen.has(key)) {
+          if (seen.has(key) || hidden.has(key)) {
             continue;
           }
           seen.add(key);
@@ -244,12 +250,63 @@ export function createEnvironmentThreadShellAtoms(input: {
     return previousThreadShells;
   }).pipe(Atom.withLabel("environment-thread-shell-list"));
 
+  // Point reads and threadShellsAtom stay complete, so code that asks whether a thread
+  // exists (outboxes, drafts, removals) never mistakes a hidden thread for a missing one.
+  let previousHiddenThreadKeys: ReadonlySet<string> = NO_HIDDEN_THREADS;
+  const hiddenThreadKeysAtom = Atom.make((get) => {
+    const hiddenThreadTagsAtom = input.hiddenThreadTagsAtom;
+    if (hiddenThreadTagsAtom === undefined) return NO_HIDDEN_THREADS;
+    const environments = Array.from(
+      enabledEnvironmentIds(get(input.catalogValueAtom)),
+      (environmentId) => ({ environmentId, hiddenTags: get(hiddenThreadTagsAtom(environmentId)) }),
+    );
+    // Read shells only while some environment hides tags, so streaming ticks cost nothing otherwise.
+    if (!environments.some((environment) => environment.hiddenTags !== null)) {
+      previousHiddenThreadKeys = NO_HIDDEN_THREADS;
+      return NO_HIDDEN_THREADS;
+    }
+    const next = hiddenThreadKeys(
+      environments.map((environment) => ({
+        ...environment,
+        threads: get(environmentThreadsAtom(environment.environmentId)),
+      })),
+    );
+    if (
+      next.size === previousHiddenThreadKeys.size &&
+      [...next].every((key) => previousHiddenThreadKeys.has(key))
+    ) {
+      return previousHiddenThreadKeys;
+    }
+    previousHiddenThreadKeys = next;
+    return next;
+  }).pipe(Atom.withLabel("environment-hidden-thread-keys"));
+
+  /** threadShellsAtom without the threads the tag filter hides, for lists and palettes. */
+  let previousVisibleThreadShells: ReadonlyArray<EnvironmentThreadShell> = [];
+  const visibleThreadShellsAtom = Atom.make((get) => {
+    const threads = get(threadShellsAtom);
+    const hidden = get(hiddenThreadKeysAtom);
+    if (hidden.size === 0) return threads;
+    const next = threads.filter(
+      (thread) =>
+        !hidden.has(threadKey({ environmentId: thread.environmentId, threadId: thread.id })),
+    );
+    if (arrayElementsEqual(previousVisibleThreadShells, next)) return previousVisibleThreadShells;
+    previousVisibleThreadShells = next;
+    return next;
+  }).pipe(Atom.withLabel("environment-visible-thread-shell-list"));
+
   let previousNavigationShells: ReadonlyArray<EnvironmentThreadShell> = [];
   const navigationThreadShellsAtom = Atom.make((get) => {
     const next: EnvironmentThreadShell[] = [];
+    const hidden = get(hiddenThreadKeysAtom);
     for (const environmentId of enabledEnvironmentIds(get(input.catalogValueAtom))) {
       for (const thread of get(environmentThreadsAtom(environmentId))) {
-        if (thread.archivedAt !== null || thread.lineage.relationshipToParent === "subagent")
+        if (
+          thread.archivedAt !== null ||
+          thread.lineage.relationshipToParent === "subagent" ||
+          hidden.has(threadKey({ environmentId, threadId: thread.id }))
+        )
           continue;
         next.push(scopedThread(environmentId, thread));
       }
@@ -266,6 +323,8 @@ export function createEnvironmentThreadShellAtoms(input: {
     environmentThreadRefsByProjectAtom,
     threadRefsAtom,
     threadShellsAtom,
+    visibleThreadShellsAtom,
+    hiddenThreadKeysAtom,
     navigationThreadShellsAtom,
     threadShellsForProjectRefsAtom: (refs: ReadonlyArray<ScopedProjectRef>) =>
       threadShellsForProjectRefsAtomFamily(projectRefCollectionKey(refs)),

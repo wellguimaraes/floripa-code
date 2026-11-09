@@ -323,6 +323,18 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["usage quota rate limit reset wake recover continue"],
   },
   {
+    id: "hide-tagged-threads",
+    title: "Hide tagged threads",
+    to: "/settings/general",
+    searchTerms: ["tag private recording demo screen share streaming hide threads"],
+  },
+  {
+    id: "hidden-thread-tags",
+    title: "Hidden thread tags",
+    to: "/settings/general",
+    searchTerms: ["tag private recording demo screen share streaming hide threads"],
+  },
+  {
     id: "auto-resume-limited-threads",
     title: "Auto-resume limited threads",
     to: "/settings/general",

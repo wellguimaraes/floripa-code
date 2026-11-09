@@ -612,6 +612,13 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.snoozeLimitedThreads !== DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads
         ? ["Snooze limited threads"]
         : []),
+      ...(settings.hideTaggedThreads !== DEFAULT_UNIFIED_SETTINGS.hideTaggedThreads
+        ? ["Hide tagged threads"]
+        : []),
+      ...(settings.hiddenThreadTags.join("\n") !==
+      DEFAULT_UNIFIED_SETTINGS.hiddenThreadTags.join("\n")
+        ? ["Hidden thread tags"]
+        : []),
       ...(settings.wordWrap !== DEFAULT_UNIFIED_SETTINGS.wordWrap ? ["Word wrap"] : []),
       ...(settings.persistComposerContextStrip !==
       DEFAULT_UNIFIED_SETTINGS.persistComposerContextStrip
@@ -745,6 +752,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.sidebarAutoSettleOnMerge,
       settings.autoResumeLimitedThreads,
       settings.snoozeLimitedThreads,
+      settings.hideTaggedThreads,
+      settings.hiddenThreadTags,
       settings.sidebarProjectGroupingMode,
       settings.sidebarProjectSortOrder,
       settings.sidebarWorkingShelfEnabled,
@@ -852,6 +861,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
       autoResumeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads,
       snoozeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads,
+      hideTaggedThreads: DEFAULT_UNIFIED_SETTINGS.hideTaggedThreads,
+      hiddenThreadTags: DEFAULT_UNIFIED_SETTINGS.hiddenThreadTags,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
@@ -2440,6 +2451,48 @@ export function GeneralSettingsPanel() {
                 updateSettings({ snoozeLimitedThreads: Boolean(checked) })
               }
               aria-label="Snooze limited threads"
+            />
+          }
+        />
+        <SettingsRow
+          serverScoped
+          {...searchableSetting("hide-tagged-threads")}
+          description="Leave out threads with a hidden tag everywhere, for example while recording or sharing your screen. Tag a thread from its menu."
+          settingKeys={["hideTaggedThreads"]}
+          control={
+            <ScopedSwitch
+              settingKeys={["hideTaggedThreads"]}
+              checked={settings.hideTaggedThreads}
+              onCheckedChange={(checked) => updateSettings({ hideTaggedThreads: Boolean(checked) })}
+              aria-label="Hide tagged threads"
+            />
+          }
+        />
+        <SettingsRow
+          serverScoped
+          {...searchableSetting("hidden-thread-tags")}
+          description="Tags to hide, separated by commas. Each one also appears in a thread's Tags menu."
+          settingKeys={["hiddenThreadTags"]}
+          control={
+            <DraftInput
+              size="sm"
+              className="w-full sm:w-72"
+              value={settings.hiddenThreadTags.join(", ")}
+              onCommit={(next) =>
+                updateSettings({
+                  hiddenThreadTags: [
+                    ...new Set(
+                      next
+                        .split(",")
+                        .map((tag) => tag.trim())
+                        .filter((tag) => tag !== "" && tag.length <= 64),
+                    ),
+                  ],
+                })
+              }
+              placeholder="private, demo"
+              spellCheck={false}
+              aria-label="Hidden thread tags"
             />
           }
         />

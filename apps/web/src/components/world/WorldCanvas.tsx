@@ -44,6 +44,7 @@ import {
   useProjects,
   useServerConfigs,
   useThreadShells,
+  useVisibleThreadShells,
   waitForThreadShell,
 } from "../../state/entities";
 import { useRightPanelStore } from "../../rightPanelStore";
@@ -187,7 +188,7 @@ export default function WorldCanvas(props: {
   // Rules, pacing and the archipelago's settings are the same at every size.
   const definition = definitions[0]!;
 
-  const threads = useThreadShells();
+  const threads = useVisibleThreadShells();
   const projects = useProjects();
   const serverConfigs = useServerConfigs();
   useEnsureMainland(projects);

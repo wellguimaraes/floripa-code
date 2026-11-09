@@ -47,7 +47,7 @@ import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
 import { useCopyToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { useClientSettings } from "./useSettings";
-import { canTurnThreadIntoProject, useThreadActions } from "./useThreadActions";
+import { canTurnThreadIntoProject, threadTagMenuState, useThreadActions } from "./useThreadActions";
 
 function failureToast(title: string, error: unknown) {
   toastManager.add(
@@ -103,6 +103,7 @@ export function useThreadActionMenu(input: {
     deleteThread,
     markThreadUnread,
     turnThreadIntoProject,
+    setThreadTag,
   } = useThreadActions();
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
@@ -151,6 +152,7 @@ export function useThreadActionMenu(input: {
         };
         const isRegeneratingTitle = thread.titleRegeneration != null;
         const snoozePresets = resolveSnoozePresets(now, timestampFormat);
+        const tagState = threadTagMenuState(threadRef);
         const allItems = buildThreadActionMenuItems({
           canOperate: readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope),
           branch: thread.branch ?? null,
@@ -164,6 +166,7 @@ export function useThreadActionMenu(input: {
           supports,
           snoozePresets,
           canTurnIntoProject: canTurnThreadIntoProject(threadRef),
+          ...(tagState ? { tags: tagState } : {}),
         });
         const items = world ? worldThreadActionMenuItems(allItems) : allItems;
         const clicked = await settlePromise(() => api.contextMenu.show(items, position));
@@ -200,6 +203,13 @@ export function useThreadActionMenu(input: {
             failureToast(title, squashAtomCommandFailure(result));
           }
         };
+        if (action.startsWith("tag:")) {
+          const tag = action.slice("tag:".length);
+          await reportFailure("Failed to update thread tags", () =>
+            setThreadTag(threadRef, tag, thread.tags?.includes(tag) !== true),
+          );
+          return;
+        }
         switch (action) {
           case "project-settings": {
             const project = projects.find(
@@ -387,6 +397,7 @@ export function useThreadActionMenu(input: {
       projects,
       router,
       setThreadAutoSettle,
+      setThreadTag,
       turnThreadIntoProject,
       settleThread,
       snoozeThread,
