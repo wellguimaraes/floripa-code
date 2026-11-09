@@ -84,6 +84,49 @@ const WebhookMaxDeliveryAgeMinutes = Schema.Int.check(
     "Skip requests the relay held longer than this many minutes while the environment was offline. Null runs every request.",
 });
 
+export const MAX_WEBHOOK_FILTERS = 16;
+
+const WebhookFilterPath = TrimmedNonEmptyString.check(
+  Schema.isPattern(/^(body|headers|query)(\.|$)/),
+).annotate({
+  description:
+    "Request value to test, in placeholder syntax without braces: headers.x-github-event, body.action, query.source.",
+});
+
+/**
+ * Forms edit an `in` list as comma-separated text, so a value that has no
+ * comma and no surrounding whitespace survives that round trip unchanged.
+ */
+const WebhookFilterListValue = Schema.String.check(
+  Schema.isPattern(/^[^,\s](?:[^,]*[^,\s])?$/),
+).annotate({ description: "Non-empty, without commas or surrounding whitespace." });
+
+export const ScheduledTaskWebhookFilter = Schema.Union([
+  Schema.Struct({
+    path: WebhookFilterPath,
+    op: Schema.Literals(["equals", "notEquals", "startsWith"]),
+    value: Schema.String,
+  }),
+  Schema.Struct({
+    path: WebhookFilterPath,
+    op: Schema.Literal("in"),
+    value: Schema.Array(WebhookFilterListValue).check(Schema.isMinLength(1)),
+  }),
+  Schema.Struct({ path: WebhookFilterPath, op: Schema.Literal("exists") }),
+]).annotate({
+  description:
+    "Scalars compare as strings; objects and arrays only satisfy 'exists'. Every op but 'exists' fails when the path is missing.",
+});
+export type ScheduledTaskWebhookFilter = typeof ScheduledTaskWebhookFilter.Type;
+export type ScheduledTaskWebhookFilterOp = ScheduledTaskWebhookFilter["op"];
+
+const ScheduledTaskWebhookFilters = Schema.Array(ScheduledTaskWebhookFilter)
+  .check(Schema.isMaxLength(MAX_WEBHOOK_FILTERS))
+  .annotate({
+    description:
+      "Run only when every filter matches the request; other requests are logged as filtered. Up to 16. Omit to keep the stored filters; pass [] to clear them.",
+  });
+
 const ScheduledTaskWebhookSchedule = Schema.Struct({
   type: Schema.Literal("webhook").annotate({
     description: "Run when the task's webhook URL receives a request.",
@@ -91,6 +134,7 @@ const ScheduledTaskWebhookSchedule = Schema.Struct({
   signature: Schema.NullOr(ScheduledTaskWebhookSignature),
   // Optional so rows saved before this setting existed still decode.
   maxDeliveryAgeMinutes: Schema.optional(Schema.NullOr(WebhookMaxDeliveryAgeMinutes)),
+  filters: Schema.optional(ScheduledTaskWebhookFilters),
 }).annotate({
   description:
     "Run on each request to the task's webhook URL. The prompt may use {{body.path}}, {{headers.name}}, {{query.name}}, {{body}} and {{request}} placeholders.",
@@ -117,6 +161,7 @@ const ScheduledTaskUpsertWebhookSchedule = Schema.Struct({
     description: "Signature check; omit or null to accept requests by URL token only.",
   }),
   maxDeliveryAgeMinutes: Schema.optional(Schema.NullOr(WebhookMaxDeliveryAgeMinutes)),
+  filters: Schema.optional(ScheduledTaskWebhookFilters),
 }).annotate({
   description:
     "Run on each request to the task's webhook URL. The prompt may use {{body.path}}, {{headers.name}}, {{query.name}}, {{body}} and {{request}} placeholders.",
@@ -260,6 +305,7 @@ export const ScheduledTaskWebhookDeliveryOutcome = Schema.Literals([
   "disabled",
   "rate_limited",
   "expired",
+  "filtered",
 ]);
 export type ScheduledTaskWebhookDeliveryOutcome = typeof ScheduledTaskWebhookDeliveryOutcome.Type;
 
@@ -270,8 +316,8 @@ export const ScheduledTaskWebhookDeliverySummary = Schema.Struct({
   method: TrimmedNonEmptyString,
   contentType: Schema.NullOr(Schema.String),
   bodyBytes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-  outcome: ScheduledTaskWebhookDeliveryOutcome,
-  /** True when a configured signature matched; false when none was configured. */
+  // Any string, so an outcome added later doesn't break a client's whole list.
+  outcome: Schema.Union([ScheduledTaskWebhookDeliveryOutcome, Schema.String]),
   signatureVerified: Schema.Boolean,
   /** Template placeholders that had no value in this request and rendered empty. */
   missingFields: Schema.Array(Schema.String),
@@ -292,6 +338,12 @@ export type ScheduledTaskWebhookDelivery = typeof ScheduledTaskWebhookDelivery.T
 
 export const ScheduledTaskListWebhookDeliveriesInput = Schema.Struct({
   id: ScheduledTaskId,
+  /**
+   * Sent by clients that decode any outcome. Shipped clients decode a closed
+   * list and fail on the whole response, so without it the server leaves out
+   * rows with outcomes they don't know.
+   */
+  acceptAnyOutcome: Schema.optional(Schema.Boolean),
 });
 export type ScheduledTaskListWebhookDeliveriesInput =
   typeof ScheduledTaskListWebhookDeliveriesInput.Type;

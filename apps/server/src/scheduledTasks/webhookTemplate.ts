@@ -114,15 +114,17 @@ function formatWebhookRequest(request: WebhookRequest): string {
   ].join("\n");
 }
 
-export function renderWebhookPrompt(
-  template: string,
+/**
+ * Resolves a placeholder expression (`body.action`, `headers.x-github-event`)
+ * against the request. Webhook filters share it, so both read the same value.
+ */
+export function webhookExpressionResolver(
   request: WebhookRequest,
-): RenderedWebhookPrompt {
-  const missing: string[] = [];
+): (expression: string) => unknown {
   let body: { parsed: unknown } | undefined;
   const parsedBody = () => (body ??= { parsed: parseBody(request) }).parsed;
 
-  const resolve = (expression: string): unknown => {
+  return (expression) => {
     const [root, ...segments] = expression.split(".");
     switch (root) {
       case "request":
@@ -143,6 +145,14 @@ export function renderWebhookPrompt(
         return undefined;
     }
   };
+}
+
+export function renderWebhookPrompt(
+  template: string,
+  request: WebhookRequest,
+): RenderedWebhookPrompt {
+  const missing: string[] = [];
+  const resolve = webhookExpressionResolver(request);
 
   const prompt = template.replace(PLACEHOLDER, (_match, expression: string) => {
     const value = resolve(expression);
