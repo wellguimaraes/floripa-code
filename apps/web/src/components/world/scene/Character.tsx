@@ -1,5 +1,5 @@
 import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
-import { Suspense, useEffect, useMemo, useRef } from "react";
+import { Suspense, useEffect, useEffectEvent, useMemo, useRef } from "react";
 import {
   BufferAttribute,
   BufferGeometry,
@@ -151,7 +151,16 @@ export function Character(props: {
   });
   const lastPlacement = useRef<Placement | null>(null);
   const lastSurface = useRef(surface);
+  // Where the frame loop puts the root, also put before anyone follows it: the trackers placing
+  // tags and bubbles run ahead of this loop, and would read a new root at the island's origin.
+  const place = (group: Group, walking: boolean) => {
+    const lift = walking ? 0 : (placement.seat ?? 0);
+    const [x, y, z] = motion.current.position;
+    group.position.set(x, y + lift + ground(x, z), z);
+  };
+  const placeOnMount = useEffectEvent(place);
   useEffect(() => {
+    if (root.current !== null) placeOnMount(root.current, motion.current.route.length > 0);
     onRoot(facts.key, root.current);
     return () => onRoot(facts.key, null);
   }, [facts.key, onRoot]);
@@ -251,9 +260,7 @@ export function Character(props: {
       ends.needsUpdate = true;
     }
     // Climbs onto a seat on arrival, and off it before walking away.
-    const lift = walking ? 0 : (placement.seat ?? 0);
-    const [x, y, z] = current.position;
-    group.position.set(x, y + lift + ground(x, z), z);
+    place(group, walking);
     group.rotation.y = current.route.length > 0 ? current.heading : placement.facing;
     if (rod.current !== null) rod.current.visible = !walking;
     if (hitbox.current !== null) {
