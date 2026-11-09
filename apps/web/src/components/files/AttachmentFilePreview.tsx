@@ -1,5 +1,5 @@
 import { filePreviewDelimiter } from "@t3tools/shared/delimitedPreview";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { AssetResource, EnvironmentId } from "@t3tools/contracts";
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 import { readFilePreviewResponse } from "@t3tools/client-runtime/file-preview";
 import { filePreviewKind, FILE_TEXT_PREVIEW_MAX_BYTES } from "@t3tools/shared/filePreview";
@@ -19,6 +19,8 @@ import { cn } from "~/lib/utils";
 import { AudioPreview } from "./AudioPreview";
 import { BrowserDocumentFrame } from "./BrowserDocumentFrame";
 import { DelimitedTablePreview } from "./DelimitedTablePreview";
+import { BinaryFilePreview } from "./BinaryFilePreview";
+import { PreviewImage } from "./PreviewImage";
 import {
   FILE_SURFACE_SUBHEADER_CLASS,
   FileSurfaceAction,
@@ -26,6 +28,12 @@ import {
   FileSurfaceLoading,
   FileSurfaceNotice,
 } from "./fileSurfaceChrome";
+
+const FontFilePreview = lazy(() =>
+  import("./FontFilePreview").then((module) => ({ default: module.FontFilePreview })),
+);
+
+const MermaidViewer = lazy(() => import("./MermaidViewer"));
 
 const SourcePreview = lazy(() => import("./ReadOnlySourcePreview"));
 
@@ -41,7 +49,11 @@ export function ReadOnlySourcePreview(props: { name: string; text: string }) {
   );
 }
 
-function renderedToggleLabel(mode: "markdown" | "html" | "table", rendered: boolean): string {
+function renderedToggleLabel(
+  mode: "markdown" | "mermaid" | "html" | "table",
+  rendered: boolean,
+): string {
+  if (mode === "mermaid") return rendered ? "Show Mermaid source" : "Show rendered diagram";
   if (mode === "markdown") return rendered ? "Show markdown source" : "Show rendered markdown";
   if (mode === "table") return rendered ? "Show source" : "Show table";
   return rendered ? "Show HTML source" : "Show rendered page";
@@ -58,7 +70,15 @@ export function AttachmentFilePreview(props: {
   /** Zero when unknown. */
   sizeBytes: number;
   file?: Blob | null;
-  asset?: { environmentId: EnvironmentId; attachmentId: string };
+  asset?:
+    | { environmentId: EnvironmentId; attachmentId: string }
+    | {
+        environmentId: EnvironmentId;
+        resource: Extract<
+          AssetResource,
+          { _tag: "workspace-file" | "media-file" | "draft-workspace-file" }
+        >;
+      };
   /** An agent's HTML render, shown in the app theme. */
   htmlRender?: boolean;
   /** First crumb: where the file comes from. */
@@ -69,8 +89,18 @@ export function AttachmentFilePreview(props: {
   const kind = filePreviewKind(props);
   const delimiter = filePreviewDelimiter(props);
   const renderedMode =
-    kind === "markdown" ? "markdown" : kind === "html" ? "html" : delimiter ? "table" : null;
-  const attachmentId = props.asset?.attachmentId;
+    kind === "mermaid"
+      ? "mermaid"
+      : kind === "markdown"
+        ? "markdown"
+        : kind === "html"
+          ? "html"
+          : delimiter
+            ? "table"
+            : null;
+  const attachmentId =
+    props.asset && "attachmentId" in props.asset ? props.asset.attachmentId : undefined;
+  const assetResource = props.asset && "resource" in props.asset ? props.asset.resource : null;
   const { copyToClipboard, isCopied } = useCopyToClipboard({ target: props.name });
   const resource = useMemo(
     () =>
@@ -82,15 +112,20 @@ export function AttachmentFilePreview(props: {
             mimeType: props.mimeType,
             disposition: "inline" as const,
           }
-        : null,
-    [attachmentId, props.name, props.mimeType],
+        : assetResource,
+    [attachmentId, assetResource, props.name, props.mimeType],
   );
   const refresh = useAssetUrlRefresh(
     props.file ? null : (props.asset?.environmentId ?? null),
     props.file ? null : resource,
   );
   const downloadResource = useMemo(
-    () => (resource ? { ...resource, disposition: "attachment" as const } : null),
+    () =>
+      resource
+        ? resource._tag === "draft-workspace-file"
+          ? resource
+          : { ...resource, disposition: "attachment" as const }
+        : null,
     [resource],
   );
   const prepareDownload = useAssetUrlRefresh(props.asset?.environmentId ?? null, downloadResource);
@@ -136,7 +171,8 @@ export function AttachmentFilePreview(props: {
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Retry must reauthorize the remote file.
   }, [props.file, refresh, revision]);
   const url = props.file ? localUrl : remoteUrl;
-  const needsText = kind === "text" || kind === "markdown" || (kind === "html" && !rendered);
+  const needsText =
+    kind === "text" || kind === "markdown" || kind === "mermaid" || (kind === "html" && !rendered);
   useEffect(() => {
     if (!needsText || !url) return;
     const controller = new AbortController();
@@ -185,7 +221,7 @@ export function AttachmentFilePreview(props: {
     needsText &&
     content !== null &&
     !(delimiter && rendered) &&
-    !(kind === "markdown" && rendered);
+    !((kind === "markdown" || kind === "mermaid") && rendered);
 
   const save = () => {
     setSaving(true);
@@ -237,6 +273,10 @@ export function AttachmentFilePreview(props: {
   ) : needsText && content ? (
     delimiter && rendered ? (
       <DelimitedTablePreview name={props.name} text={content.text} delimiter={delimiter} />
+    ) : kind === "mermaid" && rendered ? (
+      <Suspense fallback={<FileSurfaceLoading />}>
+        <MermaidViewer text={content.text} />
+      </Suspense>
     ) : kind === "markdown" && rendered ? (
       <ScrollArea className="min-h-0 flex-1">
         <ChatMarkdown text={content.text} cwd={undefined} className="mx-auto max-w-4xl px-6 py-5" />
@@ -244,6 +284,18 @@ export function AttachmentFilePreview(props: {
     ) : (
       <ReadOnlySourcePreview name={props.name} text={content.text} />
     )
+  ) : kind === "archive" || kind === "sqlite" ? (
+    <BinaryFilePreview
+      key={revision}
+      src={url}
+      name={props.name}
+      kind={kind}
+      onRetry={() => setRevision((value) => value + 1)}
+    />
+  ) : kind === "font" ? (
+    <Suspense fallback={<FileSurfaceLoading />}>
+      <FontFilePreview src={url} name={props.name} />
+    </Suspense>
   ) : kind === "pdf" || kind === "html" ? (
     <BrowserDocumentFrame
       src={url}
@@ -265,15 +317,12 @@ export function AttachmentFilePreview(props: {
       />
     </div>
   ) : kind === "image" ? (
-    // oxlint-disable-next-line floripacode/require-centered-scroll-gutter -- The image is capped at max-h-full max-w-full, so this never scrolls.
-    <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-4">
-      <img
-        src={url}
-        alt={props.name}
-        className="max-h-full max-w-full object-contain"
-        onError={() => setError("Unable to load image.")}
-      />
-    </div>
+    <PreviewImage
+      src={url}
+      name={props.name}
+      mimeType={props.mimeType}
+      onError={() => setError("Unable to load image.")}
+    />
   ) : (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 px-6 text-center">
       <p className="text-sm font-medium">No preview for this file</p>
