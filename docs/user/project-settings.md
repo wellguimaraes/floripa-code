@@ -38,6 +38,21 @@ Settings that are environment-wide stay read-only while a project is selected. W
 targets disagree, a control shows **Mixed** until you choose one value. Appearance, keyboard,
 and other phone-only settings ignore the filter.
 
+## Pin and archive projects
+
+Pinned projects come first in the project pickers: the project picker on a new thread, the
+new-thread list, the command palette, the sidebar project filter, and the world's new-agent
+picker. Pin or unpin a project from its row in those lists, from **Lands** in the world, or press
+the thread pin shortcut on the highlighted row. **Settings → Projects** has a **Pin** switch too.
+
+Archive a project you are done with in **Settings → Projects** or **Lands** in the world. It
+leaves the project pickers and, in the world, its island leaves the map. Its threads, settings,
+and files stay as they are. Archived projects still show in the Settings project list marked
+**Archived**, and under **Archived** in **Lands**. Choose one and select **Unarchive** to bring
+it back.
+
+A project on several machines must have every machine connected to pin or archive it.
+
 ## Worktree branch names
 
 In **Settings → Source Control → Worktree branch naming**, choose a static prefix,

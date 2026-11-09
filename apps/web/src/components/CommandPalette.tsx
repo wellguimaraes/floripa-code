@@ -124,6 +124,7 @@ import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { useScratchProject } from "../hooks/useScratchProject";
 import { useNewProject } from "../hooks/useNewProject";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
+import { pickableProjectGroups } from "@t3tools/client-runtime/state/project-grouping";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import {
   useProjects,
@@ -871,7 +872,11 @@ function OpenCommandPaletteDialog(props: {
   const projectPickerEntries = useMemo(
     () =>
       buildSidebarProjectPickerEntries({
-        groups: projectGroups,
+        // Pinned projects lead; archived ones stay findable but trail.
+        groups: [
+          ...pickableProjectGroups(projectGroups),
+          ...projectGroups.filter((group) => group.archived),
+        ],
         preferredProjectRef: contextualProjectRef,
       }),
     [contextualProjectRef, projectGroups],
@@ -1232,7 +1237,13 @@ function OpenCommandPaletteDialog(props: {
     const projectItems = enumerateCommandPaletteItems(
       buildProjectActionItems({
         // The no-project home shows once, as the "No project" item below.
-        projects: pickerProjects.filter((project) => !isScratch(project)),
+        // An archived project is not a place to start new work.
+        projects: pickerProjects.filter(
+          (project) =>
+            !isScratch(project) &&
+            projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`)?.archived !==
+              true,
+        ),
         valuePrefix: "new-thread-in",
         searchTerms: (project) => {
           const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);

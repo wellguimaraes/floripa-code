@@ -129,6 +129,7 @@ import type { IslandPullRequestAgent, IslandPullRequestRow } from "./islandPullR
 import { useCreateIdleWorldThread } from "./useStartWorldAgent";
 import { canOperateIsland } from "./islandAccess";
 import { IslandPrefsDialog } from "./IslandPrefsDialog";
+import { useProjectGroupUpdate } from "../../hooks/useProjectGroupUpdate";
 import { useRemoveIsland } from "./useRemoveIsland";
 import { IslandRunScriptDialog } from "./IslandRunScriptDialog";
 import { RestoreArchivedDialog } from "./RestoreArchivedDialog";
@@ -209,6 +210,8 @@ export default function WorldCanvas(props: {
     projectRecords,
     projectMembers,
     projectCheckouts,
+    projectPinned,
+    projectArchived,
   } = useMemo(() => {
     const groups = buildProjectGroups({ projects, settings: groupingSettings });
     const islandOf = new Map<string, string>();
@@ -256,6 +259,9 @@ export default function WorldCanvas(props: {
       // Signs show the main project's icon, as the sidebar does for the group.
       projectRecords: new Map(sorted.map((group) => [group.key, group.representative])),
       projectMembers: new Map(sorted.map((group) => [group.key, group.memberProjectRefs])),
+      // Pinned islands lead pickers and archived ones leave them; the map keeps its order.
+      projectPinned: new Map(sorted.map((group) => [group.key, group.pinned])),
+      projectArchived: new Map(sorted.map((group) => [group.key, group.archived])),
       // An icon is the group's, so changing it from the sign changes it on every checkout.
       projectCheckouts: new Map(
         sorted.map((group) => [
@@ -899,6 +905,19 @@ export default function WorldCanvas(props: {
   // The island whose preferences are open.
   const [prefsOn, setPrefsOn] = useState<string | null>(null);
   const removeIsland = useRemoveIsland();
+  const { updateProjectGroup, canOrganizeProjectGroup } = useProjectGroupUpdate();
+  const hiddenIslands = useWorldVisibilityStore((state) => state.hidden);
+  // Archiving also takes the island off this map, and unarchiving puts it back, so the map and
+  // the project lists agree. The island's hidden state is the viewer's own and may already match.
+  const archiveIsland = async (key: string, archived: boolean) => {
+    const result = await updateProjectGroup(
+      projectCheckouts.get(key) ?? [],
+      { archived },
+      archived ? "Failed to archive project" : "Failed to unarchive project",
+    );
+    if (result._tag === "Failure") return;
+    if (archived !== (hiddenIslands[key] === true)) hideIsland(key);
+  };
   // The agent an island's "Run script" runs in; its chat opens only once a script runs.
   const [scriptAgent, setScriptAgent] = useState<ScopedThreadRef | null>(null);
   const showIslandMenu = async (key: string, point: { x: number; y: number }) => {
@@ -1333,6 +1352,15 @@ export default function WorldCanvas(props: {
     readonly islandKey: string;
     readonly position: Vec3;
   } | null>(null);
+  // Archived islands are not offered for new agents unless every island is archived.
+  const pickableIslands = useMemo(() => {
+    const open = islands.filter((island) => projectArchived.get(island.key) !== true);
+    const list = open.length > 0 ? open : islands;
+    return [
+      ...list.filter((island) => projectPinned.get(island.key) === true),
+      ...list.filter((island) => projectPinned.get(island.key) !== true),
+    ];
+  }, [islands, projectArchived, projectPinned]);
   const startOnIsland = (key: string) => {
     setPickingProject(false);
     const island = islands.find((i) => i.key === key);
@@ -1344,7 +1372,7 @@ export default function WorldCanvas(props: {
   };
   // With one island there is nothing to pick.
   const skipPicker = useEffectEvent(() => {
-    const only = islands.length === 1 ? islands[0] : undefined;
+    const only = pickableIslands.length === 1 ? pickableIslands[0] : undefined;
     if (only !== undefined) startOnIsland(only.key);
   });
   useEffect(
@@ -2032,8 +2060,8 @@ export default function WorldCanvas(props: {
         </div>
       ) : null}
       <NewAgentProjectPicker
-        open={pickingProject && islands.length !== 1}
-        islands={islands.map((island) => ({
+        open={pickingProject && pickableIslands.length !== 1}
+        islands={pickableIslands.map((island) => ({
           key: island.key,
           title: projectTitles.get(island.key) ?? "Project",
           color: islandPlate(island.key, islandPrefs[island.key]),
@@ -2143,7 +2171,22 @@ export default function WorldCanvas(props: {
                   // The mainland is not a project you added, so it can only be hidden.
                   removable:
                     !mainland.has(key) && canOperateIsland(projectCheckouts.get(key) ?? []),
+                  // The mainland is a folder, not a project to favour or archive.
+                  organizable:
+                    !mainland.has(key) &&
+                    canOperateIsland(projectCheckouts.get(key) ?? []) &&
+                    canOrganizeProjectGroup(projectCheckouts.get(key) ?? []),
+                  pinned: projectPinned.get(key) === true,
+                  archived: projectArchived.get(key) === true,
                 }))}
+                onPin={(key, pinned) =>
+                  void updateProjectGroup(
+                    projectCheckouts.get(key) ?? [],
+                    { pinned },
+                    pinned ? "Failed to pin project" : "Failed to unpin project",
+                  )
+                }
+                onArchive={(key, archived) => void archiveIsland(key, archived)}
                 onRemove={(key) =>
                   void removeIsland(
                     projectCheckouts.get(key) ?? [],

@@ -72,9 +72,11 @@ vi.mock("~/rpc/atomRegistry", () => ({
 vi.mock("~/state/environments", () => ({
   useEnvironments: () => ({ environments }),
   usePrimaryEnvironmentId: () => primaryId,
+  readEnvironment: () => null,
 }));
 vi.mock("~/state/entities", () => ({
   useProjects: () => state.projects,
+  useServerConfigs: () => new Map(),
   useThreadShells: () => [],
 }));
 vi.mock("~/state/projects", () => ({

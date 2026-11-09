@@ -215,6 +215,9 @@ function ProjectScopeMenu({ value, groups, onChange }: SettingsScopeMenuProps) {
             <span className="flex min-w-0 items-center gap-2">
               <ProjectFavicon project={group} className="size-3.5" />
               <span className="min-w-0 flex-1 truncate">{group.displayName}</span>
+              {group.archived ? (
+                <span className="shrink-0 text-xs text-muted-foreground">Archived</span>
+              ) : null}
               <MenuRadioItemIndicator />
             </span>
           </MenuRadioItem>

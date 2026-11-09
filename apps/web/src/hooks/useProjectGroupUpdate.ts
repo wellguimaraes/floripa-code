@@ -24,10 +24,9 @@ export type ProjectGroupUpdate = Partial<{
   archived: boolean;
 }>;
 
-type ProjectGroupMember = Pick<
-  SidebarProjectGroupMember,
-  "environmentId" | "id" | "environmentLabel"
->;
+type ProjectGroupMember = Pick<SidebarProjectGroupMember, "environmentId" | "id"> & {
+  readonly environmentLabel?: string | null;
+};
 
 /**
  * Writes one update to each checkout of a project, one machine at a time, and
