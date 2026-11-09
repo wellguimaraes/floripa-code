@@ -99,8 +99,7 @@ For failures after signing in to T3 Connect, see
 ## Reclaim database space
 
 A long-lived database can hold freed space on disk. An offline repair removes
-superseded internal history (your conversations are kept), returns the space,
-and turns on automatic shrinking.
+superseded internal history (your conversations are kept), and returns the space.
 
 Run `t3 doctor` on the machine that hosts the environment. It reports the
 database size and the space it can reclaim, then asks which repairs to run;
