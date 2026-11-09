@@ -7035,6 +7035,120 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     ),
   );
 
+  it.effect("carries a workflow's phases and members on its coordinator, even between turns", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const TASK_ID = "task-workflow";
+        const TOOL_USE_ID = "toolu-workflow";
+        const harness = yield* makeWakeHarness;
+        const now = yield* DateTime.now;
+        const latestWorkflow = () => {
+          const event = harness.events.findLast(
+            (candidate) =>
+              candidate.type === "subagent.updated" && candidate.subagent.workflow !== undefined,
+          );
+          return event?.type === "subagent.updated" ? event.subagent : undefined;
+        };
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now,
+            attemptId: RunAttemptId.make("attempt-claude-workflow-1"),
+            text: "Run the workflow.",
+            attachments: [],
+          }),
+        );
+        for (const frame of [
+          claudeSdkFrame({
+            type: "system",
+            subtype: "task_started",
+            task_id: TASK_ID,
+            tool_use_id: TOOL_USE_ID,
+            description: "Review workflow",
+            is_backgrounded: true,
+            task_type: "local_workflow",
+            workflow_name: "review",
+            prompt: "Run review",
+            uuid: "00000000-0000-4000-8000-000000000a01",
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+          makeResultFrame({
+            uuid: "00000000-0000-4000-8000-000000000a02",
+            result: "Workflow launched.",
+          }),
+        ]) {
+          yield* Queue.offer(harness.sdkMessages, frame);
+        }
+        yield* awaitUntil(() => harness.terminalEvents().length === 1, "launch turn terminal");
+        // Marked as a workflow the moment it starts, before any snapshot.
+        assert.equal(latestWorkflow()?.workflow?.name, "review");
+
+        // The launching turn has settled; progress still refreshes the coordinator.
+        yield* Queue.offer(
+          harness.sdkMessages,
+          claudeSdkFrame({
+            type: "system",
+            subtype: "task_progress",
+            task_id: TASK_ID,
+            description: "",
+            usage: { total_tokens: 120, tool_uses: 3, duration_ms: 900 },
+            workflow_progress: [
+              { type: "workflow_phase", index: 0, title: "Scan" },
+              {
+                type: "workflow_agent",
+                index: 0,
+                label: "scanner",
+                state: "start",
+                phaseIndex: 0,
+                phaseTitle: "Scan",
+              },
+            ],
+            uuid: "00000000-0000-4000-8000-000000000a03",
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+        yield* awaitUntil(
+          () => latestWorkflow()?.workflow?.agents[0]?.state === "running",
+          "workflow snapshot",
+        );
+        const running = latestWorkflow();
+        assert.equal(running?.status, "running");
+        assert.deepEqual(running?.workflow?.phases, [{ index: 0, title: "Scan" }]);
+        assert.equal(running?.workflow?.totalTokens, 120);
+
+        // A frame without a snapshot keeps the roster.
+        yield* Queue.offer(
+          harness.sdkMessages,
+          claudeSdkFrame({
+            type: "system",
+            subtype: "task_progress",
+            task_id: TASK_ID,
+            description: "",
+            usage: { total_tokens: 200, tool_uses: 4, duration_ms: 1500 },
+            workflow_progress: [
+              { type: "workflow_agent", index: 0, label: "scanner", state: "done" },
+            ],
+            uuid: "00000000-0000-4000-8000-000000000a04",
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+        yield* awaitUntil(
+          () => latestWorkflow()?.workflow?.agents[0]?.state === "completed",
+          "member completion",
+        );
+        const done = latestWorkflow()?.workflow;
+        assert.equal(done?.totalTokens, 200);
+        assert.deepEqual(done?.phases, [{ index: 0, title: "Scan" }]);
+        assert.equal(done?.agents[0]?.phaseTitle, "Scan");
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
+    ),
+  );
+
   it.effect("keeps a nested subagent's launch in order while the root turn is idle", () =>
     Effect.scoped(
       Effect.gen(function* () {
