@@ -938,9 +938,6 @@ function ScheduledTaskEditorDialog({
   // Older servers ignore thread modes, so the choice is offered only where it is saved.
   const offersThreadModes =
     environment?.serverConfig?.environment.capabilities.scheduledTaskThreadModes === true;
-  const offersFreshSession =
-    environment?.serverConfig?.environment.capabilities.scheduledTaskFreshSession === true ||
-    draft.threadMode === "fresh_session";
   const connected =
     environment?.connection.phase === "connected" && environment.serverConfig !== null;
   const tasksQuery = useEnvironmentQuery(
@@ -975,6 +972,9 @@ function ScheduledTaskEditorDialog({
   const [draft, setDraft] = useState<DraftState>(() =>
     task ? taskToDraft(task) : { ...EMPTY_DRAFT, projectId: projects[0]?.id ?? "" },
   );
+  const offersFreshSession =
+    environment?.serverConfig?.environment.capabilities.scheduledTaskFreshSession === true ||
+    draft.threadMode === "fresh_session";
   const [saving, setSaving] = useState(false);
   const submissionPending = useRef(false);
   const editingTaskMissing =
