@@ -108,3 +108,56 @@ it.effect("preserves a due run when a save only pads the scheduled hour", () =>
     }).pipe(Effect.provide(ScheduledTaskService.layer.pipe(Layer.provide(layerDependencies))));
   }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
+
+it.effect("runs a one-time schedule once and rejects past times", () =>
+  Effect.gen(function* () {
+    yield* TestClock.setTime(Date.parse("2026-11-01T07:59:00.000Z"));
+    // Each launch takes two minutes, so a manual run can start before the run time and end after it.
+    const layerDependencies = Layer.mergeAll(
+      NodeCrypto.layer,
+      Scheduler.layer,
+      Layer.mock(ThreadLaunchService.ThreadLaunchService)({
+        launch: () => TestClock.adjust("2 minutes").pipe(Effect.andThen(Effect.die("synthetic"))),
+      }),
+      Layer.mock(ThreadManagementService.ThreadManagementService)({}),
+      Layer.mock(SecretRequests.SecretRequests)({}),
+    );
+    yield* Effect.gen(function* () {
+      const service = yield* ScheduledTaskService.ScheduledTaskService;
+      const decoded = yield* decodeUpsertInput({
+        commandId: "once-schedule",
+        title: "One time",
+        prompt: "Review the open pull requests.",
+        enabled: true,
+        schedule: { type: "once", runAt: "2026-11-01T03:00:00-05:00" },
+        projectId: "project-once",
+        workspaceStrategy: { type: "root" },
+        modelSelection: { instanceId: "codex", model: "gpt-5.4" },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+      });
+      const created = yield* service.upsert(decoded);
+      expect(created.task.schedule).toEqual({ type: "once", runAt: "2026-11-01T08:00:00.000Z" });
+      expect(created.task.nextRunAt).toBe("2026-11-01T08:00:00.000Z");
+
+      // A manual run that starts before the time keeps the scheduled run, even if it ends after.
+      const early = yield* service.runNow({ id: created.task.id });
+      expect(early.task.nextRunAt).toBe("2026-11-01T08:00:00.000Z");
+
+      const due = yield* service.runNow({ id: created.task.id });
+      expect(due.task.nextRunAt).toBeNull();
+      expect((yield* service.list()).tasks[0]?.nextRunAt).toBeNull();
+
+      yield* service.setEnabled({ id: created.task.id, enabled: false });
+      const resumed = yield* service
+        .setEnabled({ id: created.task.id, enabled: true })
+        .pipe(Effect.flip);
+      expect(resumed.message).toBe("The run time has passed. Pick a time in the future.");
+
+      const past = yield* service
+        .upsert({ ...decoded, commandId: undefined, title: "Late" })
+        .pipe(Effect.flip);
+      expect(past.message).toBe("The run time has passed. Pick a time in the future.");
+    }).pipe(Effect.provide(ScheduledTaskService.layer.pipe(Layer.provide(layerDependencies))));
+  }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
+);
