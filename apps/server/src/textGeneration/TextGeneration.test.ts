@@ -5,11 +5,18 @@ import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import { describe, expect } from "vite-plus/test";
 
-import { ProviderInstanceId } from "@t3tools/contracts";
+import {
+  DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  type ModelSelection,
+  type ServerProvider,
+} from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as TextGeneration from "./TextGeneration.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import * as Layer from "effect/Layer";
@@ -83,6 +90,7 @@ describe("TextGeneration.make", () => {
           ProviderInstanceRegistry.ProviderInstanceRegistry,
           makeStubRegistry([instance]),
         ),
+        Effect.provide(ServerSettings.layerTest()),
         Effect.provide(
           Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
             resolveLink: () => Effect.die("Supplied context must not be fetched again"),
@@ -127,6 +135,7 @@ describe("TextGeneration.make", () => {
           ProviderInstanceRegistry.ProviderInstanceRegistry,
           makeStubRegistry([personal, work]),
         ),
+        Effect.provide(ServerSettings.layerTest()),
         Effect.provide(
           Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
             resolveLink: () => Effect.die("No link lookup expected"),
@@ -152,6 +161,7 @@ describe("TextGeneration.make", () => {
           ProviderInstanceRegistry.ProviderInstanceRegistry,
           makeStubRegistry([]),
         ),
+        Effect.provide(ServerSettings.layerTest()),
         Effect.provide(
           Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
             resolveLink: () => Effect.die("No link lookup expected"),
@@ -177,5 +187,89 @@ describe("TextGeneration.make", () => {
         expect(result.failure.detail).toContain("missing_instance");
       }
     }),
+  );
+
+  it.effect.each([false, true])(
+    "falls back when the selected provider is exhausted: %s",
+    (exhausted) =>
+      Effect.gen(function* () {
+        const primary = ProviderInstanceId.make("codex");
+        const fallback = ProviderInstanceId.make("claude_work");
+        const selection = { instanceId: primary, model: "chat-model" };
+        const calls: ModelSelection[] = [];
+        const instances = [primary, fallback].map((instanceId) => {
+          const driver = ProviderDriverKind.make(instanceId === primary ? "codex" : "claudeAgent");
+          const snapshot: ServerProvider = {
+            instanceId,
+            driver,
+            enabled: true,
+            installed: true,
+            status: "ready",
+            auth: { status: "authenticated" },
+            version: null,
+            checkedAt: "1970-01-01T00:00:00Z",
+            models: [],
+            slashCommands: [],
+            skills: [],
+            ...(exhausted && instanceId === primary
+              ? {
+                  usageLimits: {
+                    checkedAt: "1970-01-01T00:00:00Z",
+                    windows: [
+                      { id: "session", kind: "session", label: "Session", usedPercent: 100 },
+                    ],
+                  },
+                }
+              : {}),
+          };
+          return {
+            ...makeStubInstance(
+              instanceId,
+              makeStubTextGeneration({
+                generateThreadTitle: (input) =>
+                  Effect.sync(() => {
+                    calls.push(input.modelSelection);
+                    return { title: "Generated title" };
+                  }),
+              }),
+            ),
+            snapshot: { getSnapshot: Effect.succeed(snapshot) } as ProviderInstance["snapshot"],
+          };
+        });
+        const service = yield* TextGeneration.make.pipe(
+          Effect.provideService(
+            ProviderInstanceRegistry.ProviderInstanceRegistry,
+            makeStubRegistry(instances),
+          ),
+          Effect.provide(
+            ServerSettings.layerTest({
+              fallbackModelSelection: { instanceId: fallback, model: "ignored" },
+              providerInstances: {
+                [fallback]: { driver: ProviderDriverKind.make("claudeAgent"), config: {} },
+              },
+            }),
+          ),
+          Effect.provide(
+            Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+              resolveLink: () => Effect.die("unused"),
+            }),
+          ),
+        );
+        yield* service.generateThreadTitle({
+          cwd: "/tmp",
+          message: "hello",
+          linkedContext: "",
+          modelSelection: selection,
+        });
+        expect(calls).toEqual([
+          exhausted
+            ? {
+                instanceId: fallback,
+                model:
+                  DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[ProviderDriverKind.make("claudeAgent")],
+              }
+            : selection,
+        ]);
+      }),
   );
 });
