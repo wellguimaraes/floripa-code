@@ -14,6 +14,9 @@ export type FilePreviewKind =
   | "docx"
   | "xlsx"
   | "pptx"
+  | "odt"
+  | "ods"
+  | "odp"
   | "epub"
   | "ipynb"
   | "text"
@@ -74,6 +77,9 @@ const OFFICE_MIME_TYPES = {
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  odt: "application/vnd.oasis.opendocument.text",
+  ods: "application/vnd.oasis.opendocument.spreadsheet",
+  odp: "application/vnd.oasis.opendocument.presentation",
   epub: "application/epub+zip",
   ipynb: "application/x-ipynb+json",
 } as const;

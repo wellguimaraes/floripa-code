@@ -1,7 +1,7 @@
 import JSZip from "jszip";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
-import { openEpub, openNotebook } from "./extendedDocumentPreview";
+import { openDocument, openEpub, openNotebook } from "./extendedDocumentPreview";
 
 describe("document preview contents", () => {
   const bytes = (text: string) => new TextEncoder().encode(text).buffer;
@@ -107,5 +107,100 @@ describe("document preview contents", () => {
     expect(result.pages[0]!.html).toContain('alt="© ≂̸"');
     expect(result.pages[1]!.html).toContain('src="data:image/png;base64,');
     expect(result.pages[1]!.html).not.toMatch(/https:|script|alert/);
+  });
+
+  it("resolves scoped ODF namespaces and explicit spreadsheet whitespace", async () => {
+    const archive = new JSZip().file(
+      "content.xml",
+      '<o:document-content xmlns:o="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:t="urn:oasis:names:tc:opendocument:xmlns:table:1.0"><o:body><o:spreadsheet><t:table t:name="Accounts &amp; names"><t:table-row><t:table-cell><p xmlns="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:x="urn:oasis:names:tc:opendocument:xmlns:text:1.0">Account<s/>Name<s x:c="3"/>A<tab/>B<line-break/>C</p></t:table-cell></t:table-row></t:table></o:spreadsheet></o:body></o:document-content>',
+    );
+    const result = await openDocument(archive, "ods");
+    if (result.type !== "ods") throw new Error("Expected workbook");
+    expect(result.sheets[0]!.name).toBe("Accounts & names");
+    expect(result.sheets[0]!.rows[0]).toEqual(["Account Name   A\tB\nC"]);
+  });
+
+  it("stops repeated slide images before encoding beyond the output budget", async () => {
+    const pixels = new Uint8Array(4 * 1024 * 1024);
+    pixels.set(
+      Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==",
+        "base64",
+      ),
+    );
+    const archive = new JSZip()
+      .file(
+        "content.xml",
+        '<o:document-content xmlns:o="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:d="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:l="http://www.w3.org/1999/xlink"><o:body>' +
+          '<d:page><d:image l:href="picture.png"/></d:page>'.repeat(500) +
+          "</o:body></o:document-content>",
+      )
+      .file("picture.png", pixels);
+    const image = archive.file("picture.png")!;
+    const read = vi.spyOn(image, "async");
+    await expect(openDocument(archive, "odp")).rejects.toThrow("too large");
+    expect(read.mock.calls.filter(([type]) => type === "base64")).toHaveLength(2);
+    expect(read).toHaveBeenCalledTimes(5);
+  });
+
+  it("bounds repeated OpenDocument spreadsheet cells and keeps sheet names and values", async () => {
+    const archive = new JSZip().file(
+      "content.xml",
+      '<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"><office:body><office:spreadsheet><table:table table:name="Budget"><table:table-row table:number-rows-repeated="999999999"><table:table-cell table:number-columns-repeated="999999999"><text:p>Research &amp; design</text:p></table:table-cell></table:table-row></table:table></office:spreadsheet></office:body></office:document-content>',
+    );
+    const result = await openDocument(archive, "ods");
+    expect(result.type).toBe("ods");
+    if (result.type !== "ods") throw new Error("Expected workbook");
+    expect(result.sheets[0]!.name).toBe("Budget");
+    expect(result.sheets[0]!.truncated).toBe(true);
+    expect(result.sheets[0]!.rows).toHaveLength(500);
+    expect(result.sheets[0]!.rows[0]).toHaveLength(50);
+    expect(result.sheets[0]!.rows[0]![0]).toBe("Research & design");
+  });
+
+  it.each([1, 500])("ignores styled ODS filler after %s populated rows", async (count) => {
+    const archive = new JSZip().file(
+      "content.xml",
+      `<office:document><table:table><table:table-row table:number-rows-repeated="${count}"><table:table-cell><text:p>North</text:p></table:table-cell><table:table-cell table:number-columns-repeated="1024"/></table:table-row><table:table-row table:number-rows-repeated="1048570"><table:table-cell table:number-columns-repeated="1024"/></table:table-row></table:table></office:document>`,
+    );
+    const result = await openDocument(archive, "ods");
+    if (result.type !== "ods") throw new Error("Expected workbook");
+    expect(result.sheets[0]).toMatchObject({ rowCount: count, columns: 1, truncated: false });
+    expect(result.sheets[0]!.rows).toEqual(Array.from({ length: count }, () => ["North"]));
+  });
+
+  it.each([2, 999999])(
+    "preserves internal ODS gaps of %s rows and reports real overflow",
+    async (gap) => {
+      const archive = new JSZip().file(
+        "content.xml",
+        `<office:document><table:table><table:table-row><table:table-cell><text:p>First</text:p></table:table-cell></table:table-row><table:table-row table:number-rows-repeated="${gap}"><table:table-cell/></table:table-row><table:table-row><table:table-cell table:number-columns-repeated="2"/><table:table-cell><text:p>Last</text:p></table:table-cell></table:table-row></table:table></office:document>`,
+      );
+      const result = await openDocument(archive, "ods");
+      if (result.type !== "ods") throw new Error("Expected workbook");
+      expect(result.sheets[0]).toMatchObject({
+        rowCount: Math.min(gap + 2, 500),
+        columns: gap === 2 ? 3 : 1,
+        truncated: gap !== 2,
+      });
+      expect(result.sheets[0]!.rows[1]).toEqual([]);
+      if (gap === 2) expect(result.sheets[0]!.rows[3]).toEqual(["", "", "Last"]);
+    },
+  );
+
+  it.each(["odt", "odp"] as const)("reads %s text and rejects XML entities", async (kind) => {
+    const archive = new JSZip().file(
+      "content.xml",
+      `<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0"><office:body>${kind === "odt" ? "<office:text><text:p>Field notes</text:p></office:text>" : '<draw:page draw:name="Overview"><text:h>Launch plan</text:h></draw:page>'}</office:body></office:document-content>`,
+    );
+    const result = await openDocument(archive, kind);
+    expect(result.type).toBe("document");
+    if (result.type !== "document") throw new Error("Expected document");
+    expect(result.pages[0]!.html).toContain(kind === "odt" ? "Field notes" : "Launch plan");
+    archive.file(
+      "content.xml",
+      '<!DOCTYPE x [<!ENTITY external SYSTEM "file:///etc/passwd">]><x>&external;</x>',
+    );
+    await expect(openDocument(archive, kind)).rejects.toThrow("unsupported XML");
   });
 });
