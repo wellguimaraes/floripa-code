@@ -21,7 +21,11 @@ import {
   CommandShortcut,
 } from "./ui/command";
 import { getVirtualizedScrollFadeClassName } from "./ui/scroll-area";
-import { ThreadSearchMatchExcerpt } from "./ThreadSearchMatch";
+import {
+  HighlightedSearchText,
+  SearchMatchHintLine,
+  ThreadSearchMatchExcerpt,
+} from "./ThreadSearchMatch";
 
 interface CommandPaletteResultsProps {
   emptyStateMessage?: string;
@@ -155,6 +159,44 @@ export function CommandPaletteVirtualizedResults(props: CommandPaletteVirtualize
   );
 }
 
+function CommandPaletteTitle({
+  item,
+}: {
+  item: Pick<CommandPaletteActionItem | CommandPaletteSubmenuItem, "title" | "titleRanges">;
+}) {
+  const { title } = item;
+  return (
+    <span className="truncate">
+      {typeof title === "string" && item.titleRanges ? (
+        <HighlightedSearchText text={title} ranges={item.titleRanges} />
+      ) : (
+        title
+      )}
+    </span>
+  );
+}
+
+/**
+ * Project and environment for a thread row whose second line shows a message
+ * snippet or match hint instead, so similar rows can still be told apart.
+ */
+function ThreadRowContext({
+  item,
+}: {
+  item: CommandPaletteActionItem | CommandPaletteSubmenuItem;
+}) {
+  if (!item.threadSearch || !(item.threadContentMatch || item.matchHint)) return null;
+  // A "Project: …" hint already names the project.
+  const context = [item.threadSearch.projectTitle, item.threadSearch.environmentLabel]
+    .filter((part) => part && part !== item.matchHint?.text)
+    .join(" · ");
+  return context ? (
+    <span className="max-w-[45%] shrink-0 truncate text-muted-foreground/70 text-xs">
+      {context}
+    </span>
+  ) : null;
+}
+
 function DisabledCommandPaletteResultRow(props: {
   item: CommandPaletteActionItem | CommandPaletteSubmenuItem;
 }) {
@@ -165,12 +207,14 @@ function DisabledCommandPaletteResultRow(props: {
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="flex min-w-0 items-center gap-1.5 text-sm text-foreground">
             {props.item.titleLeadingContent}
-            <span className="truncate">{props.item.title}</span>
+            <CommandPaletteTitle item={props.item} />
+            <ThreadRowContext item={props.item} />
           </span>
           {props.item.threadContentMatch ? (
             <ThreadSearchMatchExcerpt match={props.item.threadContentMatch} />
-          ) : null}
-          {props.item.description ? (
+          ) : props.item.matchHint ? (
+            <SearchMatchHintLine hint={props.item.matchHint} />
+          ) : props.item.description ? (
             <span className="min-w-0 text-muted-foreground/70 text-xs">
               {props.item.description}
             </span>
@@ -179,7 +223,7 @@ function DisabledCommandPaletteResultRow(props: {
       ) : (
         <span className="flex min-w-0 flex-1 items-center gap-1.5 text-sm text-foreground">
           {props.item.titleLeadingContent}
-          <span className="truncate">{props.item.title}</span>
+          <CommandPaletteTitle item={props.item} />
         </span>
       )}
       {props.item.titleTrailingContent}
@@ -215,12 +259,14 @@ function CommandPaletteResultRow(props: {
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="flex min-w-0 items-center gap-1.5 text-sm text-foreground">
             {props.item.titleLeadingContent}
-            <span className="truncate">{props.item.title}</span>
+            <CommandPaletteTitle item={props.item} />
+            <ThreadRowContext item={props.item} />
           </span>
           {props.item.threadContentMatch ? (
             <ThreadSearchMatchExcerpt match={props.item.threadContentMatch} />
-          ) : null}
-          {props.item.description ? (
+          ) : props.item.matchHint ? (
+            <SearchMatchHintLine hint={props.item.matchHint} />
+          ) : props.item.description ? (
             <span className="min-w-0 text-muted-foreground/70 text-xs">
               {props.item.description}
             </span>
@@ -229,7 +275,7 @@ function CommandPaletteResultRow(props: {
       ) : (
         <span className="flex min-w-0 flex-1 items-center gap-1.5 text-sm text-foreground">
           {props.item.titleLeadingContent}
-          <span className="truncate">{props.item.title}</span>
+          <CommandPaletteTitle item={props.item} />
         </span>
       )}
       {props.item.titleTrailingContent}
