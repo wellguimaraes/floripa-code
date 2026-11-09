@@ -1,6 +1,7 @@
 import type { PullRequestAction } from "@t3tools/contracts";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { SearchIcon } from "lucide-react";
+import { PullRequestChangeBreakdownStat } from "./PullRequestChangeBreakdownStat";
 import { PullRequestStackPopover } from "./PullRequestStackPopover";
 import {
   PullRequestSpeedActions,
@@ -22,11 +23,7 @@ import {
   PullRequestRowGlyph,
   PullRequestRowLines,
 } from "./PullRequestListRow";
-import {
-  PullRequestDiffStat,
-  PullRequestLabelChip,
-  PullRequestReviewDecisionGlyph,
-} from "./pullRequestPresentation";
+import { PullRequestLabelChip, PullRequestReviewDecisionGlyph } from "./pullRequestPresentation";
 
 /**
  * Each slot past the first only appears once the meta line is wide enough to hold it, so a
@@ -211,7 +208,14 @@ function PullRequestRowImpl({
                   }
                 />
               ) : null}
-              <PullRequestDiffStat
+              <PullRequestChangeBreakdownStat
+                environmentId={entry.environmentId}
+                reference={{
+                  projectId: entry.projectId,
+                  host: entry.host,
+                  repository: entry.repository,
+                  number: entry.number,
+                }}
                 additions={entry.additions}
                 deletions={entry.deletions}
                 className="font-mono"

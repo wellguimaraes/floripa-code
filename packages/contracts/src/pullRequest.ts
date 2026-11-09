@@ -1,4 +1,5 @@
 import * as Schema from "effect/Schema";
+import * as Effect from "effect/Effect";
 import * as HttpServerRespondable from "effect/http/HttpServerRespondable";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
@@ -83,6 +84,7 @@ export const PullRequestAction = Schema.Literals([
   "draft",
   "close",
   "reopen",
+  "delete-branch",
   /** Bring the base branch's commits into this one, which is what unblocks a stale branch. */
   "update-branch",
   /**
@@ -418,6 +420,8 @@ export const PullRequestCapabilities = Schema.Struct({
   actions: Schema.Array(PullRequestAction),
   /** Merge strategies the provider itself offers, before repository settings narrow them. */
   mergeMethods: Schema.Array(PullRequestMergeMethod),
+  /** The host can delete the source branch of a merged or closed change request. */
+  deleteBranch: Schema.optional(Schema.Boolean),
   /**
    * How this host can bring a stale branch up to date. Absent where it cannot at all, which is
    * every host that has not said otherwise — so a provider that says nothing offers nothing.
@@ -1080,6 +1084,30 @@ export const PullRequestFilesViewedResult = Schema.Struct({
   truncated: Schema.Boolean,
 });
 export type PullRequestFilesViewedResult = typeof PullRequestFilesViewedResult.Type;
+
+const PullRequestLineCount = Schema.Struct({
+  additions: NonNegativeInt,
+  deletions: NonNegativeInt,
+});
+
+/**
+ * A change's line counts split by what the changed files are, judged from their paths. Null when
+ * the host gives no per-file counts, or has more files than one read covers: a split of part of
+ * the change would not add up to the totals shown beside it.
+ */
+export const PullRequestChangeBreakdown = Schema.NullOr(
+  Schema.Struct({
+    code: PullRequestLineCount,
+    tests: PullRequestLineCount,
+    mocks: PullRequestLineCount,
+    generated: PullRequestLineCount,
+    // Servers from before the docs split send no key; their docs lines sit in `code`.
+    docs: PullRequestLineCount.pipe(
+      Schema.withDecodingDefault(Effect.succeed({ additions: 0, deletions: 0 })),
+    ),
+  }),
+);
+export type PullRequestChangeBreakdown = typeof PullRequestChangeBreakdown.Type;
 
 /**
  * How many presses one write carries. Every element is a statement of its own inside one

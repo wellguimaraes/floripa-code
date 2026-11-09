@@ -39,6 +39,7 @@ import {
   type PullRequestDiffFileContentsResult,
   type PullRequestDiffStat,
   type PullRequestDiffInput,
+  type PullRequestChangeBreakdown,
   type PullRequestFilesViewedResult,
   type PullRequestDiffResult,
   type PullRequestInvalidateInput,
@@ -93,6 +94,7 @@ import {
 } from "@t3tools/source-control-core/server/PullRequestProvider";
 import * as PullRequestReadCache from "./PullRequestReadCache.ts";
 import * as PullRequestProviderRegistry from "./PullRequestProviderRegistry.ts";
+import { toChangeBreakdown } from "./pullRequestChangeBreakdown.ts";
 import * as ViewedFiles from "./pullRequestViewedFiles.ts";
 
 export interface PullRequestMergeEvent extends PullRequestRef {
@@ -288,6 +290,9 @@ export class PullRequestService extends Context.Service<
     readonly setFilesViewed: (
       input: PullRequestSetFilesViewedInput,
     ) => Effect.Effect<void, PullRequestError>;
+    readonly changeBreakdown: (
+      input: PullRequestRef,
+    ) => Effect.Effect<PullRequestChangeBreakdown, PullRequestError>;
     readonly runAction: (input: PullRequestActionInput) => Effect.Effect<void, PullRequestError>;
     readonly update: (input: PullRequestUpdateInput) => Effect.Effect<void, PullRequestError>;
     readonly comment: (input: PullRequestCommentInput) => Effect.Effect<void, PullRequestError>;
@@ -354,6 +359,7 @@ const ACTION_ACCESS_REFUSALS: Record<PullRequestAction, string> = {
   "disable-auto-merge":
     "You need write access on this repository to stop it being merged for you once it is ready.",
   revert: "You need write access on this repository to open a revert pull request.",
+  "delete-branch": "You need write access on the source repository to delete its branch.",
   "approve-workflows":
     "You need write access on this repository to approve workflows from a fork pull request.",
 };
@@ -665,6 +671,9 @@ function withRateLimitBackoff(
     ...(api.getFilesViewed === undefined
       ? {}
       : { getFilesViewed: wrap("getFilesViewed", api.getFilesViewed) }),
+    ...(api.getFileStats === undefined
+      ? {}
+      : { getFileStats: wrap("getFileStats", api.getFileStats) }),
     ...(api.setFilesViewed === undefined
       ? {}
       : { setFilesViewed: interactive("setFilesViewed", api.setFilesViewed) }),
@@ -1985,6 +1994,14 @@ export const make = Effect.gen(function* () {
   const runAction = (input: PullRequestActionInput): Effect.Effect<string, PullRequestError> =>
     requireProject(input).pipe(
       Effect.flatMap((project): Effect.Effect<string, PullRequestError> => {
+        if (input.action === "delete-branch" && project.api.capabilities.deleteBranch !== true) {
+          return Effect.fail(
+            new PullRequestOperationError({
+              operation: "runAction",
+              detail: "This host cannot delete a change request's source branch.",
+            }),
+          );
+        }
         if (
           input.stackNumber !== undefined &&
           (project.api.capabilities.stackActions !== true ||
@@ -2039,7 +2056,7 @@ export const make = Effect.gen(function* () {
         // What the host can do and what this account may ask of it are two questions, and both
         // have to say yes. The second is asked last, because it costs a request and the checks
         // above do not.
-        return viewerPermissionsOf(
+        const operation = viewerPermissionsOf(
           project,
           input,
           "runAction",
@@ -2124,6 +2141,18 @@ export const make = Effect.gen(function* () {
             );
           }),
         );
+        // Deleting a branch is irreversible, so it runs against a credential verified up front.
+        return input.action === "delete-branch" && project.api.withVerifiedCredential !== undefined
+          ? project.api
+              .withVerifiedCredential(
+                { cwd: project.project.workspaceRoot, host: project.host },
+                () => operation.pipe(Effect.result),
+              )
+              .pipe(
+                Effect.mapError(toPullRequestError("runAction")),
+                Effect.flatMap(Effect.fromResult),
+              )
+          : operation;
       }),
     );
 
@@ -3197,6 +3226,32 @@ export const make = Effect.gen(function* () {
     },
   );
 
+  const changeBreakdownCache = yield* Cache.makeWith(
+    (key: string) => {
+      const ref = refOfCacheKey(key);
+      return requireProject(ref).pipe(
+        Effect.flatMap((project) => {
+          const read = project.api.getFileStats;
+          if (read === undefined) return Effect.succeed(null);
+          return read({
+            cwd: project.project.workspaceRoot,
+            repository: project.repository,
+            host: project.host,
+            number: ref.number,
+          }).pipe(
+            Effect.map(toChangeBreakdown),
+            Effect.mapError(toPullRequestError("changeBreakdown")),
+          );
+        }),
+      );
+    },
+    {
+      capacity: DETAIL_CACHE_CAPACITY,
+      timeToLive: (exit, key) =>
+        Exit.isSuccess(exit) ? detailTimeToLive(lastGoodSummary.peek(key)?.state) : Duration.zero,
+    },
+  );
+
   const previewCache = yield* Cache.makeWith(
     (key: string) => {
       return previewUncached(refOfCacheKey(key));
@@ -3496,6 +3551,9 @@ export const make = Effect.gen(function* () {
     diffFileContents,
     filesViewed: credentialCached(filesViewed),
     setFilesViewed,
+    changeBreakdown: credentialCached((input) =>
+      Cache.get(changeBreakdownCache, refCacheKey(input)),
+    ),
     runAction: runActionAndInvalidate,
     update: invalidatedByMutation(update),
     comment: invalidatedByMutation(comment),

@@ -37,6 +37,7 @@ import {
   PanelRightIcon,
   PlayIcon,
   RotateCcwIcon,
+  Trash2Icon,
   TriangleAlertIcon,
   XIcon,
 } from "lucide-react";
@@ -68,6 +69,7 @@ import { usePullRequestDefaultMergeMethodResolver } from "./usePullRequestAction
 import { changeRequestRepositoryUrl, gitHubPullRequestBrowserUrl } from "~/lib/openPullRequestLink";
 import { usePreparePullRequestThreadAction } from "~/lib/sourceControlActions";
 import { cn } from "~/lib/utils";
+import { PullRequestChangeBreakdownStat } from "./PullRequestChangeBreakdownStat";
 import { readLocalApi } from "~/localApi";
 import type { ReviewCommentContext } from "~/reviewCommentContext";
 import { useProjects, useServerConfigs } from "~/state/entities";
@@ -151,6 +153,7 @@ import {
   resolveDisplayedPullRequestDetail,
   resolvePullRequestPrimaryControl,
   allowsSinglePullRequestMerge,
+  canDeletePullRequestBranch,
   resolveBaseFreshness,
   resolvePullRequestMergeMethod,
   type PullRequestFinding,
@@ -166,7 +169,6 @@ import {
 import { PullRequestChecksPopover } from "./PullRequestChecksPopover";
 import {
   PullRequestActorLabel,
-  PullRequestDiffStat,
   PullRequestMetaLine,
   PullRequestReviewOutcomeIcon,
   pullRequestChecksState,
@@ -191,6 +193,7 @@ const ACTION_FAILURE_LABELS: Record<PullRequestAction, string> = {
   "enable-auto-merge": "Could not turn on auto-merge",
   "disable-auto-merge": "Could not turn off auto-merge",
   revert: "Could not open a revert pull request",
+  "delete-branch": "Could not delete this branch",
   "approve-workflows": "Could not approve workflows",
 };
 
@@ -215,6 +218,8 @@ const ACTION_FAILURE_HINTS: Record<PullRequestAction, string> = {
     "The host refused it. Check that you have write access, and that the merge has not already happened.",
   revert:
     "The host refused it. Check that you have write access and that this pull request was merged on the host.",
+  "delete-branch":
+    "The host refused it. Check that you have write access to the source repository and that the branch has not moved since this page loaded.",
   "approve-workflows":
     "The host refused it. Check that you have Actions write access and that these workflow runs are still awaiting approval.",
 };
@@ -969,6 +974,9 @@ export function PullRequestDetailPanel({
     // Reverting opens another PR; the current panel has no new state to show.
     if (action === "revert") {
       toastManager.add({ type: "success", title: "Revert pull request opened" });
+    }
+    if (action === "delete-branch") {
+      toastManager.add({ type: "success", title: "Branch deleted" });
     }
     // A branch update moves the head commit, which leaves the diff atom pointed at a comparison
     // that no longer exists — the same staleness the manual refresh button fixes, so it goes
@@ -2267,6 +2275,30 @@ export function PullRequestDetailPanel({
                       </MenuItem>
                     </>
                   ) : null}
+                  {canDeletePullRequestBranch(detail) ? (
+                    <>
+                      <MenuSeparator />
+                      <MenuItem
+                        closeOnClick={inlineConfirm.isArmed("delete-branch")}
+                        aria-label={
+                          inlineConfirm.isArmed("delete-branch")
+                            ? "Confirm delete branch?"
+                            : "Delete branch"
+                        }
+                        variant="destructive"
+                        disabled={actionPending}
+                        {...inlineConfirm.props(
+                          "delete-branch",
+                          () => void perform("delete-branch"),
+                        )}
+                      >
+                        <Trash2Icon className="size-3.5" />
+                        {inlineConfirm.isArmed("delete-branch")
+                          ? "Confirm delete branch?"
+                          : "Delete branch"}
+                      </MenuItem>
+                    </>
+                  ) : null}
                 </MenuPopup>
               </Menu>
             </TooltipProvider>
@@ -2386,10 +2418,13 @@ export function PullRequestDetailPanel({
                       <FileDiffIcon aria-hidden className="size-3" />
                       {detail.changedFiles.toLocaleString()}
                     </span>
-                    <PullRequestDiffStat
+                    <PullRequestChangeBreakdownStat
+                      environmentId={environmentId}
+                      reference={reference}
                       additions={detail.additions}
                       deletions={detail.deletions}
                       className="shrink-0 font-mono text-2xs"
+                      eager
                     />
                   </span>
                 </div>
@@ -2562,10 +2597,13 @@ export function PullRequestDetailPanel({
                 }
                 files={`${detail.changedFiles.toLocaleString()} ${detail.changedFiles === 1 ? "file" : "files"}`}
                 diffStat={
-                  <PullRequestDiffStat
+                  <PullRequestChangeBreakdownStat
+                    environmentId={environmentId}
+                    reference={reference}
                     additions={detail.additions}
                     deletions={detail.deletions}
                     className="shrink-0 font-mono text-xs"
+                    eager
                   />
                 }
               />
