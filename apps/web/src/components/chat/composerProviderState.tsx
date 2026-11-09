@@ -19,7 +19,13 @@ import type { ReactNode } from "react";
 import type { DraftId } from "../../composerDraftStore";
 import { getProviderModelCapabilities } from "../../providerModels";
 import type { ComposerControlSize } from "./ComposerControl";
-import { shouldRenderTraitsControls, TraitsMenuContent, TraitsPicker } from "./TraitsPicker";
+import {
+  getReasoningTraitStep,
+  shouldRenderTraitsControls,
+  TraitsMenuContent,
+  TraitsPicker,
+  type TraitsSelectionInput,
+} from "./TraitsPicker";
 
 export type ComposerProviderStateInput = {
   provider: ProviderDriverKind;
@@ -160,6 +166,61 @@ export function getComposerProviderState(input: ComposerProviderStateInput): Com
   };
 }
 
+/**
+ * `cursor` is an expanded caret in `prompt`; the result's `cursor` keeps it on
+ * the same character when the Ultrathink prefix is added or removed.
+ */
+export function getComposerReasoningStep(input: {
+  provider: ProviderDriverKind;
+  instanceId: ProviderInstanceId;
+  model: string;
+  models: ReadonlyArray<ServerProviderModel>;
+  modelOptions: ReadonlyArray<ProviderOptionSelection> | null | undefined;
+  reportedModelSelection?: ModelSelection | null | undefined;
+  prompt: string;
+  cursor: number;
+  planModeEnabled: boolean;
+  direction: 1 | -1;
+}): {
+  prompt: string;
+  cursor: number;
+  modelOptions?: ReadonlyArray<ProviderOptionSelection>;
+} | null {
+  const { prompt, cursor } = input;
+  const { selections } = resolveComposerOptionSelections(
+    input.models,
+    input.model,
+    input.provider,
+    input.modelOptions,
+    input.planModeEnabled,
+  );
+  const step = getReasoningTraitStep({
+    provider: input.provider,
+    instanceId: input.instanceId,
+    model: input.model,
+    models: input.models,
+    modelOptions: selections,
+    reportedModelSelection: input.reportedModelSelection,
+    prompt,
+    planModeEnabled: input.planModeEnabled,
+    direction: input.direction,
+  });
+  if (!step) return null;
+  const modelOptions = "modelOptions" in step ? { modelOptions: step.modelOptions } : {};
+  if (step.prompt === prompt) return { prompt, cursor, ...modelOptions };
+  // Adding the prefix also trims the prompt, so the kept text starts right after the prefix.
+  const keptStart = "modelOptions" in step ? 0 : step.prompt.length - prompt.trim().length;
+  const offset =
+    "modelOptions" in step
+      ? step.prompt.length - prompt.length
+      : keptStart - (prompt.length - prompt.trimStart().length);
+  return {
+    prompt: step.prompt,
+    cursor: Math.min(step.prompt.length, Math.max(keptStart, cursor + offset)),
+    ...modelOptions,
+  };
+}
+
 function renderTraitsControl(
   Component: typeof TraitsMenuContent | typeof TraitsPicker,
   input: TraitsRenderInput,
@@ -229,4 +290,48 @@ export function renderProviderTraitsMenuContent(input: TraitsRenderInput): React
 
 export function renderProviderTraitsPicker(input: TraitsRenderInput): ReactNode {
   return renderTraitsControl(TraitsPicker, input);
+}
+
+/**
+ * The traits the model picker's effort column shows, or null when the target has no draft or
+ * thread to persist to, or the model has nothing to configure.
+ */
+export function resolveComposerTraitsSelection(
+  input: TraitsRenderInput,
+): TraitsSelectionInput | null {
+  const { threadRef, draftId, model, models, provider, modelOptions, prompt, planModeEnabled } =
+    input;
+  if (threadRef === undefined && draftId === undefined) return null;
+  const { selections } = resolveComposerOptionSelections(
+    models,
+    model,
+    provider,
+    modelOptions,
+    planModeEnabled,
+  );
+  if (
+    !shouldRenderTraitsControls({
+      provider,
+      models,
+      model,
+      modelOptions: selections,
+      prompt,
+      planModeEnabled,
+    })
+  ) {
+    return null;
+  }
+  return {
+    provider,
+    ...(input.instanceId ? { instanceId: input.instanceId } : {}),
+    models,
+    ...(threadRef ? { threadRef } : {}),
+    ...(draftId ? { draftId } : {}),
+    model,
+    modelOptions: selections,
+    reportedModelSelection: input.reportedModelSelection,
+    prompt,
+    onPromptChange: input.onPromptChange,
+    planModeEnabled,
+  } as TraitsSelectionInput;
 }

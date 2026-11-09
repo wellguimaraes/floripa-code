@@ -21,6 +21,10 @@ task lists, quotes, headings and rules; ` ``` ` followed by Enter opens a code
 block. What you typed is what the agent receives, markers and numbering
 included, and `#1234` without a space still looks up a pull request.
 
+To see the plain Markdown instead, press the paragraph button beside the send button or
+`mod+/`. Press it again to return to styled text. It is the same setting as **Settings → Chat →
+Rich text composer**.
+
 Enter sends. In a list or quote, **Shift+Enter** continues it, and Shift+Enter
 on an empty line leaves it; **Tab** nests a list item. In a code block, Enter
 starts a new line at the current indentation, **Tab** and **Shift+Tab** indent

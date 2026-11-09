@@ -34,6 +34,14 @@ export function ContextWindowMeter(props: {
   const totalProcessedTokens = usage.totalProcessedTokens ?? null;
   const showTotalProcessed = totalProcessedTokens !== null && totalProcessedTokens > 0;
   const isOverloaded = normalizedPercentage > 90;
+  // Marks where the provider compacts on its own, when it reports that point.
+  const compactTick =
+    usage.maxTokens != null &&
+    usage.autoCompactThreshold != null &&
+    usage.autoCompactThreshold > 0 &&
+    usage.autoCompactThreshold < usage.maxTokens
+      ? (usage.autoCompactThreshold / usage.maxTokens) * 100
+      : null;
   const usageColor = isOverloaded
     ? "var(--color-error)"
     : "color-mix(in oklab, var(--color-muted-foreground) 72%, transparent)";
@@ -115,7 +123,7 @@ export function ContextWindowMeter(props: {
           </div>
           {usage.maxTokens !== null ? (
             <div
-              className="h-1.5 w-full overflow-hidden rounded-full bg-muted/60"
+              className="relative h-1.5 w-full rounded-full bg-muted/60"
               role="progressbar"
               aria-valuemin={0}
               aria-valuemax={100}
@@ -126,6 +134,13 @@ export function ContextWindowMeter(props: {
                 className="h-full rounded-full transition-[width,background-color] duration-500 ease-out motion-reduce:transition-none"
                 style={{ width: `${normalizedPercentage}%`, backgroundColor: usageColor }}
               />
+              {compactTick !== null ? (
+                <span
+                  aria-hidden
+                  className="absolute -top-[2px] h-2.5 w-px -translate-x-1/2 bg-foreground/60"
+                  style={{ left: `${compactTick}%` }}
+                />
+              ) : null}
             </div>
           ) : null}
           {showTotalProcessed ? (
