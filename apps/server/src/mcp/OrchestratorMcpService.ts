@@ -21,6 +21,7 @@ import {
   type OrchestratorMcpDelegateTaskResult,
   type OrchestratorMcpInteractionMode,
   type OrchestratorMcpDeleteScheduledTaskInput,
+  SECRET_REQUEST_UNSAVED_NOTE,
   type OrchestratorMcpRequestSecretInput,
   type OrchestratorMcpRequestSecretResult,
   type OrchestratorMcpDeleteScheduledTaskResult,
@@ -1734,6 +1735,26 @@ const make = Effect.gen(function* () {
             "Asking for a secret requires an active run owned by this MCP provider session.",
           );
         }
+        // A secret the user already pasted needs no card: it goes straight to a file.
+        if (input.value !== undefined) {
+          if (input.delivery === "secretRef") {
+            return yield* failure(
+              "invalid_request",
+              'A pasted `value` is saved as a file. Leave out `delivery: "secretRef"`.',
+            );
+          }
+          const file = yield* secretRequests
+            .savePasted({
+              threadId,
+              requestNamespace: scope.requestNamespace,
+              requestKey: yield* requestKey(input.clientRequestId),
+              value: input.value,
+            })
+            .pipe(Effect.mapError((error) => failure("orchestration_error", error.message)));
+          yield* Effect.annotateCurrentSpan({ "secret_request.status": "saved_pasted" });
+          yield* Metrics.increment(Metrics.secretRequestsTotal, { status: "saved_pasted" });
+          return { status: "saved" as const, file };
+        }
         const runId = run.id;
         const nodeId = run.rootNodeId;
         const key = yield* requestKey(input.clientRequestId);
@@ -1758,6 +1779,7 @@ const make = Effect.gen(function* () {
               label: input.label,
               reason: input.reason,
               ...(input.placeholder === undefined ? {} : { placeholder: input.placeholder }),
+              ...(input.delivery === "file" ? { delivery: "file" as const } : {}),
               secretStatus,
             })
             .pipe(
@@ -1839,7 +1861,13 @@ const make = Effect.gen(function* () {
               );
         yield* Effect.annotateCurrentSpan({ "secret_request.status": status });
         yield* Metrics.increment(Metrics.secretRequestsTotal, { status });
-        if (status !== "saved") return { status };
+        if (status !== "saved") return { status, note: SECRET_REQUEST_UNSAVED_NOTE[status] };
+        if (input.delivery === "file") {
+          const file = yield* secretRequests
+            .saveToFile({ threadId, turnItemId })
+            .pipe(Effect.mapError((error) => failure("orchestration_error", error.message)));
+          return { status, file };
+        }
         // Saved means the value was stored before the card said so; a missing
         // value is a storage fault, not an answer the agent can act on.
         const secretRef = yield* secretRequests.savedRef({ threadId: threadId, turnItemId });

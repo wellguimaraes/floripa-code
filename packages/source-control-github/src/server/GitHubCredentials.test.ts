@@ -5,7 +5,11 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import { ChildProcessSpawner } from "effect/process";
 
-import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  SecretProviderId,
+  type SettingsSecretValue,
+} from "@t3tools/contracts";
 import type * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
 import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
 import * as TestSourceControlHost from "@t3tools/source-control-testing/TestSourceControlHost";
@@ -29,7 +33,7 @@ const hostSettings = (
 function harness(
   hosts: Record<string, { readonly account?: string; readonly enabled?: boolean }> = {},
   signedOut: ReadonlyArray<string> = [],
-  tokens: Record<string, string> = {},
+  tokens: Record<string, SettingsSecretValue> = {},
 ) {
   const calls: Array<ReadonlyArray<string>> = [];
   const run: SourceControlHost.SourceControlHost["Service"]["process"]["run"] = (input) =>
@@ -177,6 +181,21 @@ describe("GitHubCredentials", () => {
       expect((yield* Effect.flip(credentials.get("github.com")))._tag).toBe(
         "GitHubHostDisabledError",
       );
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect("fails instead of falling back when the token's secret cannot be read", () => {
+    vi.stubEnv("GH_TOKEN", "env-token");
+    // The host's `getWithSecrets` keeps a reference it could not read.
+    const { layer, calls } = harness({}, [], {
+      "github.com": { provider: SecretProviderId.make("personal"), reference: "op://P/GH/token" },
+    });
+    return Effect.gen(function* () {
+      const credentials = yield* GitHubCredentials.GitHubCredentials;
+      const error = yield* Effect.flip(credentials.get("github.com"));
+      expect(error._tag).toBe("SettingsSecretUnresolvedError");
+      expect(error.message).toContain("personal");
+      expect(calls).toEqual([]);
     }).pipe(Effect.provide(layer));
   });
 });

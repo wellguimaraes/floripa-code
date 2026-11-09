@@ -166,6 +166,7 @@ import * as OrchestrationEventStore from "./persistence/OrchestrationEventStore.
 import { userFacingDispatchErrorMessage } from "./orchestration-v2/UserFacingErrors.ts";
 import * as ProviderRegistry from "./provider/ProviderRegistry.ts";
 import * as ProviderInstanceRegistry from "./provider/ProviderInstanceRegistry.ts";
+import { reloadProviderInstanceSecrets } from "./provider/ProviderInstanceRegistryHydration.ts";
 import * as AcpRegistrySupport from "@t3tools/provider-acp-registry/server/AcpRegistrySupport";
 import * as AcpRegistryRuntimeCoordinator from "@t3tools/provider-acp-registry/server/AcpRegistryRuntimeCoordinator";
 import * as ModelManifest from "./provider/ModelManifest.ts";
@@ -1738,6 +1739,8 @@ const layerWsRpc = (
             threadSnapshotPagination: true,
             threadFind: true,
             threadFindProgressive: true,
+            secretProviderSettings: true,
+            secretReferences: true,
             ...Option.match(scratchWorkspaceRoot, {
               onNone: () => ({}),
               onSome: (root) => ({ scratchWorkspaceRoot: root }),
@@ -2208,6 +2211,13 @@ const layerWsRpc = (
           Effect.gen(function* () {
             // Only explicit catalog refreshes bypass T3's caches. Workspace
             // discovery and background status checks retain their timers.
+            if (input.reloadSecrets === true) {
+              yield* reloadProviderInstanceSecrets.pipe(
+                Effect.catchCause((cause) =>
+                  Effect.logWarning("could not reload provider secrets", { cause }),
+                ),
+              );
+            }
             if (input.refreshModels) {
               yield* modelManifest.forceRefresh;
               const instances = yield* providerInstances.listInstances;

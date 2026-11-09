@@ -3,6 +3,8 @@ import {
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
+  SecretProviderId,
+  SecretProviderKind,
   UsageLimitSourceId,
   type ServerProvider,
 } from "@t3tools/contracts";
@@ -598,6 +600,26 @@ describe("serverSettings helpers", () => {
 
     const removed = applyServerSettingsPatch(added, { usageLimitSources: { [hubA]: null } });
     expect(Object.keys(removed.usageLimitSources)).toEqual([hubB]);
+  });
+
+  it("upserts and removes secretProviders per entry", () => {
+    const entry = (account: string) => ({
+      kind: SecretProviderKind.make("one_password"),
+      label: account,
+      config: { account },
+    });
+    const personal = SecretProviderId.make("personal");
+    const work = SecretProviderId.make("work");
+    const current = {
+      ...DEFAULT_SERVER_SETTINGS,
+      secretProviders: { [personal]: entry("a.1password.com") },
+    };
+    const added = applyServerSettingsPatch(current, {
+      secretProviders: { [work]: entry("b.1password.com") },
+    });
+    expect(Object.keys(added.secretProviders)).toEqual([personal, work]);
+    const removed = applyServerSettingsPatch(added, { secretProviders: { [personal]: null } });
+    expect(Object.keys(removed.secretProviders)).toEqual([work]);
   });
 
   it("replaces and removes individual usage prices without clobbering other models", () => {

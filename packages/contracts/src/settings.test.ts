@@ -2,6 +2,8 @@ import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
 import { type CommandId, ProjectId } from "./baseSchemas.ts";
+import { isSecretReferenceForKind } from "./secretProviders.ts";
+import { SecretProviderId } from "./secretReference.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 import {
   ClientSettingsSchema,
@@ -12,6 +14,7 @@ import {
   idleCompactionPatch,
   requiredScopesForProjectMutation,
   resolveIdleCompaction,
+  requiredScopesForServerSettingsPatch,
   resolveProviderInstanceEnabled,
   ServerSettings,
   ServerSettingsPatch,
@@ -1172,5 +1175,46 @@ describe("requiredScopesForProjectMutation", () => {
         scripts: [],
       }),
     ).toEqual(["orchestration:operate", "settings:write"]);
+  });
+});
+
+describe("secret providers", () => {
+  it("accepts a 1Password provider and its removal in a patch", () => {
+    expect(
+      decodeServerSettingsPatch({
+        secretProviders: {
+          personal: {
+            kind: "one_password",
+            label: "Personal",
+            config: { account: "my.1password.com" },
+          },
+          old: null,
+        },
+      }).secretProviders?.["old" as SecretProviderId],
+    ).toBeNull();
+  });
+
+  it("rejects writes for unknown kinds, bad configs, and option-like accounts", () => {
+    for (const entry of [
+      { kind: "vault", label: "Vault", config: {} },
+      { kind: "one_password", label: "Personal", config: {} },
+      { kind: "one_password", label: "Personal", config: { account: "--config=/tmp" } },
+    ]) {
+      expect(() => decodeServerSettingsPatch({ secretProviders: { x: entry } } as never)).toThrow();
+    }
+  });
+
+  it("requires the providers grant to change secret providers", () => {
+    expect(
+      requiredScopesForServerSettingsPatch({
+        secretProviders: { [SecretProviderId.make("x")]: null },
+      }),
+    ).toEqual(["providers:manage"]);
+  });
+
+  it("only reads 1Password references of the op:// form", () => {
+    expect(isSecretReferenceForKind("one_password", "op://Private/GitHub/token")).toBe(true);
+    expect(isSecretReferenceForKind("one_password", "op://Private/{{x}}/token")).toBe(false);
+    expect(isSecretReferenceForKind("vault", "op://Private/GitHub/token")).toBe(false);
   });
 });

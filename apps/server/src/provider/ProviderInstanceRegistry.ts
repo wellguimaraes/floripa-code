@@ -54,6 +54,7 @@ import {
   type ProviderInstanceConfig,
   type ProviderInstanceConfigMap,
   type ProviderDriverKind,
+  type ResolvedProviderInstanceEnvironment,
   type ServerProvider,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -176,6 +177,12 @@ const resolveEntryEnabled = (entry: ProviderInstanceConfig, typedConfig: unknown
   return entry.enabled ?? providerInstanceConfigEnabledFlag(typedConfig) ?? true;
 };
 
+/** The environment as drivers get it; `buildEntry` has already refused an unresolved reference. */
+const resolvedEnvironment = (entry: ProviderInstanceConfig): ResolvedProviderInstanceEnvironment =>
+  (entry.environment ?? []).flatMap((variable) =>
+    typeof variable.value === "string" ? [{ ...variable, value: variable.value }] : [],
+  );
+
 /**
  * Build one live entry from a raw config envelope. Returns either a
  * `LiveEntry` plus undefined unavailable shadow, or a shadow snapshot and
@@ -231,6 +238,24 @@ const buildEntry = <R>(input: {
       };
     }
 
+    // Hydration reads every reference first; one still in place could not be read. Starting
+    // without it would run the provider on another credential, so the instance is unavailable.
+    const unreadable = (entry.environment ?? []).flatMap((variable) =>
+      typeof variable.value === "string" ? [] : [variable.name],
+    );
+    if (unreadable.length > 0) {
+      return {
+        kind: "unavailable" as const,
+        snapshot: yield* buildUnavailableProviderSnapshot({
+          driverKind: entry.driver,
+          instanceId,
+          displayName: entry.displayName,
+          accentColor: entry.accentColor,
+          reason: `Could not read ${unreadable.join(", ")} from its secret provider. Unlock it, then refresh providers in Settings.`,
+        }),
+      };
+    }
+
     const typedConfig = decodeResult.success;
     const childScope = yield* Scope.make();
     // Attach the child scope to the registry's parent scope: if the
@@ -245,7 +270,7 @@ const buildEntry = <R>(input: {
         instanceId,
         displayName: entry.displayName,
         accentColor: entry.accentColor,
-        environment: entry.environment ?? [],
+        environment: resolvedEnvironment(entry),
         enabled: resolveEntryEnabled(entry, typedConfig),
         config: typedConfig,
       })

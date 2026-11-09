@@ -34,6 +34,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
+import * as SecretResolver from "../secrets/SecretResolver.ts";
 import * as Settings from "../serverSettings.ts";
 import { makeCliproxyApi } from "./cliproxyApi.ts";
 
@@ -64,6 +65,7 @@ function sourceLabel(id: string, config: UsageLimitSourceConfig): string {
 export const make = Effect.gen(function* () {
   const api = yield* makeCliproxyApi;
   const settingsService = yield* Settings.ServerSettingsService;
+  const secretResolver = yield* SecretResolver.SecretResolver;
   const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
   const stateRef = yield* Ref.make<ReadonlyArray<UsageLimitSourceSnapshot>>([]);
   const changes = yield* Effect.acquireRelease(
@@ -77,10 +79,19 @@ export const make = Effect.gen(function* () {
   ) {
     const checkedAt = DateTime.formatIso(yield* DateTime.now);
     const base = { id, kind: config.kind, label: sourceLabel(id, config), checkedAt } as const;
-    if (config.managementKey.length === 0) {
+    const key = yield* SecretResolver.requireSettingsSecret(
+      secretResolver,
+      config.managementKey,
+    ).pipe(Effect.result);
+    if (key._tag === "Failure") {
+      return { ...base, accounts: [], error: key.failure.message };
+    }
+    if (key.success.length === 0) {
       return { ...base, accounts: [], error: "No management key configured." };
     }
-    const accounts = yield* api.readAccounts(config).pipe(Effect.result);
+    const accounts = yield* api
+      .readAccounts({ ...config, managementKey: key.success })
+      .pipe(Effect.result);
     if (accounts._tag === "Failure") {
       yield* Effect.logDebug("usage limit source read failed", { id, cause: accounts.failure });
       return { ...base, accounts: [], error: accounts.failure.detail };
@@ -124,12 +135,20 @@ export const make = Effect.gen(function* () {
         ),
       );
       const config = settings.usageLimitSources[input.sourceId];
-      if (!config?.enabled || !config.managementKey) {
+      if (!config?.enabled || config.managementKey === "") {
         return yield* new UsageLimitSourceError({
           detail: "The usage limit source is missing or disabled.",
         });
       }
-      const result = yield* api.consume(config, input.accountId, input.creditId);
+      const key = yield* SecretResolver.requireSettingsSecret(
+        secretResolver,
+        config.managementKey,
+      ).pipe(Effect.mapError((error) => new UsageLimitSourceError({ detail: error.message })));
+      const result = yield* api.consume(
+        { ...config, managementKey: key },
+        input.accountId,
+        input.creditId,
+      );
       const snapshot = yield* readSource(input.sourceId, config);
       const previous = yield* Ref.get(stateRef);
       yield* publish(previous.map((source) => (source.id === input.sourceId ? snapshot : source)));
@@ -182,4 +201,6 @@ export const make = Effect.gen(function* () {
   } satisfies UsageLimitSources["Service"];
 });
 
-export const layer = Layer.effect(UsageLimitSources, make);
+export const layer = Layer.effect(UsageLimitSources, make).pipe(
+  Layer.provide(SecretResolver.layer),
+);

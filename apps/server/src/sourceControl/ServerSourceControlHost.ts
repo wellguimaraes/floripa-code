@@ -8,6 +8,7 @@ import * as SourceControlHost from "@t3tools/source-control-core/server/SourceCo
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
+import * as SecretResolver from "../secrets/SecretResolver.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
@@ -17,11 +18,19 @@ export const layer = Layer.effect(
   SourceControlHost.SourceControlHost,
   Effect.gen(function* () {
     const serverSettings = yield* ServerSettings.ServerSettingsService;
+    const secretResolver = yield* SecretResolver.SecretResolver;
     const process = yield* VcsProcess.VcsProcess;
     const git = yield* GitVcsDriver.GitVcsDriver;
     const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
     return SourceControlHost.SourceControlHost.of({
-      settings: { get: serverSettings.getSettings },
+      settings: {
+        get: serverSettings.getSettings,
+        getWithSecrets: serverSettings.getSettings.pipe(
+          Effect.flatMap((settings) =>
+            SecretResolver.resolveGitHubTokens(secretResolver, settings),
+          ),
+        ),
+      },
       process: { run: process.run },
       git: {
         execute: git.execute,
@@ -39,4 +48,7 @@ export const layer = Layer.effect(
       },
     });
   }),
+).pipe(
+  // Layers build once per graph, so every consumer of the resolver shares its read cache.
+  Layer.provide(SecretResolver.layer),
 );

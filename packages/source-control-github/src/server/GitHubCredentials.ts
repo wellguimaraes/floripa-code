@@ -11,6 +11,10 @@ import * as PlatformError from "effect/PlatformError";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
+import {
+  requireSettingsSecretLiteral,
+  type SettingsSecretUnresolvedError,
+} from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
@@ -78,7 +82,8 @@ export type GitHubCredentialUnavailableError =
   | GitHubCliMissingError
   | GitHubNotSignedInError
   | GitHubHostDisabledError
-  | GitHubCliFailedError;
+  | GitHubCliFailedError
+  | SettingsSecretUnresolvedError;
 
 /**
  * Where GitHub tokens come from. Callers ask per host and never see how the token was found,
@@ -185,9 +190,16 @@ export const make = Effect.gen(function* () {
 
   /** A token saved in Settings for the host, read fresh so a saved or removed one applies at once. */
   const savedToken = (host: string) =>
-    sourceControlHost.settings.get.pipe(
-      Effect.map((settings) => settings.github.tokens[host]?.trim() || null),
-      Effect.orElseSucceed(() => null),
+    sourceControlHost.settings.getWithSecrets.pipe(
+      Effect.map((settings) => ({
+        token: settings.github.tokens[host],
+        secretProviders: settings.secretProviders,
+      })),
+      Effect.orElseSucceed(() => ({ token: undefined, secretProviders: {} })),
+      Effect.flatMap(({ token, secretProviders }) =>
+        requireSettingsSecretLiteral(token, secretProviders),
+      ),
+      Effect.map((token) => token.trim() || null),
     );
 
   /** Cache key: the host plus its pinned account, so a changed pin misses the cache. */

@@ -35,7 +35,9 @@
  */
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import * as SchemaTransformation from "effect/SchemaTransformation";
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { SecretReference } from "./secretReference.ts";
 
 const PROVIDER_SLUG_MAX_CHARS = 64;
 /**
@@ -101,16 +103,48 @@ export const ProviderInstanceEnvironmentVariableName = TrimmedNonEmptyString.che
 export type ProviderInstanceEnvironmentVariableName =
   typeof ProviderInstanceEnvironmentVariableName.Type;
 
-export const ProviderInstanceEnvironmentVariable = Schema.Struct({
+const ProviderInstanceEnvironmentVariableValue = Schema.Struct({
+  name: ProviderInstanceEnvironmentVariableName,
+  value: Schema.Union([Schema.String, SecretReference]),
+  sensitive: Schema.Boolean,
+  valueRedacted: Schema.optionalKey(Schema.Boolean),
+});
+
+// A reference is encoded beside an empty value so older servers and clients still decode it.
+const StoredProviderInstanceEnvironmentVariable = Schema.Struct({
   name: ProviderInstanceEnvironmentVariableName,
   value: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   sensitive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   valueRedacted: Schema.optionalKey(Schema.Boolean),
+  secret: Schema.optionalKey(SecretReference),
 });
+
+// A stored secret reference is always sensitive, whatever the flag beside it says.
+export const ProviderInstanceEnvironmentVariable = StoredProviderInstanceEnvironmentVariable.pipe(
+  Schema.decodeTo(
+    Schema.toType(ProviderInstanceEnvironmentVariableValue),
+    SchemaTransformation.transform<
+      typeof ProviderInstanceEnvironmentVariableValue.Type,
+      typeof StoredProviderInstanceEnvironmentVariable.Type
+    >({
+      decode: ({ secret, ...variable }) =>
+        secret === undefined ? variable : { ...variable, value: secret, sensitive: true },
+      encode: ({ value, ...variable }) =>
+        typeof value === "string"
+          ? { ...variable, value }
+          : { ...variable, value: "", secret: value },
+    }),
+  ),
+);
 export type ProviderInstanceEnvironmentVariable = typeof ProviderInstanceEnvironmentVariable.Type;
 
 export const ProviderInstanceEnvironment = Schema.Array(ProviderInstanceEnvironmentVariable);
 export type ProviderInstanceEnvironment = typeof ProviderInstanceEnvironment.Type;
+
+/** What drivers receive: every secret reference has been read into a plain value. */
+export type ResolvedProviderInstanceEnvironment = ReadonlyArray<
+  Omit<ProviderInstanceEnvironmentVariable, "value"> & { readonly value: string }
+>;
 
 /**
  * Envelope shape for a provider instance configuration in `ServerSettings`.
