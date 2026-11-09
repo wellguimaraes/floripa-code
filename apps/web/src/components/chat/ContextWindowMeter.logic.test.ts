@@ -148,7 +148,7 @@ describe("shouldOfferResumeCompaction", () => {
     expect(
       shouldOfferResumeCompaction({
         provider: "claudeAgent",
-        usedTokens: 100_000,
+        usedTokens: 200_000,
         updatedAt: "2026-08-24T10:50:00.000Z",
         now,
       }),
@@ -159,7 +159,7 @@ describe("shouldOfferResumeCompaction", () => {
     expect(
       shouldOfferResumeCompaction({
         provider: "claudeAgent",
-        usedTokens: 99_999,
+        usedTokens: 199_999,
         updatedAt: "2026-08-24T10:00:00.000Z",
         now,
       }),
