@@ -1,8 +1,17 @@
 import type {
+  ModelSelection,
+  OrchestrationV2ModelSwitch,
   OrchestrationV2Run,
   OrchestrationV2TurnItem,
   ProviderInstanceId,
+  ServerProvider,
 } from "@t3tools/contracts";
+import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
+
+import {
+  formatModelSelectionEffort,
+  REASONING_EFFORT_OPTION_IDS,
+} from "./state/threadExecution.ts";
 
 /**
  * The subset of a projection run that handoff rows read. Kept minimal so the
@@ -61,4 +70,41 @@ function latestRunModelBefore(
     if (latest === undefined || run.ordinal > latest.ordinal) latest = run;
   }
   return latest?.modelSelection.model;
+}
+
+export interface ModelSwitchChange {
+  readonly modelChanged: boolean;
+  /** Effort labels, set only when the effort changed. */
+  readonly effort: { readonly from: string; readonly to: string } | null;
+}
+
+/**
+ * What a recorded model switch visibly changed, or null when it changed neither the model nor the
+ * effort. The composer omits an untouched effort, so an unset effort reads as the model's default.
+ */
+export function resolveModelSwitchChange(
+  { from, to }: OrchestrationV2ModelSwitch,
+  providers: ReadonlyArray<ServerProvider>,
+): ModelSwitchChange | null {
+  const fromEffort = resolveEffortLabel(from, providers);
+  const toEffort = resolveEffortLabel(to, providers);
+  const modelChanged = from.model !== to.model;
+  const effort =
+    fromEffort && toEffort && fromEffort !== toEffort ? { from: fromEffort, to: toEffort } : null;
+  return modelChanged || effort ? { modelChanged, effort } : null;
+}
+
+/** The composer's effort label for the model; stated values only when the catalog lacks it. */
+function resolveEffortLabel(
+  selection: ModelSelection,
+  providers: ReadonlyArray<ServerProvider>,
+): string | undefined {
+  const models = providers.find((provider) => provider.instanceId === selection.instanceId)?.models;
+  if (models?.some((candidate) => candidate.slug === selection.model)) {
+    return formatModelSelectionEffort(selection, models) ?? undefined;
+  }
+  // Pi states its effort as `thinking`.
+  return [...REASONING_EFFORT_OPTION_IDS, "thinking"]
+    .map((id) => getModelSelectionStringOptionValue(selection, id))
+    .find((candidate) => candidate !== undefined);
 }

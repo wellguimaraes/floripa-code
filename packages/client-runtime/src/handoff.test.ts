@@ -1,6 +1,10 @@
-import { ProviderInstanceId, RunId } from "@t3tools/contracts";
+import { ProviderInstanceId, RunId, type ServerProvider } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
-import { resolveHandoffEndpoints, type HandoffTimelineRun } from "./handoff.ts";
+import {
+  resolveHandoffEndpoints,
+  resolveModelSwitchChange,
+  type HandoffTimelineRun,
+} from "./handoff.ts";
 
 const from = ProviderInstanceId.make("codex_personal");
 const to = ProviderInstanceId.make("claudeAgent");
@@ -61,5 +65,81 @@ describe("handoff endpoints shared by web and mobile", () => {
     expect(
       resolveHandoffEndpoints(item, [run("target", 2, from, "wrong-model")]).to.model,
     ).toBeUndefined();
+  });
+});
+
+describe("model switch change", () => {
+  const selection = (model: string, options?: Record<string, string>) => ({
+    instanceId: from,
+    model,
+    ...(options === undefined
+      ? {}
+      : { options: Object.entries(options).map(([id, value]) => ({ id, value })) }),
+  });
+  const providers = [
+    {
+      instanceId: from,
+      models: ["gpt", "mini"].map((slug) => ({
+        slug,
+        capabilities: {
+          optionDescriptors: [
+            { id: "serviceTier", type: "select", options: [{ id: "fast", label: "Fast" }] },
+            {
+              id: "reasoningEffort",
+              type: "select",
+              options: [
+                { id: "medium", label: "Medium", isDefault: true },
+                { id: "high", label: "High" },
+              ],
+            },
+          ],
+        },
+      })),
+    },
+  ] as unknown as ServerProvider[];
+
+  it("shows only what changed, reading an unset effort as the default", () => {
+    expect(
+      resolveModelSwitchChange(
+        { from: selection("gpt"), to: selection("gpt", { reasoningEffort: "high" }) },
+        providers,
+      ),
+    ).toEqual({ modelChanged: false, effort: { from: "Medium", to: "High" } });
+    expect(
+      resolveModelSwitchChange({ from: selection("gpt"), to: selection("mini") }, providers),
+    ).toEqual({ modelChanged: true, effort: null });
+  });
+
+  it("ignores changes the user cannot see", () => {
+    expect(
+      resolveModelSwitchChange(
+        { from: selection("gpt"), to: selection("gpt", { reasoningEffort: "medium" }) },
+        providers,
+      ),
+    ).toBeNull();
+    expect(
+      resolveModelSwitchChange(
+        { from: selection("gpt"), to: selection("gpt", { serviceTier: "fast" }) },
+        providers,
+      ),
+    ).toBeNull();
+  });
+
+  it("falls back to stated efforts without a catalog", () => {
+    expect(
+      resolveModelSwitchChange(
+        {
+          from: selection("gpt", { reasoningEffort: "low" }),
+          to: selection("gpt", { reasoningEffort: "high" }),
+        },
+        [],
+      ),
+    ).toEqual({ modelChanged: false, effort: { from: "low", to: "high" } });
+    expect(
+      resolveModelSwitchChange(
+        { from: selection("gpt"), to: selection("gpt", { reasoningEffort: "high" }) },
+        [],
+      ),
+    ).toBeNull();
   });
 });
