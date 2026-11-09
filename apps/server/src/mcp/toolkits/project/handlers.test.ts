@@ -19,6 +19,7 @@ import * as Stream from "effect/Stream";
 import * as ThreadLaunch from "../../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as ServerConfig from "../../../config.ts";
+import * as ServerSettings from "../../../serverSettings.ts";
 import * as Project from "../../../project/ProjectService.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
 import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
@@ -76,6 +77,7 @@ it.effect("attributes a launched thread's first message to the calling thread", 
           } as unknown as ThreadLaunch.ThreadLaunchResult);
         },
       }),
+      ServerSettings.layerTest(),
       Layer.mock(Project.ProjectService)({}),
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/projects" }),
       Layer.mock(GitVcsDriver.GitVcsDriver)({}),
@@ -147,6 +149,7 @@ it.effect("launches a scratch thread into the Scratch project", () =>
           } as unknown as ThreadLaunch.ThreadLaunchResult);
         },
       }),
+      ServerSettings.layerTest(),
       Layer.mock(Project.ProjectService)({}),
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
         namedProjectsRoot: "/projects",
@@ -232,6 +235,7 @@ it.effect("starts a project from just a title when workspaceRoot is omitted", ()
         getThreadShell: () => Effect.succeed(caller),
       }),
       Layer.mock(ThreadLaunch.ThreadLaunchService)({}),
+      ServerSettings.layerTest(),
       Layer.mock(Project.ProjectService)({
         create: (input) =>
           Effect.sync(() => {
@@ -304,7 +308,10 @@ const clientLaunchHarness = (input: {
   readonly checkWorktreeBase?: ThreadLaunch.ThreadLaunchService["Service"]["checkWorktreeBase"];
 }) => {
   const projectId = ProjectId.make("project:client-target");
-  const modelSelection = { instanceId: ProviderInstanceId.make("claude"), model: "claude-opus" };
+  const modelSelection = {
+    instanceId: ProviderInstanceId.make("claudeAgent"),
+    model: "claude-opus",
+  };
   const layerDependencies = Layer.mergeAll(
     NodeCrypto.layer,
     Layer.succeed(McpInvocationContext.McpInvocationContext, {
@@ -337,6 +344,9 @@ const clientLaunchHarness = (input: {
           resumed: false,
         } as unknown as ThreadLaunch.ThreadLaunchResult);
       },
+    }),
+    ServerSettings.layerTest({
+      projectSettingsOverrides: { [projectId]: { defaultModelSelection: modelSelection } },
     }),
     Layer.mock(Project.ProjectService)({
       getById: (id) =>
