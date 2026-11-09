@@ -512,7 +512,12 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           .pipe(Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(ServerSettings))));
 
         yield* serverSettings.updateSettings({ usagePriceOverrides: { "example-model": prices } });
+        yield* serverSettings.updateSettings({
+          storageCleanup: { worktreeSettledAfterDays: 0, worktreeKeepWhen: "any-local-files" },
+        });
         const persisted = yield* readPersisted;
+        assert.equal(persisted.storageCleanup.worktreeSettledAfterDays, 0);
+        assert.equal(persisted.storageCleanup.worktreeKeepWhen, "any-local-files");
         assert.deepStrictEqual(persisted.usagePriceOverrides, { "example-model": prices });
 
         yield* serverSettings.updateSettings({ usagePriceOverrides: { "example-model": null } });

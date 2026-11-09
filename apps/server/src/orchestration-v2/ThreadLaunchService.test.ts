@@ -544,7 +544,6 @@ it.effect("enqueues provider work only after setup has been initiated", () =>
             scriptName: "Setup",
             scriptCommand: "vp install",
             terminalId: "setup",
-            scopeKey: "setup-scope",
             scopeKey: "/repo",
             cwd: "/repo",
           }),
@@ -2609,6 +2608,7 @@ it.effect.each(
                 scriptName: "Setup",
                 scriptCommand: "setup",
                 terminalId: "setup",
+                scopeKey: "setup-scope",
                 cwd: "/repo-worktrees/feature",
                 completion: Deferred.succeed(setupEntered, undefined).pipe(
                   Effect.andThen(Deferred.await(allowSetup)),

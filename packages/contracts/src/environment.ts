@@ -127,6 +127,7 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   storageCleanup: Schema.optionalKey(Schema.Boolean),
   storageCleanupRun: Schema.optionalKey(Schema.Boolean),
   projectWorktreeCleanup: Schema.optionalKey(Schema.Boolean),
+  settledWorktreeCleanup: Schema.optionalKey(Schema.Boolean),
   /** Server honors the `worktreesDirectory` setting. */
   worktreesDirectory: Schema.optionalKey(Schema.Boolean),
   /** Server persists the opt-in for continuing interrupted threads after restarts. */
