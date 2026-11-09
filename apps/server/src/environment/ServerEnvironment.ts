@@ -267,6 +267,7 @@ export const make = Effect.gen(function* () {
       freshContext: true,
       threadProjectFromScratch: true,
       threadTags: true,
+      projectOrganization: true,
     },
   };
 
