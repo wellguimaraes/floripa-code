@@ -48,7 +48,7 @@ describe("useThreadSearch", () => {
     };
 
     render("");
-    const typing = ["li", "lin", "link "].map(render);
+    const typing = ["lin", "lin ", "link "].map(render);
     expect(typing.map((result) => result.query)).toEqual(["", "", ""]);
     expect(new Set(typing.map((result) => result.matches)).size).toBe(1);
     expect(typing.every((result) => result.isPending)).toBe(true);

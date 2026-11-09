@@ -126,6 +126,7 @@ import {
   scopeProjectRef,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
+import { claimThreadOpen } from "@t3tools/client-runtime/state/thread-search";
 import {
   applyClaudePromptEffortPrefix,
   createModelSelection,
@@ -2546,6 +2547,32 @@ export default function ChatView(props: ChatViewProps) {
     },
     [openOrReuseProjectDraftThread],
   );
+
+  const recordedOpenRef = useRef<string | null>(null);
+  // Opening a thread is one visit that also counts toward search ranking. A
+  // palette pick already sent it with the query. It runs before the watermark
+  // effect, which then sees this watermark as sent.
+  useEffect(() => {
+    if (!serverThread?.id) return;
+    if (recordedOpenRef.current === routeThreadKey) return;
+    recordedOpenRef.current = routeThreadKey;
+    // Recorded here even when the server cannot take opens, so recents follow it.
+    const claimed = claimThreadOpen(serverThread.environmentId, serverThread.id, Date.now());
+    if (!claimed || serverThread.lastVisitedAt === undefined) return;
+    lastDispatchedVisitRef.current = `${routeThreadKey}:${serverThread.updatedAt}`;
+    lastVisitDispatchAtRef.current = Date.now();
+    void visitThreadMutation({
+      environmentId: serverThread.environmentId,
+      input: { threadId: serverThread.id, visitedAt: serverThread.updatedAt, opened: true },
+    });
+  }, [
+    routeThreadKey,
+    serverThread?.environmentId,
+    serverThread?.id,
+    serverThread?.lastVisitedAt,
+    serverThread?.updatedAt,
+    visitThreadMutation,
+  ]);
 
   useEffect(() => {
     if (!serverThread?.id) return;
