@@ -76,6 +76,7 @@ it.each([
       childThreadId: "child",
       origin,
       threadId: "parent",
+      runId: "run-1",
       nativeTaskRef: { driver, nativeId: "claude-task", strength: "strong" },
       driver,
       providerInstanceId: "codex",
@@ -855,3 +856,84 @@ it.each(["source", "target"])(
     }
   },
 );
+
+it("unfolds a Claude workflow into phases, opens members, and stops it through the subagent path", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const phases = ["Inspect", "Verify"].map((title, index) => ({ index, title }));
+  const agents = [
+    { index: 0, label: "Reader", state: "completed", phaseIndex: 0, childThreadId: "reader-chat" },
+    { index: 1, label: "Checker", state: "running", phaseIndex: 1, childThreadId: "checker-chat" },
+    { index: 2, label: "Loose", state: "completed" },
+  ];
+  state.projection = {
+    thread: { id: "parent", lineage: { relationshipToParent: null } },
+    runs: [],
+    providerThreads: [],
+    providerSessions: [],
+    contextTransfers: [],
+    subagents: [
+      {
+        id: "workflow",
+        threadId: "parent",
+        runId: "run-1",
+        origin: "provider_native",
+        driver: "claudeAgent",
+        providerInstanceId: "claude",
+        childThreadId: "workflow-chat",
+        nativeTaskRef: { driver: "claudeAgent", nativeId: "task-1", strength: "strong" },
+        title: "Checkout review",
+        status: "running",
+        startedAt: DateTime.makeUnsafe("2026-09-21T12:00:00Z"),
+        completedAt: null,
+        updatedAt: DateTime.makeUnsafe("2026-09-21T12:00:00Z"),
+        workflow: { name: "Checkout review", phases, agents },
+      },
+    ],
+  };
+  state.shells = ["workflow-chat", "reader-chat", "checker-chat"].map((id) => ({
+    environmentId: "test",
+    source: {
+      id,
+      title: id,
+      lineage: { parentThreadId: "parent", relationshipToParent: "subagent" },
+      status: "running",
+    },
+  }));
+  await act(async () => {
+    renderer = create(
+      <ThreadRelationshipsPanel
+        environmentId={EnvironmentId.make("test")}
+        threadId={ThreadId.make("parent")}
+      />,
+    );
+  });
+  const memberLabels = () =>
+    renderer.root
+      .findAll(
+        (node) => node.type === "button" && String(node.props["aria-label"]).startsWith("Open "),
+      )
+      .map((node) => String(node.props["aria-label"]));
+  expect(memberLabels()).toEqual([]);
+  await act(async () =>
+    renderer.root.findByProps({ "aria-label": "Expand Checkout review" }).props.onClick(),
+  );
+  // The running phase opens itself; the settled one stays closed.
+  expect(memberLabels()).toEqual(["Open Checker chat", "Open Loose chat"]);
+  await act(async () =>
+    renderer.root.findByProps({ "aria-label": "Expand Inspect phase, done" }).props.onClick(),
+  );
+  await act(async () =>
+    renderer.root.findByProps({ "aria-label": "Open Reader chat" }).props.onClick(),
+  );
+  expect(state.navigate).toHaveBeenLastCalledWith({
+    to: "/$environmentId/$threadId",
+    params: { environmentId: "test", threadId: "reader-chat" },
+  });
+  await act(async () =>
+    renderer.root.findByProps({ "aria-label": "Stop workflow Checkout review" }).props.onClick(),
+  );
+  expect(state.command).toHaveBeenCalledExactlyOnceWith({
+    environmentId: "test",
+    input: { threadId: "parent", subagentId: "workflow" },
+  });
+});
