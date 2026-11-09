@@ -150,13 +150,14 @@ export function webhookExpressionResolver(
 export function renderWebhookPrompt(
   template: string,
   request: WebhookRequest,
+  raw = false,
 ): RenderedWebhookPrompt {
   const missing: string[] = [];
   const resolve = webhookExpressionResolver(request);
 
   const prompt = template.replace(PLACEHOLDER, (_match, expression: string) => {
     const value = resolve(expression);
-    if (value === undefined || value === null) {
+    if (value === undefined || value === null || (raw && stringify(value) === "")) {
       if (!missing.includes(expression)) missing.push(expression);
       return "";
     }
