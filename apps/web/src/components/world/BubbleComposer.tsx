@@ -123,7 +123,7 @@ export function BubbleComposer(props: {
   /** Shown between the staged files and the status line. */
   readonly children?: ReactNode;
   /**
-   * Controls inside the text box, under the text, beside the attach, voice and send
+   * Controls under the text, in the same unframed field, beside the attach, voice and send
    * buttons, which move in with them: one box, like the chat composer.
    */
   readonly toolbar?: ReactNode;
@@ -657,13 +657,14 @@ export function BubbleComposer(props: {
               void attach(files);
             }}
           />
-          {props.toolbar !== undefined ? (
-            <div className="-mx-1 mt-1 flex items-center gap-1">
-              <div className="min-w-0 flex-1">{props.toolbar}</div>
-              {actions}
-            </div>
-          ) : null}
         </div>
+        {/* Outside the scrolling text box, so long text never scrolls it away. */}
+        {props.toolbar !== undefined ? (
+          <div className="-mr-1 ml-0.5 mt-1 flex items-center gap-1">
+            <div className="min-w-0 flex-1">{props.toolbar}</div>
+            {actions}
+          </div>
+        ) : null}
         {suggestions.open && menuPlacement !== null ? (
           // Floats over the bubble from the text field, inside the bubble so it moves with it
           // and clicks on it count as inside.
