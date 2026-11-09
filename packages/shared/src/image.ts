@@ -20,6 +20,18 @@ export const GENERIC_MIME_TYPES = new Set([
   "application/unknown",
 ]);
 
+/** SVG is previewable but never a provider image, so it stays a file attachment. */
+export function isSvgAttachment(attachment: {
+  readonly name: string;
+  readonly mimeType: string;
+}): boolean {
+  const mimeType = attachment.mimeType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+  return (
+    mimeType === "image/svg+xml" ||
+    ((mimeType === "" || GENERIC_MIME_TYPES.has(mimeType)) && /\.svg$/i.test(attachment.name))
+  );
+}
+
 /**
  * Recognizes pictures even when the picker omitted their MIME type. A picture chosen through
  * the document picker arrives typed as a plain file, so what it *is* has to come from its own
