@@ -11,6 +11,7 @@ import {
   type OpenXmlKind,
 } from "./officePreviewProtocol";
 const WordDocument = lazy(() => import("./office/WordDocument"));
+const Spreadsheet = lazy(() => import("./office/Spreadsheet"));
 async function readOfficeFile(src: string, signal: AbortSignal) {
   const response = await fetch(src, { signal });
   if (!response.ok) throw new Error("The file could not be loaded. Close it and try again.");
@@ -104,7 +105,7 @@ export default function OfficeViewer(props: {
       </div>
     );
   if (!prepared) return <FileSurfaceLoading />;
-  const Viewer = WordDocument;
+  const Viewer = props.kind === "docx" ? WordDocument : Spreadsheet;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {details ? (

@@ -160,6 +160,15 @@
   ],
   "packageOverrides": [
     {
+      "name": "@betteroffice/xlsx",
+      "version": "0.3.0",
+      "license": "Apache-2.0",
+      "sourceUrl": "https://github.com/openooxml/betteroffice",
+      "generatedNotice": {
+        "licenseId": "Apache-2.0"
+      }
+    },
+    {
       "name": "@betteroffice/docx",
       "version": "0.4.3",
       "license": "Apache-2.0",

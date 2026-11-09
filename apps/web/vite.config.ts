@@ -200,6 +200,8 @@ export default defineConfig(() => {
         "@betteroffice/docx/layout/render",
         "@betteroffice/docx/yrs",
         "@betteroffice/fonts",
+        "@betteroffice/xlsx",
+        "@betteroffice/xlsx/headless",
         "sql.js",
         "tiff",
         "@pierre/diffs/worker/worker.js",

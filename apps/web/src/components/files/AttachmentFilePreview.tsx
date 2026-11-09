@@ -313,7 +313,7 @@ export function AttachmentFilePreview(props: {
       kind={kind}
       onRetry={() => setRevision((value) => value + 1)}
     />
-  ) : kind === "docx" ? (
+  ) : kind === "docx" || kind === "xlsx" ? (
     <OfficeFilePreview key={revision} src={url} name={props.name} kind={kind} />
   ) : kind === "font" ? (
     <Suspense fallback={<FileSurfaceLoading />}>

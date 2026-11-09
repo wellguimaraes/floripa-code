@@ -109,6 +109,8 @@ describe("attachment preview classification", () => {
     ["report.docx", "application/octet-stream", "docx"],
     ["any-name", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx"],
     ["report.docx", "application/zip", "archive"],
+    ["budget.xlsx", "", "xlsx"],
+    ["any-name", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"],
     ["misleading.json", "application/pdf", "pdf"],
     ["misleading.pdf", "application/zip", "archive"],
   ])("classifies %s (%s) as %s", (name, mimeType, expected) => {
