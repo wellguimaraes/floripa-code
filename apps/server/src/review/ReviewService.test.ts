@@ -190,6 +190,44 @@ describe("ReviewService", () => {
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
+  it.effect("allows linked worktrees of an allowed repository wherever they live", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-workspace-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-base-" });
+      const projectRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-project-" });
+      yield* fs.makeDirectory(`${projectRoot}/.git/worktrees/feature`, { recursive: true });
+      // Made by hand beside the project, outside every allowed root.
+      const worktree = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-worktree-" });
+      const worktreeChild = `${worktree}/src`;
+      yield* fs.makeDirectory(worktreeChild);
+      const pointTo = (gitDir: string) =>
+        fs.writeFileString(`${worktree}/.git`, `gitdir: ${gitDir}\n`);
+
+      const review = (cwd: string, projectRoots: ReadonlyArray<string>) =>
+        Effect.gen(function* () {
+          const service = yield* ReviewService.ReviewService;
+          return yield* service.getDiffPreview({ cwd });
+        }).pipe(Effect.provide(layer({ workspaceRoot, baseDir, projectRoots })));
+
+      yield* pointTo(`${projectRoot}/.git/worktrees/feature`);
+      assert.strictEqual((yield* review(worktree, [projectRoot])).cwd, worktree);
+      assert.strictEqual((yield* review(worktreeChild, [projectRoot])).cwd, worktreeChild);
+      // Not a registered project's worktree.
+      assert.strictEqual(
+        (yield* review(worktree, []).pipe(Effect.flip))._tag,
+        "VcsRepositoryDetectionError",
+      );
+
+      // A pointer that is not a linked worktree's grants nothing.
+      yield* pointTo(`${projectRoot}/.git`);
+      assert.strictEqual(
+        (yield* review(worktree, [projectRoot]).pipe(Effect.flip))._tag,
+        "VcsRepositoryDetectionError",
+      );
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("allows diff preview cwd inside the configured workspace root", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

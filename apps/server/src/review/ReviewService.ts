@@ -69,6 +69,33 @@ export const make = Effect.gen(function* () {
     return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
   };
 
+  /**
+   * The repository folder (`<main>/.git/worktrees/<name>`) of the linked worktree holding
+   * `directory`, or null when it is in none. Reads the `.git` pointer file instead of running
+   * git, which must not run in a folder that has not been allowed yet.
+   */
+  const linkedWorktreeGitDir = Effect.fn("ReviewService.linkedWorktreeGitDir")(function* (
+    directory: string,
+  ) {
+    for (let folder = directory; ; folder = path.dirname(folder)) {
+      const gitPath = path.join(folder, ".git");
+      const stats = yield* fileSystem.stat(gitPath).pipe(Effect.orElseSucceed(() => null));
+      if (stats !== null) {
+        if (stats.type === "Directory") return null;
+        const pointer = yield* fileSystem
+          .readFileString(gitPath)
+          .pipe(Effect.orElseSucceed(() => ""));
+        const target = /^gitdir:\s*(.+)$/m.exec(pointer)?.[1]?.trim();
+        if (target === undefined || target === "") return null;
+        const gitDir = yield* canonicalizePath(path.resolve(folder, target)).pipe(
+          Effect.orElseSucceed(() => null),
+        );
+        return gitDir !== null && /[\\/]worktrees[\\/][^\\/]+$/.test(gitDir) ? gitDir : null;
+      }
+      if (path.dirname(folder) === folder) return null;
+    }
+  });
+
   const assertWorkspaceBoundCwd = Effect.fn("ReviewService.assertWorkspaceBoundCwd")(function* (
     operation: "ReviewService.getDiffPreview" | "ReviewService.getDiffFileContents",
     cwd: string,
@@ -92,10 +119,8 @@ export const make = Effect.gen(function* () {
       ),
     ]);
 
-    if (
-      isWithinRoot(candidate, workspaceRoot) ||
-      worktreesRoots.some((root) => isWithinRoot(candidate, root))
-    ) {
+    const fixedRoots = [workspaceRoot, ...worktreesRoots];
+    if (fixedRoots.some((root) => isWithinRoot(candidate, root))) {
       return;
     }
 
@@ -103,13 +128,19 @@ export const make = Effect.gen(function* () {
     // directory in packaged desktop builds, e.g. a repository on another
     // Windows drive. Unreadable or unresolvable project roots grant nothing.
     const projects = yield* projectStore.listShells().pipe(Effect.orElseSucceed(() => []));
-    for (const project of projects) {
-      const root = yield* canonicalizePath(project.workspaceRoot).pipe(
-        Effect.orElseSucceed(() => null),
-      );
-      if (root !== null && isWithinRoot(candidate, root)) {
-        return;
-      }
+    const projectRoots = (yield* Effect.forEach(projects, (project) =>
+      canonicalizePath(project.workspaceRoot).pipe(Effect.orElseSucceed(() => null)),
+    )).filter((root): root is string => root !== null);
+    const allowedRoots = [...fixedRoots, ...projectRoots];
+    if (projectRoots.some((root) => isWithinRoot(candidate, root))) {
+      return;
+    }
+
+    // A linked worktree made anywhere else, such as by hand beside the project, belongs to
+    // the repository its `.git` file points into.
+    const gitDir = yield* linkedWorktreeGitDir(candidate);
+    if (gitDir !== null && allowedRoots.some((root) => isWithinRoot(gitDir, root))) {
+      return;
     }
 
     return yield* new VcsRepositoryDetectionError({
