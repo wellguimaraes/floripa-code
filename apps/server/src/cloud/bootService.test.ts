@@ -70,6 +70,14 @@ it("survives the kernel OOM-killing a greedy agent child", () => {
   expect(unit).toContain("OOMPolicy=continue");
 });
 
+it("protects the server unit from agents under CPU and memory pressure", () => {
+  const unit = BootService.renderBootServiceUnit(linuxPlan);
+  const service = unit.slice(unit.indexOf("[Service]"), unit.indexOf("[Install]"));
+  for (const line of ["CPUWeight=1000", "IOWeight=1000", "MemoryLow=1536M", "OOMScoreAdjust=100"]) {
+    expect(service.split("\n")).toContain(line);
+  }
+});
+
 const macRuntime = "/Users/theo/.t3/runtime/versions/1.2.3/t3";
 const macPlan = {
   program: [macRuntime, "__service-launcher"],

@@ -92,6 +92,14 @@ export interface AgentSystemdScope {
   readonly options: ReadonlyArray<string>;
 }
 
+const quoteShell = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`;
+
+/** An executable file for launchers that take a path, not a command line, such as Playwright. */
+export function agentScopeLauncherScript(launch: AgentScopeCommand): string {
+  const command = [launch.command, ...launch.args].map(quoteShell).join(" ");
+  return `#!/bin/sh\nexec ${command} "$@"\n`;
+}
+
 /**
  * Builds the Linux launch for an agent command. Every step `exec`s, so the
  * spawned PID, stdio, and signals all belong to the agent itself.

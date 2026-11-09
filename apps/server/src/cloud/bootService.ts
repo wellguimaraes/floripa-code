@@ -33,7 +33,7 @@ import {
 } from "./serviceProtocol.ts";
 
 const BOOT_SERVICE_NAME = "floripacode";
-const BOOT_SERVICE_UNIT_FILE = `${BOOT_SERVICE_NAME}.service`;
+export const BOOT_SERVICE_UNIT_FILE = `${BOOT_SERVICE_NAME}.service`;
 // `.service` suffix keeps the label distinct from the desktop app's bundle id
 // (com.floripacode), so launchd and TCC records never collide.
 const BOOT_SERVICE_LAUNCHD_LABEL = "com.floripacode.service";
@@ -119,6 +119,12 @@ export function renderBootServiceUnit(plan: BootServicePlan): string {
     // server responsive while agents saturate CPU or disk.
     "CPUWeight=1000",
     "IOWeight=1000",
+    // Reclaim takes the agents' unprotected pages first. The kernel caps this at the
+    // protection of user.slice and user@.service, which only root can grant.
+    "MemoryLow=1536M",
+    // A user manager's own score, the lowest it may set: below its other services (200) and agents (800).
+    // `t3 service protect` lowers it further through a drop-in.
+    "OOMScoreAdjust=100",
     // systemd-oomd only honors this when the cgroup it watches is owned by the
     // same user. Distros watch user-1000.slice, which root owns, so there it is
     // ignored. The agent scopes are what keep oomd off the server.
