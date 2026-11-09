@@ -1085,7 +1085,7 @@ function acpMcpFallbackInput(value: string | undefined): Record<string, unknown>
  * T3 tool inventory, so the separator match can stay loose.
  */
 const T3_MCP_TITLE_CALL =
-  /^(?:mcp[-_]{1,2})?floripa[-_ ]?code[-_.:/ ]{1,3}(?<tool>[A-Za-z0-9][A-Za-z0-9_.-]*)(?::.*)?$/i;
+  /^(?:@|mcp[-_]{1,2})?floripa[-_ ]?code[-_.:/ ]{1,3}(?<tool>[A-Za-z0-9][A-Za-z0-9_.-]*)(?::.*)?$/i;
 
 /**
  * Gemini CLI titles injected MCP calls "<tool> (<server> MCP Server)" and
@@ -1125,6 +1125,18 @@ export function extractMcpToolCallIdentity(
   const tool = typeof rawInput?.tool === "string" ? rawInput.tool.trim() : "";
   if (meta?.is_mcp_tool_call === true && server.length > 0 && tool.length > 0) {
     return { server, tool };
+  }
+  // Kiro names the server in `_meta.kiro.serverName` and the call in `rawInput.tool_id`
+  // ("<server>::<tool>"), with the tool's own input under `rawInput.arguments`.
+  const kiroServer = isRecord(meta?.kiro) ? meta.kiro.serverName : undefined;
+  const kiroToolId = typeof rawInput?.tool_id === "string" ? rawInput.tool_id.trim() : "";
+  if (
+    typeof kiroServer === "string" &&
+    kiroServer.length > 0 &&
+    kiroToolId.startsWith(`${kiroServer}::`) &&
+    kiroToolId.length > kiroServer.length + 2
+  ) {
+    return { server: kiroServer, tool: kiroToolId.slice(kiroServer.length + 2) };
   }
   // Agents without tagged rawInput identify their MCP calls through _meta
   // (goose, qwen, claude-acp) or only through the namespaced function name
