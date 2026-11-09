@@ -18,6 +18,7 @@ import type {
   ScheduledTask,
   ScheduledTaskId,
   ScheduledTaskSchedule,
+  ScheduledTaskThreadMode,
   ScheduledTaskUpsertInput,
   ScheduledTaskWebhookDeliverySummary,
   ThreadId,
@@ -136,6 +137,7 @@ const EMPTY_DRAFT: DraftState = {
   weekdays: new Set([1, 2, 3, 4, 5]),
   projectId: "",
   threadId: "",
+  threadMode: "new_thread",
   workspaceMode: "worktree",
   baseRef: "main",
   startFromOrigin: true,
@@ -281,6 +283,12 @@ function splitModelKey(value: string): ModelSelection | null {
     model: value.slice(index + 1),
   };
 }
+
+const THREAD_MODE_LABELS: Record<ScheduledTaskThreadMode, string> = {
+  new_thread: "New thread each run",
+  continue: "One thread, continuing the conversation",
+  fresh_session: "One thread, fresh session each run",
+};
 
 const ONCE_FORMATTER = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
@@ -927,6 +935,12 @@ function ScheduledTaskEditorDialog({
   const offersOnce =
     environment?.serverConfig?.environment.capabilities.oneTimeSchedules === true ||
     task?.schedule.type === "once";
+  // Older servers ignore thread modes, so the choice is offered only where it is saved.
+  const offersThreadModes =
+    environment?.serverConfig?.environment.capabilities.scheduledTaskThreadModes === true;
+  const offersFreshSession =
+    environment?.serverConfig?.environment.capabilities.scheduledTaskFreshSession === true ||
+    draft.threadMode === "fresh_session";
   const connected =
     environment?.connection.phase === "connected" && environment.serverConfig !== null;
   const tasksQuery = useEnvironmentQuery(
@@ -1083,6 +1097,7 @@ function ScheduledTaskEditorDialog({
       schedule,
       projectId: selectedProjectId as ProjectId,
       threadId: draft.threadId ? (draft.threadId as ThreadId) : null,
+      ...(offersThreadModes ? { threadMode: draft.threadMode } : {}),
       workspaceStrategy,
       modelSelection,
       runtimeMode: draft.runtimeMode,
@@ -1230,6 +1245,33 @@ function ScheduledTaskEditorDialog({
                 </Select>
               </Field>
             </div>
+
+            {offersThreadModes ? (
+              <Field label="Destination" htmlFor="scheduled-task-destination">
+                <Select
+                  value={draft.threadMode}
+                  onValueChange={(value) =>
+                    setDraft((current) => ({
+                      ...current,
+                      threadMode: value as ScheduledTaskThreadMode,
+                    }))
+                  }
+                >
+                  <SelectTrigger size="sm" id="scheduled-task-destination">
+                    <SelectValue>{THREAD_MODE_LABELS[draft.threadMode]}</SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup>
+                    {(Object.keys(THREAD_MODE_LABELS) as ScheduledTaskThreadMode[])
+                      .filter((mode) => mode !== "fresh_session" || offersFreshSession)
+                      .map((mode) => (
+                        <SelectItem key={mode} value={mode}>
+                          {THREAD_MODE_LABELS[mode]}
+                        </SelectItem>
+                      ))}
+                  </SelectPopup>
+                </Select>
+              </Field>
+            ) : null}
 
             {draft.workspaceMode === "worktree" ? (
               <Field label="Base branch" htmlFor="scheduled-task-base-ref">

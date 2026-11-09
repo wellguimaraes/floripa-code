@@ -1,3 +1,4 @@
+import { freshSessionSupported } from "../scheduledTasks/freshSession.ts";
 import {
   EnvironmentId,
   ORCHESTRATION_PROTOCOL_VERSION,
@@ -257,6 +258,8 @@ export const make = Effect.gen(function* () {
       environmentIcon: true,
       projectCloneTracking: true,
       oneTimeSchedules: true,
+      scheduledTaskThreadModes: true,
+      scheduledTaskFreshSession: freshSessionSupported,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
       ...(serverInstallation === null ? {} : { serverInstallation }),
       // V2 restart recovery uses the environment-owned opt-in. The old

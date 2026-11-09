@@ -161,3 +161,120 @@ it.effect("runs a one-time schedule once and rejects past times", () =>
     }).pipe(Effect.provide(ScheduledTaskService.layer.pipe(Layer.provide(layerDependencies))));
   }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
+
+const threadModeInput = {
+  title: "One thread",
+  prompt: "Review the open pull requests.",
+  enabled: true,
+  schedule: { type: "interval", everyMs: 60_000 },
+  projectId: "project-thread-mode",
+  workspaceStrategy: { type: "root" },
+  modelSelection: { instanceId: "codex", model: "gpt-5.4" },
+  runtimeMode: "full-access",
+  interactionMode: "default",
+} as const;
+
+const threadModeHarness = Effect.gen(function* () {
+  const launched: string[] = [];
+  const sent: string[] = [];
+  let deleted = false;
+  const layerDependencies = Layer.mergeAll(
+    NodeCrypto.layer,
+    Scheduler.layer,
+    Layer.mock(ThreadLaunchService.ThreadLaunchService)({
+      launch: (input) =>
+        Effect.sync(() => {
+          launched.push(input.commandId);
+          return { threadId: "thread-first" } as never;
+        }),
+    }),
+    Layer.mock(ThreadManagementService.ThreadManagementService)({
+      sendToThread: (input) =>
+        Effect.sync(() => {
+          sent.push(input.threadId);
+          return {} as never;
+        }),
+      getThreadShell: () => Effect.succeed(deleted ? null : ({ deletedAt: null } as never)),
+    }),
+    Layer.mock(SecretRequests.SecretRequests)({}),
+  );
+  return {
+    launched,
+    sent,
+    deleteThread: () => {
+      deleted = true;
+    },
+    layer: ScheduledTaskService.layer.pipe(Layer.provide(layerDependencies)),
+  };
+});
+
+it.effect("a one-thread task starts its thread on the first run and posts later runs there", () =>
+  Effect.gen(function* () {
+    const harness = yield* threadModeHarness;
+    yield* Effect.gen(function* () {
+      const service = yield* ScheduledTaskService.ScheduledTaskService;
+      const { task } = yield* service.upsert(
+        yield* decodeUpsertInput({ ...threadModeInput, threadMode: "continue" }),
+      );
+      expect(task.threadId).toBeNull();
+      yield* service.runNow({ id: task.id });
+      expect((yield* service.list()).tasks[0]?.threadId).toBe("thread-first");
+      yield* service.runNow({ id: task.id });
+      expect(harness.launched).toHaveLength(1);
+      expect(harness.sent).toEqual(["thread-first"]);
+
+      // Moving the task to another project leaves the old thread behind.
+      const moved = yield* service.upsert(
+        yield* decodeUpsertInput({
+          ...threadModeInput,
+          id: task.id,
+          projectId: "project-elsewhere",
+          threadId: "thread-first",
+          requireExisting: true,
+        }),
+      );
+      expect(moved.task.threadId).toBeNull();
+      expect(moved.task.threadMode).toBe("continue");
+    }).pipe(Effect.provide(harness.layer));
+  }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
+);
+
+it.effect("a new-thread task never binds, and a thread deleted mid-run is unbound again", () =>
+  Effect.gen(function* () {
+    const harness = yield* threadModeHarness;
+    yield* Effect.gen(function* () {
+      const service = yield* ScheduledTaskService.ScheduledTaskService;
+      const fresh = yield* service.upsert(
+        yield* decodeUpsertInput({ ...threadModeInput, commandId: "new-thread-task" }),
+      );
+      yield* service.runNow({ id: fresh.task.id });
+      expect((yield* service.list()).tasks[0]?.threadId).toBeNull();
+      expect(fresh.task.threadMode).toBe("new_thread");
+
+      const bound = yield* service.upsert(
+        yield* decodeUpsertInput({
+          ...threadModeInput,
+          commandId: "continue-task",
+          threadMode: "continue",
+        }),
+      );
+      harness.deleteThread();
+      yield* service.runNow({ id: bound.task.id });
+      const stored = (yield* service.list()).tasks.find((task) => task.id === bound.task.id);
+      expect(stored?.threadId).toBeNull();
+    }).pipe(Effect.provide(harness.layer));
+  }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
+);
+
+it.effect("refuses fresh-session tasks until the thread service can start fresh sessions", () =>
+  Effect.gen(function* () {
+    const harness = yield* threadModeHarness;
+    yield* Effect.gen(function* () {
+      const service = yield* ScheduledTaskService.ScheduledTaskService;
+      const refused = yield* service
+        .upsert(yield* decodeUpsertInput({ ...threadModeInput, threadMode: "fresh_session" }))
+        .pipe(Effect.flip);
+      expect(refused.message).toBe("This server cannot start each run in a fresh session yet.");
+    }).pipe(Effect.provide(harness.layer));
+  }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
+);

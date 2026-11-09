@@ -69,6 +69,14 @@ environment's time zone, which may differ from your phone's. Choose **Once**
 to run a task a single time at a date and time in your own time zone. If the
 environment is offline then, the task runs when it is back.
 
+Under **Destination**, choose where runs go. **New thread each run** keeps every
+run separate. **One thread, continuing the conversation** starts a thread on the
+first run and posts later runs there, in the same conversation. Moving such a task
+to another project starts a new thread there on its next run. Deleting a thread
+that a task posts into leaves the task starting a new thread on its next run.
+**One thread, fresh session each run** is offered once the server can start
+each run without the earlier runs' context.
+
 You can edit, pause, resume, run immediately, or delete a task from the list.
 Webhook tasks only run when their URL is called, so they can't be run
 immediately.
