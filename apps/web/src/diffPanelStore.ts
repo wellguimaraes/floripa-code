@@ -22,6 +22,7 @@ export type DiffPanelSelection =
   | ({ kind: "tool-call" } & ToolCallDiffTarget)
   | { kind: "branch"; baseRef: string | null }
   | { kind: "unstaged" }
+  | { kind: "commit"; sha: string; baseRef: string | null }
   | { kind: "turn"; turnId: RunId; filePath: string | null; revealRequestId: number };
 
 // "branch" is the Changes view: everything this checkout changed since its base.
@@ -33,6 +34,7 @@ interface DiffPanelStoreState {
   selectGitScope: (ref: ScopedThreadRef, scope: "branch" | "unstaged") => void;
   selectBranchBaseRef: (ref: ScopedThreadRef, baseRef: string | null) => void;
   selectToolCall: (ref: ScopedThreadRef, target: ToolCallDiffTarget) => void;
+  selectCommit: (ref: ScopedThreadRef, sha: string) => void;
   selectTurn: (ref: ScopedThreadRef, turnId: RunId, filePath?: string) => void;
   reconcileTurnSelection: (ref: ScopedThreadRef, availableTurnIds: ReadonlyArray<RunId>) => void;
   removeThread: (ref: ScopedThreadRef) => void;
@@ -41,6 +43,17 @@ interface DiffPanelStoreState {
 function normalizeBaseRef(baseRef: string | null): string | null {
   const normalized = baseRef?.trim();
   return normalized ? normalized : null;
+}
+
+// A commit view keeps the Changes base ref, so leaving it returns to the same comparison.
+function branchBaseRef(
+  state: Pick<DiffPanelStoreState, "byThreadKey" | "branchBaseRefByThreadKey">,
+  threadKey: string,
+): string | null {
+  const previous = state.byThreadKey[threadKey];
+  return previous?.kind === "branch" || previous?.kind === "commit"
+    ? previous.baseRef
+    : (state.branchBaseRefByThreadKey[threadKey] ?? null);
 }
 
 export const useDiffPanelStore = create<DiffPanelStoreState>()(
@@ -52,10 +65,7 @@ export const useDiffPanelStore = create<DiffPanelStoreState>()(
         set((state) => {
           const threadKey = scopedThreadKey(ref);
           const previous = state.byThreadKey[threadKey];
-          const previousBaseRef =
-            previous?.kind === "branch"
-              ? previous.baseRef
-              : (state.branchBaseRefByThreadKey[threadKey] ?? null);
+          const previousBaseRef = branchBaseRef(state, threadKey);
           return {
             byThreadKey: {
               ...state.byThreadKey,
@@ -65,7 +75,7 @@ export const useDiffPanelStore = create<DiffPanelStoreState>()(
                   : { kind: "unstaged" },
             },
             branchBaseRefByThreadKey:
-              previous?.kind === "branch"
+              previous?.kind === "branch" || previous?.kind === "commit"
                 ? { ...state.branchBaseRefByThreadKey, [threadKey]: previous.baseRef }
                 : state.branchBaseRefByThreadKey,
           };
@@ -92,6 +102,15 @@ export const useDiffPanelStore = create<DiffPanelStoreState>()(
             [scopedThreadKey(ref)]: { kind: "tool-call", ...target },
           },
         })),
+      selectCommit: (ref, sha) =>
+        set((state) => {
+          const threadKey = scopedThreadKey(ref);
+          const baseRef = branchBaseRef(state, threadKey);
+          return {
+            byThreadKey: { ...state.byThreadKey, [threadKey]: { kind: "commit", sha, baseRef } },
+            branchBaseRefByThreadKey: { ...state.branchBaseRefByThreadKey, [threadKey]: baseRef },
+          };
+        }),
       selectTurn: (ref, turnId, filePath) =>
         set((state) => {
           const threadKey = scopedThreadKey(ref);
@@ -171,4 +190,11 @@ export function resolveToolCallDiffTarget(
   if (row?.item.type !== "file_change") return target;
   const revision = turnItemDetailRevision(row.item);
   return revision === target.revision ? target : { ...target, revision };
+}
+
+export function selectThreadBranchBaseRef(
+  state: Pick<DiffPanelStoreState, "byThreadKey" | "branchBaseRefByThreadKey">,
+  ref: ScopedThreadRef | null | undefined,
+): string | null {
+  return ref ? branchBaseRef(state, scopedThreadKey(ref)) : null;
 }
