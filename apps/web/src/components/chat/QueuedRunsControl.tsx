@@ -140,6 +140,7 @@ export function QueuedRunsControl({
     ...queued.map(({ run, text, attachments }, serverIndex) => ({
       key: run.id,
       runId: run.id,
+      freshContext: run.freshContext === true,
       messageId: run.userMessageId,
       serverIndex,
       text,
@@ -156,6 +157,7 @@ export function QueuedRunsControl({
     ...optimisticQueued.map((message) => ({
       key: message.id,
       runId: null,
+      freshContext: false,
       messageId: null,
       serverIndex: null,
       text: message.text,
@@ -197,6 +199,9 @@ export function QueuedRunsControl({
   // With an active turn a queued message steers it. With none, the message
   // should already be running, so the action sends it by resuming the queue.
   const canSendNow = workflow?.canSendQueuedNow === true;
+  // A fresh message starts its own session, so it can wait for a turn but never steer into it.
+  const canSendRun = (freshContext: boolean) =>
+    canSendNow || (workflow?.canPromoteToSteer === true && !freshContext);
   const steerInFlightRef = useRef(false);
   const steer = async (queuedRunId: RunId) => {
     if (steerInFlightRef.current) return;
@@ -219,7 +224,13 @@ export function QueuedRunsControl({
       }
       return;
     }
-    if (activeRun === null || !workflow?.canPromoteToSteer) return;
+    if (
+      activeRun === null ||
+      !workflow?.canPromoteToSteer ||
+      queued.some(({ run }) => run.id === queuedRunId && run.freshContext === true)
+    ) {
+      return;
+    }
     steerInFlightRef.current = true;
     setBusyRunId(queuedRunId);
     try {
@@ -236,7 +247,7 @@ export function QueuedRunsControl({
   useImperativeHandle(ref, () => ({
     steerNext(repeat) {
       const next = queued[0];
-      if (!next || !(canSendNow || workflow?.canPromoteToSteer)) return false;
+      if (!next || !canSendRun(next.run.freshContext === true)) return false;
       if (!repeat && busyRunId === null) void steer(next.run.id);
       return true;
     },
@@ -488,7 +499,7 @@ export function QueuedRunsControl({
                             disabled={
                               item.runId === null ||
                               busyRunId !== null ||
-                              !(canSendNow || workflow?.canPromoteToSteer)
+                              !canSendRun(item.freshContext)
                             }
                             onClick={() => {
                               if (item.runId !== null) {

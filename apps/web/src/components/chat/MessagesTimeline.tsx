@@ -128,6 +128,7 @@ import { T3Wordmark } from "../T3Wordmark";
 import { ThreadContextChip } from "../ThreadContextChip";
 import {
   BotIcon,
+  EraserIcon,
   BrainIcon,
   CheckIcon,
   ChevronDownIcon,
@@ -2969,6 +2970,9 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             "Sent by another agent"
           )}
         </p>
+      ) : null}
+      {row.message.freshContext ? (
+        <TimelineSystemDivider label="New session" icon={EraserIcon} />
       ) : null}
       {row.message.inputIntent && row.message.inputIntent !== "turn_start" ? (
         <UserMessageIntentMarker intent={row.message.inputIntent} />

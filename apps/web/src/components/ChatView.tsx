@@ -452,6 +452,14 @@ import {
 } from "../state/entities";
 import { environmentShell } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
+import { isClearComposerCommand } from "@t3tools/shared/composerTrigger";
+import { freshSessionBannerItem } from "./chat/ComposerFreshSession";
+import {
+  armFreshSession,
+  disarmFreshSession,
+  readFreshSessionArm,
+  useFreshSessionArmed,
+} from "./chat/freshSessionArms";
 import { createPageScrollController, type PageScrollKey } from "./chat/pageScrollController";
 import { isTimelineScrollTarget } from "./chat/timelineScrollTarget";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
@@ -7377,6 +7385,16 @@ export default function ChatView(props: ChatViewProps) {
     () => setKeepFullHistory(routeThreadKey, !keepFullHistory),
     [keepFullHistory, routeThreadKey, setKeepFullHistory],
   );
+  const freshSessionAvailable =
+    activeMessageCount > 0 && serverConfig?.environment.capabilities.freshContext === true;
+  // While a question or approval owns the composer, its text answers that, not the agent.
+  const freshSessionCommandAvailable =
+    freshSessionAvailable && activePendingApproval === null && pendingUserInputs.length === 0;
+  const freshSessionArmed = useFreshSessionArmed(routeThreadKey);
+  const armFreshSessionForThread = useCallback(
+    () => armFreshSession(routeThreadKey),
+    [routeThreadKey],
+  );
   const handleRestoreThreadBranch = useCallback(() => {
     if (!canWriteSourceControl) return;
     if (gitStatusQuery.data?.hasWorkingTreeChanges) {
@@ -7433,12 +7451,18 @@ export default function ChatView(props: ChatViewProps) {
     // The user asked for this one, so it leads the notice tier instead of trailing it.
     const usageLimitsItems = usageLimitsBanner === null ? [] : [usageLimitsBanner];
     const projectCloneItems = projectCloneBannerItem === null ? [] : [projectCloneBannerItem];
+    // An approval's feedback goes to that approval; the armed session waits for the next message.
+    const freshSessionItems =
+      freshSessionAvailable && freshSessionArmed && activePendingApproval === null
+        ? [freshSessionBannerItem(() => disarmFreshSession(routeThreadKey))]
+        : [];
     if (!localCheckoutBranchMismatch || !showBranchMismatchBanner || !activeBranchMismatchKey) {
       return [
         ...feedbackBannerItems,
         ...limitRecoveryItems,
         ...usageLimitsItems,
         ...projectCloneItems,
+        ...freshSessionItems,
         ...systemComposerBannerItems,
         ...backgroundWorkItems,
       ];
@@ -7448,6 +7472,7 @@ export default function ChatView(props: ChatViewProps) {
       ...limitRecoveryItems,
       ...usageLimitsItems,
       ...projectCloneItems,
+      ...freshSessionItems,
       ...systemComposerBannerItems,
       ...backgroundWorkItems,
       {
@@ -7507,6 +7532,10 @@ export default function ChatView(props: ChatViewProps) {
     showBranchMismatchBanner,
     systemComposerBannerItems,
     usageLimitsBanner,
+    freshSessionAvailable,
+    freshSessionArmed,
+    activePendingApproval,
+    routeThreadKey,
   ]);
 
   useEffect(() => {
@@ -8375,6 +8404,21 @@ export default function ChatView(props: ChatViewProps) {
       return;
     }
 
+    if (
+      freshSessionCommandAvailable &&
+      !directAnnotation &&
+      !composerHasNonPromptContent &&
+      isClearComposerCommand(promptRef.current)
+    ) {
+      armFreshSession(routeThreadKey);
+      promptRef.current = "";
+      setComposerDraftPrompt(composerDraftTarget, "");
+      composerRef.current?.resetCursorState();
+      return;
+    }
+    // Read once: an arm made while this send is in flight belongs to the next message.
+    const freshArm = freshSessionAvailable ? readFreshSessionArm(routeThreadKey) : undefined;
+
     const notifyDirectAnnotationAttached = () => {
       if (!directAnnotation) return;
       toastManager.add(
@@ -8886,12 +8930,18 @@ export default function ChatView(props: ChatViewProps) {
     // old history. The message queues behind the /compact run, since steering into it is
     // rejected. /compact, /clear and /new already shed the history, so they skip it.
     const compactBeforeSend =
+      freshArm === undefined &&
       resumeCompactionTokens !== null &&
       !keepFullHistory &&
       !skipsResumeCompaction(messageTextForSend);
-    const turnDispatchMode = compactBeforeSend ? "queue" : dispatchMode;
+    // A fresh session never joins the running turn, so it queues instead of steering.
+    const effectiveDispatchMode =
+      freshArm !== undefined && (dispatchMode === "steer" || dispatchMode === "restart")
+        ? "queue"
+        : dispatchMode;
+    const turnDispatchMode = compactBeforeSend ? "queue" : effectiveDispatchMode;
     const shouldQueueBehindActiveRun =
-      compactBeforeSend || (phase === "running" && dispatchMode === "queue");
+      compactBeforeSend || (phase === "running" && effectiveDispatchMode === "queue");
     const outgoingMessageText = formatOutgoingPrompt({
       provider: ctxSelectedProvider,
       model: ctxSelectedModel,
@@ -9568,6 +9618,7 @@ export default function ChatView(props: ChatViewProps) {
           runtimeMode,
           interactionMode: sendInteractionMode,
           dispatchMode: turnDispatchMode,
+          ...(freshArm === undefined ? {} : { freshContext: true }),
           ...(bootstrap ? { bootstrap } : {}),
           createdAt: messageCreatedAt,
         },
@@ -9602,6 +9653,7 @@ export default function ChatView(props: ChatViewProps) {
       } else {
         turnStartSucceeded = true;
         setKeepFullHistory(routeThreadKey, false);
+        if (freshArm !== undefined) disarmFreshSession(routeThreadKey, freshArm);
         // The turn is under way and will spend quota, so that thread's limits
         // snapshot is stale. Uploads may have outlasted a navigation, so only
         // the sending thread's panel clears.
@@ -11408,6 +11460,11 @@ export default function ChatView(props: ChatViewProps) {
                                 resumeCompactionTokens={resumeCompactionTokens}
                                 keepFullHistory={keepFullHistory}
                                 onToggleKeepFullHistory={toggleKeepFullHistory}
+                                onFreshSession={
+                                  freshSessionCommandAvailable
+                                    ? armFreshSessionForThread
+                                    : undefined
+                                }
                                 // With attachments or contexts aboard the pick just inserts the
                                 // text, so it sends as a prompt like the typed path would.
                                 onUsageLimitsCommand={
