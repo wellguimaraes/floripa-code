@@ -1068,7 +1068,9 @@ describe("deriveMessagesTimelineRows", () => {
     const rowsFor = (text: string) =>
       deriveMessagesTimelineRows({
         timelineEntries: deriveTimelineEntriesFromVisibleTurnItems({
-          visibleTurnItems: [{ ...liveUser, item: { ...liveUser.item, text } }],
+          visibleTurnItems: [
+            { ...liveUser, item: { ...liveUser.item, text } as typeof liveUser.item },
+          ],
           optimisticMessages: [],
         }),
         isWorking: true,
