@@ -41,6 +41,7 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { InlineButton } from "../ui/button";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
 
 // Picker value for the "Add project" row; real entries are keyed by logical
 // project key.
@@ -237,10 +238,19 @@ export function DraftHeroHeadline({
       const environmentSettings = environments.find(
         (environment) => environment.environmentId === project.environmentId,
       )?.serverConfig?.settings;
-      const defaultModelSelection = environmentSettings
+      const configuredDefaultModelSelection = environmentSettings
         ? resolveProjectSettings(environmentSettings, project.id, project).settings
             .defaultModelSelection
         : project.defaultModelSelection;
+      const defaultModelSelection = resolveNewThreadModelSelection({
+        defaultSelection: configuredDefaultModelSelection ?? null,
+        fallbackSelection: environmentSettings?.fallbackModelSelection ?? null,
+        providers:
+          environments.find((entry) => entry.environmentId === project.environmentId)?.serverConfig
+            ?.providers ?? [],
+        ...(environmentSettings ? { settings: environmentSettings } : {}),
+        now: Date.now(),
+      }).selection;
       if (defaultModelSelection) {
         setModelSelection(draftId, defaultModelSelection, {
           replaceOptions: true,
