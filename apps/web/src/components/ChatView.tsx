@@ -9756,6 +9756,19 @@ export default function ChatView(props: ChatViewProps) {
     [activeThreadId, environmentId, pendingApprovals, respondToThreadApproval, setThreadError],
   );
 
+  const canRespondToApprovals = readEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
+  const pendingApprovalRows = useMemo(
+    () =>
+      pendingApprovals.length === 0
+        ? undefined
+        : {
+            pending: new Map(pendingApprovals.map((approval) => [approval.requestId, approval])),
+            responding: respondingRequestIds,
+            canRespond: canRespondToApprovals,
+            onRespond: onRespondToApproval,
+          },
+    [canRespondToApprovals, onRespondToApproval, pendingApprovals, respondingRequestIds],
+  );
   const onRespondToUserInput = useCallback(
     async (requestId: RuntimeRequestId, answers: Record<string, unknown>) => {
       if (!activeThreadId || !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope))
@@ -11133,6 +11146,7 @@ export default function ChatView(props: ChatViewProps) {
                   routeThreadKey={displayedTimelineKey}
                   displayThreadKey={displayedTimelineKey}
                   onOpenToolDiff={paintOnlyDisplayedTimeline ? undefined : onOpenToolDiff}
+                  pendingApprovalRows={paintOnlyDisplayedTimeline ? undefined : pendingApprovalRows}
                   onOpenTurnDiff={paintOnlyDisplayedTimeline ? noopHeldTurnDiff : onOpenTurnDiff}
                   onOpenThread={onOpenRelatedThread}
                   parentThreadLink={paintOnlyDisplayedTimeline ? null : parentThreadLink}

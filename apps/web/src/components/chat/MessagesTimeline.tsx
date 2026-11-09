@@ -1,4 +1,17 @@
 import type { ToolCallDiffTarget } from "../../diffPanelStore";
+import type { PendingApproval as ThreadPendingApproval } from "../../session-logic";
+import type { ProviderApprovalDecision, RuntimeRequestId } from "@t3tools/contracts";
+import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
+
+export interface PendingApprovalRows {
+  readonly pending: ReadonlyMap<string, ThreadPendingApproval>;
+  readonly responding: ReadonlyArray<string>;
+  readonly canRespond: boolean;
+  readonly onRespond: (
+    requestId: RuntimeRequestId,
+    decision: ProviderApprovalDecision,
+  ) => Promise<unknown>;
+}
 import { ThreadFindTimelineContext } from "./ThreadFindProvider";
 import { shouldPreserveAssistantLineBreaks } from "@t3tools/shared/markdownPipeline";
 import { MarkdownFindContext, useFindRevealRef } from "./markdownFindContext";
@@ -356,6 +369,8 @@ interface TimelineRowSharedState {
   displayThreadKey?: string;
   onOpenTurnDiff: (runId: RunId, filePath?: string) => void;
   onOpenToolDiff: ((target: ToolCallDiffTarget) => void) | undefined;
+  /** Pending approvals by request id, so an approval row can answer where it sits. */
+  pendingApprovalRows: PendingApprovalRows | undefined;
   onOpenThread: (threadId: OrchestrationV2TurnItem["threadId"]) => void;
   /** Absent where a response can't be forked from, which hides the button. */
   onForkFromRun:
@@ -531,6 +546,7 @@ interface MessagesTimelineProps {
   displayThreadKey?: string;
   onOpenTurnDiff: (runId: RunId, filePath?: string) => void;
   onOpenToolDiff?: ((target: ToolCallDiffTarget) => void) | undefined;
+  pendingApprovalRows?: PendingApprovalRows | undefined;
   onOpenThread: (threadId: OrchestrationV2TurnItem["threadId"]) => void;
   parentThreadLink?: {
     readonly threadId: ThreadId;
@@ -648,6 +664,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   displayThreadKey,
   onOpenTurnDiff,
   onOpenToolDiff,
+  pendingApprovalRows,
   onOpenThread,
   parentThreadLink = null,
   onForkFromRun,
@@ -1334,6 +1351,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     onFileDownload,
     onOpenTurnDiff,
     onOpenToolDiff,
+    pendingApprovalRows,
     onOpenThread,
     onForkFromRun,
     onRollbackCheckpoint,
@@ -1722,6 +1740,7 @@ function useTimelineRowSharedState(
     onFileDownload,
     onOpenTurnDiff,
     onOpenToolDiff,
+    pendingApprovalRows,
     onOpenThread,
     onForkFromRun,
     onRollbackCheckpoint,
@@ -1765,6 +1784,7 @@ function useTimelineRowSharedState(
       openPullRequest,
       onOpenTurnDiff,
       onOpenToolDiff,
+      pendingApprovalRows,
       onOpenThread,
       onForkFromRun,
       onRollbackCheckpoint,
@@ -1805,6 +1825,7 @@ function useTimelineRowSharedState(
       openPullRequest,
       onOpenTurnDiff,
       onOpenToolDiff,
+      pendingApprovalRows,
       onOpenThread,
       onForkFromRun,
       onRollbackCheckpoint,
@@ -2008,6 +2029,7 @@ export function InlineTimelineRows({
     onAppFullscreenChange: NOOP_APP_FULLSCREEN,
     onFileDownload: NOOP_OPEN_ATTACHMENT,
     onOpenToolDiff: undefined,
+    pendingApprovalRows: undefined,
     onOpenTurnDiff,
     onOpenThread,
     onForkFromRun: undefined,
@@ -6312,6 +6334,11 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
     showWarningIndicator || showDestructiveRowStyle
       ? undefined
       : (workEntry.toolIcon ?? workEntry.toolSource?.icon);
+  const approvalItem = workEntry.projectedItem?.item;
+  const pendingApproval =
+    approvalItem?.type === "approval_request"
+      ? ctx.pendingApprovalRows?.pending.get(approvalItem.requestId)
+      : undefined;
   const isReasoning = workEntry.itemType === "reasoning";
   // The question is the row's identity: a generic "User input submitted"
   // label buries what was asked, so lead with the question text (even over a
@@ -6529,6 +6556,27 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
           !showDestructiveRowStyle &&
           !toolIconAcceptsTint(entryIconName, entryToolIcon) ? (
             <XIcon aria-hidden className={cn("size-3 shrink-0", failedToolIconClassName)} />
+          ) : null}
+          {pendingApproval ? (
+            // Stops the row toggle: the buttons answer the request, they do not expand the row.
+            <span
+              className="flex shrink-0 items-center gap-1.5"
+              onClick={stopRowToggle}
+              onKeyDown={stopRowToggle}
+            >
+              <ComposerPendingApprovalActions
+                requestId={pendingApproval.requestId}
+                isResponding={
+                  ctx.pendingApprovalRows?.responding.includes(pendingApproval.requestId) ?? false
+                }
+                canRespond={
+                  (ctx.pendingApprovalRows?.canRespond ?? false) &&
+                  pendingApproval.responseCapability === "live"
+                }
+                options={pendingApproval.options}
+                onRespondToApproval={ctx.pendingApprovalRows!.onRespond}
+              />
+            </span>
           ) : null}
           <TimelineRowTimestamp createdAt={workEntry.createdAt} timestampFormat={timestampFormat} />
           <span
