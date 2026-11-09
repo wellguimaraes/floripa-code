@@ -83,6 +83,7 @@ import {
 } from "./useScopedSettings";
 import { useScopedModelDisabledReason } from "./useScopedModelAvailability";
 import { useSettingsScope } from "./SettingsScopeContext";
+import { SnoozePresetsRow } from "./SnoozePresetsSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
@@ -612,6 +613,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.snoozeLimitedThreads !== DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads
         ? ["Snooze limited threads"]
         : []),
+      ...(!Equal.equals(settings.snoozePresets, DEFAULT_UNIFIED_SETTINGS.snoozePresets)
+        ? ["Snooze options"]
+        : []),
       ...(settings.hideTaggedThreads !== DEFAULT_UNIFIED_SETTINGS.hideTaggedThreads
         ? ["Hide tagged threads"]
         : []),
@@ -752,6 +756,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.sidebarAutoSettleOnMerge,
       settings.autoResumeLimitedThreads,
       settings.snoozeLimitedThreads,
+      settings.snoozePresets,
       settings.hideTaggedThreads,
       settings.hiddenThreadTags,
       settings.sidebarProjectGroupingMode,
@@ -861,6 +866,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
       autoResumeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads,
       snoozeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads,
+      snoozePresets: DEFAULT_UNIFIED_SETTINGS.snoozePresets,
       hideTaggedThreads: DEFAULT_UNIFIED_SETTINGS.hideTaggedThreads,
       hiddenThreadTags: DEFAULT_UNIFIED_SETTINGS.hiddenThreadTags,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
@@ -2454,6 +2460,7 @@ export function GeneralSettingsPanel() {
             />
           }
         />
+        <SnoozePresetsRow />
         <SettingsRow
           serverScoped
           {...searchableSetting("hide-tagged-threads")}
