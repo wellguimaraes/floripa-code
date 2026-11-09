@@ -275,7 +275,6 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
       control={
         fallbackSelection ? (
           <ProviderModelPicker
-            environmentId={representative?.environmentId ?? null}
             activeInstanceId={fallbackSelection.instanceId}
             model={fallbackSelection.model}
             lockedProvider={null}

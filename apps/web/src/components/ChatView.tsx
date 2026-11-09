@@ -72,6 +72,7 @@ import {
   type ProviderApprovalDecision,
   type PreviewAnnotationPayload,
   ProviderInstanceId,
+  resolveIdleCompaction,
   type ServerProvider,
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
@@ -7366,6 +7367,10 @@ export default function ChatView(props: ChatViewProps) {
   // multi-model sends never compact first, so the offer hides for them.
   const resumeCompactionTokens =
     activeContextWindow &&
+    resolveIdleCompaction(
+      settings,
+      activeProviderInstanceId ?? ProviderInstanceId.make("claudeAgent"),
+    ) !== "off" &&
     !resumeCompactionPermanentlyDismissed &&
     !nativeResumeCompactionDismissed &&
     !compactDisabled &&

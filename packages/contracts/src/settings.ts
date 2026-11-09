@@ -1401,7 +1401,28 @@ export const ServerSettings = Schema.Struct({
 });
 export type ServerSettings = typeof ServerSettings.Type;
 
-export const DEFAULT_SERVER_SETTINGS: ServerSettings = Schema.decodeSync(ServerSettings)({});
+type IdleCompactionSettings = Pick<ServerSettings, "compactIdleThreads" | "idleCompaction">;
+
+/** The environment-wide idle compaction mode, from whichever field the settings carry. */
+export const globalIdleCompaction = (settings: IdleCompactionSettings): IdleCompactionMode =>
+  settings.idleCompaction ??
+  (typeof settings.compactIdleThreads === "string"
+    ? settings.compactIdleThreads
+    : settings.compactIdleThreads
+      ? "beforeCacheExpires"
+      : "onReturn");
+
+/** Sets the mode, and the legacy switch shipped clients still read alongside it. */
+export const withIdleCompaction = <S extends IdleCompactionSettings>(
+  settings: S,
+  mode: IdleCompactionMode,
+): S => ({ ...settings, idleCompaction: mode, compactIdleThreads: mode === "beforeCacheExpires" });
+
+// The defaults carry `idleCompaction` too, which tells clients this server reads modes.
+export const DEFAULT_SERVER_SETTINGS: ServerSettings = withIdleCompaction(
+  Schema.decodeSync(ServerSettings)({}),
+  "onReturn",
+);
 
 /**
  * Read the legacy `enabled` flag embedded in a provider instance config
@@ -1464,23 +1485,6 @@ export const resolveProviderInstanceEnabled = (
 };
 
 const decodeClaudeSettings = Schema.decodeUnknownOption(ClaudeSettings);
-
-type IdleCompactionSettings = Pick<ServerSettings, "compactIdleThreads" | "idleCompaction">;
-
-/** The environment-wide idle compaction mode, from whichever field the settings carry. */
-export const globalIdleCompaction = (settings: IdleCompactionSettings): IdleCompactionMode =>
-  settings.idleCompaction ??
-  (typeof settings.compactIdleThreads === "string"
-    ? settings.compactIdleThreads
-    : settings.compactIdleThreads
-      ? "beforeCacheExpires"
-      : "onReturn");
-
-/** Sets the mode, and the legacy switch shipped clients still read alongside it. */
-export const withIdleCompaction = <S extends IdleCompactionSettings>(
-  settings: S,
-  mode: IdleCompactionMode,
-): S => ({ ...settings, idleCompaction: mode, compactIdleThreads: mode === "beforeCacheExpires" });
 
 /** Whether a server reads modes, rather than only the boolean switch from before them. */
 export const readsIdleCompactionModes = (settings: IdleCompactionSettings) =>

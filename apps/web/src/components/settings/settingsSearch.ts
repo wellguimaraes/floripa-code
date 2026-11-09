@@ -329,6 +329,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["usage quota rate limit reset wake recover continue"],
   },
   {
+    id: "compact-idle-threads",
+    title: "Compact idle threads",
+    to: "/settings/general",
+    scope: "environment-defaults",
+    searchTerms: ["claude context compaction idle cache tokens usage summary resume beta"],
+  },
+  {
     id: "auto-resume-limited-threads",
     title: "Auto-resume limited threads",
     to: "/settings/general",

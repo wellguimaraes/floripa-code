@@ -1,4 +1,5 @@
 import { SettingsGroup } from "./SettingsGroup";
+import { scopedIdleCompaction } from "./scopedSettings";
 import { useScopedSettingsWriteAllowed } from "./useScopedSettings";
 import { Spinner } from "~/components/ui/spinner";
 import { NotificationSettings } from "./NotificationSettings";
@@ -10,6 +11,8 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import {
   type BackgroundActivityProfile,
   type DesktopUpdateChannel,
+  globalIdleCompaction,
+  IDLE_COMPACTION_MODES,
   ProviderDriverKind,
   type ProviderInstanceId,
   type ScopedThreadRef,
@@ -606,6 +609,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.sidebarAutoSettleOnMerge !== DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge
         ? ["Auto-settle merged threads"]
         : []),
+      ...(globalIdleCompaction(settings) !== globalIdleCompaction(DEFAULT_UNIFIED_SETTINGS)
+        ? ["Compact idle threads"]
+        : []),
       ...(settings.autoResumeLimitedThreads !== DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads
         ? ["Auto-resume limited threads"]
         : []),
@@ -743,6 +749,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.askToContinueThreadsAfterRestart,
       settings.sidebarAutoSettleAfterDays,
       settings.sidebarAutoSettleOnMerge,
+      settings.compactIdleThreads,
+      settings.idleCompaction,
       settings.autoResumeLimitedThreads,
       settings.snoozeLimitedThreads,
       settings.sidebarProjectGroupingMode,
@@ -850,6 +858,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
+      idleCompaction: globalIdleCompaction(DEFAULT_UNIFIED_SETTINGS),
       autoResumeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads,
       snoozeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
@@ -2248,7 +2257,8 @@ export function GeneralSettingsPanel() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const navigate = useNavigate();
-  const { scope, environment, connectedEnvironments } = useSettingsScope();
+  const { scope, environment, connectedEnvironments, targets } = useSettingsScope();
+  const idleCompaction = scopedIdleCompaction(targets.length > 0 ? targets : [{ settings }]);
   // The representative environment supplies the provider list for pickers;
   // a fanned-out model choice is validated against every target before it
   // is written. Per-machine tuning (background activity overrides) still
@@ -2411,6 +2421,55 @@ export function GeneralSettingsPanel() {
           }
         />
 
+        <SettingsRow
+          serverScoped
+          settingKeys={["idleCompaction", "compactIdleThreads"]}
+          mixed={idleCompaction.mixed}
+          {...searchableSetting("compact-idle-threads")}
+          description="When to compact an idle Claude thread over 200,000 tokens: after you return, just before its prompt cache expires, or never. Each Claude provider can override this."
+          resetAction={
+            globalIdleCompaction(settings) !== globalIdleCompaction(DEFAULT_UNIFIED_SETTINGS) ? (
+              <SettingResetButton
+                label="compact idle threads"
+                onClick={() =>
+                  updateSettings({ idleCompaction: globalIdleCompaction(DEFAULT_UNIFIED_SETTINGS) })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={idleCompaction.mixed ? null : globalIdleCompaction(settings)}
+              onValueChange={(value) => {
+                const mode = IDLE_COMPACTION_MODES.find((candidate) => candidate.value === value);
+                if (mode) updateSettings({ idleCompaction: mode.value });
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Compact idle threads">
+                <SelectValue>
+                  {(value: string | null) =>
+                    value === null
+                      ? "Mixed"
+                      : IDLE_COMPACTION_MODES.find((mode) => mode.value === value)?.label
+                  }
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {IDLE_COMPACTION_MODES.map((mode) => (
+                  <SelectItem
+                    hideIndicator
+                    key={mode.value}
+                    value={mode.value}
+                    // A server from before modes has only the on/off switch, so it cannot store "Never".
+                    disabled={mode.value === "off" && !idleCompaction.neverAvailable}
+                  >
+                    {mode.label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          }
+        />
         <SettingsRow
           serverScoped
           {...searchableSetting("auto-resume-limited-threads")}
