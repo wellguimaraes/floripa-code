@@ -20,6 +20,7 @@ import { AudioPreview } from "./AudioPreview";
 import { BrowserDocumentFrame } from "./BrowserDocumentFrame";
 import { DelimitedTablePreview, LargeTextPreview } from "./DelimitedTablePreview";
 import { BinaryFilePreview } from "./BinaryFilePreview";
+import { OfficeFilePreview } from "./OfficeFilePreview";
 import { PreviewImage } from "./PreviewImage";
 import {
   FILE_SURFACE_SUBHEADER_CLASS,
@@ -312,6 +313,8 @@ export function AttachmentFilePreview(props: {
       kind={kind}
       onRetry={() => setRevision((value) => value + 1)}
     />
+  ) : kind === "docx" ? (
+    <OfficeFilePreview key={revision} src={url} name={props.name} kind={kind} />
   ) : kind === "font" ? (
     <Suspense fallback={<FileSurfaceLoading />}>
       <FontFilePreview src={url} name={props.name} />

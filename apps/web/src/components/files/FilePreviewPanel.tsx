@@ -15,6 +15,7 @@ import {
   binaryPreviewKind,
   isWorkspaceAudioPreviewPath,
   isWorkspaceFontPreviewPath,
+  officePreviewKind,
   isWorkspaceImagePreviewPath,
   isWorkspaceVideoPreviewPath,
 } from "@t3tools/shared/filePreview";
@@ -1098,10 +1099,11 @@ export default function FilePreviewPanel({
   const isAudio = relativePath !== null && !isVideo && isWorkspaceAudioPreviewPath(relativePath);
   const isImage = relativePath !== null && !isVideo && isWorkspaceImagePreviewPath(relativePath);
   const isMedia = isImage || isVideo || isAudio;
-  // Fonts, archives and databases render from their bytes, never from the text read.
+  // Fonts, archives, databases and Office documents render from their bytes, never from the text read.
   const isDocument =
     relativePath !== null &&
     (binaryPreviewKind({ name: relativePath }) !== null ||
+      officePreviewKind({ name: relativePath }) !== null ||
       isWorkspaceFontPreviewPath(relativePath));
   // PDFs have no text to show; HTML has, and can toggle between page and source.
   const isPdf = relativePath !== null && isPdfPreviewFile(relativePath);

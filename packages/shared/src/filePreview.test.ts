@@ -105,6 +105,10 @@ describe("attachment preview classification", () => {
     ["diagram.mmd", "", "mermaid"],
     ["face.woff2", "", "font"],
     ["scan.tiff", "", "image"],
+    ["report.DOCX", "", "docx"],
+    ["report.docx", "application/octet-stream", "docx"],
+    ["any-name", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx"],
+    ["report.docx", "application/zip", "archive"],
     ["misleading.json", "application/pdf", "pdf"],
     ["misleading.pdf", "application/zip", "archive"],
   ])("classifies %s (%s) as %s", (name, mimeType, expected) => {

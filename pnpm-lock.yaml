@@ -757,6 +757,18 @@ importers:
       '@base-ui/react':
         specifier: ^1.4.1
         version: 1.5.0(@date-fns/tz@1.5.0)(@types/react@19.3.0)(date-fns@4.4.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@betteroffice/docx':
+        specifier: 0.4.3
+        version: 0.4.3(@betteroffice/fonts@0.4.0)
+      '@betteroffice/fonts':
+        specifier: 0.4.0
+        version: 0.4.0
+      '@betteroffice/pptx':
+        specifier: 0.2.0
+        version: 0.2.0
+      '@betteroffice/xlsx':
+        specifier: 0.3.0
+        version: 0.3.0
       '@clerk/electron':
         specifier: 0.0.44
         version: 0.0.44(@clerk/electron-passkeys@0.0.3)(electron-store@8.2.0)(electron@44.4.5)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -935,6 +947,9 @@ importers:
         specifier: 'catalog:'
         version: 4.0.1
       remark-math:
+        specifier: 6.0.0
+        version: 6.0.0
+      saxes:
         specifier: 6.0.0
         version: 6.0.0
       sql.js:
@@ -2686,6 +2701,28 @@ packages:
     peerDependenciesMeta:
       '@types/react':
         optional: true
+
+  '@betteroffice/docx@0.4.3':
+    resolution: {integrity: sha512-CEErXJH3iCsi2a61gTNkAofLCzSTcktLmp710gGhMwbBfOqwQ2yI7dRFBV3ElGa9JxkS03IfejvLX0sAvlTrUQ==}
+    peerDependencies:
+      '@betteroffice/fonts': ^0
+    peerDependenciesMeta:
+      '@betteroffice/fonts':
+        optional: true
+
+  '@betteroffice/fonts@0.4.0':
+    resolution: {integrity: sha512-x1BVwYDAgY5R6TWI4t9NLguSiAEbH5GItN2ZlpBIFoRXTIJgjBsXd6sUxPGpexXOyY6KdhRjG8XvHjyAYxEGCw==}
+    peerDependencies:
+      '@betteroffice/fonts-cjk': ^0
+    peerDependenciesMeta:
+      '@betteroffice/fonts-cjk':
+        optional: true
+
+  '@betteroffice/pptx@0.2.0':
+    resolution: {integrity: sha512-pNPQ58tlA+pVibERbLdQNskvP7a0GIMf4jhkCU/gPp8043Ichf6gB3PSb4ra9sfqoIaWqOaZKCWyptovA2+Q0A==}
+
+  '@betteroffice/xlsx@0.3.0':
+    resolution: {integrity: sha512-K2bHtdk/epAxsmvxJlIWBRndjP3ltQU0Oh3p4gcZd2n5/YgXglo3SmMYX4nQe8WEm/yvz91p+aIasKyXXQP9Wg==}
 
   '@blazediff/core@1.10.0':
     resolution: {integrity: sha512-AOQff0zgR7cGsZL+4E7hVkmujoPUpm0J9xzWGWZj5wCjd3gmxESXAPfKyuzs93VdpQNFhHlBhfOjrcZ+XTERtQ==}
@@ -13519,6 +13556,16 @@ snapshots:
       use-sync-external-store: 1.6.0(react@19.2.6)
     optionalDependencies:
       '@types/react': 19.3.0
+
+  '@betteroffice/docx@0.4.3(@betteroffice/fonts@0.4.0)':
+    optionalDependencies:
+      '@betteroffice/fonts': 0.4.0
+
+  '@betteroffice/fonts@0.4.0': {}
+
+  '@betteroffice/pptx@0.2.0': {}
+
+  '@betteroffice/xlsx@0.3.0': {}
 
   '@blazediff/core@1.10.0': {}
 

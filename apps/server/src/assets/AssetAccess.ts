@@ -20,6 +20,7 @@ import {
 import {
   hostPreviewMimeTypeFromExtension,
   binaryPreviewKind,
+  officePreviewKind,
   isWorkspaceFontPreviewPath,
   isWorkspaceImagePreviewPath,
   isWorkspacePreviewEntryPath,
@@ -476,7 +477,8 @@ const finalizeWorkspaceFileAsset = Effect.fn("AssetAccess.finalizeWorkspaceFileA
       claims:
         isWorkspaceImagePreviewPath(resolved.relativePath) ||
         isWorkspaceFontPreviewPath(resolved.relativePath) ||
-        binaryPreviewKind({ name: resolved.relativePath }) !== null
+        binaryPreviewKind({ name: resolved.relativePath }) !== null ||
+        officePreviewKind({ name: resolved.relativePath }) !== null
           ? {
               version: 1 as const,
               kind: "workspace-file-exact" as const,
