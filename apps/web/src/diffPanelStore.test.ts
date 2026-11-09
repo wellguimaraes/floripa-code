@@ -1,8 +1,13 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { EnvironmentId, ThreadId, RunId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId, RunId, TurnItemId } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
-import { selectThreadDiffPanelSelection, useDiffPanelStore } from "./diffPanelStore";
+import {
+  resolveToolCallDiffTarget,
+  selectThreadDiffPanelSelection,
+  useDiffPanelStore,
+} from "./diffPanelStore";
 
 const THREAD_REF = scopeThreadRef(EnvironmentId.make("environment-1"), ThreadId.make("thread-1"));
 
@@ -13,6 +18,67 @@ describe("diffPanelStore", () => {
       branchBaseRefByThreadKey: {},
     }),
   );
+
+  it("keeps a tool call selection independent of checkpoints and allows returning to Git changes", () => {
+    const target = {
+      threadId: ThreadId.make("child"),
+      itemId: TurnItemId.make("edit"),
+      revision: "1",
+    };
+    const store = useDiffPanelStore.getState();
+    store.selectToolCall(THREAD_REF, target);
+    store.reconcileTurnSelection(THREAD_REF, [RunId.make("turn-1")]);
+    expect(
+      selectThreadDiffPanelSelection(useDiffPanelStore.getState().byThreadKey, THREAD_REF),
+    ).toEqual({ kind: "tool-call", ...target });
+    store.selectGitScope(THREAD_REF, "branch");
+    expect(
+      selectThreadDiffPanelSelection(useDiffPanelStore.getState().byThreadKey, THREAD_REF),
+    ).toEqual({ kind: "branch", baseRef: null });
+  });
+
+  it("refreshes a live tool-call target when its source item completes", () => {
+    const target = {
+      threadId: ThreadId.make("child"),
+      itemId: TurnItemId.make("edit"),
+      revision: "live",
+    };
+    const now = DateTime.makeUnsafe("2026-10-28T00:00:00Z");
+    const row = {
+      position: 0,
+      visibility: "local" as const,
+      sourceThreadId: target.threadId,
+      sourceItemId: target.itemId,
+      item: {
+        id: target.itemId,
+        threadId: target.threadId,
+        runId: null,
+        nodeId: null,
+        providerThreadId: null,
+        providerTurnId: null,
+        nativeItemRef: null,
+        parentItemId: null,
+        ordinal: 1,
+        status: "running" as const,
+        title: null,
+        startedAt: now,
+        completedAt: null,
+        updatedAt: now,
+        type: "file_change" as const,
+        fileName: "a.ts",
+      },
+    };
+    expect(resolveToolCallDiffTarget(target, [row])).toBe(target);
+    const completed = {
+      ...row,
+      item: { ...row.item, status: "completed" as const, completedAt: now },
+    };
+    expect(resolveToolCallDiffTarget(target, [completed])).toEqual({
+      ...target,
+      revision: DateTime.formatIso(now),
+    });
+    expect(resolveToolCallDiffTarget(target, [])).toBe(target);
+  });
 
   it("defaults each thread to Changes without requiring git status", () => {
     expect(

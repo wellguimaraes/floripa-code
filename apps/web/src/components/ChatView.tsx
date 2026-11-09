@@ -182,7 +182,7 @@ import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 import { isElectron } from "../env";
 import { readLocalApi } from "../localApi";
-import { useDiffPanelStore } from "../diffPanelStore";
+import { useDiffPanelStore, type ToolCallDiffTarget } from "../diffPanelStore";
 import { useActiveThreadRef } from "../hooks/useActiveThreadRef";
 import {
   type ComposerSubmissionIntent,
@@ -10525,6 +10525,16 @@ export default function ChatView(props: ChatViewProps) {
     },
     [activeThreadRef, diffOpen, isServerThread, onDiffPanelOpen],
   );
+  const onOpenToolDiff = useCallback(
+    (target: ToolCallDiffTarget) => {
+      if (!isServerThread || !activeThreadRef) return;
+      explicitDiffOpenRef.current = diffOpen ? null : activeThreadRef;
+      useDiffPanelStore.getState().selectToolCall(activeThreadRef, target);
+      useRightPanelStore.getState().open(activeThreadRef, "diff");
+      onDiffPanelOpen?.();
+    },
+    [activeThreadRef, diffOpen, isServerThread, onDiffPanelOpen],
+  );
   // The revert handler is read from a ref at call-time so the callback
   // reference is fully stable and never busts TimelineRowCtx identity.
   const onRevertToTurnCountRef = useRef(onRevertToTurnCount);
@@ -11122,6 +11132,7 @@ export default function ChatView(props: ChatViewProps) {
                   }
                   routeThreadKey={displayedTimelineKey}
                   displayThreadKey={displayedTimelineKey}
+                  onOpenToolDiff={paintOnlyDisplayedTimeline ? undefined : onOpenToolDiff}
                   onOpenTurnDiff={paintOnlyDisplayedTimeline ? noopHeldTurnDiff : onOpenTurnDiff}
                   onOpenThread={onOpenRelatedThread}
                   parentThreadLink={paintOnlyDisplayedTimeline ? null : parentThreadLink}

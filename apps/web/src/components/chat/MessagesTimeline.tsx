@@ -1,3 +1,4 @@
+import type { ToolCallDiffTarget } from "../../diffPanelStore";
 import { ThreadFindTimelineContext } from "./ThreadFindProvider";
 import { shouldPreserveAssistantLineBreaks } from "@t3tools/shared/markdownPipeline";
 import { MarkdownFindContext, useFindRevealRef } from "./markdownFindContext";
@@ -354,6 +355,7 @@ interface TimelineRowSharedState {
   onImageExpand: (preview: ExpandedImagePreview) => void;
   displayThreadKey?: string;
   onOpenTurnDiff: (runId: RunId, filePath?: string) => void;
+  onOpenToolDiff: ((target: ToolCallDiffTarget) => void) | undefined;
   onOpenThread: (threadId: OrchestrationV2TurnItem["threadId"]) => void;
   /** Absent where a response can't be forked from, which hides the button. */
   onForkFromRun:
@@ -528,6 +530,7 @@ interface MessagesTimelineProps {
   routeThreadKey: string;
   displayThreadKey?: string;
   onOpenTurnDiff: (runId: RunId, filePath?: string) => void;
+  onOpenToolDiff?: ((target: ToolCallDiffTarget) => void) | undefined;
   onOpenThread: (threadId: OrchestrationV2TurnItem["threadId"]) => void;
   parentThreadLink?: {
     readonly threadId: ThreadId;
@@ -644,6 +647,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   routeThreadKey,
   displayThreadKey,
   onOpenTurnDiff,
+  onOpenToolDiff,
   onOpenThread,
   parentThreadLink = null,
   onForkFromRun,
@@ -1329,6 +1333,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     onAppFullscreenChange,
     onFileDownload,
     onOpenTurnDiff,
+    onOpenToolDiff,
     onOpenThread,
     onForkFromRun,
     onRollbackCheckpoint,
@@ -1716,6 +1721,7 @@ function useTimelineRowSharedState(
     onAppFullscreenChange,
     onFileDownload,
     onOpenTurnDiff,
+    onOpenToolDiff,
     onOpenThread,
     onForkFromRun,
     onRollbackCheckpoint,
@@ -1758,6 +1764,7 @@ function useTimelineRowSharedState(
       onFileDownload,
       openPullRequest,
       onOpenTurnDiff,
+      onOpenToolDiff,
       onOpenThread,
       onForkFromRun,
       onRollbackCheckpoint,
@@ -1797,6 +1804,7 @@ function useTimelineRowSharedState(
       onFileDownload,
       openPullRequest,
       onOpenTurnDiff,
+      onOpenToolDiff,
       onOpenThread,
       onForkFromRun,
       onRollbackCheckpoint,
@@ -1999,6 +2007,7 @@ export function InlineTimelineRows({
     onSendAppMessage: undefined,
     onAppFullscreenChange: NOOP_APP_FULLSCREEN,
     onFileDownload: NOOP_OPEN_ATTACHMENT,
+    onOpenToolDiff: undefined,
     onOpenTurnDiff,
     onOpenThread,
     onForkFromRun: undefined,
@@ -3991,6 +4000,7 @@ function V2EventTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "event"
               workspaceRoot={ctx.workspaceRoot}
               onOpenThread={ctx.onOpenThread}
               onOpenTurnDiff={ctx.onOpenTurnDiff}
+              onOpenToolDiff={ctx.onOpenToolDiff}
               onRollbackCheckpoint={ctx.onRollbackCheckpoint}
               onImageExpand={ctx.onImageExpand}
             />
@@ -4066,6 +4076,7 @@ function V2EventTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "event"
               workspaceRoot={ctx.workspaceRoot}
               onOpenThread={ctx.onOpenThread}
               onOpenTurnDiff={ctx.onOpenTurnDiff}
+              onOpenToolDiff={ctx.onOpenToolDiff}
               onRollbackCheckpoint={ctx.onRollbackCheckpoint}
               onImageExpand={ctx.onImageExpand}
             />
@@ -6570,6 +6581,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
               workspaceRoot={workspaceRoot}
               onOpenThread={ctx.onOpenThread}
               onOpenTurnDiff={ctx.onOpenTurnDiff}
+              onOpenToolDiff={ctx.onOpenToolDiff}
               onRollbackCheckpoint={ctx.onRollbackCheckpoint}
               onImageExpand={ctx.onImageExpand}
             />
