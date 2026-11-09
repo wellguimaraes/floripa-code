@@ -76,6 +76,8 @@ import Migration0059 from "./Migrations/059_McpAppModelContext.ts";
 import Migration0060 from "./Migrations/060_ThreadSnapshotWindowIndexes.ts";
 import Migration0061 from "./Migrations/061_ThreadEmbeddings.ts";
 import Migration0062 from "./Migrations/062_ProjectionProjectsPinArchive.ts";
+import Migration0063 from "./Migrations/063_WebhookDedupe.ts";
+import Migration0064 from "./Migrations/064_ScheduledTaskThreadMode.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -152,6 +154,8 @@ export const migrationEntries = [
   [60, "ThreadSnapshotWindowIndexes", Migration0060],
   [61, "ThreadEmbeddings", Migration0061],
   [62, "ProjectionProjectsPinArchive", Migration0062],
+  [63, "WebhookDedupe", Migration0063],
+  [64, "ScheduledTaskThreadMode", Migration0064],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

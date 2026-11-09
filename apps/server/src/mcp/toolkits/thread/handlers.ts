@@ -90,9 +90,16 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
           code: "invalid_request",
           message: "The scheduled task was not found.",
         });
+      // The service's message says why a run was refused (a webhook task, a
+      // busy task, a deleted one), so it reaches the agent as written.
       const { task } = yield* scheduler
         .runNow({ id: input.taskId })
-        .pipe(Effect.mapError(unavailable));
+        .pipe(
+          Effect.mapError(
+            (error) =>
+              new OrchestratorMcpFailure({ code: "orchestration_error", message: error.message }),
+          ),
+        );
       return {
         taskId: task.id,
         threadId: task.threadId,
