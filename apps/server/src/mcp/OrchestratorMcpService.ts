@@ -20,6 +20,7 @@ import {
   type OrchestratorMcpDelegateTaskResult,
   type OrchestratorMcpInteractionMode,
   type OrchestratorMcpDeleteScheduledTaskInput,
+  SECRET_REQUEST_UNSAVED_NOTE,
   type OrchestratorMcpRequestSecretInput,
   type OrchestratorMcpRequestSecretResult,
   type OrchestratorMcpDeleteScheduledTaskResult,
@@ -1722,6 +1723,7 @@ const make = Effect.gen(function* () {
               label: input.label,
               reason: input.reason,
               ...(input.placeholder === undefined ? {} : { placeholder: input.placeholder }),
+              ...(input.delivery === "file" ? { delivery: "file" as const } : {}),
               secretStatus,
             })
             .pipe(
@@ -1803,7 +1805,13 @@ const make = Effect.gen(function* () {
               );
         yield* Effect.annotateCurrentSpan({ "secret_request.status": status });
         yield* Metrics.increment(Metrics.secretRequestsTotal, { status });
-        if (status !== "saved") return { status };
+        if (status !== "saved") return { status, note: SECRET_REQUEST_UNSAVED_NOTE[status] };
+        if (input.delivery === "file") {
+          const file = yield* secretRequests
+            .saveToFile({ threadId, turnItemId })
+            .pipe(Effect.mapError((error) => failure("orchestration_error", error.message)));
+          return { status, file };
+        }
         // Saved means the value was stored before the card said so; a missing
         // value is a storage fault, not an answer the agent can act on.
         const secretRef = yield* secretRequests.savedRef({ threadId: threadId, turnItemId });
