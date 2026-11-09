@@ -69,6 +69,12 @@ describe("media path parsing", () => {
     ["images/result.png%23secret.txt", null],
     ["images/result.png%3Fsecret.txt", null],
     ["/tmp/100%.png", "image"],
+    ["/tmp/tone.MP3", "audio"],
+    ["tone.m4a", "audio"],
+    ["https://example.com/tone%2Emp3?download=1", "audio"],
+    ["data:audio/wav;base64,AAAA", "audio"],
+    ["tone.webm", "video"],
+    ["report.pdf", null],
   ])("classifies the decoded pathname of %s", (source, kind) => {
     expect(mediaKindFromPath(source)).toBe(kind);
   });
