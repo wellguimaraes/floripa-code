@@ -508,6 +508,7 @@ import {
 import { useLinkedThreadPullRequest } from "./ThreadStatusIndicators";
 import type { ComposerBannerStackItem } from "./chat/ComposerBannerStack";
 import { ThreadStatusLine } from "./chat/ThreadStatusLine";
+import { ThreadNow, type ThreadNowItem } from "./chat/ThreadNow";
 import { formatRelativeTimeLabel, formatRelativeTimeUntilLabel } from "../timestampFormat";
 import { ComposerSurface } from "./chat/ComposerSurface";
 import { resolveThreadSyncPhase } from "../threadSync";
@@ -593,7 +594,6 @@ import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { Button, InlineButton } from "./ui/button";
 import { Kbd } from "./ui/kbd";
-import { Spinner } from "./ui/spinner";
 import {
   AlertDialog,
   AlertDialogClose,
@@ -6345,6 +6345,12 @@ export default function ChatView(props: ChatViewProps) {
     composerRef.current?.restoreAfterTimelineReachedEnd();
   }, [composerRef]);
 
+  // The list ignores footer layout, so a new status line there would land under the composer.
+  // Follow it when the reader was following the end.
+  const onTimelineFooterGrow = useCallback(() => {
+    if (timelineScrollModeRef.current === "following-end") scrollToEnd();
+  }, [scrollToEnd]);
+
   const onIsAtEndChange = useCallback((isAtEnd: boolean) => {
     if (
       !isAtEnd &&
@@ -7034,16 +7040,15 @@ export default function ChatView(props: ChatViewProps) {
     [environmentId, navigate],
   );
   const childThreadInputs = useChildThreadInputs(activeThreadRef);
-  const childInputBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
+  const childInputNowItem = useMemo<ThreadNowItem | null>(() => {
     const first = childThreadInputs[0];
     const parentAwaitingUser =
       activePendingApproval || activePendingUserInput || activeThreadShell?.hasPendingUserInput;
     if (!first || parentAwaitingUser) return null;
     return {
       id: `child-input:${first.id}`,
-      variant: "info",
-      priority: "activity",
-      icon: <MessageCircleIcon />,
+      // The only line at the end of the timeline that needs you gets the info color.
+      icon: <MessageCircleIcon className="text-info-foreground" />,
       title:
         childThreadInputs.length === 1
           ? "Subagent needs input"
@@ -7057,9 +7062,7 @@ export default function ChatView(props: ChatViewProps) {
         </Fragment>
       )),
       actions: (
-        <Button size="xs" variant="ghost" onClick={() => onOpenRelatedThread(first.id)}>
-          Open question
-        </Button>
+        <InlineButton onClick={() => onOpenRelatedThread(first.id)}>Open question</InlineButton>
       ),
     };
   }, [
@@ -7157,13 +7160,11 @@ export default function ChatView(props: ChatViewProps) {
   // A native /goal keeps the agent working across turns. Stop pauses a Codex
   // goal; once the thread is idle the row offers the native follow-ups.
   const activeGoal = activeThreadShell?.goal ?? null;
-  const goalBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
+  const goalNowItem = useMemo<ThreadNowItem | null>(() => {
     if (!activeThread || activeGoal === null) return null;
     const presentation = presentProviderGoal(activeGoal, isWorking);
     return {
       id: `goal:${activeThread.id}`,
-      variant: "default",
-      priority: "activity",
       icon: <TargetIcon />,
       // Usage stays in the title so a long objective cannot clip it.
       title:
@@ -7174,43 +7175,36 @@ export default function ChatView(props: ChatViewProps) {
       actions: isWorking ? undefined : (
         <>
           {presentation.canResume ? (
-            <Button
-              size="xs"
-              variant="ghost"
-              onClick={() => void sendStandaloneCommand("/goal resume", "Failed to resume goal.")}
-            >
-              Resume
-            </Button>
+            <>
+              <InlineButton
+                onClick={() => void sendStandaloneCommand("/goal resume", "Failed to resume goal.")}
+              >
+                Resume
+              </InlineButton>
+              <span aria-hidden>·</span>
+            </>
           ) : null}
-          <Button
-            size="xs"
-            variant="ghost"
+          <InlineButton
+            tone="muted"
             onClick={() => void sendStandaloneCommand("/goal clear", "Failed to clear goal.")}
           >
             Clear
-          </Button>
+          </InlineButton>
         </>
       ),
     };
   }, [activeGoal, activeThread, isWorking, sendStandaloneCommand]);
 
-  const backgroundWorkBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
+  const backgroundWorkNowItem = useMemo<ThreadNowItem | null>(() => {
     const presentation = presentPendingBackgroundWork(activeBackgroundTasks);
     if (presentation === null || !activeThread) {
       return null;
     }
     return {
       id: `background-work:${activeThread.id}`,
-      variant: "default",
-      priority: "activity",
-      icon: (
-        <span className="flex opacity-40" aria-hidden="true">
-          <Spinner size="xs" />
-        </span>
-      ),
+      // Static: a line that animates forever repaints every frame.
+      icon: <span className="size-1.5 rounded-full bg-muted-foreground" aria-hidden="true" />,
       title: presentation.title,
-      // A long task name truncates so Stop stays on its line.
-      actionsLayout: "inline",
       // A single named item is already in the title.
       description:
         presentation.items.length === 1 && presentation.items[0]?.childThreadId === undefined
@@ -7235,14 +7229,12 @@ export default function ChatView(props: ChatViewProps) {
               );
             }),
       actions: (
-        <Button
-          size="xs"
-          variant="ghost"
+        <InlineButton
           disabled={!canOperateThread || isStoppingBackgroundWork}
           onClick={() => void handleStopBackgroundWork()}
         >
           {isStoppingBackgroundWork ? "Stopping..." : "Stop"}
-        </Button>
+        </InlineButton>
       ),
     };
   }, [
@@ -7308,6 +7300,17 @@ export default function ChatView(props: ChatViewProps) {
     isUnsnoozing,
     nowMinute,
   ]);
+  // Thread state sits at the end of the timeline, above the settled/snoozed line.
+  // Memoized: it is the timeline's list footer, and a new element re-renders that footer.
+  const timelineFooter = useMemo(
+    () => (
+      <>
+        <ThreadNow attention={childInputNowItem} work={backgroundWorkNowItem} goal={goalNowItem} />
+        {threadStatusLine}
+      </>
+    ),
+    [backgroundWorkNowItem, childInputNowItem, goalNowItem, threadStatusLine],
+  );
   const activeThreadHasCompactableConversation = serverVisibleTurnItems.some(
     ({ item }) =>
       item.type === "user_message" &&
@@ -7425,11 +7428,6 @@ export default function ChatView(props: ChatViewProps) {
       : null;
   const composerBannerItems = useMemo<ComposerBannerStackItem[]>(() => {
     const limitRecoveryItems = limitRecoveryBanner === null ? [] : [limitRecoveryBanner];
-    const backgroundWorkItems = [
-      childInputBannerItem,
-      goalBannerItem,
-      backgroundWorkBannerItem,
-    ].filter((item) => item !== null);
     // The user asked for this one, so it leads the notice tier instead of trailing it.
     const usageLimitsItems = usageLimitsBanner === null ? [] : [usageLimitsBanner];
     const projectCloneItems = projectCloneBannerItem === null ? [] : [projectCloneBannerItem];
@@ -7440,7 +7438,6 @@ export default function ChatView(props: ChatViewProps) {
         ...usageLimitsItems,
         ...projectCloneItems,
         ...systemComposerBannerItems,
-        ...backgroundWorkItems,
       ];
     }
     return [
@@ -7449,7 +7446,6 @@ export default function ChatView(props: ChatViewProps) {
       ...usageLimitsItems,
       ...projectCloneItems,
       ...systemComposerBannerItems,
-      ...backgroundWorkItems,
       {
         id: `branch-mismatch:${activeBranchMismatchKey}`,
         variant: "info",
@@ -7499,9 +7495,6 @@ export default function ChatView(props: ChatViewProps) {
     limitRecoveryBanner,
     handleRestoreThreadBranch,
     isRestoringThreadBranch,
-    backgroundWorkBannerItem,
-    childInputBannerItem,
-    goalBannerItem,
     localCheckoutBranchMismatch,
     projectCloneBannerItem,
     showBranchMismatchBanner,
@@ -11110,7 +11103,7 @@ export default function ChatView(props: ChatViewProps) {
                   {...(draftId ? { onWorktreeSetupWorkLocally } : {})}
                   {...(onOpenWorktreeSetupTerminal ? { onOpenWorktreeSetupTerminal } : {})}
                   isPreparingWorktree={!paintOnlyDisplayedTimeline && isPreparingWorktree}
-                  footer={paintOnlyDisplayedTimeline ? null : threadStatusLine}
+                  footer={paintOnlyDisplayedTimeline ? null : timelineFooter}
                   listRef={legendListRef}
                   timelineEntries={displayedTimeline.entries}
                   providerStatuses={
@@ -11175,6 +11168,7 @@ export default function ChatView(props: ChatViewProps) {
                   onIsAtEndChange={onIsAtEndChange}
                   onContentOverflowChange={setTimelineOverflows}
                   onToolOutputCollapsedAtEnd={onToolOutputCollapsedAtEnd}
+                  onFooterGrow={onTimelineFooterGrow}
                   onManualNavigation={cancelTimelineLiveFollowForUserNavigation}
                   cancelPositionRestoreRef={cancelPositionRestoreRef}
                   hideEmptyPlaceholder={isDraftHeroState || threadDetailLoading}
