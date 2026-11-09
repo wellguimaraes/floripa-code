@@ -38,6 +38,12 @@ The controls retreat as the composer docks after you send the first message.
 Turn on **Composer context** to keep those controls visible after the thread starts. This preference
 applies to the web and desktop clients.
 
+## Math
+
+Turn on **Render math** in **Settings → Appearance** to typeset LaTeX in messages and Markdown
+previews on web and desktop. It reads `$…$` and `$$…$$` outside of code. Write `\$` to keep a dollar
+sign literal. The preference is saved separately on each device.
+
 ## Motion
 
 The main sidebar and right panel animate over 250 ms by default. Move the **Panel animations**

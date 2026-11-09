@@ -184,27 +184,27 @@ export const assetFileResponse = Effect.fn("assetFileResponse")(function* (
   let status = 200;
   let offset = 0n;
   let bytesToRead: bigint | undefined;
-  if (isMedia) {
-    headers["Accept-Ranges"] = "bytes";
-    // If-Range requires a matching validator. A full response is safe when we cannot validate it.
-    if (method === "GET" && rangeHeader && ifRangeHeader === undefined) {
-      const fs = yield* FileSystem.FileSystem;
-      const info = mediaInfo ?? (yield* fs.stat(asset.path));
-      const range = assetByteRange(rangeHeader, info.size);
-      if (range?._tag === "Unsatisfiable") {
-        return HttpServerResponse.empty({
-          status: 416,
-          headers: { ...headers, "Content-Range": `bytes */${info.size}` },
-        });
-      }
-      if (range?._tag === "Range") {
-        status = 206;
-        offset = range.offset;
-        bytesToRead = range.bytesToRead;
-        headers["Content-Range"] = range.contentRange;
-      }
+  // Every file honors byte ranges: large text previews page through the file by range.
+  headers["Accept-Ranges"] = "bytes";
+  // If-Range requires a matching validator. A full response is safe when we cannot validate it.
+  if (method === "GET" && rangeHeader && ifRangeHeader === undefined) {
+    const fs = yield* FileSystem.FileSystem;
+    const info = mediaInfo ?? (yield* fs.stat(asset.path));
+    const range = assetByteRange(rangeHeader, info.size);
+    if (range?._tag === "Unsatisfiable") {
+      return HttpServerResponse.empty({
+        status: 416,
+        headers: { ...headers, "Content-Range": `bytes */${info.size}` },
+      });
+    }
+    if (range?._tag === "Range") {
+      status = 206;
+      offset = range.offset;
+      bytesToRead = range.bytesToRead;
+      headers["Content-Range"] = range.contentRange;
     }
   }
+
   if (mediaFile && mediaInfo) {
     const size = bytesToRead ?? mediaInfo.size;
     headers["Content-Type"] ??= Option.getOrElse(

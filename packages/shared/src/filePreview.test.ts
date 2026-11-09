@@ -99,9 +99,14 @@ describe("attachment preview classification", () => {
     ["page.HTML", "", "html"],
     ["recording.mp3", "", "audio"],
     ["payload", "application/problem+json", "text"],
-    ["archive.zip", "application/zip", "unsupported"],
+    ["archive.zip", "application/zip", "archive"],
+    ["data.sqlite", "", "sqlite"],
+    ["data.db", "application/octet-stream", "sqlite"],
+    ["diagram.mmd", "", "mermaid"],
+    ["face.woff2", "", "font"],
+    ["scan.tiff", "", "image"],
     ["misleading.json", "application/pdf", "pdf"],
-    ["misleading.pdf", "application/zip", "unsupported"],
+    ["misleading.pdf", "application/zip", "archive"],
   ])("classifies %s (%s) as %s", (name, mimeType, expected) => {
     expect(filePreviewKind({ name, mimeType })).toBe(expected);
   });

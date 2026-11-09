@@ -193,6 +193,9 @@ export default defineConfig(() => {
         "@pierre/diffs",
         "@pierre/diffs/edit",
         "@pierre/diffs/react",
+        "heic-to/next",
+        "sql.js",
+        "tiff",
         "@pierre/diffs/worker/worker.js",
         "effect/Array",
         "effect/Order",
@@ -282,6 +285,8 @@ export default defineConfig(() => {
     css: {
       devSourcemap: buildSourcemap !== false,
     },
+    // Preview workers lazy-load heavy decoders, so they must be ES modules to code-split.
+    worker: { format: "es" },
     build: {
       outDir: "dist",
       emptyOutDir: true,
