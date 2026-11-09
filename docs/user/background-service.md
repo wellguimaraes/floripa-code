@@ -98,12 +98,9 @@ For failures after signing in to T3 Connect, see
 
 ## Reclaim database space
 
-Floripa Code removes superseded internal history on its own while it runs; your
-conversations are kept. Databases created before this shrank automatically
-still hold the freed space on disk until a one-time offline repair returns it
-and turns on automatic shrinking. Settings > Storage (web and desktop) or
-Settings > Maintenance (mobile) suggests the repair when at least 1 GiB can be
-reclaimed.
+A long-lived database can hold freed space on disk. An offline repair removes
+superseded internal history (your conversations are kept), returns the space,
+and turns on automatic shrinking.
 
 Run `t3 doctor` on the machine that hosts the environment. It reports the
 database size and the space it can reclaim, then asks which repairs to run;
