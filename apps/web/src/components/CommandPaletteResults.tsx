@@ -21,11 +21,7 @@ import {
   CommandShortcut,
 } from "./ui/command";
 import { getVirtualizedScrollFadeClassName } from "./ui/scroll-area";
-import {
-  HighlightedSearchText,
-  SearchMatchHintLine,
-  ThreadSearchMatchExcerpt,
-} from "./ThreadSearchMatch";
+import { SearchMatchHintLine, ThreadSearchMatchExcerpt } from "./ThreadSearchMatch";
 
 interface CommandPaletteResultsProps {
   emptyStateMessage?: string;
@@ -162,18 +158,10 @@ export function CommandPaletteVirtualizedResults(props: CommandPaletteVirtualize
 function CommandPaletteTitle({
   item,
 }: {
-  item: Pick<CommandPaletteActionItem | CommandPaletteSubmenuItem, "title" | "titleRanges">;
+  item: Pick<CommandPaletteActionItem | CommandPaletteSubmenuItem, "title">;
 }) {
   const { title } = item;
-  return (
-    <span className="truncate">
-      {typeof title === "string" && item.titleRanges ? (
-        <HighlightedSearchText text={title} ranges={item.titleRanges} />
-      ) : (
-        title
-      )}
-    </span>
-  );
+  return <span className="truncate">{title}</span>;
 }
 
 /**
