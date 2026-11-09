@@ -3101,6 +3101,7 @@ it.layer(
               "cursor",
               "fx",
               "grok",
+              "kiro",
               "muse",
               "opencode",
               "pi",

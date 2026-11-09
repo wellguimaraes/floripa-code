@@ -97,6 +97,12 @@
       ]
     },
     {
+      "driver": "kiro",
+      "floripaCodeRange": ">=0.0.46",
+      "recommendedRange": ">=2.27.0",
+      "ranges": [{ "range": ">=2.27.0", "status": "supported" }]
+    },
+    {
       "driver": "fx",
       "floripaCodeRange": ">=0.0.46",
       "recommendedRange": ">=0.0.13",
