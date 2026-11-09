@@ -19,6 +19,8 @@ import {
 } from "@t3tools/contracts";
 import * as FileSystem from "effect/FileSystem";
 import * as ServerConfig from "../../../config.ts";
+import * as ProviderRegistry from "../../../provider/ProviderRegistry.ts";
+import * as ServerSettings from "../../../serverSettings.ts";
 import * as ThreadLaunchService from "../../../orchestration-v2/ThreadLaunchService.ts";
 import * as Crypto from "effect/Crypto";
 import * as Schema from "effect/Schema";
@@ -144,6 +146,8 @@ const ThreadLaunchTool = Tool.make("t3_thread_launch", {
     GitVcsDriver.GitVcsDriver,
     FileSystem.FileSystem,
     ServerConfig.ServerConfig,
+    ServerSettings.ServerSettingsService,
+    ProviderRegistry.ProviderRegistry,
   ],
 })
   .annotate(Tool.Destructive, true)

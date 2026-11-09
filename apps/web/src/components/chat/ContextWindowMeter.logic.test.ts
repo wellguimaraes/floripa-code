@@ -148,7 +148,7 @@ describe("shouldOfferResumeCompaction", () => {
     expect(
       shouldOfferResumeCompaction({
         provider: "claudeAgent",
-        usedTokens: 100_000,
+        usedTokens: 200_000,
         updatedAt: "2026-08-24T10:50:00.000Z",
         now,
       }),
@@ -159,7 +159,7 @@ describe("shouldOfferResumeCompaction", () => {
     expect(
       shouldOfferResumeCompaction({
         provider: "claudeAgent",
-        usedTokens: 99_999,
+        usedTokens: 199_999,
         updatedAt: "2026-08-24T10:00:00.000Z",
         now,
       }),
@@ -172,6 +172,19 @@ describe("shouldOfferResumeCompaction", () => {
         now,
       }),
     ).toBe(false);
+  });
+
+  it("uses the reported prompt cache TTL instead of the fallback", () => {
+    const offer = (updatedAt: string) =>
+      shouldOfferResumeCompaction({
+        provider: "claudeAgent",
+        usedTokens: 200_000,
+        updatedAt,
+        promptCacheTtlMs: 5 * 60_000,
+        now,
+      });
+    expect(offer("2026-08-24T11:55:00.000Z")).toBe(true);
+    expect(offer("2026-08-24T11:56:00.000Z")).toBe(false);
   });
 
   it("does not show Claude's resume prompt for another provider", () => {

@@ -31,6 +31,7 @@ import {
 } from "../lib/chatThreadActions";
 import { readT3ProjectFile } from "../lib/t3ProjectFileDefaults";
 import { environmentServerConfigsAtom } from "../state/server";
+import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
 import { useClientSettings } from "./useSettings";
@@ -135,7 +136,13 @@ export function useNewThreadHandler() {
         project?.id ?? null,
         project,
       );
-      const projectDefaultModelSelection = projectSettings.settings.defaultModelSelection;
+      const projectDefaultModelSelection = resolveNewThreadModelSelection({
+        defaultSelection: projectSettings.settings.defaultModelSelection ?? null,
+        fallbackSelection: targetServerSettings.fallbackModelSelection,
+        providers: environmentServerConfigs.get(projectRef.environmentId)?.providers ?? [],
+        settings: targetServerSettings,
+        now: Date.now(),
+      }).selection;
       const defaultRuntimeMode = projectSettings.settings.defaultRuntimeMode;
       const resolveModelSelectionOverride = (destinationDraftId: DraftId) =>
         resolveNewThreadModelSelectionOverride({

@@ -1,4 +1,10 @@
-import { MessageId, ThreadId, OrchestratorMcpFailure, ProjectId } from "@t3tools/contracts";
+import {
+  MessageId,
+  type ModelSelection,
+  ThreadId,
+  OrchestratorMcpFailure,
+  ProjectId,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
@@ -9,6 +15,10 @@ import * as Project from "../../../project/ProjectService.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
 import * as Repositories from "../../../sourceControl/SourceControlRepositoryService.ts";
 import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
+import * as ProviderRegistry from "../../../provider/ProviderRegistry.ts";
+import * as ServerSettings from "../../../serverSettings.ts";
+import * as DateTime from "effect/DateTime";
+import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { newCommandId, readCaller, resolveProjectId, unavailable } from "../../threadAccess.ts";
 import { ProjectToolkit } from "./tools.ts";
@@ -23,6 +33,26 @@ function projectFailure(error: Project.ProjectServiceError) {
         : "The project is not empty; force=true is required to delete it.";
   return new OrchestratorMcpFailure({ code: "invalid_request", message });
 }
+
+/** The project's default model, or the configured fallback while the default's provider is out of usage. */
+const resolveProjectDefaultModelSelection = Effect.fn("mcp.resolveProjectDefaultModelSelection")(
+  function* (defaultSelection: ModelSelection | null | undefined) {
+    if (!defaultSelection) return null;
+    const settings = yield* ServerSettings.ServerSettingsService.pipe(
+      Effect.flatMap((service) => service.getSettings),
+      Effect.mapError(unavailable),
+    );
+    return resolveNewThreadModelSelection({
+      defaultSelection,
+      fallbackSelection: settings.fallbackModelSelection,
+      providers: yield* ProviderRegistry.ProviderRegistry.pipe(
+        Effect.flatMap((registry) => registry.getProviders),
+      ),
+      settings,
+      now: DateTime.toEpochMillis(yield* DateTime.now),
+    }).selection;
+  },
+);
 
 /**
  * An existing checkout a launch may bind: one of the project's own git
@@ -127,7 +157,9 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
         const modelSelection =
           input.modelSelection ??
           caller?.modelSelection ??
-          (yield* readProject)?.defaultModelSelection ??
+          (yield* resolveProjectDefaultModelSelection(
+            (yield* readProject)?.defaultModelSelection,
+          )) ??
           undefined;
         if (modelSelection === undefined)
           return yield* new OrchestratorMcpFailure({

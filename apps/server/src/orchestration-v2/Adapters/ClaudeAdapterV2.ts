@@ -67,6 +67,7 @@ import {
   type ProviderUserInputAnswers,
   type ProviderThreadId,
   type ThreadId,
+  resolveIdleCompaction,
 } from "@t3tools/contracts";
 
 import * as Cause from "effect/Cause";
@@ -90,6 +91,7 @@ import { resolveClaudeSdkExecutablePath } from "../../provider/Drivers/ClaudeExe
 import { planClaudeSkillDispatch } from "../../provider/Drivers/ClaudeSkillDispatch.ts";
 import { discoverClaudeSkills } from "../../provider/Drivers/ClaudeSkills.ts";
 import { compileClaudeModelSelection } from "../../claudeModelOptions.ts";
+import * as ServerSettings from "../../serverSettings.ts";
 import * as ServerConfig from "../../config.ts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import {
@@ -156,21 +158,46 @@ function claudeContextWindow(modelSelection: ModelSelection): number | null {
   );
 }
 
+interface ClaudeCacheCreation {
+  readonly ephemeral_1h_input_tokens: number;
+  readonly ephemeral_5m_input_tokens: number;
+}
+
+// Claude Code writes 1h cache entries on a subscription within its limits and
+// 5m entries otherwise (API key, Bedrock, Vertex, extra usage). A response
+// that wrote nothing leaves the TTL unknown.
+function claudePromptCacheTtlMs(
+  cacheCreation: ClaudeCacheCreation | null | undefined,
+): number | undefined {
+  if (!cacheCreation) return undefined;
+  if (cacheCreation.ephemeral_1h_input_tokens > 0) return 60 * 60_000;
+  if (cacheCreation.ephemeral_5m_input_tokens > 0) return 5 * 60_000;
+  return undefined;
+}
+
 export function claudeProviderTurnTokenUsage(
   usage: {
     readonly input_tokens: number;
     readonly cache_creation_input_tokens?: number | null;
     readonly cache_read_input_tokens?: number | null;
+    readonly cache_creation?: ClaudeCacheCreation | null;
     readonly output_tokens: number;
   },
   modelSelection: ModelSelection,
   updatedAt: string,
+  requestedAt?: DateTime.Utc,
 ) {
   const inputTokens =
     usage.input_tokens +
     (usage.cache_creation_input_tokens ?? 0) +
     (usage.cache_read_input_tokens ?? 0);
   const outputTokens = usage.output_tokens;
+  const promptCacheTtlMs = claudePromptCacheTtlMs(usage.cache_creation);
+  // The cache lifetime starts with the request, not when its response ends.
+  const promptCacheExpiresAt =
+    promptCacheTtlMs === undefined || requestedAt === undefined
+      ? undefined
+      : DateTime.formatIso(DateTime.add(requestedAt, { milliseconds: promptCacheTtlMs }));
   return {
     usedTokens: inputTokens + outputTokens,
     maxTokens: claudeContextWindow(modelSelection),
@@ -178,6 +205,8 @@ export function claudeProviderTurnTokenUsage(
     cachedInputTokens: usage.cache_read_input_tokens ?? 0,
     outputTokens,
     reasoningOutputTokens: 0,
+    ...(promptCacheTtlMs === undefined ? {} : { promptCacheTtlMs }),
+    ...(promptCacheExpiresAt === undefined ? {} : { promptCacheExpiresAt }),
     updatedAt,
   };
 }
@@ -2853,6 +2882,8 @@ interface ActiveClaudeTurnContext {
       { readonly startedAt: DateTime.Utc; readonly ordinal: number; text: string }
     >;
   };
+  // When the latest root request started streaming; its prompt cache lifetime starts then.
+  streamRequest: { readonly messageId: string; readonly requestedAt: DateTime.Utc } | null;
   readonly toolCalls: Map<string, ActiveClaudeToolCall>;
   readonly ignoredTaskIds: Set<string>;
   readonly announcedUsageLimits: Set<string>;
@@ -3183,6 +3214,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
   adapterOptions: ClaudeAdapterV2Options,
 ) {
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
+  const serverSettings = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
   const { attachmentsDir, fileSystem, path, crypto, idAllocator, queryRunner } = adapterOptions;
   // Subagent model names and effort levels, including the instance's custom models.
   const subagentModelCatalog = scopeClaudeModelCatalog(
@@ -6056,6 +6088,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             if (event.type === "message_start") {
               reasoning.messageId = event.message.id;
               reasoning.streamBlocks.clear();
+              context.streamRequest = {
+                messageId: event.message.id,
+                requestedAt: yield* DateTime.now,
+              };
             } else if (
               event.type === "content_block_start" &&
               event.content_block.type === "thinking" &&
@@ -6309,6 +6345,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     message.message.usage,
                     context.input.modelSelection,
                     DateTime.formatIso(now),
+                    // A snapshot with no matching stream start leaves the expiry unknown.
+                    context.streamRequest?.messageId === message.message.id
+                      ? context.streamRequest.requestedAt
+                      : undefined,
                   ),
                 },
               });
@@ -7344,6 +7384,17 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               if (request.dialogKind !== "resume_return") {
                 return { behavior: "cancelled" as const };
               }
+              const idleCompaction = Option.isSome(serverSettings)
+                ? yield* serverSettings.value.getSettings.pipe(
+                    Effect.map((settings) =>
+                      resolveIdleCompaction(settings, adapterOptions.instanceId),
+                    ),
+                    Effect.orElseSucceed(() => adapterOptions.settings.idleCompaction),
+                  )
+                : adapterOptions.settings.idleCompaction;
+              if (idleCompaction === "off") {
+                return { behavior: "completed" as const, result: "continue" as const };
+              }
               const ageMinutes =
                 typeof request.payload.sessionAgeMinutes === "number" &&
                 Number.isFinite(request.payload.sessionAgeMinutes)
@@ -7724,6 +7775,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 snapshots: new Set(),
                 blocks: new Map(),
               },
+              streamRequest: null,
               toolCalls: new Map(),
               ignoredTaskIds: new Set(),
               announcedUsageLimits: new Set(),

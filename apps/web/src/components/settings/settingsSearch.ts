@@ -199,6 +199,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["new thread project provider reasoning effort"],
   },
   {
+    id: "fallback-model",
+    title: "Fallback model",
+    to: "/settings/general",
+    searchTerms: ["out of usage limit new thread provider backup"],
+  },
+  {
     id: "default-permissions",
     title: "Permissions",
     to: "/settings/general",
@@ -321,6 +327,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Snooze limited threads",
     to: "/settings/general",
     searchTerms: ["usage quota rate limit reset wake recover continue"],
+  },
+  {
+    id: "compact-idle-threads",
+    title: "Compact idle threads",
+    to: "/settings/general",
+    scope: "environment-defaults",
+    searchTerms: ["claude context compaction idle cache tokens usage summary resume beta"],
   },
   {
     id: "auto-resume-limited-threads",

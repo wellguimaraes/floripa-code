@@ -24,6 +24,35 @@ import {
 const FOLDED_SERVER_SETTINGS = { ...DEFAULT_SERVER_SETTINGS, projectSettingsFolded: true };
 
 describe("serverSettings helpers", () => {
+  it("translates a shipped client's idle compaction switch into a mode", () => {
+    const off = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, { idleCompaction: "off" });
+    expect([off.idleCompaction, off.compactIdleThreads]).toEqual(["off", false]);
+    // Turning the old switch off keeps "Never" rather than reverting to the default.
+    const stillOff = applyServerSettingsPatch(off, { compactIdleThreads: false });
+    expect(stillOff.idleCompaction).toBe("off");
+    const on = applyServerSettingsPatch(off, { compactIdleThreads: true });
+    expect([on.idleCompaction, on.compactIdleThreads]).toEqual(["beforeCacheExpires", true]);
+  });
+
+  it("replaces and clears the fallback model without carrying model options", () => {
+    const fallbackModelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "new" };
+    const settings = applyServerSettingsPatch(
+      {
+        ...DEFAULT_SERVER_SETTINGS,
+        fallbackModelSelection: {
+          ...fallbackModelSelection,
+          model: "old",
+          options: [{ id: "effort", value: "high" }],
+        },
+      },
+      { fallbackModelSelection },
+    );
+    expect(settings.fallbackModelSelection).toEqual(fallbackModelSelection);
+    expect(
+      applyServerSettingsPatch(settings, { fallbackModelSelection: null }).fallbackModelSelection,
+    ).toBeNull();
+  });
+
   it("changes a cleanup rule without replacing the machine's other rules", () => {
     const enabled = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
       storageCleanup: { worktreeAfterDays: 8, worktreeOnMerge: true, logsAfterDays: 30 },

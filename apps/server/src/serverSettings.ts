@@ -15,6 +15,7 @@ import {
   DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
   DEFAULT_MODEL_BY_PROVIDER,
   DEFAULT_SERVER_SETTINGS,
+  globalIdleCompaction,
   ModelSelection,
   type OpenRouterApiKeyProblem,
   ProjectId,
@@ -23,6 +24,7 @@ import {
   type ProviderInstanceConfig,
   type ProviderInstanceEnvironmentVariable,
   type UsageLimitSourceConfig,
+  withIdleCompaction,
   type ProviderInstanceMutation,
   defaultInstanceIdForDriver,
   isProviderDriverKind,
@@ -130,6 +132,7 @@ const normalizeServerSettings = (
   encodeServerSettings(settings).pipe(
     Effect.flatMap(decodeServerSettings),
     Effect.map(foldProviderInstanceEnabledFlags),
+    Effect.map((next) => withIdleCompaction(next, globalIdleCompaction(next))),
     Effect.map((next) => ({ ...next, ...deriveLegacyProjectOverrides(next) })),
     Effect.mapError(
       (cause) =>
@@ -609,6 +612,7 @@ const ATOMIC_SETTINGS_KEYS: ReadonlySet<string> = new Set([
   "providerHealthRefreshInterval",
   "sourceControlWriterModelSelection",
   "textGenerationModelSelection",
+  "fallbackModelSelection",
   "pullRequestMergeMethod",
 ]);
 
@@ -890,6 +894,10 @@ const make = Effect.gen(function* () {
         settings = decoded.value;
       }
     }
+    // Settings saved by a server that kept the mode in `compactIdleThreads` move
+    // it to `idleCompaction`, so that switch goes to clients as a boolean. The
+    // defaults gain the field too, which tells clients this server reads modes.
+    settings = withIdleCompaction(settings, globalIdleCompaction(settings));
 
     const providerHistory = yield* sql<{
       readonly providerName: string;
