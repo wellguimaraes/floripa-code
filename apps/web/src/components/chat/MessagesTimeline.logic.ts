@@ -50,6 +50,7 @@ import {
   type WorktreeSetupSnapshot,
   type OrchestrationV2ProjectedTurnItem,
   type RunAttemptId,
+  type RuntimeRequestId,
   RunId,
   type ThreadId,
   type TurnItemId,
@@ -1417,6 +1418,7 @@ function isCompactCommand(message: {
 
 export function deriveMessagesTimelineRows(input: {
   timelineEntries: ReadonlyArray<TimelineEntry>;
+  pendingApprovalRequestIds?: ReadonlySet<RuntimeRequestId>;
   latestRun?: TimelineLatestRun | null;
   runningRunId?: RunId | null;
   expandedRunIds?: ReadonlySet<RunId>;
@@ -1437,6 +1439,13 @@ export function deriveMessagesTimelineRows(input: {
   worktreeSetup?: WorktreeSetupSnapshot | null;
 }): MessagesTimelineRow[] {
   const timelineEntries = timelineRowEntries(input.timelineEntries);
+  const isPendingApproval = (entry: WorkLogEntry) => {
+    const item = entry.projectedItem?.item;
+    return (
+      item?.type === "approval_request" &&
+      input.pendingApprovalRequestIds?.has(item.requestId) === true
+    );
+  };
   const turnDiffSummaryByAssistantMessageId = new Map<MessageId, TurnDiffSummary>();
   for (const summary of input.turnDiffSummaries) {
     if (summary.assistantMessageId) {
@@ -1495,6 +1504,14 @@ export function deriveMessagesTimelineRows(input: {
       }
     }
   }
+  if (input.pendingApprovalRequestIds?.size) {
+    for (const entry of timelineEntries) {
+      if (entry.kind === "work" && isPendingApproval(entry.entry)) {
+        collapsedEntryIds.delete(entry.id);
+        collapsedSupersededEntryIds.delete(entry.id);
+      }
+    }
+  }
   const runIdIsActiveResponse = (runId: RunId | null | undefined) =>
     runId == null ? runlessWorkActive : activeVisualResponseRunIds.has(runId);
   const workEntryIsInActiveRun = (entry: WorkLogEntry) =>
@@ -1523,6 +1540,7 @@ export function deriveMessagesTimelineRows(input: {
         entry.entry.sourceActivityKind === "runtime.error" ||
         entry.entry.itemType === "system_notice" ||
         entry.entry.itemType === "notification" ||
+        isPendingApproval(entry.entry) ||
         !runIdIsActiveResponse(entry.entry.runId) ||
         entry.entry.sourceActivityKind === "context-compaction" ||
         collapsedEntryIds.has(entry.id) ||
@@ -1550,7 +1568,8 @@ export function deriveMessagesTimelineRows(input: {
   const latestToolKeepsActivityLive =
     latestRunningToolEntry !== undefined ||
     (latestVisibleToolEntry !== undefined &&
-      workEntryIndicatesToolSuccess(latestVisibleToolEntry.entry));
+      workEntryIndicatesToolSuccess(latestVisibleToolEntry.entry) &&
+      !input.pendingApprovalRequestIds?.size);
   const latestToolFailed =
     latestRunningToolEntry === undefined &&
     latestVisibleToolEntry !== undefined &&
@@ -1715,6 +1734,7 @@ export function deriveMessagesTimelineRows(input: {
 
     if (timelineEntry.kind === "work") {
       if (
+        isPendingApproval(timelineEntry.entry) ||
         (timelineEntry.entry.runId != null && failedRunIds.has(timelineEntry.entry.runId)) ||
         (timelineEntry.entry.itemType === "error" &&
           timelineEntry.entry.toolLifecycleStatus === "failed") ||
@@ -1744,6 +1764,7 @@ export function deriveMessagesTimelineRows(input: {
           nextEntry.entry.sourceActivityKind === "runtime.error" ||
           nextEntry.entry.itemType === "system_notice" ||
           nextEntry.entry.itemType === "notification" ||
+          isPendingApproval(nextEntry.entry) ||
           activeWorkEntryIds.has(nextEntry.id) ||
           collapsedEntryIds.has(nextEntry.id) ||
           collapsedSupersededEntryIds.has(nextEntry.id) ||
@@ -2041,7 +2062,7 @@ export function deriveMessagesTimelineRows(input: {
     input.isWorking &&
     !setupOwnsWorkingSlot &&
     !hasActiveCompaction &&
-    (!hasActivityRow || latestToolFailed)
+    (latestToolFailed || (!hasActivityRow && !input.pendingApprovalRequestIds?.size))
   ) {
     // A failed latest tool hands the row back to thinking, but its group
     // stays reachable through the same disclosure the live row offers.
@@ -2205,6 +2226,7 @@ function replaceStreamingMessageRows(
     expandedRunIds: previousExpandedRuns,
     expandedAttemptIds: previousExpandedAttempts,
     expandedWorkGroupIds: previousExpandedGroups,
+    pendingApprovalRequestIds: previousPendingApprovalRequestIds,
     ...previousContext
   } = previous.input;
   const {
@@ -2214,6 +2236,7 @@ function replaceStreamingMessageRows(
     expandedRunIds,
     expandedAttemptIds,
     expandedWorkGroupIds,
+    pendingApprovalRequestIds,
     ...context
   } = input;
   // V2 shell and checkpoint selectors produce fresh summaries for each event.
@@ -2225,6 +2248,7 @@ function replaceStreamingMessageRows(
     !shallow(previousExpandedRuns, expandedRunIds) ||
     !shallow(previousExpandedAttempts, expandedAttemptIds) ||
     !shallow(previousExpandedGroups, expandedWorkGroupIds) ||
+    !shallow(previousPendingApprovalRequestIds, pendingApprovalRequestIds) ||
     !sameCheckpointSummaries(previousCheckpoints, turnDiffSummaries)
   ) {
     return null;

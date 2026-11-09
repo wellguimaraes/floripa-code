@@ -925,6 +925,39 @@ describe("deriveMessagesTimelineRows", () => {
       expect(rows.some((row) => row.kind === "event")).toBe(false);
       expect(workRows[0]).not.toMatchObject({ expanded: true });
       expect(workRows[0]).not.toMatchObject({ isExpandedToolGroup: true });
+      const pendingApprovalRequestIds = new Set([RuntimeRequestId.make("approval-request")]);
+      const pendingRows = deriveMessagesTimelineRows({
+        timelineEntries: entries,
+        pendingApprovalRequestIds,
+        isWorking: status === "waiting",
+        runningRunId: fixture.runId,
+        activeTurnStartedAt: fixture.time(0),
+        turnDiffSummaries: [],
+        supportsConversationRollback: false,
+      });
+      // A pending approval stays on its own row so its buttons are reachable.
+      expect(pendingRows.filter((row) => row.kind === "work")).toContainEqual(
+        expect.objectContaining({
+          groupedEntries: [expect.objectContaining({ itemType: "approval_request" })],
+          isExpandedToolGroup: false,
+        }),
+      );
+      expect(
+        pendingRows
+          .filter((row) => row.kind === "work-live")
+          .flatMap((row) => row.groupedEntries)
+          .some((entry) => entry.itemType === "approval_request"),
+      ).toBe(false);
+      const approvalOnlyRows = deriveMessagesTimelineRows({
+        timelineEntries: entries.slice(1, 2),
+        pendingApprovalRequestIds,
+        isWorking: status === "waiting",
+        runningRunId: fixture.runId,
+        activeTurnStartedAt: fixture.time(0),
+        turnDiffSummaries: [],
+        supportsConversationRollback: false,
+      });
+      expect(approvalOnlyRows.some((row) => row.kind === "thinking")).toBe(false);
     },
   );
 
