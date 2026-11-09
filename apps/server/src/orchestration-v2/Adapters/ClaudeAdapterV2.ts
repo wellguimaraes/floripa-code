@@ -183,6 +183,7 @@ export function claudeProviderTurnTokenUsage(
   },
   modelSelection: ModelSelection,
   updatedAt: string,
+  requestedAt?: DateTime.Utc,
 ) {
   const inputTokens =
     usage.input_tokens +
@@ -190,6 +191,11 @@ export function claudeProviderTurnTokenUsage(
     (usage.cache_read_input_tokens ?? 0);
   const outputTokens = usage.output_tokens;
   const promptCacheTtlMs = claudePromptCacheTtlMs(usage.cache_creation);
+  // The cache lifetime starts with the request, not when its response ends.
+  const promptCacheExpiresAt =
+    promptCacheTtlMs === undefined || requestedAt === undefined
+      ? undefined
+      : DateTime.formatIso(DateTime.add(requestedAt, { milliseconds: promptCacheTtlMs }));
   return {
     usedTokens: inputTokens + outputTokens,
     maxTokens: claudeContextWindow(modelSelection),
@@ -198,6 +204,7 @@ export function claudeProviderTurnTokenUsage(
     outputTokens,
     reasoningOutputTokens: 0,
     ...(promptCacheTtlMs === undefined ? {} : { promptCacheTtlMs }),
+    ...(promptCacheExpiresAt === undefined ? {} : { promptCacheExpiresAt }),
     updatedAt,
   };
 }
@@ -2873,6 +2880,8 @@ interface ActiveClaudeTurnContext {
       { readonly startedAt: DateTime.Utc; readonly ordinal: number; text: string }
     >;
   };
+  // When the latest root request started streaming; its prompt cache lifetime starts then.
+  streamRequest: { readonly messageId: string; readonly requestedAt: DateTime.Utc } | null;
   readonly toolCalls: Map<string, ActiveClaudeToolCall>;
   readonly ignoredTaskIds: Set<string>;
   readonly announcedUsageLimits: Set<string>;
@@ -6076,6 +6085,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             if (event.type === "message_start") {
               reasoning.messageId = event.message.id;
               reasoning.streamBlocks.clear();
+              context.streamRequest = {
+                messageId: event.message.id,
+                requestedAt: yield* DateTime.now,
+              };
             } else if (
               event.type === "content_block_start" &&
               event.content_block.type === "thinking" &&
@@ -6329,6 +6342,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     message.message.usage,
                     context.input.modelSelection,
                     DateTime.formatIso(now),
+                    // A snapshot with no matching stream start leaves the expiry unknown.
+                    context.streamRequest?.messageId === message.message.id
+                      ? context.streamRequest.requestedAt
+                      : undefined,
                   ),
                 },
               });
@@ -7744,6 +7761,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 snapshots: new Set(),
                 blocks: new Map(),
               },
+              streamRequest: null,
               toolCalls: new Map(),
               ignoredTaskIds: new Set(),
               announcedUsageLimits: new Set(),
