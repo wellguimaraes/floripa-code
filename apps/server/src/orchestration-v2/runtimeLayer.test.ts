@@ -4778,6 +4778,63 @@ it.layer(layerScratchPromotionTest)("turning a No project thread into a project"
   );
 });
 
+it.layer(layerSharedApplicationDataPlaneTest)("thread tags", (it) => {
+  it.effect("adds and removes tags idempotently without counting as activity", () =>
+    Effect.gen(function* () {
+      const projects = yield* ProjectService.ProjectService;
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const projectId = ProjectId.make("runtime-layer-tags-project");
+      const threadId = ThreadId.make("runtime-layer-tags-thread");
+      yield* projects.create({
+        commandId: CommandId.make("runtime-layer-tags-project-create"),
+        projectId,
+        title: "Tags",
+        workspaceRoot: "/tmp/runtime-layer-tags",
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("runtime-layer-tags-thread-create"),
+        threadId,
+        projectId,
+        title: "Tagged",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+      });
+      const shellOf = () =>
+        orchestrator
+          .getShellSnapshot()
+          .pipe(Effect.map((shell) => shell.threads.find((thread) => thread.id === threadId)!));
+      const untagged = yield* shellOf();
+      for (const [step, tag, tagged, expected] of [
+        ["add", "demo", true, ["demo"]],
+        ["retry", "demo", true, ["demo"]],
+        ["add-other", "private", true, ["demo", "private"]],
+        ["remove", "demo", false, ["private"]],
+        ["remove-last", "private", false, []],
+      ] as const) {
+        yield* orchestrator.dispatch({
+          type: "thread.tag.set",
+          commandId: CommandId.make(`runtime-layer-tags-${step}`),
+          threadId,
+          tag,
+          tagged,
+        });
+        assert.deepEqual((yield* shellOf()).tags ?? [], expected, step);
+      }
+      // Tags are not activity, so the thread keeps its place in thread lists.
+      assert.equal(
+        DateTime.toEpochMillis((yield* shellOf()).updatedAt),
+        DateTime.toEpochMillis(untagged.updatedAt),
+      );
+    }),
+  );
+});
+
 it.layer(layerSharedApplicationDataPlaneTest)("visited projection", (it) => {
   it.effect("carries the visited watermark through the V2 shell projection", () =>
     Effect.gen(function* () {

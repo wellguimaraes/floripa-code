@@ -118,6 +118,15 @@ describe("storage cleanup settings", () => {
   });
 });
 
+it("drops a hand-edited non-string hidden tag and keeps the rest of the settings", () => {
+  const settings = decodeServerSettings({
+    hiddenThreadTags: ["private", 123],
+    hideTaggedThreads: true,
+  });
+  expect(settings.hiddenThreadTags).toEqual(["private"]);
+  expect(settings.hideTaggedThreads).toBe(true);
+});
+
 describe("ClientSettings rich text composer", () => {
   it("enables rich text for new and existing settings without a saved preference", () => {
     expect(decodeClientSettings({}).composerRichTextEnabled).toBe(true);

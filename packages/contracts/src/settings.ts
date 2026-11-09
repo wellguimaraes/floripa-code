@@ -1214,6 +1214,18 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS)),
   ),
   snoozeLimitedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /** Clients hide threads with these tags while `hideTaggedThreads` is on. Bad entries drop alone, so a hand edit cannot reset settings. */
+  hiddenThreadTags: Schema.Array(Schema.Unknown).pipe(
+    Schema.decodeTo(
+      Schema.Array(Schema.String),
+      SchemaTransformation.transform<ReadonlyArray<string>, ReadonlyArray<unknown>>({
+        decode: (values) => values.filter((value) => typeof value === "string"),
+        encode: (values) => values,
+      }),
+    ),
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  hideTaggedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   autoResumeLimitedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   sidebarAutoSettleOnMerge: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   backgroundActivity: BackgroundActivitySettings,
@@ -1536,6 +1548,8 @@ export const ServerSettingsPatch = Schema.Struct({
   sidebarAutoSettleOnMerge: Schema.optionalKey(Schema.Boolean),
   autoResumeLimitedThreads: Schema.optionalKey(Schema.Boolean),
   snoozeLimitedThreads: Schema.optionalKey(Schema.Boolean),
+  hiddenThreadTags: Schema.optionalKey(Schema.Array(Schema.String)),
+  hideTaggedThreads: Schema.optionalKey(Schema.Boolean),
   backgroundActivity: Schema.optionalKey(
     Schema.Struct({
       schemaVersion: Schema.optionalKey(Schema.Literal(1)),
