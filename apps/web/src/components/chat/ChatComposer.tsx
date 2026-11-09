@@ -301,6 +301,7 @@ import {
 import {
   getComposerPromptInjectionState,
   getComposerProviderState,
+  getComposerReasoningStep,
   renderProviderTraitsMenuContent,
   renderProviderTraitsPicker,
 } from "./composerProviderState";
@@ -1393,6 +1394,7 @@ export interface ChatComposerHandle {
     sourceAnchor: AssistantCitationSourceAnchor,
   ) => boolean;
   openModelPicker: () => void;
+  stepReasoningEffort: (direction: 1 | -1) => void;
   toggleModelPicker: () => void;
   openControl: (command: KeybindingCommand) => void;
   isModelPickerOpen: () => boolean;
@@ -6452,6 +6454,44 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           { ensureLeadingBoundary: true, citationCommentAnchor: sourceAnchor },
         ),
       openModelPicker,
+      stepReasoningEffort: (direction) => {
+        if (
+          noProviderAvailable ||
+          isComposerApprovalState ||
+          pendingUserInputs.length > 0 ||
+          // A queued-message edit draft is discarded when the edit ends.
+          isEditingQueuedMessage
+        ) {
+          return;
+        }
+        const change = getComposerReasoningStep({
+          provider: selectedProvider,
+          instanceId: selectedInstanceId,
+          model: selectedModel,
+          models: selectedProviderModels,
+          modelOptions: composerModelOptions?.[selectedInstanceId],
+          reportedModelSelection,
+          prompt: promptRef.current,
+          cursor: readComposerSnapshot().expandedCursor,
+          planModeEnabled: settings.planModeEnabled,
+          direction,
+        });
+        if (!change) return;
+        if (change.modelOptions) {
+          useComposerDraftStore
+            .getState()
+            .setProviderModelOptions(composerDraftTarget, selectedProvider, change.modelOptions, {
+              instanceId: selectedInstanceId,
+              model: selectedModel,
+              persistSticky: true,
+            });
+        }
+        if (change.prompt !== promptRef.current) {
+          applyPromptReplacement(0, promptRef.current.length, change.prompt, {
+            expandedCursorAfterReplace: change.cursor,
+          });
+        }
+      },
       toggleModelPicker: () => {
         if (isComposerModelPickerOpen) {
           setIsComposerModelPickerOpen(false);
@@ -6591,6 +6631,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       addComposerAttachments,
       foldPastedText,
       composerDraftTarget,
+      composerModelOptions,
+      isEditingQueuedMessage,
       composerCursor,
       activePendingProgress,
       composerTerminalContexts,
@@ -6619,6 +6661,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       resetComposerTrigger,
       setComposerTrigger,
       selectedModel,
+      selectedInstanceId,
+      reportedModelSelection,
+      settings.planModeEnabled,
       selectedModelOptionsForDispatch,
       selectedModelSelection,
       multipleModelSelections,

@@ -7793,6 +7793,15 @@ export default function ChatView(props: ChatViewProps) {
         return;
       }
 
+      if (command === "composer.increaseEffort" || command === "composer.decreaseEffort") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) {
+          composerRef.current?.stepReasoningEffort(command === "composer.increaseEffort" ? 1 : -1);
+        }
+        return;
+      }
+
       if (
         command === "composer.host" ||
         command === "composer.effort" ||
