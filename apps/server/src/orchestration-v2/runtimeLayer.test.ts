@@ -49,6 +49,9 @@ import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore.ts";
 import * as ProjectEnrichmentService from "../project/ProjectEnrichmentService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
+import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
+import * as ScratchThreadPromotion from "../project/ScratchThreadPromotion.ts";
+import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as McpSessionRegistryTestkit from "../mcp/McpSessionRegistry.testkit.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
@@ -4609,6 +4612,168 @@ it.layer(layerSharedApplicationDataPlaneTest)("snooze projection", (it) => {
       const awakened = yield* orchestrator.getThreadProjection(threadId);
       assert.isNull(awakened.thread.snoozedUntil);
       assert.isNull(awakened.thread.snoozedAt);
+    }),
+  );
+});
+
+const SCRATCH_ROOT = "/tmp/runtime-layer-promotion-scratch";
+const SCRATCH_PROJECT_ID = ProjectId.make("runtime-layer-promotion-scratch");
+const movedTaskThreads: Array<ReadonlyArray<ThreadId>> = [];
+const layerScratchPromotionTest = ScratchThreadPromotion.layer.pipe(
+  Layer.provide(
+    Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+      scratchRoot: Effect.succeedSome(SCRATCH_ROOT),
+      isScratchProject: (projectId) => Effect.succeed(projectId === SCRATCH_PROJECT_ID),
+      namedProjectsRoot: "/projects",
+    }),
+  ),
+  Layer.provide(
+    Layer.mock(ScheduledTaskService.ScheduledTaskService)({
+      moveThreadTasks: (input) =>
+        Effect.sync(() => {
+          movedTaskThreads.push(input.threadIds);
+        }),
+    }),
+  ),
+  Layer.provide(NodeServices.layer),
+  Layer.provideMerge(layerSharedApplicationDataPlaneTest),
+);
+
+it.layer(layerScratchPromotionTest)("turning a No project thread into a project", (it) => {
+  const setup = Effect.fn(function* (name: string) {
+    const projects = yield* ProjectService.ProjectService;
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const folder = `${SCRATCH_ROOT}/2026-01-01-${name}`;
+    if (Option.isNone(yield* projects.getById(SCRATCH_PROJECT_ID))) {
+      yield* projects.create({
+        commandId: CommandId.make("promotion-scratch-create"),
+        projectId: SCRATCH_PROJECT_ID,
+        title: "No project",
+        workspaceRoot: SCRATCH_ROOT,
+      });
+    }
+    const createThread = (suffix: string, worktreePath: string) =>
+      orchestrator
+        .dispatch({
+          type: "thread.create",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: CommandId.make(`promotion-${name}-${suffix}-create`),
+          threadId: ThreadId.make(`promotion-${name}-${suffix}`),
+          projectId: SCRATCH_PROJECT_ID,
+          title: `${name} ${suffix}`,
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath,
+        })
+        .pipe(Effect.as(ThreadId.make(`promotion-${name}-${suffix}`)));
+    return { folder, createThread };
+  });
+  const shellOf = (threadId: ThreadId) =>
+    Orchestrator.OrchestratorV2.pipe(
+      Effect.flatMap((orchestrator) => orchestrator.getThreadShell(threadId)),
+    );
+
+  it.effect("moves every thread in the folder into one project", () =>
+    Effect.gen(function* () {
+      const promotion = yield* ScratchThreadPromotion.ScratchThreadPromotion;
+      const projects = yield* ProjectService.ProjectService;
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const { folder, createThread } = yield* setup("moves");
+      const threadId = yield* createThread("main", folder);
+      const siblingId = yield* createThread("sibling", folder);
+      const otherId = yield* createThread("other", `${SCRATCH_ROOT}/2026-01-01-elsewhere`);
+      yield* orchestrator.dispatch({
+        type: "thread.archive",
+        commandId: CommandId.make("promotion-moves-sibling-archive"),
+        threadId: siblingId,
+      });
+
+      const { projectId } = yield* promotion.promote({ threadId });
+
+      const project = yield* projects.getById(projectId);
+      assert.equal(Option.getOrUndefined(project)?.workspaceRoot, folder);
+      assert.equal(Option.getOrUndefined(project)?.title, "moves main");
+      for (const id of [threadId, siblingId]) {
+        const shell = yield* shellOf(id);
+        assert.equal(shell?.projectId, projectId);
+        assert.isNull(shell?.worktreePath);
+      }
+      assert.equal((yield* shellOf(otherId))?.projectId, SCRATCH_PROJECT_ID);
+      assert.isTrue(
+        movedTaskThreads.some(
+          (ids) => ids.includes(threadId) && ids.includes(siblingId) && !ids.includes(otherId),
+        ),
+      );
+      assert.deepEqual(yield* promotion.promote({ threadId }), { projectId });
+    }),
+  );
+
+  it.effect("changes nothing while a thread in the folder is busy", () =>
+    Effect.gen(function* () {
+      const promotion = yield* ScratchThreadPromotion.ScratchThreadPromotion;
+      const projects = yield* ProjectService.ProjectService;
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const { folder, createThread } = yield* setup("busy");
+      const threadId = yield* createThread("idle", folder);
+      const busyId = yield* createThread("delegate", folder);
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("promotion-busy-message"),
+        threadId: busyId,
+        messageId: MessageId.make("promotion-busy-message"),
+        text: "Keep this run active.",
+        attachments: [],
+        modelSelection,
+        dispatchMode: { type: "start_immediately" },
+      });
+
+      const error = yield* promotion.promote({ threadId }).pipe(Effect.flip);
+
+      assert.equal(error.message, '"busy delegate" is still working. Finish or stop it first.');
+      assert.isTrue(Option.isNone(yield* projects.getByWorkspaceRoot(folder)));
+      assert.equal((yield* shellOf(threadId))?.projectId, SCRATCH_PROJECT_ID);
+    }),
+  );
+
+  it.effect("refuses a thread outside No project", () =>
+    Effect.gen(function* () {
+      const promotion = yield* ScratchThreadPromotion.ScratchThreadPromotion;
+      const projects = yield* ProjectService.ProjectService;
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const projectId = ProjectId.make("promotion-regular-project");
+      const threadId = ThreadId.make("promotion-regular-thread");
+      yield* projects.create({
+        commandId: CommandId.make("promotion-regular-project"),
+        projectId,
+        title: "Regular",
+        workspaceRoot: "/tmp/runtime-layer-promotion-regular",
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("promotion-regular-thread-create"),
+        threadId,
+        projectId,
+        title: "Regular",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+      });
+
+      const error = yield* promotion.promote({ threadId }).pipe(Effect.flip);
+
+      assert.equal(
+        error.message,
+        "Only a No project thread with its own folder can become a project.",
+      );
     }),
   );
 });

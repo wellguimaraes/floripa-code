@@ -5,6 +5,7 @@ import {
   ScheduledTask,
   ScheduledTaskError,
   ScheduledTaskId,
+  type ProjectId,
   ThreadId,
   ScheduledTaskWebhookDeliveryId,
   type ScheduledTaskDeleteInput,
@@ -232,6 +233,11 @@ export class ScheduledTaskService extends Context.Service<
     readonly delete: (
       input: ScheduledTaskDeleteInput,
     ) => Effect.Effect<ScheduledTaskDeleteResult, ScheduledTaskError>;
+    /** Points tasks bound to these threads at the project the threads moved to. */
+    readonly moveThreadTasks: (input: {
+      readonly threadIds: ReadonlyArray<ThreadId>;
+      readonly projectId: ProjectId;
+    }) => Effect.Effect<void, ScheduledTaskError>;
     readonly runNow: (
       input: ScheduledTaskRunNowInput,
     ) => Effect.Effect<ScheduledTaskRunNowResult, ScheduledTaskError>;
@@ -789,6 +795,44 @@ export const layer = Layer.effect(
         // from the row when the request arrived.
         const prompt = webhook?.prompt ?? active.prompt;
 
+        // A bound thread can move to another project (No project to a project) while
+        // this fires. Follow it; one move needs at most two retries. Same ids replay safely.
+        const sendBound = (
+          threadId: ThreadId,
+          projectId: ProjectId,
+          retries: number,
+        ): ReturnType<typeof threadManagement.sendToThread> =>
+          threadManagement
+            .sendToThread({
+              projectId,
+              commandId,
+              threadId,
+              messageId,
+              scheduledTaskId: active.id,
+              text: prompt,
+              attachments: [],
+              modelSelection: active.modelSelection,
+              // Scheduled prompts must not interrupt tools in the bound thread.
+              mode: "queue",
+              createdBy: active.createdBy,
+              creationSource: active.creationSource,
+            })
+            .pipe(
+              Effect.catchTags({
+                ThreadManagementThreadNotFoundError: (error) =>
+                  retries === 0
+                    ? Effect.fail(error)
+                    : threadManagement.getThreadShell(threadId).pipe(
+                        Effect.orElseSucceed(() => null),
+                        Effect.flatMap((shell) =>
+                          shell === null || shell.projectId === projectId
+                            ? Effect.fail(error)
+                            : sendBound(threadId, shell.projectId, retries - 1),
+                        ),
+                      ),
+              }),
+            );
+
         // Effect.exit (not Effect.result) so defects and interruptions in the
         // dispatch are also captured and recorded as a failed run instead of
         // aborting before markCompleted.
@@ -813,22 +857,7 @@ export const layer = Layer.effect(
                   creationSource: active.creationSource,
                 }),
               )
-            : yield* Effect.exit(
-                threadManagement.sendToThread({
-                  projectId: active.projectId,
-                  commandId,
-                  threadId: ThreadId.make(active.threadId),
-                  messageId,
-                  scheduledTaskId: active.id,
-                  text: prompt,
-                  attachments: [],
-                  modelSelection: active.modelSelection,
-                  // Scheduled prompts must not interrupt tools in the bound thread.
-                  mode: "queue",
-                  createdBy: active.createdBy,
-                  creationSource: active.creationSource,
-                }),
-              );
+            : yield* Effect.exit(sendBound(ThreadId.make(active.threadId), active.projectId, 2));
 
         const completedAt = yield* localNow;
         const runSucceeded = result._tag === "Success";
@@ -1155,6 +1184,20 @@ export const layer = Layer.effect(
         Effect.andThen(notifyChanged),
         Effect.as({ id: input.id }),
       );
+
+    const moveThreadTasks: ScheduledTaskService["Service"]["moveThreadTasks"] = (input) =>
+      input.threadIds.length === 0
+        ? Effect.void
+        : sql<{ task_id: ScheduledTaskId }>`
+            UPDATE scheduled_tasks SET project_id = ${input.projectId}
+            WHERE project_id != ${input.projectId} AND thread_id IN ${sql.in(input.threadIds)}
+            RETURNING task_id
+          `.pipe(
+            Effect.mapError((cause) =>
+              taskError("Could not move the thread's schedule tasks.", { cause }),
+            ),
+            Effect.flatMap((moved) => (moved.length > 0 ? notifyChanged : Effect.void)),
+          );
 
     const runNow: ScheduledTaskService["Service"]["runNow"] = (input: ScheduledTaskRunNowInput) =>
       Effect.gen(function* () {
@@ -1665,6 +1708,7 @@ export const layer = Layer.effect(
       upsert,
       setEnabled,
       delete: deleteTask,
+      moveThreadTasks,
       runNow,
       rotateWebhookToken,
       listWebhookDeliveries,

@@ -3087,6 +3087,13 @@ export type OrchestrationV2Command = typeof OrchestrationV2Command.Type;
  * send them.
  */
 const OrchestrationV2InternalCommand = Schema.Union([
+  /** Moves a thread to a project rooted at the folder it already works in, so its cwd never changes. */
+  Schema.Struct({
+    type: Schema.Literal("thread.project.adopt-folder"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    projectId: ProjectId,
+  }),
   /**
    * Records what a pull request watch saw, and wakes the agent in the same transaction when
    * `wake` is set. Rejected once the watch started at `startedAt` has ended, and a wake is

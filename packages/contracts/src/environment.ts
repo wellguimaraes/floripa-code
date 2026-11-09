@@ -153,6 +153,7 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   /** Server understands thread.pin / thread.unpin commands. Same
       version-skew contract as threadSettlement. */
   threadPinning: Schema.optionalKey(Schema.Boolean),
+  threadProjectFromScratch: Schema.optionalKey(Schema.Boolean),
   /** Server understands thread.pin.reorder (and orderKey on thread.pin).
       Same version-skew contract as threadSettlement. */
   threadPinReorder: Schema.optionalKey(Schema.Boolean),
