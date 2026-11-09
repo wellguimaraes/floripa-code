@@ -47,7 +47,7 @@ import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
 import { useCopyToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { useClientSettings } from "./useSettings";
-import { useThreadActions } from "./useThreadActions";
+import { canTurnThreadIntoProject, useThreadActions } from "./useThreadActions";
 
 function failureToast(title: string, error: unknown) {
   toastManager.add(
@@ -102,6 +102,7 @@ export function useThreadActionMenu(input: {
     archiveThread,
     deleteThread,
     markThreadUnread,
+    turnThreadIntoProject,
   } = useThreadActions();
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
@@ -162,6 +163,7 @@ export function useThreadActionMenu(input: {
           isRegeneratingTitle,
           supports,
           snoozePresets,
+          canTurnIntoProject: canTurnThreadIntoProject(threadRef),
         });
         const items = world ? worldThreadActionMenuItems(allItems) : allItems;
         const clicked = await settlePromise(() => api.contextMenu.show(items, position));
@@ -245,6 +247,22 @@ export function useThreadActionMenu(input: {
             return;
           case "unpin": {
             await reportFailure("Failed to unpin thread", () => confirmAndUnpinThread(threadRef));
+            return;
+          }
+          case "turn-into-project": {
+            const result = await turnThreadIntoProject(threadRef);
+            if (result._tag === "Success") {
+              toastManager.add({
+                type: "success",
+                title: "Project created",
+                description: thread.title,
+              });
+            } else if (!isAtomCommandInterrupted(result)) {
+              failureToast(
+                "Could not turn thread into a project",
+                squashAtomCommandFailure(result),
+              );
+            }
             return;
           }
           case "auto-settle:enabled":
@@ -369,6 +387,7 @@ export function useThreadActionMenu(input: {
       projects,
       router,
       setThreadAutoSettle,
+      turnThreadIntoProject,
       settleThread,
       snoozeThread,
       threadRef,
