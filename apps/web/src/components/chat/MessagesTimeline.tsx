@@ -1,5 +1,7 @@
 import { ThreadFindTimelineContext } from "./ThreadFindProvider";
 import { isSvgAttachment } from "@t3tools/shared/image";
+import { filePreviewKind } from "@t3tools/shared/filePreview";
+import { InlineAudioPreview } from "../files/InlineAudioPreview";
 import { shouldPreserveAssistantLineBreaks } from "@t3tools/shared/markdownPipeline";
 import { MarkdownFindContext, useFindRevealRef } from "./markdownFindContext";
 import { ComputerUseAppIcon } from "~/components/Icons";
@@ -2809,7 +2811,10 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
     [row.message.attachments],
   );
   const userVideos = userFiles.filter(isVideoAttachment);
-  const otherUserFiles = userFiles.filter((file) => !isVideoAttachment(file));
+  const userAudio = userFiles.filter(isInlineAudioAttachment);
+  const otherUserFiles = userFiles.filter(
+    (file) => !isVideoAttachment(file) && !isInlineAudioAttachment(file),
+  );
   const unknownAttachments = (row.message.attachments ?? []).filter(
     (attachment) => !isImageAttachment(attachment) && !isFileAttachment(attachment),
   );
@@ -2991,6 +2996,25 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             ))}
           </div>
         )}
+        {userAudio.length > 0 ? (
+          <div className="mb-2 flex max-w-full flex-col gap-1">
+            {userAudio.map((file) => (
+              <InlineAudioPreview
+                key={file.id}
+                name={file.name}
+                environmentId={ctx.activeThreadEnvironmentId}
+                resource={{
+                  _tag: "attachment",
+                  attachmentId: file.id,
+                  fileName: file.name,
+                  mimeType: file.mimeType,
+                  disposition: "inline",
+                }}
+                onOpen={() => ctx.onFileOpen(file)}
+              />
+            ))}
+          </div>
+        ) : null}
         {unchippedFiles.length > 0 || unknownAttachments.length > 0 ? (
           <div className="mb-2 flex flex-col gap-1">
             {unchippedFiles.map((file) => {
@@ -3651,6 +3675,10 @@ function ProposedPlanTimelineRow({
       />
     </div>
   );
+}
+
+function isInlineAudioAttachment(file: ChatFileAttachment) {
+  return file.downloadable !== false && filePreviewKind(file) === "audio";
 }
 
 function HtmlRenderTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "html-render" }> }) {
@@ -5251,6 +5279,8 @@ const userMessageContextPresentationRegistry = createContextPresentationRegistry
           return <UnavailableUserMessageContextChip {...context} />;
         }
         const attachment = context.attachment;
+        // Audio plays in its own row above the prose, so its chip would only repeat it.
+        if (isInlineAudioAttachment(attachment)) return null;
         const isVideo = isVideoAttachment(attachment);
         const disabled =
           attachment.downloadable === false && (!isVideo || attachment.previewUrl === undefined);
