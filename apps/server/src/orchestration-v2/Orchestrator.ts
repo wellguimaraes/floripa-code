@@ -4208,6 +4208,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       const selectionMustApplyNow =
         selectionChanged &&
         (providerInstanceChanged || selectionTransition?.type !== "apply_on_next_turn");
+      const attachmentsNeedRestart =
+        input.attachments.length > 0 && turnCapabilities.activeSteeringAcceptsAttachments === false;
       const steeringPolicy = yield* enforceCommandPolicy(input.command)(
         commandPolicy.decideSteeringExecution({
           commandId: input.command.commandId,
@@ -4217,6 +4219,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           forceRestart:
             input.forceRestart ||
             selectionMustApplyNow ||
+            attachmentsNeedRestart ||
             (selectionChanged &&
               turnCapabilities.supportsInterrupt &&
               turnCapabilities.supportsSteeringByInterruptRestart),
