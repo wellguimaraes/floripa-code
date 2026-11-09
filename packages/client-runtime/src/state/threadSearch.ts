@@ -216,6 +216,9 @@ export interface SettledThreadSearch {
   readonly matches: ReadonlyArray<EnvironmentThreadSearchMatch>;
 }
 
+// Shared so a cleared search keeps one identity across renders.
+const NO_THREAD_SEARCH: SettledThreadSearch = Object.freeze({ query: "", matches: [] });
+
 /**
  * What a search box shows for `query`: its own results once they arrive
  * (`ready`), else the previous results if `query` refines or widens their
@@ -235,5 +238,5 @@ export function visibleThreadSearch(
     before.length > 0 &&
     (current.startsWith(before) || before.startsWith(current))
     ? previous
-    : { query: "", matches: [] };
+    : NO_THREAD_SEARCH;
 }
