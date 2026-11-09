@@ -194,6 +194,17 @@ export default defineConfig(() => {
         "@pierre/diffs/edit",
         "@pierre/diffs/react",
         "heic-to/next",
+        "saxes",
+        "fast-xml-parser",
+        "entities",
+        "@betteroffice/docx/editor",
+        "@betteroffice/docx/layout",
+        "@betteroffice/docx/layout/render",
+        "@betteroffice/docx/yrs",
+        "@betteroffice/fonts",
+        "@betteroffice/pptx",
+        "@betteroffice/xlsx",
+        "@betteroffice/xlsx/headless",
         "sql.js",
         "tiff",
         "@pierre/diffs/worker/worker.js",
@@ -227,6 +238,13 @@ export default defineConfig(() => {
     },
     resolve: {
       tsconfigPaths: true,
+      alias: {
+        // The optional CJK font pack is not shipped; the stub keeps its dynamic import resolvable.
+        "@betteroffice/fonts-cjk": new URL(
+          "./src/components/files/office/fonts-cjk.ts",
+          import.meta.url,
+        ).pathname,
+      },
       dedupe: ["react", "react-dom"],
     },
     experimental: {

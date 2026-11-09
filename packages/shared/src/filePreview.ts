@@ -11,6 +11,15 @@ export type FilePreviewKind =
   | "font"
   | "archive"
   | "sqlite"
+  | "docx"
+  | "xlsx"
+  | "pptx"
+  | "odt"
+  | "ods"
+  | "odp"
+  | "rtf"
+  | "epub"
+  | "ipynb"
   | "text"
   | "unsupported";
 
@@ -23,6 +32,8 @@ export function filePreviewKind(file: {
   const name = file.name.toLowerCase();
   const extension = name.slice(name.lastIndexOf("."));
   const generic = !mime || mime === "application/octet-stream" || mime === "text/plain";
+  const office = officePreviewKind(file);
+  if (office) return office;
   if (mime === "application/pdf") return "pdf";
   if (mime === "text/html") return "html";
   if (mime === "text/markdown" || mime === "text/x-markdown") return "markdown";
@@ -61,6 +72,42 @@ export function filePreviewKind(file: {
   )
     return "text";
   return "unsupported";
+}
+
+const OFFICE_MIME_TYPES = {
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  odt: "application/vnd.oasis.opendocument.text",
+  ods: "application/vnd.oasis.opendocument.spreadsheet",
+  odp: "application/vnd.oasis.opendocument.presentation",
+  rtf: "application/rtf",
+  epub: "application/epub+zip",
+  ipynb: "application/x-ipynb+json",
+} as const;
+
+export type OfficePreviewKind = keyof typeof OFFICE_MIME_TYPES;
+
+/** Documents the viewer renders from their bytes in a worker. A generic type falls back to the extension. */
+export function officePreviewKind(file: {
+  readonly name: string;
+  readonly mimeType?: string;
+}): OfficePreviewKind | null {
+  const mime = file.mimeType?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+  const generic = !mime || mime === "application/octet-stream" || mime === "text/plain";
+  const name = file.name.toLowerCase();
+  if (mime === "text/rtf") return "rtf";
+  for (const kind of Object.keys(OFFICE_MIME_TYPES) as OfficePreviewKind[]) {
+    if (mime === OFFICE_MIME_TYPES[kind]) return kind;
+    // Servers commonly label a notebook as plain JSON.
+    if ((generic || (kind === "ipynb" && mime === "application/json")) && name.endsWith(`.${kind}`))
+      return kind;
+  }
+  return null;
+}
+
+export function isOfficePreviewKind(kind: FilePreviewKind): kind is OfficePreviewKind {
+  return Object.hasOwn(OFFICE_MIME_TYPES, kind);
 }
 
 const BINARY_MIME_TYPES = new Map([
@@ -206,6 +253,9 @@ export function hostPreviewMimeTypeFromExtension(extension: string): string | nu
     BROWSER_MIME_TYPE_BY_EXTENSION.get(extension.toLowerCase()) ??
     FONT_MIME_TYPE_BY_EXTENSION.get(extension.toLowerCase()) ??
     BINARY_MIME_TYPES.get(extension.toLowerCase()) ??
+    (Object.hasOwn(OFFICE_MIME_TYPES, extension.toLowerCase().slice(1))
+      ? OFFICE_MIME_TYPES[extension.toLowerCase().slice(1) as OfficePreviewKind]
+      : null) ??
     null
   );
 }
@@ -276,6 +326,7 @@ export function isWorkspacePreviewEntryPath(path: string): boolean {
     isWorkspaceBrowserPreviewPath(path) ||
     isWorkspaceImagePreviewPath(path) ||
     isWorkspaceFontPreviewPath(path) ||
-    binaryPreviewKind({ name: path }) !== null
+    binaryPreviewKind({ name: path }) !== null ||
+    officePreviewKind({ name: path }) !== null
   );
 }

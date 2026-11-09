@@ -2,7 +2,11 @@ import { filePreviewDelimiter } from "@t3tools/shared/delimitedPreview";
 import type { AssetResource, EnvironmentId } from "@t3tools/contracts";
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 import { readFilePreviewResponse } from "@t3tools/client-runtime/file-preview";
-import { filePreviewKind, FILE_TEXT_PREVIEW_MAX_BYTES } from "@t3tools/shared/filePreview";
+import {
+  filePreviewKind,
+  FILE_TEXT_PREVIEW_MAX_BYTES,
+  isOfficePreviewKind,
+} from "@t3tools/shared/filePreview";
 import { ChevronRightIcon, DownloadIcon, Trash2Icon, WrapTextIcon, XIcon } from "lucide-react";
 import { Check, Code2, Copy, Eye, Table2 } from "lucide";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
@@ -20,6 +24,7 @@ import { AudioPreview } from "./AudioPreview";
 import { BrowserDocumentFrame } from "./BrowserDocumentFrame";
 import { DelimitedTablePreview, LargeTextPreview } from "./DelimitedTablePreview";
 import { BinaryFilePreview } from "./BinaryFilePreview";
+import { OfficeFilePreview } from "./OfficeFilePreview";
 import { PreviewImage } from "./PreviewImage";
 import {
   FILE_SURFACE_SUBHEADER_CLASS,
@@ -311,6 +316,14 @@ export function AttachmentFilePreview(props: {
       name={props.name}
       kind={kind}
       onRetry={() => setRevision((value) => value + 1)}
+    />
+  ) : isOfficePreviewKind(kind) ? (
+    <OfficeFilePreview
+      key={revision}
+      src={url}
+      name={props.name}
+      kind={kind}
+      sizeBytes={props.sizeBytes}
     />
   ) : kind === "font" ? (
     <Suspense fallback={<FileSurfaceLoading />}>
