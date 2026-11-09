@@ -17,6 +17,7 @@ export type FilePreviewKind =
   | "odt"
   | "ods"
   | "odp"
+  | "rtf"
   | "epub"
   | "ipynb"
   | "text"
@@ -80,6 +81,7 @@ const OFFICE_MIME_TYPES = {
   odt: "application/vnd.oasis.opendocument.text",
   ods: "application/vnd.oasis.opendocument.spreadsheet",
   odp: "application/vnd.oasis.opendocument.presentation",
+  rtf: "application/rtf",
   epub: "application/epub+zip",
   ipynb: "application/x-ipynb+json",
 } as const;
@@ -94,6 +96,7 @@ export function officePreviewKind(file: {
   const mime = file.mimeType?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
   const generic = !mime || mime === "application/octet-stream" || mime === "text/plain";
   const name = file.name.toLowerCase();
+  if (mime === "text/rtf") return "rtf";
   for (const kind of Object.keys(OFFICE_MIME_TYPES) as OfficePreviewKind[]) {
     if (mime === OFFICE_MIME_TYPES[kind]) return kind;
     // Servers commonly label a notebook as plain JSON.

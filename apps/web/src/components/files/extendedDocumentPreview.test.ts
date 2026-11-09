@@ -1,7 +1,7 @@
 import JSZip from "jszip";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { openDocument, openEpub, openNotebook } from "./extendedDocumentPreview";
+import { openDocument, openEpub, openNotebook, openRtf } from "./extendedDocumentPreview";
 
 describe("document preview contents", () => {
   const bytes = (text: string) => new TextEncoder().encode(text).buffer;
@@ -202,5 +202,73 @@ describe("document preview contents", () => {
       '<!DOCTYPE x [<!ENTITY external SYSTEM "file:///etc/passwd">]><x>&external;</x>',
     );
     await expect(openDocument(archive, kind)).rejects.toThrow("unsupported XML");
+  });
+
+  it.each(["?", String.raw`\'3f`, String.raw`\\`])(
+    "consumes skipped rich text Unicode fallback %s",
+    (fallback) => {
+      const result = openRtf(bytes(String.raw`{\rtf1{\*\unknown\u945` + fallback + "}Hello}"));
+      if (result.type !== "document") throw new Error("Expected document");
+      expect(result.pages[0]!.html).toBe("<p>Hello</p>");
+    },
+  );
+
+  it("decodes rich text formatting and Unicode without showing hidden destinations", () => {
+    const result = openRtf(
+      bytes(
+        String.raw`{\rtf1\ansi{\fonttbl{\f0 Hidden font;}}Hello \b bold\b0\par Unicode: \u945?{\*\unknown hidden}{\field{\*\fldinst HYPERLINK "https://example.com"}{\fldrslt visible}}}`,
+      ),
+    );
+    expect(result.type).toBe("document");
+    if (result.type !== "document") throw new Error("Expected document");
+    const html = result.pages[0]!.html;
+    expect(html.replaceAll(/<[^>]*>/g, "")).toBe("Hello boldUnicode: αvisible");
+    expect(html).toContain("<strong>");
+    expect(html).not.toContain("https:");
+  });
+
+  it("treats a backslash before a line break as a paragraph break, as TextEdit writes them", () => {
+    const html = (rtf: string) => {
+      const result = openRtf(bytes(rtf));
+      if (result.type !== "document") throw new Error("Expected document");
+      return result.pages.map((page) => page.html);
+    };
+    const textEdit = String.raw`{\rtf1\ansi{\fonttbl\f0\fswiss Helvetica;}
+\pard\f0\fs24 \cf0 First\
+Second\
+\
+Third}`;
+    const expected = html(
+      String.raw`{\rtf1\ansi{\fonttbl\f0\fswiss Helvetica;}\pard\f0\fs24 \cf0 First\par Second\par \par Third}`,
+    );
+    expect(html(textEdit)).toEqual(expected);
+    expect(html(textEdit.replaceAll("\n", "\r\n"))).toEqual(expected);
+  });
+
+  it("preserves rich text page breaks and formatting without splitting hidden destinations", () => {
+    const result = openRtf(
+      bytes(String.raw`{\rtf1\b First\page Second\b0{\*\unknown \page hidden}\page Third\page}`),
+    );
+    if (result.type !== "document") throw new Error("Expected document");
+    expect(result.navigation).toBe("page");
+    expect(result.pages.map((page) => page.html)).toEqual([
+      "<p><strong>First</strong></p>",
+      "<p><strong>Second</strong></p>",
+      "<p>Third</p>",
+    ]);
+    expect(() => openRtf(bytes(String.raw`{\rtf1 ` + String.raw`\page`.repeat(501) + "}"))).toThrow(
+      "500 pages",
+    );
+  });
+
+  it("decodes declared rich text code pages for raw bytes and escaped byte runs", () => {
+    const input = new TextEncoder().encode(
+      String.raw`{\rtf1\ansi\ansicpg1251 A \'c0\par\ansicpg932\'82\'a0}`,
+    );
+    input[input.indexOf(65)] = 0xc0;
+    const result = openRtf(input.buffer);
+    if (result.type !== "document") throw new Error("Expected document");
+    expect(result.pages[0]!.html).toBe("<p>А А<br>あ</p>");
+    expect(() => openRtf(bytes(String.raw`{\rtf1\ansicpg99999 text}`))).toThrow("code page");
   });
 });
