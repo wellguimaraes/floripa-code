@@ -755,3 +755,41 @@ describe("settled worktree cleanup", () => {
     }),
   );
 });
+
+describe("settled cleanup and unpushed work", () => {
+  it.live("keeps a settled worktree whose commits exist on no remote", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const now = yield* Clock.currentTimeMillis;
+        const longAgo = DateTime.makeUnsafe(now - 3 * DAY_MS);
+        const fixture = yield* cleanupFixture;
+        const remote = yield* fixture.fs.makeTempDirectoryScoped({ prefix: "cleanup-remote-" });
+        yield* fixture.command(remote, ["init", "--bare", "-b", "main"]);
+        yield* fixture.command(fixture.worktree, ["remote", "add", "origin", remote]);
+        yield* fixture.command(fixture.worktree, ["push", "origin", "main", "feature"]);
+        yield* fixture.fs.writeFileString(`${fixture.worktree}/local.txt`, "local\n");
+        yield* fixture.command(fixture.worktree, ["add", "."]);
+        yield* fixture.command(fixture.worktree, ["commit", "-m", "local only"]);
+        fixture.setSettledAfterDays(2);
+        fixture.setThreads([
+          shell({
+            branch: "feature",
+            worktreePath: fixture.worktree,
+            settledAt: longAgo,
+            updatedAt: longAgo,
+          }),
+        ]);
+        const kept = yield* fixture.service.runNow;
+        expect(kept.entries[0]).toMatchObject({
+          outcome: "kept",
+          reason: "Has commits that are not pushed",
+        });
+        expect(yield* fixture.fs.exists(fixture.worktree)).toBe(true);
+        yield* fixture.command(fixture.worktree, ["push", "origin", "feature"]);
+        const removed = yield* fixture.service.runNow;
+        expect(removed.entries[0]).toMatchObject({ outcome: "removed" });
+        expect(yield* fixture.fs.exists(fixture.worktree)).toBe(false);
+      }),
+    ),
+  );
+});

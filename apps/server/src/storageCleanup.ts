@@ -278,6 +278,27 @@ const make = Effect.gen(function* () {
     return false;
   });
 
+  // Commits on no remote-tracking ref exist only in this clone. A repository
+  // without remotes has nowhere to push, so it never counts as unpushed.
+  const hasUnpushedCommits = Effect.fn("StorageCleanup.hasUnpushedCommits")(function* (
+    cwd: string,
+  ) {
+    const remotes = yield* git.execute({
+      operation: "StorageCleanup.remotes",
+      cwd,
+      args: ["remote"],
+      maxOutputBytes: 64 * 1024,
+    });
+    if (remotes.stdout.trim() === "") return false;
+    const unpushed = yield* git.execute({
+      operation: "StorageCleanup.unpushedCommits",
+      cwd,
+      args: ["rev-list", "--max-count=1", "HEAD", "--not", "--remotes"],
+      maxOutputBytes: 1024,
+    });
+    return unpushed.stdout.trim() !== "";
+  });
+
   const localChangesReason = Effect.fn("StorageCleanup.localChangesReason")(function* (
     cwd: string,
     rules: WorktreeCleanupRules,
@@ -450,6 +471,9 @@ const make = Effect.gen(function* () {
           settledFor !== null &&
           settings.worktreeSettledAfterDays !== null &&
           settledFor >= settings.worktreeSettledAfterDays * DAY_MS;
+        // Settling says nothing about the work being saved elsewhere.
+        if (settled && !old && (yield* hasUnpushedCommits(worktreePath)))
+          return keep("has commits that are not pushed");
         let eligible = deleted || old || settled;
         let removalReason = deleted
           ? "thread was deleted"
