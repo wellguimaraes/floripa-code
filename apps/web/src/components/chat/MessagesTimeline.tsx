@@ -4,7 +4,7 @@ import type { ProviderApprovalDecision, RuntimeRequestId } from "@t3tools/contra
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 
 export interface PendingApprovalRows {
-  readonly pending: ReadonlyMap<string, ThreadPendingApproval>;
+  readonly pending: ReadonlyMap<RuntimeRequestId, ThreadPendingApproval>;
   readonly responding: ReadonlyArray<string>;
   readonly canRespond: boolean;
   readonly onRespond: (
@@ -496,6 +496,7 @@ const TIMELINE_MAINTAIN_SCROLL_AT_END = {
 } as const satisfies MaintainScrollAtEndOptions;
 const EMPTY_TIMELINE_RUNS: ReadonlyArray<HandoffTimelineRun> = [];
 const EMPTY_RUN_IDS: ReadonlySet<RunId> = new Set();
+const EMPTY_REQUEST_IDS: ReadonlySet<RuntimeRequestId> = new Set();
 // Streamed text lands a paragraph at a time. A smooth scroll to the end
 // turns each landing into a short glide instead of a jump. Thread switches
 // and layout settles keep the instant variant so nothing visibly travels.
@@ -923,9 +924,14 @@ const ConversationTimeline = memo(function ConversationTimeline({
     [activeFindAttemptId, paintedExpandedAttemptIds],
   );
 
+  const pendingApprovalRequestIds = useMemo(
+    () => new Set(pendingApprovalRows?.pending.keys()),
+    [pendingApprovalRows?.pending],
+  );
   const rows = useMessagesTimelineRows(
     {
       timelineEntries,
+      pendingApprovalRequestIds,
       latestRun,
       runningRunId,
       expandedRunIds: visibleExpandedRunIds,
@@ -1653,6 +1659,7 @@ function useMessagesTimelineRows(
 ): MessagesTimelineRow[] {
   const {
     timelineEntries,
+    pendingApprovalRequestIds,
     latestRun,
     runningRunId,
     expandedRunIds,
@@ -1676,6 +1683,7 @@ function useMessagesTimelineRows(
     const projection = deriveMessagesTimelineRowsWithState(
       {
         timelineEntries,
+        pendingApprovalRequestIds,
         latestRun,
         runningRunId,
         expandedRunIds,
@@ -1698,6 +1706,7 @@ function useMessagesTimelineRows(
     threadKey,
     workspaceRoot,
     timelineEntries,
+    pendingApprovalRequestIds,
     latestRun,
     runningRunId,
     expandedRunIds,
@@ -1976,6 +1985,7 @@ export function InlineTimelineRows({
   const allRows = useMessagesTimelineRows(
     {
       timelineEntries,
+      pendingApprovalRequestIds: EMPTY_REQUEST_IDS,
       latestRun,
       runningRunId,
       expandedRunIds: EMPTY_RUN_IDS,

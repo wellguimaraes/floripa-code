@@ -173,6 +173,7 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 import { assistantCitationFromLocation } from "../lib/assistantCitationNavigation";
 import { isMacPlatform } from "../lib/utils";
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
+import { shallow } from "zustand/vanilla/shallow";
 import { useShallow } from "zustand/react/shallow";
 import {
   isAtomCommandInterrupted,
@@ -10040,18 +10041,33 @@ export default function ChatView(props: ChatViewProps) {
   }, [onRespondToApproval]);
 
   const canRespondToApprovals = readEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
-  const pendingApprovalRows = useMemo(
-    () =>
-      pendingApprovals.length === 0
-        ? undefined
-        : {
-            pending: new Map(pendingApprovals.map((approval) => [approval.requestId, approval])),
-            responding: respondingRequestIds,
-            canRespond: canRespondToApprovals,
-            onRespond: onRespondToApproval,
-          },
-    [canRespondToApprovals, onRespondToApproval, pendingApprovals, respondingRequestIds],
+  // Approvals answer on their timeline row. While the user types a draft the composer holds
+  // them back, so the row must not offer buttons that would change under their fingers.
+  const [heldApprovalRequestIds, setHeldApprovalRequestIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
   );
+  const onHeldRequestIdsChange = useCallback((requestIds: ReadonlySet<string>) => {
+    setHeldApprovalRequestIds((current) => (shallow(current, requestIds) ? current : requestIds));
+  }, []);
+  const pendingApprovalRows = useMemo(() => {
+    const shown = pendingApprovals.filter(
+      (approval) => !heldApprovalRequestIds.has(approval.requestId),
+    );
+    return shown.length === 0
+      ? undefined
+      : {
+          pending: new Map(shown.map((approval) => [approval.requestId, approval])),
+          responding: respondingRequestIds,
+          canRespond: canRespondToApprovals,
+          onRespond: onRespondToApproval,
+        };
+  }, [
+    canRespondToApprovals,
+    heldApprovalRequestIds,
+    onRespondToApproval,
+    pendingApprovals,
+    respondingRequestIds,
+  ]);
   const onRespondToUserInput = useCallback(
     async (requestId: RuntimeRequestId, answers: Record<string, unknown>) => {
       if (!activeThreadId || !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope))
@@ -11727,6 +11743,7 @@ export default function ChatView(props: ChatViewProps) {
                                 environmentUnavailable={activeEnvironmentUnavailableState}
                                 activePendingApproval={activePendingApproval}
                                 pendingApprovals={pendingApprovals}
+                                onHeldRequestIdsChange={onHeldRequestIdsChange}
                                 pendingUserInputs={pendingUserInputs}
                                 activePendingProgress={activePendingProgress}
                                 activePendingResolvedAnswers={activePendingResolvedAnswers}
@@ -11790,7 +11807,6 @@ export default function ChatView(props: ChatViewProps) {
                                 onResume={onResume}
                                 onInterrupt={onInterrupt}
                                 onImplementPlanInNewThread={onImplementPlanInNewThread}
-                                onRespondToApproval={onRespondToApproval}
                                 onSelectActivePendingUserInputOption={
                                   onSelectActivePendingUserInputOption
                                 }
