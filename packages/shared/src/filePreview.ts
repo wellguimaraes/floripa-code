@@ -13,6 +13,7 @@ export type FilePreviewKind =
   | "sqlite"
   | "docx"
   | "xlsx"
+  | "pptx"
   | "text"
   | "unsupported";
 
@@ -70,6 +71,7 @@ export function filePreviewKind(file: {
 const OFFICE_MIME_TYPES = {
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 } as const;
 
 export type OfficePreviewKind = keyof typeof OFFICE_MIME_TYPES;
