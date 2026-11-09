@@ -234,6 +234,41 @@ describe("AssetAccess", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
+  it.effect("serves any host file as an opaque download only when explicitly requested", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-media-root-" });
+      const outside = yield* fs.makeTempDirectoryScoped({ prefix: "t3-media-outside-" });
+      const filePath = path.join(outside, "archive.zip");
+      yield* fs.writeFileString(filePath, "zip");
+      const canonicalFile = yield* fs.realPath(filePath);
+      const threadId = ThreadId.make("thread-1");
+
+      const preview = yield* issueAssetUrl({
+        resource: { _tag: "media-file", threadId, path: filePath },
+        workspaceRoot: root,
+      }).pipe(Effect.flip);
+      expect(preview).toBeInstanceOf(AssetPreviewTypeValidationError);
+
+      const result = yield* issueAssetUrl({
+        resource: { _tag: "media-file", threadId, path: filePath, disposition: "attachment" },
+        workspaceRoot: root,
+      });
+      const suffix = result.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+      const separator = suffix.indexOf("/");
+      expect(
+        yield* resolveAsset(suffix.slice(0, separator), suffix.slice(separator + 1)),
+      ).toMatchObject({
+        kind: "file",
+        path: canonicalFile,
+        mimeType: "application/octet-stream",
+        download: true,
+        fileName: "archive.zip",
+      });
+    }).pipe(Effect.provide(layerTest)),
+  );
+
   it.effect("reports pixel dimensions from an image header and nothing for other files", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
