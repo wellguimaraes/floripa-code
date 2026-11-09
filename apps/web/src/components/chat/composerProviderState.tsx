@@ -24,6 +24,7 @@ import {
   shouldRenderTraitsControls,
   TraitsMenuContent,
   TraitsPicker,
+  type TraitsSelectionInput,
 } from "./TraitsPicker";
 
 export type ComposerProviderStateInput = {
@@ -289,4 +290,48 @@ export function renderProviderTraitsMenuContent(input: TraitsRenderInput): React
 
 export function renderProviderTraitsPicker(input: TraitsRenderInput): ReactNode {
   return renderTraitsControl(TraitsPicker, input);
+}
+
+/**
+ * The traits the model picker's effort column shows, or null when the target has no draft or
+ * thread to persist to, or the model has nothing to configure.
+ */
+export function resolveComposerTraitsSelection(
+  input: TraitsRenderInput,
+): TraitsSelectionInput | null {
+  const { threadRef, draftId, model, models, provider, modelOptions, prompt, planModeEnabled } =
+    input;
+  if (threadRef === undefined && draftId === undefined) return null;
+  const { selections } = resolveComposerOptionSelections(
+    models,
+    model,
+    provider,
+    modelOptions,
+    planModeEnabled,
+  );
+  if (
+    !shouldRenderTraitsControls({
+      provider,
+      models,
+      model,
+      modelOptions: selections,
+      prompt,
+      planModeEnabled,
+    })
+  ) {
+    return null;
+  }
+  return {
+    provider,
+    ...(input.instanceId ? { instanceId: input.instanceId } : {}),
+    models,
+    ...(threadRef ? { threadRef } : {}),
+    ...(draftId ? { draftId } : {}),
+    model,
+    modelOptions: selections,
+    reportedModelSelection: input.reportedModelSelection,
+    prompt,
+    onPromptChange: input.onPromptChange,
+    planModeEnabled,
+  } as TraitsSelectionInput;
 }

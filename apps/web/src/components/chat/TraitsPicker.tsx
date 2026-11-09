@@ -128,7 +128,7 @@ function replaceDescriptorCurrentValue(
   );
 }
 
-function getDescriptorStringValue(
+export function getDescriptorStringValue(
   descriptor: Extract<ProviderOptionDescriptor, { type: "select" }> | null,
   selection?: ModelSelection | null,
   reportedSelection?: ModelSelection | null,
@@ -222,12 +222,12 @@ function getSelectedTraits(
   };
 }
 
-function getTraitsSectionVisibility(input: {
+export function getTraitsSectionVisibility(input: {
   provider: ProviderDriverKind;
   models: ReadonlyArray<ServerProviderModel>;
   model: string | null | undefined;
   prompt: string;
-  modelOptions: ProviderOptions | null | undefined;
+  modelOptions?: ProviderOptions | null | undefined;
   allowPromptInjectedEffort?: boolean;
   planModeEnabled: boolean;
 }) {
@@ -382,7 +382,13 @@ export interface TraitsMenuContentProps {
   isComposerOwned?: boolean;
 }
 
-export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
+export type TraitsSelectionInput = TraitsMenuContentProps & TraitsPersistence;
+
+/**
+ * The selected model's options, with handlers that persist a change to the draft or thread the
+ * same way the traits menu does. Menus and the model picker's effort column both read from it.
+ */
+export function useTraitsSelection({
   provider,
   instanceId,
   models,
@@ -394,7 +400,7 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
   allowPromptInjectedEffort = true,
   planModeEnabled,
   ...persistence
-}: TraitsMenuContentProps & TraitsPersistence) {
+}: TraitsSelectionInput) {
   const modelSelection =
     instanceId && model ? { instanceId, model, options: modelOptions ?? [] } : null;
   const setProviderModelOptions = useComposerDraftStore((store) => store.setProviderModelOptions);
@@ -425,6 +431,33 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
     allowPromptInjectedEffort,
     planModeEnabled,
   });
+  const updateDescriptors = (nextDescriptors: ReadonlyArray<ProviderOptionDescriptor>) => {
+    updateModelOptions(buildProviderOptionSelectionsFromDescriptors(nextDescriptors));
+  };
+
+  const changeSelect = (
+    descriptor: Extract<ProviderOptionDescriptor, { type: "select" }>,
+    value: string,
+  ) => {
+    const change = getTraitSelectChange(selected, descriptor, prompt, value);
+    if (!change) return;
+    if (change.prompt !== prompt) onPromptChange(change.prompt);
+    if ("modelOptions" in change) updateModelOptions(change.modelOptions);
+  };
+  const changeBoolean = (descriptorId: string, value: boolean) => {
+    updateDescriptors(replaceDescriptorCurrentValue(selected.descriptors, descriptorId, value));
+  };
+  const selectValue = (descriptor: Extract<ProviderOptionDescriptor, { type: "select" }>) =>
+    selected.ultrathinkPromptControlled && descriptor.id === selected.primarySelectDescriptor?.id
+      ? "ultrathink"
+      : (getDescriptorStringValue(descriptor, modelSelection, reportedModelSelection) ?? "");
+  const currentLabel = (descriptor: ProviderOptionDescriptor) =>
+    getProviderOptionCurrentLabel(descriptor, modelSelection, reportedModelSelection);
+
+  return { ...selected, changeSelect, changeBoolean, selectValue, currentLabel };
+}
+
+export const TraitsMenuContent = memo(function TraitsMenuContentImpl(props: TraitsSelectionInput) {
   const {
     descriptors,
     selectDescriptors,
@@ -434,20 +467,11 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
     ultrathinkInBodyText,
     hasAnyControls,
     modelIsUnavailable,
-  } = selected;
-  const updateDescriptors = (nextDescriptors: ReadonlyArray<ProviderOptionDescriptor>) => {
-    updateModelOptions(buildProviderOptionSelectionsFromDescriptors(nextDescriptors));
-  };
-
-  const handleSelectChange = (
-    descriptor: Extract<ProviderOptionDescriptor, { type: "select" }>,
-    value: string,
-  ) => {
-    const change = getTraitSelectChange(selected, descriptor, prompt, value);
-    if (!change) return;
-    if (change.prompt !== prompt) onPromptChange(change.prompt);
-    if ("modelOptions" in change) updateModelOptions(change.modelOptions);
-  };
+    changeSelect: handleSelectChange,
+    changeBoolean,
+    currentLabel,
+    selectValue,
+  } = useTraitsSelection(props);
 
   if (!hasAnyControls) {
     return null;
@@ -457,11 +481,7 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
     return (
       <>
         {descriptors.map((descriptor, index) => {
-          const value = getProviderOptionCurrentLabel(
-            descriptor,
-            modelSelection,
-            reportedModelSelection,
-          );
+          const value = currentLabel(descriptor);
           if (!value) return null;
           return (
             <div key={descriptor.id}>
@@ -482,10 +502,7 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
   return (
     <>
       {selectDescriptors.map((descriptor, index) => {
-        const selectedValue =
-          ultrathinkPromptControlled && descriptor.id === primarySelectDescriptor?.id
-            ? "ultrathink"
-            : (getDescriptorStringValue(descriptor, modelSelection, reportedModelSelection) ?? "");
+        const selectedValue = selectValue(descriptor);
 
         return (
           <div key={descriptor.id}>
@@ -551,11 +568,7 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
               </div>
               <MenuRadioGroup
                 value={selectedValue}
-                onValueChange={(value) => {
-                  updateDescriptors(
-                    replaceDescriptorCurrentValue(descriptors, descriptor.id, value === "on"),
-                  );
-                }}
+                onValueChange={(value) => changeBoolean(descriptor.id, value === "on")}
               >
                 {(["on", "off"] as const).map((value) => (
                   <MenuRadioItem key={value} value={value} hideIndicator closeOnClick>
