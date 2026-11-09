@@ -89,6 +89,7 @@ import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { PendingReviewCommentCard, ReviewThreadCard } from "./PullRequestReviewAnnotation";
 import {
+  getFileViewedRange,
   isFileDiffCollapsed,
   isLineInFileDiff,
   toggleFileDiffFoldForViewed,
@@ -234,6 +235,8 @@ function PullRequestCodeTab({
   const { resolvedTheme } = useTheme();
   const settings = useClientSettings();
   const [toggledFiles, setToggledFiles] = useState<ReadonlySet<string>>(() => new Set());
+  // The anchor for shift-click range ticking, a ref because the header callbacks read it lazily.
+  const lastViewedFileKeyRef = useRef<string | null>(null);
   // A change of any size can carry hundreds of commits, and a menu that long is a scroll rather
   // than a choice. The rest arrive ten at a time, on request.
   const [visibleCommitCount, setVisibleCommitCount] = useState(COMMIT_PAGE_SIZE);
@@ -283,6 +286,7 @@ function PullRequestCodeTab({
     setDraft(null);
     setSelectedLines(null);
     setToggledFiles(new Set());
+    lastViewedFileKeyRef.current = null;
     setFoldOverride(null);
     setVisibleCommitCount(COMMIT_PAGE_SIZE);
     setOrphansOpen(false);
@@ -693,14 +697,25 @@ function PullRequestCodeTab({
   // The tick and the fold are one gesture: clearing a file puts it away, un-clearing brings it
   // back. Folding is still held as the reader's difference from the toolbar's default rather
   // than derived from what has been ticked, so folding everything ticks nothing off.
+  // Shift-click extends from the last file ticked, in the order the files are shown.
   const setFileViewed = useCallback(
-    (fileKey: string, path: string, viewed: boolean) => {
-      setViewed(path, viewed);
+    (fileKey: string, viewed: boolean, extendRange: boolean) => {
+      const range = getFileViewedRange(
+        annotatedFiles,
+        fileKey,
+        extendRange ? lastViewedFileKeyRef.current : null,
+      );
+      lastViewedFileKeyRef.current = fileKey;
+      for (const file of range) setViewed(file.path, viewed);
       setToggledFiles((current) =>
-        toggleFileDiffFoldForViewed(fileKey, viewed, effectiveFoldOverride, current),
+        range.reduce(
+          (next, file) =>
+            toggleFileDiffFoldForViewed(file.fileKey, viewed, effectiveFoldOverride, next),
+          current,
+        ),
       );
     },
-    [effectiveFoldOverride, setViewed],
+    [annotatedFiles, effectiveFoldOverride, setViewed],
   );
 
   const requestTreeReveal = useCodeViewFileReveal(viewer, scopeKey);
@@ -914,7 +929,13 @@ function PullRequestCodeTab({
             <Checkbox
               aria-label={stale ? "Changed" : "Viewed"}
               checked={viewed}
-              onCheckedChange={(next) => setFileViewedRef.current(item.id, path, next === true)}
+              onCheckedChange={(next, details) =>
+                setFileViewedRef.current(
+                  item.id,
+                  next === true,
+                  "shiftKey" in details.event && details.event.shiftKey === true,
+                )
+              }
             />
             {stale ? (
               <Tooltip>
