@@ -1,4 +1,5 @@
 import {
+  settingsSecretLiteral,
   ProviderDriverKind,
   UsageLimitSourceError,
   type ProviderConsumeResetCreditResult,
@@ -136,7 +137,12 @@ export const makeCliproxyApi = Effect.gen(function* () {
     });
     const request = (
       body === undefined ? HttpClientRequest.get(url) : HttpClientRequest.post(url)
-    ).pipe(HttpClientRequest.setHeader("Authorization", `Bearer ${config.managementKey}`));
+    ).pipe(
+      HttpClientRequest.setHeader(
+        "Authorization",
+        `Bearer ${settingsSecretLiteral(config.managementKey)}`,
+      ),
+    );
     const response = yield* client
       .execute(body === undefined ? request : request.pipe(HttpClientRequest.bodyJsonUnsafe(body)))
       .pipe(

@@ -66,7 +66,7 @@ import type {
 import * as ProviderInstanceRegistry from "./ProviderInstanceRegistry.ts";
 import * as ProviderRegistry from "./ProviderRegistry.ts";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "@t3tools/provider-core/server/maintenanceResolver";
-const decodeServerSettings = Schema.decodeSync(ServerSettings);
+const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const encodedDefaultServerSettings = encodeServerSettings(DEFAULT_SERVER_SETTINGS);
 
@@ -2712,7 +2712,7 @@ it.layer(
         const missingBinary = `floripacode_codex_missing_`;
         const serverSettings = yield* makeMutableServerSettingsService(
           decodeServerSettings(
-            deepMerge(encodedDefaultServerSettings, {
+            deepMerge(encodedDefaultServerSettings as Record<string, unknown>, {
               // `providerInstances` keys are branded `ProviderInstanceId`;
               // the branded index signature rejects plain string literals
               // at the TS level even though the runtime schema happily
@@ -2826,7 +2826,7 @@ it.layer(
         const allowLazySettingsStream = yield* Deferred.make<void>();
         const mutableServerSettings = yield* makeMutableServerSettingsService(
           decodeServerSettings(
-            deepMerge(encodedDefaultServerSettings, {
+            deepMerge(encodedDefaultServerSettings as Record<string, unknown>, {
               providerInstances: {
                 ...disabledDefaultSlots("claudeAgent", "cursor", "grok", "opencode"),
                 [ProviderInstanceId.make("codex")]: {
@@ -2954,7 +2954,7 @@ it.layer(
       Effect.gen(function* () {
         const serverSettings = yield* makeMutableServerSettingsService(
           decodeServerSettings(
-            deepMerge(encodedDefaultServerSettings, {
+            deepMerge(encodedDefaultServerSettings as Record<string, unknown>, {
               providerInstances: {
                 ...disabledDefaultSlots("codex", "claudeAgent", "cursor", "grok", "opencode"),
                 ghost_main: {
@@ -3021,7 +3021,7 @@ it.layer(
         Effect.gen(function* () {
           const serverSettings = yield* makeMutableServerSettingsService(
             decodeServerSettings(
-              deepMerge(encodedDefaultServerSettings, {
+              deepMerge(encodedDefaultServerSettings as Record<string, unknown>, {
                 providerInstances: disabledDefaultSlots("codex", "grok"),
               }),
             ),

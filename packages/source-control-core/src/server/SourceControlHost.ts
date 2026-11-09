@@ -71,6 +71,12 @@ export class SourceControlHost extends Context.Service<
     readonly settings: {
       /** Read fresh on each call, so a credential saved in Settings applies without a restart. */
       readonly get: Effect.Effect<ServerSettings, ServerSettingsError>;
+      /**
+       * `get` with each credential that names a secret provider replaced by the secret it names.
+       * One that cannot be read keeps its reference, which `requireSettingsSecretLiteral` turns
+       * into an error so a caller cannot fall back to another account unnoticed.
+       */
+      readonly getWithSecrets: Effect.Effect<ServerSettings, ServerSettingsError>;
     };
     readonly process: {
       readonly run: (

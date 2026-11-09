@@ -1,4 +1,4 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
+import { settingsSecretLiteral, SourceControlProviderKind } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
@@ -202,7 +202,7 @@ export const makeDiscovery = Effect.gen(function* () {
     label: discovery.label,
     installHint: discovery.installHint,
     probe: Effect.fn("GitHubSourceControlProvider.discovery")(function* (cwd: string) {
-      const settings = yield* sourceControlHost.settings.get.pipe(
+      const settings = yield* sourceControlHost.settings.getWithSecrets.pipe(
         Effect.map((current) => current.github),
         Effect.orElseSucceed(() => DEFAULT_SERVER_SETTINGS.github),
       );
@@ -212,7 +212,7 @@ export const makeDiscovery = Effect.gen(function* () {
         spec: { ...discovery, parseAuth: (input) => parseGitHubAuth(input, settings) },
       });
       // A token saved in Settings wins over the environment, which wins over gh.
-      const savedToken = (settings.tokens["github.com"] ?? "").trim() !== "";
+      const savedToken = settingsSecretLiteral(settings.tokens["github.com"]).trim() !== "";
       const variable = environmentTokenVariable(environment);
       const tokenSource = savedToken ? "the token saved in Settings" : variable;
       // A host turned off in Settings stays off even with a token.
@@ -310,6 +310,7 @@ function fromGitHubApiError(
       );
     case "GitHubNotSignedInError":
     case "GitHubHostDisabledError":
+    case "SettingsSecretUnresolvedError":
       // A missing or turned-off credential already says what to do about it.
       return failure(error.message, error);
     case "GitHubApiAuthenticationError":

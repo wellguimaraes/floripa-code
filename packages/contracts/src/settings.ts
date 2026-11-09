@@ -20,6 +20,7 @@ import {
   TrimmedString,
 } from "./baseSchemas.ts";
 import { SecretProviderId } from "./secretReference.ts";
+import { SettingsSecretValue } from "./settingsSecretValue.ts";
 import { SecretProviderConfig, SecretProviderConfigWrite } from "./secretProviders.ts";
 import { UsageLimitSourceId } from "./usageLimitSourceId.ts";
 import { EnvironmentMachineKind, ThreadEnvMode, WorktreeSubmodules } from "./environment.ts";
@@ -796,7 +797,7 @@ export const UsageLimitSourceConfig = Schema.Struct({
   kind: Schema.Literal("cliproxy"),
   label: Schema.optional(TrimmedNonEmptyString),
   url: TrimmedNonEmptyString,
-  managementKey: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  managementKey: SettingsSecretValue.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
 });
 export type UsageLimitSourceConfig = typeof UsageLimitSourceConfig.Type;
@@ -868,7 +869,7 @@ export const GitHubSettings = Schema.Struct({
    * A token per host, used before `GH_TOKEN` and `gh`. The server keeps each one in its secret
    * store; settings and clients only ever see a redaction marker for a saved token.
    */
-  tokens: Schema.Record(GitHubHost, TrimmedString).pipe(
+  tokens: Schema.Record(GitHubHost, SettingsSecretValue).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
 });
@@ -1603,7 +1604,7 @@ export const ServerSettingsPatch = Schema.Struct({
   github: Schema.optionalKey(
     Schema.Struct({
       hosts: Schema.optionalKey(Schema.Record(GitHubHost, GitHubHostSettings)),
-      tokens: Schema.optionalKey(Schema.Record(GitHubHost, TrimmedString)),
+      tokens: Schema.optionalKey(Schema.Record(GitHubHost, SettingsSecretValue)),
     }),
   ),
   // Whole-map replacement for the new instance config. Patching individual
