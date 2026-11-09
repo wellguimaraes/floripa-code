@@ -544,6 +544,7 @@ it.effect("enqueues provider work only after setup has been initiated", () =>
             scriptName: "Setup",
             scriptCommand: "vp install",
             terminalId: "setup",
+            scopeKey: "setup-scope",
             scopeKey: "/repo",
             cwd: "/repo",
           }),
