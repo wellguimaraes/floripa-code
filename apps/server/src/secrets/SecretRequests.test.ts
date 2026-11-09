@@ -528,3 +528,38 @@ it.effect("a secret the card promised to keep from the agent is never written to
     }),
   ),
 );
+
+it.effect(
+  "a pasted secret goes straight to an owner-only file, and a retry returns the same file",
+  () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "secret-pasted-test-" });
+      yield* withService(
+        ({ service, stored, dispatched }) =>
+          Effect.gen(function* () {
+            const input = { threadId, requestNamespace: "session-a", requestKey: "key-1" };
+            const file = yield* service.savePasted({ ...input, value: " pw 'with' spaces " });
+            assert.equal(yield* fs.readFileString(file), " pw 'with' spaces ");
+            if (process.platform !== "win32") {
+              assert.equal((yield* fs.stat(file)).mode & 0o777, 0o600);
+              assert.equal((yield* fs.stat(path.dirname(file))).mode & 0o777, 0o700);
+            }
+            // A retry never swaps in a different value under a path a command already holds.
+            assert.equal(yield* service.savePasted({ ...input, value: "other" }), file);
+            assert.equal(yield* fs.readFileString(file), " pw 'with' spaces ");
+            // Another session or key gets its own file; nothing reaches the store or a card.
+            const second = yield* service.savePasted({
+              ...input,
+              requestNamespace: "session-b",
+              value: "x",
+            });
+            assert.notEqual(second, file);
+            assert.deepEqual(valuesOf(stored), []);
+            assert.deepEqual(dispatched, []);
+          }),
+        { directory },
+      );
+    }).pipe(Effect.provide(NodeServices.layer)),
+);

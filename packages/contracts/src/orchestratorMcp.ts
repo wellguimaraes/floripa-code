@@ -593,6 +593,11 @@ export const OrchestratorMcpUpdateScheduledTaskInput = Schema.Struct({
 export type OrchestratorMcpUpdateScheduledTaskInput =
   typeof OrchestratorMcpUpdateScheduledTaskInput.Type;
 
+// Not trimmed: whitespace in a password matters. The check stays out of the advertised schema.
+const PastedSecretValue = Schema.String.check(
+  Schema.makeFilter((value: string) => value.length > 0, { expected: "a non-empty string" }),
+);
+
 export const OrchestratorMcpRequestSecretInput = Schema.Struct({
   label: TrimmedNonEmptyString.annotate({
     description: "What you need, shown as the card's title, e.g. 'GitHub webhook secret'.",
@@ -607,6 +612,10 @@ export const OrchestratorMcpRequestSecretInput = Schema.Struct({
   delivery: Schema.optional(Schema.Literals(["secretRef", "file"])).annotate({
     description:
       'secretRef (default): for a T3 tool that takes one. file: for a shell CLI; the result is a private file path to read inside your command, e.g. CLOUDFLARE_API_TOKEN="$(cat <file>)" wrangler whoami.',
+  }),
+  value: Schema.optional(PastedSecretValue).annotate({
+    description:
+      "A secret the user already pasted in this thread, for a child or script. It is saved as a file without a card; do not repeat it anywhere else.",
   }),
   timeoutMs: Schema.optional(
     Schema.Int.check(Schema.isBetween({ minimum: 1_000, maximum: 60 * 60 * 1_000 })),

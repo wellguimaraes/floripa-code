@@ -153,7 +153,7 @@ const DeleteScheduledTaskTool = Tool.make("delete_scheduled_task", {
 
 const RequestSecretTool = Tool.make("request_secret", {
   description:
-    "Ask the user for one secret (a token, API key, signing secret, password) per single-line private card, never combining values, in this thread, and wait for them to answer. The value is kept by the app and NEVER returned to you or shown in the transcript. By default the result carries a one-use secretRef for a tool that accepts one (e.g. schedule_task's signature.secretRef). For a shell CLI token, set delivery to file. Never ask for secrets in chat, and never invent one.",
+    "Ask the user for one secret (a token, API key, signing secret, password) per single-line private card, never combining values, in this thread, and wait for them to answer. The value is kept by the app and NEVER returned to you or shown in the transcript. By default the result carries a one-use secretRef for a tool that accepts one (e.g. schedule_task's signature.secretRef). For a shell CLI token, set delivery to file. If you are asked how to provide a secret, call this now instead of explaining. When the user already pasted a secret in this thread and a child or script needs it, pass it as `value` and it is saved as a file with no card. Never ask for secrets in chat, never reuse one from an old thread, and never invent one.",
   parameters: OrchestratorMcpRequestSecretInput,
   success: OrchestratorMcpRequestSecretResult,
   failure: OrchestratorMcpFailure,
@@ -161,7 +161,9 @@ const RequestSecretTool = Tool.make("request_secret", {
   dependencies,
 })
   .annotate(Tool.Title, "Request a secret from the user")
-  .annotate(Tool.Destructive, false);
+  .annotate(Tool.Destructive, false)
+  // Claude Code defers MCP tools behind ToolSearch; agents that never load this one ask in chat.
+  .annotate(Tool.Meta, { "anthropic/alwaysLoad": true });
 
 export const CreateThreadsTool = Tool.make("create_threads", {
   description:
