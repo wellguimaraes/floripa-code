@@ -222,6 +222,55 @@ it.layer(layerTest)("ThreadSearch", (it) => {
     }),
   );
 
+  it.effect("finds messages through the index, ranking whole words over mid-word hits", () =>
+    Effect.gen(function* () {
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const search = yield* ThreadSearch.ThreadSearch;
+      const project = ProjectId.make("project:search-index");
+      yield* createProject(project);
+      const whole = ThreadId.make("thread:index-whole");
+      const inside = ThreadId.make("thread:index-inside");
+      const subagent = ThreadId.make("thread:index-subagent");
+      const subagentCreated = thread(subagent, project);
+      yield* Effect.forEach(
+        [
+          thread(whole, project),
+          message(whole, "index-whole", "user", "fix the rust build", { minute: 1 }),
+          thread(inside, project),
+          message(inside, "index-inside", "user", "Trust the café menu", { minute: 5 }),
+          subagentCreated.type === "thread.created"
+            ? {
+                ...subagentCreated,
+                payload: {
+                  ...subagentCreated.payload,
+                  lineage: {
+                    parentThreadId: whole,
+                    relationshipToParent: "subagent" as const,
+                    rootThreadId: whole,
+                  },
+                },
+              }
+            : subagentCreated,
+          message(subagent, "index-subagent", "assistant", "rust from a subagent"),
+        ],
+        projections.apply,
+        { discard: true },
+      );
+
+      assert.deepEqual(
+        (yield* search.search({ query: "rust" })).matches.map((match) => match.threadId),
+        [whole, inside],
+      );
+      // Accents fold, and a word may start anywhere the trigram index matches.
+      assert.deepEqual(
+        (yield* search.search({ query: "cafe menu" })).matches.map((match) => match.threadId),
+        [inside],
+      );
+      // Words too short to search match nothing.
+      assert.deepEqual((yield* search.search({ query: "ru" })).matches, []);
+    }),
+  );
+
   it.effect("reports an unreadable match as a decode failure", () =>
     Effect.gen(function* () {
       const projections = yield* ProjectionStore.ProjectionStoreV2;
