@@ -279,6 +279,7 @@ import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerControlBlocks, useRestingComposerControlsLayout } from "./ComposerControlBlocks";
 import { ComposerImageThumbnail } from "./ComposerImageThumbnail";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
+import { ComposerRichTextToggle, flipComposerRichText } from "./ComposerRichTextToggle";
 import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
@@ -1396,6 +1397,7 @@ export interface ChatComposerHandle {
   openModelPicker: () => void;
   stepReasoningEffort: (direction: 1 | -1) => void;
   toggleModelPicker: () => void;
+  toggleRichText: () => void;
   openControl: (command: KeybindingCommand) => void;
   isModelPickerOpen: () => boolean;
   /** True when a collapsed caret sits before everything in the draft, including when it is empty. */
@@ -6494,6 +6496,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           });
         }
       },
+      toggleRichText: () => {
+        if (isLiteralPendingAnswer) return;
+        void flipComposerRichText();
+      },
       toggleModelPicker: () => {
         if (isComposerModelPickerOpen) {
           setIsComposerModelPickerOpen(false);
@@ -7681,6 +7687,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       </Tooltip>
                     </>
                   ) : null}
+                  {isLiteralPendingAnswer ? null : (
+                    <ComposerRichTextToggle
+                      richTextEnabled={settings.composerRichTextEnabled}
+                      shortcutLabel={shortcutLabelForCommand(
+                        keybindings,
+                        "composer.toggleRichText",
+                        {
+                          context: { terminalFocus: false, terminalOpen, modelPickerOpen: false },
+                        },
+                      )}
+                    />
+                  )}
                   <ComposerFooterPrimaryActions
                     compact={isComposerResting || isComposerPrimaryActionsCompact}
                     canOperateThread={canOperateThread}

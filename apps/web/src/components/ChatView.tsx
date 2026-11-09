@@ -7801,6 +7801,20 @@ export default function ChatView(props: ChatViewProps) {
         return;
       }
 
+      if (command === "composer.toggleRichText") {
+        // The flip remounts the editor, which would drop an unsaved citation comment.
+        if (
+          event.target instanceof Element &&
+          event.target.closest("[data-citation-comment-editor]")
+        ) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) composerRef.current?.toggleRichText();
+        return;
+      }
+
       if (command === "composer.increaseEffort" || command === "composer.decreaseEffort") {
         event.preventDefault();
         event.stopPropagation();
