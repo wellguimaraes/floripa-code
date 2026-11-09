@@ -4,3 +4,8 @@
  * code executes, so this is reliable at module load time.
  */
 export const isElectron = typeof window !== "undefined" && window.desktopBridge !== undefined;
+
+/** Secret providers are opt-in while they settle: set FLORIPACODE_FEATURE_SECRETS=1 at build or dev time. */
+export const isSecretsFeatureEnabled = ["1", "true"].includes(
+  import.meta.env.FLORIPACODE_FEATURE_SECRETS?.trim().toLowerCase() ?? "",
+);
