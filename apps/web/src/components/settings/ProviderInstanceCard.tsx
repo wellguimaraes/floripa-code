@@ -22,6 +22,7 @@ import {
   type ProviderInstanceConfig,
   type ProviderInstanceEnvironmentVariable,
   type ProviderInstanceId,
+  type SecretReference,
   type AcpRegistryUrlAuthAction,
   type EnvironmentId,
   type ProjectId,
@@ -42,6 +43,7 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { MorphIcon } from "~/components/MorphIcon";
 import { DraftInput } from "../ui/draft-input";
+import { SecretSourceInput, WithSecretSources, type SecretSource } from "./SecretSourceInput";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -91,10 +93,18 @@ const nextEnvironmentVariableDraftId = () => `provider-env-${environmentVariable
 type EnvironmentDraftRow = {
   readonly id: string;
   readonly name: string;
-  readonly value: string;
+  readonly value: string | SecretReference;
   readonly sensitive: boolean;
   readonly valueRedacted?: boolean;
 };
+
+const sameEnvironmentValue = (
+  left: ProviderInstanceEnvironmentVariable["value"],
+  right: ProviderInstanceEnvironmentVariable["value"],
+) =>
+  typeof left === "string" || typeof right === "string"
+    ? left === right
+    : left.provider === right.provider && left.reference === right.reference;
 
 function makeEnvironmentDraftRow(
   variable: ProviderInstanceEnvironmentVariable,
@@ -120,7 +130,7 @@ function providerEnvironmentsEqual(
       return (
         other !== undefined &&
         variable.name === other.name &&
-        variable.value === other.value &&
+        sameEnvironmentValue(variable.value, other.value) &&
         variable.sensitive === other.sensitive &&
         variable.valueRedacted === other.valueRedacted
       );
@@ -220,9 +230,9 @@ export function providerEnvironmentWithoutNames(
 export function nextProviderEnvironmentWithFieldValue(
   environment: ReadonlyArray<ProviderInstanceEnvironmentVariable> | undefined,
   field: ProviderEnvironmentField,
-  value: string,
+  value: string | SecretReference,
 ): ReadonlyArray<ProviderInstanceEnvironmentVariable> {
-  const trimmed = value.trim();
+  const trimmed = typeof value === "string" ? value.trim() : value;
   const next: ProviderInstanceEnvironmentVariable[] = [];
   let found = false;
 
@@ -232,20 +242,20 @@ export function nextProviderEnvironmentWithFieldValue(
       continue;
     }
     found = true;
-    if (trimmed.length > 0) {
+    if (typeof trimmed !== "string" || trimmed.length > 0) {
       next.push({
         name: variable.name,
         value: trimmed,
-        sensitive: field.sensitive ?? true,
+        sensitive: typeof trimmed === "string" ? (field.sensitive ?? true) : true,
       });
     }
   }
 
-  if (!found && trimmed.length > 0) {
+  if (!found && (typeof trimmed !== "string" || trimmed.length > 0)) {
     next.push({
       name: field.name,
       value: trimmed,
-      sensitive: field.sensitive ?? true,
+      sensitive: typeof trimmed === "string" ? (field.sensitive ?? true) : true,
     });
   }
 
@@ -256,8 +266,9 @@ function ProviderEnvironmentFieldRow(props: {
   readonly field: ProviderEnvironmentField;
   readonly variable: ProviderInstanceEnvironmentVariable | undefined;
   readonly idPrefix: string;
-  readonly onCommit: (field: ProviderEnvironmentField, value: string) => void;
+  readonly onCommit: (field: ProviderEnvironmentField, value: string | SecretReference) => void;
   readonly onRemove: (field: ProviderEnvironmentField) => void;
+  readonly secretSources: ReadonlyArray<SecretSource>;
 }) {
   const inputId = `${props.idPrefix}-environment-${props.field.name}`;
   const value = props.variable?.valueRedacted ? "" : (props.variable?.value ?? "");
@@ -271,16 +282,19 @@ function ProviderEnvironmentFieldRow(props: {
       description={props.field.description}
       control={
         <div className="flex w-full min-w-0 items-center gap-2 @min-[32rem]/settings-row:w-56">
-          <DraftInput
+          <SecretSourceInput
             id={inputId}
             size="sm"
             className="min-w-0 flex-1"
             type={props.field.sensitive === false ? undefined : "password"}
             autoComplete="off"
             value={value}
-            onCommit={(next) => props.onCommit(props.field, next)}
+            sources={props.secretSources}
+            onLiteralCommit={(next) => props.onCommit(props.field, next)}
+            onSecretChange={(secret) => props.onCommit(props.field, secret ?? "")}
             placeholder={placeholder}
             spellCheck={false}
+            aria-label={props.field.label}
           />
           {props.variable ? (
             <Button
@@ -302,6 +316,19 @@ function ProviderEnvironmentFieldRow(props: {
 export function ProviderEnvironmentSection(props: {
   readonly environment: ReadonlyArray<ProviderInstanceEnvironmentVariable>;
   readonly onChange: (environment: ReadonlyArray<ProviderInstanceEnvironmentVariable>) => void;
+  readonly environmentId?: EnvironmentId | undefined;
+}) {
+  return (
+    <WithSecretSources environmentId={props.environmentId}>
+      {(secretSources) => <ProviderEnvironmentRows {...props} secretSources={secretSources} />}
+    </WithSecretSources>
+  );
+}
+
+function ProviderEnvironmentRows(props: {
+  readonly environment: ReadonlyArray<ProviderInstanceEnvironmentVariable>;
+  readonly onChange: (environment: ReadonlyArray<ProviderInstanceEnvironmentVariable>) => void;
+  readonly secretSources: ReadonlyArray<SecretSource>;
 }) {
   const [rows, setRows] = useState<ReadonlyArray<EnvironmentDraftRow>>(() =>
     props.environment.map(makeEnvironmentDraftRow),
@@ -334,6 +361,7 @@ export function ProviderEnvironmentSection(props: {
       if (!ENVIRONMENT_VARIABLE_NAME_PATTERN.test(name)) {
         if (
           name.length > 0 ||
+          typeof row.value !== "string" ||
           row.value.length > 0 ||
           row.sensitive !== true ||
           row.valueRedacted !== undefined
@@ -356,6 +384,8 @@ export function ProviderEnvironmentSection(props: {
             ...row,
             ...patch,
             ...(patch.value !== undefined ? { valueRedacted: false } : {}),
+            // A stored reference is always sensitive.
+            ...(typeof patch.value === "object" ? { sensitive: true } : {}),
           }
         : row,
     );
@@ -408,12 +438,14 @@ export function ProviderEnvironmentSection(props: {
               <span className="hidden text-xs text-muted-foreground sm:inline" aria-hidden>
                 =
               </span>
-              <DraftInput
+              <SecretSourceInput
                 size="sm"
                 font="mono"
                 className="min-w-0 flex-1"
                 value={variable.valueRedacted ? "" : variable.value}
-                onCommit={(value) => updateVariable(variable.id, { value })}
+                sources={props.secretSources}
+                onLiteralCommit={(value) => updateVariable(variable.id, { value })}
+                onSecretChange={(secret) => updateVariable(variable.id, { value: secret ?? "" })}
                 type={variable.sensitive ? "password" : undefined}
                 autoComplete="off"
                 placeholder={
@@ -438,6 +470,7 @@ export function ProviderEnvironmentSection(props: {
                             : { valueRedacted: sensitive ? variable.valueRedacted : false }),
                         });
                       }}
+                      disabled={typeof variable.value !== "string"}
                       aria-pressed={variable.sensitive}
                       aria-label={`Mark environment variable ${variable.name || index + 1} as sensitive`}
                     >
@@ -722,7 +755,10 @@ export function ProviderInstanceCard({
     );
     updateEnvironment([...dedicatedEnvironment, ...environment]);
   };
-  const updateEnvironmentField = (field: ProviderEnvironmentField, value: string) => {
+  const updateEnvironmentField = (
+    field: ProviderEnvironmentField,
+    value: string | SecretReference,
+  ) => {
     updateEnvironment(nextProviderEnvironmentWithFieldValue(instance.environment, field, value));
   };
   const removeEnvironmentField = (field: ProviderEnvironmentField) => {
@@ -1106,16 +1142,21 @@ export function ProviderInstanceCard({
           >
             {environmentFields.length > 0 ? (
               <>
-                {environmentFields.map((field) => (
-                  <ProviderEnvironmentFieldRow
-                    key={field.name}
-                    field={field}
-                    variable={readProviderEnvironmentVariable(instance.environment, field.name)}
-                    idPrefix={`provider-instance-${instanceId}`}
-                    onCommit={updateEnvironmentField}
-                    onRemove={removeEnvironmentField}
-                  />
-                ))}
+                <WithSecretSources environmentId={environmentId}>
+                  {(secretSources) =>
+                    environmentFields.map((field) => (
+                      <ProviderEnvironmentFieldRow
+                        key={field.name}
+                        field={field}
+                        variable={readProviderEnvironmentVariable(instance.environment, field.name)}
+                        idPrefix={`provider-instance-${instanceId}`}
+                        onCommit={updateEnvironmentField}
+                        onRemove={removeEnvironmentField}
+                        secretSources={secretSources}
+                      />
+                    ))
+                  }
+                </WithSecretSources>
               </>
             ) : null}
           </div>
@@ -1157,6 +1198,7 @@ export function ProviderInstanceCard({
         <ProviderEnvironmentSection
           environment={genericEnvironment}
           onChange={updateGenericEnvironment}
+          environmentId={environmentId}
         />
       </SettingsSection>
       {environmentId !== undefined && liveProvider?.driver === "acpRegistry" ? (

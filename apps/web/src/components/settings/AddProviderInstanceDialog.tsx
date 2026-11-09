@@ -505,6 +505,7 @@ export function AddProviderInstanceDialog({
                           <ProviderEnvironmentSection
                             environment={localEnvironment}
                             onChange={setLocalEnvironment}
+                            environmentId={environmentId}
                           />
                         ) : null}
                       </SettingsGroup>

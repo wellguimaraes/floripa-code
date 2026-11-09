@@ -1,4 +1,4 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId, SecretProviderId, SettingsSecretValue } from "@t3tools/contracts";
 import { ExternalLinkIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -8,6 +8,16 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { Button, InlineButton } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
+import {
+  parseSecretReference,
+  secretReferenceHint,
+  SecretSourceSelect,
+  useSecretSources,
+} from "./SecretSourceInput";
+
+/** A saved token is a literal in the server's store or a reference to a secret provider. */
+const isTokenSet = (token: SettingsSecretValue | undefined) =>
+  typeof token === "object" || (token ?? "").length > 0;
 
 const DEFAULT_HOST = "github.com";
 
@@ -34,14 +44,20 @@ export function GitHubTokenSettings({
   });
   const [host, setHost] = useState(DEFAULT_HOST);
   const [draft, setDraft] = useState("");
+  const secretSources = useSecretSources(environmentId);
+  // Null enters the token itself; a provider enters a reference to read it from.
+  const [provider, setProvider] = useState<SecretProviderId | null>(null);
+  const reference = provider === null ? null : parseSecretReference(secretSources, provider, draft);
+  const hint = secretReferenceHint(secretSources, provider);
+  const entry: SettingsSecretValue | null = provider === null ? draft.trim() || null : reference;
   const [saving, setSaving] = useState(false);
   const normalizedHost = host.trim().toLowerCase();
-  const isSaved = (tokens[normalizedHost] ?? "").length > 0;
+  const isSaved = isTokenSet(tokens[normalizedHost]);
   const savedHosts = Object.entries(tokens)
-    .filter(([, value]) => value.length > 0)
+    .filter(([, value]) => isTokenSet(value))
     .map(([saved]) => saved);
 
-  const save = async (target: string, token: string) => {
+  const save = async (target: string, token: SettingsSecretValue) => {
     setSaving(true);
     try {
       const result = await updateSettings({
@@ -62,7 +78,7 @@ export function GitHubTokenSettings({
       className="grid gap-3"
       onSubmit={(event) => {
         event.preventDefault();
-        if (normalizedHost && draft.trim()) void save(normalizedHost, draft.trim());
+        if (normalizedHost && entry !== null) void save(normalizedHost, entry);
       }}
     >
       {/* Locked while saving: a successful save clears the draft, which would drop edits made mid-request. */}
@@ -99,15 +115,42 @@ export function GitHubTokenSettings({
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor={`github-token-${environmentId}`}>Token</Label>
-            <Input
-              id={`github-token-${environmentId}`}
-              type="password"
-              autoComplete="off"
-              size="sm"
-              placeholder={isSaved ? "Stored secret, enter a new value to replace" : "Not set"}
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-            />
+            <div className="flex min-w-0 items-start gap-1.5">
+              {secretSources.length > 0 ? (
+                <SecretSourceSelect
+                  value={provider}
+                  sources={secretSources}
+                  label="GitHub token"
+                  onValueChange={(next) => {
+                    setProvider(next);
+                    setDraft("");
+                  }}
+                />
+              ) : null}
+              <Input
+                id={`github-token-${environmentId}`}
+                type={provider === null ? "password" : "text"}
+                {...(provider === null ? {} : { font: "mono" as const })}
+                autoComplete="off"
+                spellCheck={false}
+                size="sm"
+                aria-invalid={provider !== null && draft.trim() !== "" && reference === null}
+                placeholder={
+                  provider !== null
+                    ? (hint?.placeholder ?? "Secret reference")
+                    : isSaved
+                      ? "Stored secret, enter a new value to replace"
+                      : "Not set"
+                }
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+              />
+            </div>
+            {provider !== null && draft.trim() !== "" && reference === null ? (
+              <p className="text-2xs text-destructive">
+                {hint?.invalid ?? "Enter a valid secret reference."}
+              </p>
+            ) : null}
           </div>
         </div>
         <div className="flex items-center justify-between gap-3">
@@ -127,7 +170,7 @@ export function GitHubTokenSettings({
                 Remove
               </Button>
             ) : null}
-            <Button type="submit" size="xs" disabled={!normalizedHost || !draft.trim() || saving}>
+            <Button type="submit" size="xs" disabled={!normalizedHost || entry === null || saving}>
               Save
             </Button>
           </div>

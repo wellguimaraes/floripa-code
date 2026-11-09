@@ -99,6 +99,7 @@ import { CodexSetupSection, CodexManagedRuntimeFields } from "./CodexSetupSectio
 import { readCodexSetupMode } from "./CodexSetupSection.logic";
 import { providerClients } from "./providerDriverMeta";
 import { searchableSetting } from "./settingsSearch";
+import { isSecretsFeatureEnabled } from "../../env";
 import {
   backgroundActivityOverrideSettings,
   buildProviderInstanceUpdatePatch,
@@ -669,7 +670,8 @@ export function EnvironmentProviderSettings({
     void (async () => {
       const result = await refreshServerProviders({
         environmentId,
-        input: { refreshModels: true },
+        // A refresh is also how a vault unlocked since the last read gets read again.
+        input: { refreshModels: true, ...(isSecretsFeatureEnabled ? { reloadSecrets: true } : {}) },
       });
       refreshingRef.current = false;
       setIsRefreshingProviders(false);
