@@ -1061,6 +1061,34 @@ describe("deriveMessagesTimelineRows", () => {
     ]);
   });
 
+  it("shows a bare /compact turn as one live compaction row without its prompt or a working row", () => {
+    const fixture = makeStreamingTimelineFixture();
+    const liveUser = fixture.visibleTurnItems[3]!;
+    if (liveUser.item.type !== "user_message") throw new Error("Expected user fixture");
+    const rowsFor = (text: string) =>
+      deriveMessagesTimelineRows({
+        timelineEntries: deriveTimelineEntriesFromVisibleTurnItems({
+          visibleTurnItems: [{ ...liveUser, item: { ...liveUser.item, text } }],
+          optimisticMessages: [],
+        }),
+        isWorking: true,
+        runningRunId: fixture.runId,
+        latestRun: {
+          runId: fixture.runId,
+          status: "running",
+          startedAt: fixture.time(5),
+          completedAt: null,
+        },
+        activeTurnStartedAt: fixture.time(5),
+        turnDiffSummaries: [],
+        supportsConversationRollback: false,
+      });
+    const compacting = rowsFor("/compact");
+    expect(compacting.map((row) => row.kind)).toEqual(["context-compaction"]);
+    expect(compacting[0]).toMatchObject({ active: true, label: "Compacting context" });
+    expect(rowsFor("compact the history").some((row) => row.kind === "message")).toBe(true);
+  });
+
   it("gives live compaction the activity slot and restores Thinking when it completes", () => {
     const fixture = makeStreamingTimelineFixture();
     const last = fixture.visibleTurnItems.at(-1)!;
