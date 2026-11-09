@@ -1,6 +1,7 @@
+import JSZip from "jszip";
 import { describe, expect, it } from "vite-plus/test";
 
-import { openNotebook } from "./extendedDocumentPreview";
+import { openEpub, openNotebook } from "./extendedDocumentPreview";
 
 describe("document preview contents", () => {
   const bytes = (text: string) => new TextEncoder().encode(text).buffer;
@@ -55,5 +56,56 @@ describe("document preview contents", () => {
         bytes(JSON.stringify({ nbformat: 4, cells: Array.from({ length: 501 }, () => ({})) })),
       ),
     ).toThrow("500 cells");
+  });
+
+  it("bounds EPUB markup made entirely of empty allowed elements", async () => {
+    const archive = new JSZip()
+      .file(
+        "META-INF/container.xml",
+        '<container><rootfiles><rootfile full-path="book.opf"/></rootfiles></container>',
+      )
+      .file(
+        "book.opf",
+        '<package><manifest><item id="a" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest><spine>' +
+          '<itemref idref="a"/>'.repeat(30) +
+          "</spine></package>",
+      )
+      .file("chapter.xhtml", "<html><body>" + "<figcaption/>".repeat(30_000) + "</body></html>");
+    await expect(openEpub(archive)).rejects.toThrow("too large");
+  });
+
+  it("reads EPUB chapters in spine order and removes active and remote content", async () => {
+    const archive = new JSZip()
+      .file(
+        "META-INF/container.xml",
+        '<container><rootfiles><rootfile full-path="Book/book.opf"/></rootfiles></container>',
+      )
+      .file(
+        "Book/book.opf",
+        '<package><manifest><item id="a" href="one.xhtml" media-type="application/xhtml+xml"/><item id="b" href="two&amp;&#x26;&#38;.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="b"/><itemref idref="a"/></spine></package>',
+      )
+      .file(
+        "Book/one.xhtml",
+        '<html><head><title>First</title></head><body><h1>First chapter</h1><img src="cover.png" alt="Cover"/><img src="https://example.com/tracker.png"/><script>alert(1)</script><style>@import "https://example.com/style.css";</style></body></html>',
+      )
+      .file(
+        "Book/two&&&.xhtml",
+        '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd"><html><head><title>Second</title></head><body><h1>Second chapter</h1><p>A&nbsp;B &copy; &mdash; &NotEqualTilde; &amp;lt;</p><img src="cover.png" alt="&copy; &NotEqualTilde;"/></body></html>',
+      )
+      .file(
+        "Book/cover.png",
+        Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==",
+          "base64",
+        ),
+      );
+    const result = await openEpub(archive);
+    expect(result.type).toBe("document");
+    if (result.type !== "document") throw new Error("Expected document");
+    expect(result.pages.map((page) => page.title)).toEqual(["Second", "First"]);
+    expect(result.pages[0]!.html).toContain("A\u00a0B © — ≂̸ &amp;lt;");
+    expect(result.pages[0]!.html).toContain('alt="© ≂̸"');
+    expect(result.pages[1]!.html).toContain('src="data:image/png;base64,');
+    expect(result.pages[1]!.html).not.toMatch(/https:|script|alert/);
   });
 });
