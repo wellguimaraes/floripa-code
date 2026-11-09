@@ -5,16 +5,47 @@ export const OFFICE_PREVIEW_MAX_COLUMNS = 1024;
 /** The Office Open XML formats the Office worker prepares for a layout engine. */
 export type OpenXmlKind = "docx" | "xlsx" | "pptx";
 
-export type OfficeWorkerRequest = {
-  readonly type: "open";
-  readonly kind: OpenXmlKind;
-  readonly bytes: ArrayBuffer;
+/** Formats converted to sanitized HTML, cells or notebook cells by the Office worker. */
+export type ExtendedKind = "odt" | "ods" | "odp" | "rtf" | "epub" | "ipynb";
+
+export type OfficeKind = OpenXmlKind | ExtendedKind;
+
+export type OfficeWorkerRequest =
+  | { readonly type: "open"; readonly kind: OfficeKind; readonly bytes: ArrayBuffer }
+  | { readonly type: "sheet-page"; readonly sheet: number; readonly index: number };
+
+export type NotebookCell = {
+  readonly kind: "markdown" | "code" | "raw";
+  readonly source: string;
+  readonly outputs: { readonly kind: "text" | "image" | "html"; readonly text: string }[];
 };
 
 export type OfficeWorkerResult =
+  | {
+      readonly type: "document";
+      readonly navigation: "page" | "slide" | "chapter";
+      readonly pages: { title: string; html: string }[];
+    }
+  | { readonly type: "notebook"; readonly language: string; readonly cells: NotebookCell[] }
   | { readonly type: "error"; readonly message: string }
   | {
-      readonly type: OpenXmlKind;
+      readonly type: "docx" | "xlsx" | "pptx";
       readonly bytes: ArrayBuffer;
       readonly truncated: boolean;
+    }
+  | {
+      readonly type: "ods";
+      readonly sheets: {
+        name: string;
+        rows: string[][];
+        truncated: boolean;
+        rowCount: number;
+        columns: number;
+      }[];
+    }
+  | {
+      readonly type: "sheet-page";
+      readonly sheet: number;
+      readonly index: number;
+      readonly rows: string[][];
     };

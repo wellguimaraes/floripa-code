@@ -195,6 +195,8 @@ export default defineConfig(() => {
         "@pierre/diffs/react",
         "heic-to/next",
         "saxes",
+        "fast-xml-parser",
+        "entities",
         "@betteroffice/docx/editor",
         "@betteroffice/docx/layout",
         "@betteroffice/docx/layout/render",

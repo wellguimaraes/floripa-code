@@ -14,6 +14,7 @@ export type FilePreviewKind =
   | "docx"
   | "xlsx"
   | "pptx"
+  | "ipynb"
   | "text"
   | "unsupported";
 
@@ -72,6 +73,7 @@ const OFFICE_MIME_TYPES = {
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ipynb: "application/x-ipynb+json",
 } as const;
 
 export type OfficePreviewKind = keyof typeof OFFICE_MIME_TYPES;
@@ -86,9 +88,15 @@ export function officePreviewKind(file: {
   const name = file.name.toLowerCase();
   for (const kind of Object.keys(OFFICE_MIME_TYPES) as OfficePreviewKind[]) {
     if (mime === OFFICE_MIME_TYPES[kind]) return kind;
-    if (generic && name.endsWith(`.${kind}`)) return kind;
+    // Servers commonly label a notebook as plain JSON.
+    if ((generic || (kind === "ipynb" && mime === "application/json")) && name.endsWith(`.${kind}`))
+      return kind;
   }
   return null;
+}
+
+export function isOfficePreviewKind(kind: FilePreviewKind): kind is OfficePreviewKind {
+  return Object.hasOwn(OFFICE_MIME_TYPES, kind);
 }
 
 const BINARY_MIME_TYPES = new Map([

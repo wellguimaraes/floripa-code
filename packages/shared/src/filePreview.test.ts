@@ -110,6 +110,9 @@ describe("attachment preview classification", () => {
     ["any-name", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx"],
     ["report.docx", "application/zip", "archive"],
     ["budget.xlsx", "", "xlsx"],
+    ["analysis.ipynb", "", "ipynb"],
+    ["analysis.ipynb", "application/json", "ipynb"],
+    ["data.json", "application/json", "text"],
     ["deck.pptx", "application/octet-stream", "pptx"],
     [
       "any-name",
