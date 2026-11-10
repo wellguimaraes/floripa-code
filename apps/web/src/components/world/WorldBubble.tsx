@@ -36,6 +36,7 @@ import { Button, InlineButton } from "../ui/button";
 import { Kbd } from "../ui/kbd";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { ProjectFavicon } from "../ProjectFavicon";
 import {
   PrStatusTooltipContent,
   prStatusIndicator,
@@ -57,13 +58,15 @@ import { QueuedRunsControl } from "../chat/QueuedRunsControl";
 import { BubbleApproval } from "./BubbleApproval";
 import { BubbleComposer } from "./BubbleComposer";
 import type { CharacterFacts } from "./engine/facts";
-import { FamilyHueButton } from "./FamilyHueButton";
+import { AppIcon } from "./AppIcon";
+import { CharacterHueButton } from "./CharacterHueButton";
 import { useBubbleAttachments } from "./useBubbleAttachments";
 import { useBubbleQuestion } from "./useBubbleQuestion";
 import { ARCHIVE_SHORTCUT, confirmArchive, useArchiveShortcut } from "./useArchiveShortcut";
 import { LatestTurn } from "./LatestTurn";
 import { RollingSwap } from "./RollingSwap";
 import { useLastExchange } from "./useLastExchange";
+import { useWorldLookStore } from "./worldLookStore";
 import { worktreeLabel } from "./worktreeLabel";
 
 /**
@@ -194,6 +197,8 @@ export function WorldBubble(props: {
   );
   const regeneratingTitle = thread?.titleRegeneration != null;
   const worktree = thread === null || props.onMainland ? null : worktreeLabel(thread);
+  // The character's hat, so its portrait matches the one on the map.
+  const hat = useWorldLookStore((state) => state.looks.get(facts.key)?.hat ?? null);
   // The thread's pull request, resolved as the sidebar does.
   const pullRequest = useLinkedThreadPullRequest(
     facts.ref.environmentId,
@@ -413,7 +418,25 @@ export function WorldBubble(props: {
             data-bubble-drag-handle=""
             className="-mx-2.5 flex cursor-grab touch-none items-center gap-2 border-b border-border px-2.5 pb-2 active:cursor-grabbing"
           >
-            <FamilyHueButton hue={hue} kid={facts.kid} onHueChange={onHueChange} />
+            {/* The project's icon and the character, as the world chat's header shows them. */}
+            {props.onMainland || project !== null ? (
+              // A white tile keeps any icon legible on any background.
+              <span className="flex shrink-0 rounded-md bg-white">
+                {props.onMainland || project === null ? (
+                  <AppIcon className="size-9 rounded-md" />
+                ) : (
+                  <ProjectFavicon project={project} className="size-9" />
+                )}
+              </span>
+            ) : null}
+            <CharacterHueButton
+              hue={hue}
+              hat={hat}
+              kid={facts.kid}
+              onHueChange={onHueChange}
+              side="bottom"
+              className="w-7 self-stretch"
+            />
             <div className="min-w-0 flex-1">
               <p className={cn("truncate text-sm font-medium", regeneratingTitle && "opacity-55")}>
                 {facts.title || "Untitled thread"}
