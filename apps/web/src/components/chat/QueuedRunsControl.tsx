@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { deriveThreadQueueWorkflowState } from "@t3tools/client-runtime/state/thread-workflows";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
@@ -19,6 +20,8 @@ import {
 import { useId, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
 
 import { useAssetUrls } from "../../assets/assetUrls";
+import { shortcutLabelForCommand } from "../../keybindings";
+import { primaryServerKeybindingsAtom } from "../../state/server";
 import { threadEnvironment } from "../../state/threads";
 import { useThreadProjection } from "../../state/entities";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -43,6 +46,26 @@ interface QueuedRowThumbnail {
 
 const QUEUED_RUN_DRAG_TYPE = "application/x-floripacode-queued-run";
 
+/**
+ * The steer shortcut's label while a press would send the next queued message into the run, for
+ * a "to steer" hint beside the composer; null otherwise.
+ */
+export function useQueuedSteerShortcutLabel(
+  projection: Parameters<typeof deriveThreadQueueWorkflowState>[0] | null,
+): string | null {
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const canSteer = useMemo(() => {
+    if (projection === null) return false;
+    const queue = deriveThreadQueueWorkflowState(projection);
+    return (queue.canPromoteToSteer || queue.canSendQueuedNow) && queue.queuedRuns.length > 0;
+  }, [projection]);
+  return canSteer
+    ? shortcutLabelForCommand(keybindings, "thread.steerQueuedMessage", {
+        context: { terminalFocus: false },
+      })
+    : null;
+}
+
 export interface QueuedRunsControlHandle {
   steerNext: (repeat: boolean) => boolean;
   editLatest: (repeat: boolean) => boolean;
@@ -53,8 +76,6 @@ export function QueuedRunsControl({
   ...props
 }: {
   readonly ref?: Ref<QueuedRunsControlHandle>;
-  readonly steerShortcutLabel?: string | null;
-  readonly editShortcutLabel?: string | null;
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
   readonly optimisticMessages?: ReadonlyArray<
@@ -69,6 +90,13 @@ export function QueuedRunsControl({
   readonly placement?: "attached" | "docked";
 }) {
   const { editingRunId = null, onEditQueuedRun, placement = "attached" } = props;
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const steerShortcutLabel = shortcutLabelForCommand(keybindings, "thread.steerQueuedMessage", {
+    context: { terminalFocus: false },
+  });
+  const editShortcutLabel = shortcutLabelForCommand(keybindings, "thread.editQueuedMessage", {
+    context: { composerFocus: true },
+  });
   const projection = useThreadProjection(
     scopeThreadRef(props.environmentId, props.threadId),
   )?.projection;
@@ -487,7 +515,7 @@ export function QueuedRunsControl({
                             <PencilIcon />
                           </TooltipTrigger>
                           <TooltipPopup>
-                            {`Edit in the composer${item.serverIndex === queued.length - 1 && props.editShortcutLabel ? ` (${props.editShortcutLabel})` : ""}`}
+                            {`Edit in the composer${item.serverIndex === queued.length - 1 && editShortcutLabel ? ` (${editShortcutLabel})` : ""}`}
                           </TooltipPopup>
                         </Tooltip>
                       ) : null}
@@ -516,7 +544,7 @@ export function QueuedRunsControl({
                             ? "The agent is idle. Send this message now"
                             : activeRun === null
                               ? "There is no active run to steer"
-                              : `Send as a steer instead${item.serverIndex === 0 && props.steerShortcutLabel ? ` (${props.steerShortcutLabel})` : ""}`}
+                              : `Send as a steer instead${item.serverIndex === 0 && steerShortcutLabel ? ` (${steerShortcutLabel})` : ""}`}
                         </TooltipPopup>
                       </Tooltip>
                       <Tooltip>

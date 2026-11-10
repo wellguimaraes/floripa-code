@@ -1,4 +1,11 @@
-import type { ChatAttachment } from "@t3tools/contracts";
+import type {
+  ChatAttachment,
+  MessageId,
+  OrchestrationMessageContext,
+  RunId,
+  ThreadId,
+  UploadChatAttachment,
+} from "@t3tools/contracts";
 import {
   composerDraftHasUserContent,
   useComposerDraftStore,
@@ -6,6 +13,17 @@ import {
   type ComposerImageAttachment,
   type ComposerThreadTarget,
 } from "../../composerDraftStore";
+import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "./composerPromptHistory";
+
+/** A queued message being edited; `existingAttachments` are the stored ones the edit keeps. */
+export interface QueuedRunEdit {
+  readonly threadId: ThreadId;
+  readonly runId: RunId;
+  readonly messageId: MessageId;
+  readonly originalText: string;
+  readonly existingAttachments: ReadonlyArray<ChatAttachment>;
+  readonly context?: OrchestrationMessageContext | undefined;
+}
 
 /** Keep an unsaved edit when its queued run starts or is removed remotely. */
 export function recoverQueuedMessageEdit(input: {
@@ -51,4 +69,40 @@ export async function prepareQueuedEditAttachments(input: {
     })),
   );
   return [...input.existingAttachments, ...images, ...files];
+}
+
+/**
+ * The `editQueuedRun` input that saves an edit: the full attachment list (kept ones first, then
+ * the new ones) and the context records, the kept message's own minus any for a removed file,
+ * then the new draft's.
+ */
+export function queuedRunEditCommandInput(input: {
+  readonly editing: QueuedRunEdit;
+  readonly text: string;
+  readonly attachments: ReadonlyArray<ChatAttachment | UploadChatAttachment>;
+  readonly newContext: OrchestrationMessageContext | undefined;
+}) {
+  const { editing } = input;
+  const keptRecords = (editing.context?.records ?? []).filter(
+    (record) =>
+      !("attachmentId" in record) ||
+      editing.existingAttachments.some((attachment) => attachment.id === record.attachmentId),
+  );
+  const records = [
+    ...new Map(
+      [...keptRecords, ...(input.newContext?.records ?? [])].map(
+        (record) => [record.contextId, record] as const,
+      ),
+    ).values(),
+  ];
+  return {
+    threadId: editing.threadId,
+    runId: editing.runId,
+    text: input.text.length === 0 ? ATTACHMENT_ONLY_BOOTSTRAP_PROMPT : input.text,
+    edit: {
+      messageId: editing.messageId,
+      attachments: input.attachments,
+      context: { version: 1 as const, records },
+    },
+  };
 }

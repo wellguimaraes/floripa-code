@@ -1,4 +1,10 @@
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  MessageId,
+  type OrchestrationMessageContext,
+  RunId,
+  ThreadId,
+} from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 import {
@@ -7,7 +13,13 @@ import {
   type ComposerFileAttachment,
   type ComposerImageAttachment,
 } from "../../composerDraftStore";
-import { prepareQueuedEditAttachments, recoverQueuedMessageEdit } from "./queuedMessageEdit";
+import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "./composerPromptHistory";
+import {
+  prepareQueuedEditAttachments,
+  type QueuedRunEdit,
+  queuedRunEditCommandInput,
+  recoverQueuedMessageEdit,
+} from "./queuedMessageEdit";
 
 const environmentId = EnvironmentId.make("remote-environment");
 const threadTarget = scopeThreadRef(environmentId, ThreadId.make("thread:edit"));
@@ -120,5 +132,72 @@ describe("queued message file edits", () => {
     );
     expect(store.getComposerDraft(threadTarget)?.prompt).toBe("Separate draft");
     expect(store.getComposerDraft(editTarget)).toBeNull();
+  });
+});
+
+type ContextRecord = OrchestrationMessageContext["records"][number];
+
+function imageRecord(contextId: string, attachmentId: string): ContextRecord {
+  return {
+    version: 1,
+    kind: "image",
+    contextId,
+    label: attachmentId,
+    attachmentId,
+    name: `${attachmentId}.png`,
+    mimeType: "image/png",
+    sizeBytes: 5,
+  } as unknown as ContextRecord;
+}
+
+function mentionRecord(contextId: string): ContextRecord {
+  return { version: 1, kind: "mention", contextId, label: contextId } as unknown as ContextRecord;
+}
+
+describe("queued message edit saves", () => {
+  const keptImage = { ...uploadedFile, type: "image" as const, id: "kept", mimeType: "image/png" };
+  const editing: QueuedRunEdit = {
+    threadId: ThreadId.make("thread:edit"),
+    runId: RunId.make("run:queued"),
+    messageId: MessageId.make("message:queued"),
+    originalText: "Original",
+    existingAttachments: [keptImage],
+    context: {
+      version: 1,
+      records: [
+        imageRecord("ctx:kept", "kept"),
+        imageRecord("ctx:removed", "removed"),
+        mentionRecord("ctx:mention"),
+      ],
+    },
+  };
+
+  it("keeps the message's context except for removed files, then adds the new draft's", () => {
+    const input = queuedRunEditCommandInput({
+      editing,
+      text: "Edited",
+      attachments: [keptImage, uploadedFile],
+      newContext: {
+        version: 1,
+        records: [imageRecord("ctx:new", uploadedFile.id), mentionRecord("ctx:mention")],
+      },
+    });
+    expect(input.edit.attachments).toEqual([keptImage, uploadedFile]);
+    expect(input.edit.context.records.map((record) => record.contextId)).toEqual([
+      "ctx:kept",
+      "ctx:mention",
+      "ctx:new",
+    ]);
+    expect(input.text).toBe("Edited");
+  });
+
+  it("sends the attachment-only prompt when the edit leaves no text", () => {
+    const input = queuedRunEditCommandInput({
+      editing,
+      text: "",
+      attachments: [keptImage],
+      newContext: undefined,
+    });
+    expect(input.text).toBe(ATTACHMENT_ONLY_BOOTSTRAP_PROMPT);
   });
 });

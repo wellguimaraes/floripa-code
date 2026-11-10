@@ -3,7 +3,12 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import { resolveProviderSkillsForCwd } from "@t3tools/client-runtime/providerSkills";
 import { presentPendingBackgroundWork } from "@t3tools/client-runtime/state/thread-execution";
 import { derivePendingThreadRequests } from "@t3tools/client-runtime/state/thread-requests";
-import type { ScopedThreadRef, ServerProvider, TimestampFormat } from "@t3tools/contracts";
+import {
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  type ScopedThreadRef,
+  type ServerProvider,
+  type TimestampFormat,
+} from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import {
   ArchiveIcon,
@@ -54,9 +59,16 @@ import {
   useMessageWithImagePreviews,
 } from "../chat/MessagesTimeline";
 import { ComposerPendingUserInputPanel } from "../chat/ComposerPendingUserInputPanel";
-import { QueuedRunsControl } from "../chat/QueuedRunsControl";
+import {
+  type EditQueuedRunRequest,
+  QueuedRunsControl,
+  type QueuedRunsControlHandle,
+  useQueuedSteerShortcutLabel,
+} from "../chat/QueuedRunsControl";
+import { type QueuedRunEdit, queuedRunEditCommandInput } from "../chat/queuedMessageEdit";
+import { useQueuedRunEdit } from "../chat/useQueuedRunEdit";
 import { BubbleApproval } from "./BubbleApproval";
-import { BubbleComposer } from "./BubbleComposer";
+import { BubbleComposer, type BubbleComposerHandle } from "./BubbleComposer";
 import type { CharacterFacts } from "./engine/facts";
 import { AppIcon } from "./AppIcon";
 import { CharacterHueButton } from "./CharacterHueButton";
@@ -186,6 +198,9 @@ export function WorldBubble(props: {
   const updateMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
+  const editQueuedRun = useOrchestrationCommand(threadEnvironment.editQueuedRun, {
+    reportFailure: false,
+  });
   // Work that outlives the turn (dev servers, watch loops, subagents), as the chat shows it once
   // the turn settles.
   const backgroundWork = useMemo(
@@ -210,10 +225,24 @@ export function WorldBubble(props: {
   const pr = pullRequest?.pr ?? null;
   const prStatus = prStatusIndicator(pr, pullRequest?.sourceControlProvider);
   // The thread's composer draft, shared with the chat panel: what you type in either shows in both.
-  const draftTarget = useMemo(
+  const threadDraftTarget = useMemo(
     () => scopeThreadRef(facts.ref.environmentId, facts.ref.threadId),
     [facts.ref.environmentId, facts.ref.threadId],
   );
+  const projection = useThreadProjection(facts.ref)?.projection ?? null;
+  // Editing a queued message, as in the chat (and shared with it): the text box holds the
+  // message, and sending saves it in place.
+  const queuedRunEdit = useQueuedRunEdit({
+    environmentId: facts.ref.environmentId,
+    threadRef: facts.ref,
+    baseDraftTarget: threadDraftTarget,
+    projection,
+  });
+  const editing = queuedRunEdit.editing;
+  const draftTarget = queuedRunEdit.draftTarget;
+  const composer = useRef<BubbleComposerHandle>(null);
+  const queuedRuns = useRef<QueuedRunsControlHandle>(null);
+  const steerShortcutLabel = useQueuedSteerShortcutLabel(projection);
   const text = useComposerDraftStore((store) => store.getComposerDraft(draftTarget)?.prompt ?? "");
   const setText = (next: string) => useComposerDraftStore.getState().setPrompt(draftTarget, next);
   const attachments = useBubbleAttachments(facts.ref.environmentId, draftTarget);
@@ -234,7 +263,6 @@ export function WorldBubble(props: {
 
   // What the agent waits on you for, oldest first. An approval comes before a question, as in
   // the chat.
-  const projection = useThreadProjection(facts.ref)?.projection ?? null;
   const pending = useMemo(() => {
     if (projection === null) return null;
     const requests = derivePendingThreadRequests(projection);
@@ -251,9 +279,63 @@ export function WorldBubble(props: {
     approval === null ? (pending?.question ?? null) : null,
     showError,
   );
-  const asking = question.request !== null && question.answerable;
+  // An edit in progress keeps the text box for the queued message.
+  const asking = editing === null && question.request !== null && question.answerable;
+
+  const saveEdit = async (said: string, edit: QueuedRunEdit) => {
+    if (state.phase === "sending" || attachments.preparing) return;
+    const message = said.trim();
+    const staged = attachments.attachments.length;
+    if (message === "" && edit.existingAttachments.length === 0 && staged === 0) return;
+    if (edit.existingAttachments.length + staged > PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
+      setState({
+        phase: "error",
+        message: `A message can have at most ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} attachments.`,
+      });
+      return;
+    }
+    setState({ phase: "sending" });
+    let outgoing;
+    try {
+      outgoing = await attachments.prepareForSend(message);
+    } catch (error) {
+      setState({
+        phase: "error",
+        message: error instanceof Error ? error.message : "Could not attach the files.",
+      });
+      return;
+    }
+    const result = await editQueuedRun({
+      environmentId: facts.ref.environmentId,
+      input: queuedRunEditCommandInput({
+        editing: edit,
+        text: outgoing.text,
+        attachments: [...edit.existingAttachments, ...outgoing.attachments],
+        newContext: outgoing.context,
+      }),
+    });
+    if (result._tag === "Failure") {
+      setState({ phase: "error", message: "Could not save the edited queued message." });
+      return;
+    }
+    attachments.sent();
+    queuedRunEdit.end();
+    setState({ phase: "idle" });
+    composer.current?.focusAtEnd();
+  };
+
+  const beginEdit = (request: EditQueuedRunRequest) => {
+    queuedRunEdit.begin(request);
+    composer.current?.focusAtEnd();
+  };
+
+  const cancelEdit = () => {
+    queuedRunEdit.end();
+    composer.current?.focusAtEnd();
+  };
 
   const send = async (said: string) => {
+    if (editing !== null) return saveEdit(said, editing);
     if (asking) {
       if (question.answer(said)) setText("");
       return;
@@ -365,6 +447,7 @@ export function WorldBubble(props: {
 
   return (
     <BubbleComposer
+      ref={composer}
       // Sized by the BubbleResizeFrame the world mounts it in.
       width="resizable"
       environmentId={facts.ref.environmentId}
@@ -377,22 +460,37 @@ export function WorldBubble(props: {
       onExpand={expand}
       onClose={onClose}
       placeholder={
-        !asking
-          ? "Message this agent"
-          : question.takesText
-            ? "Type your own answer"
-            : "Pick an answer above"
+        editing !== null
+          ? "Edit the queued message"
+          : !asking
+            ? "Message this agent"
+            : question.takesText
+              ? "Type your own answer"
+              : "Pick an answer above"
       }
       inputLabel={
         asking ? `Answer ${facts.title || "this agent"}` : `Message ${facts.title || "this agent"}`
       }
       submitLabel={
-        !asking ? "Send" : question.progress?.isLastQuestion ? "Answer" : "Next question"
+        editing !== null
+          ? "Save"
+          : !asking
+            ? "Send"
+            : question.progress?.isLastQuestion
+              ? "Answer"
+              : "Next question"
       }
       speakLabel={asking ? "Speak an answer" : "Speak a message"}
       hint={
         <>
-          <Kbd variant="outline">Enter</Kbd> to {asking ? "answer" : "send"}
+          <Kbd variant="outline">Enter</Kbd> to{" "}
+          {editing !== null ? "save" : asking ? "answer" : "send"}
+          {steerShortcutLabel !== null ? (
+            <>
+              <span className="mx-2">·</span>
+              <Kbd variant="outline">{steerShortcutLabel}</Kbd> to steer
+            </>
+          ) : null}
           <span className="mx-2">·</span>
           <Kbd variant="outline">{EXPAND_SHORTCUT}</Kbd> to open full chat
         </>
@@ -404,6 +502,10 @@ export function WorldBubble(props: {
         state.phase === "sending" && attachments.attachments.length > 0 ? "Uploading…" : null
       }
       {...(isStoppable(facts) ? { onStop: () => void stop() } : {})}
+      onSteerQueued={(repeat) => queuedRuns.current?.steerNext(repeat) ?? false}
+      onEditQueued={(repeat) => queuedRuns.current?.editLatest(repeat) ?? false}
+      keptAttachments={queuedRunEdit.existingAttachments}
+      onRemoveKeptAttachment={queuedRunEdit.removeExistingAttachment}
       notice={state.phase === "stopping" ? "Stopping…" : null}
       submitBlocked={
         thread === null ||
@@ -645,9 +747,13 @@ export function WorldBubble(props: {
               ) : null}
               {/* Messages waiting behind the agent's current run, on the rule above the text box. */}
               <QueuedRunsControl
+                ref={queuedRuns}
                 environmentId={facts.ref.environmentId}
                 threadId={facts.ref.threadId}
                 placement="docked"
+                editingRunId={editing?.runId ?? null}
+                onEditQueuedRun={beginEdit}
+                onCancelEdit={cancelEdit}
               />
             </div>
           </div>

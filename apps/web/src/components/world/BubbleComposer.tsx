@@ -1,12 +1,14 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { EnvironmentId, ServerProvider } from "@t3tools/contracts";
+import type { ChatAttachment, EnvironmentId, ServerProvider } from "@t3tools/contracts";
 import { LoaderIcon, MicIcon, PaperclipIcon, SendHorizontalIcon, SquareIcon } from "lucide-react";
 import {
   type CSSProperties,
   type ReactNode,
+  type Ref,
   useEffect,
   useEffectEvent,
   useId,
+  useImperativeHandle,
   useLayoutEffect,
   useRef,
   useState,
@@ -56,6 +58,18 @@ const HOLD_TO_TALK_MS = 300;
 const TALK_KEYS_HOLD_MS = 250;
 const MODIFIER_KEYS = new Set(["Meta", "Control", "Shift", "Alt"]);
 
+/**
+ * Whether an event started inside a world bubble. A bubble can float over the chat panel and
+ * handles its own thread's queue shortcuts, so the chat leaves those keys to it.
+ */
+export function isInsideWorldBubble(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest("[data-world-bubble]") !== null;
+}
+
+export interface BubbleComposerHandle {
+  readonly focusAtEnd: () => void;
+}
+
 /** The caret at the end of the text, counted the way the editor counts it. */
 const endOf = (text: string) => collapseExpandedComposerCursor(text, text.length);
 
@@ -67,6 +81,7 @@ const endOf = (text: string) => collapseExpandedComposerCursor(text, text.length
  * and extras; change shared behaviour here so both bubbles keep it.
  */
 export function BubbleComposer(props: {
+  readonly ref?: Ref<BubbleComposerHandle>;
   readonly environmentId: EnvironmentId;
   /** Where the agent works, for `@` file suggestions; null leaves them out. */
   readonly cwd: string | null;
@@ -87,6 +102,16 @@ export function BubbleComposer(props: {
   readonly onClose: () => void;
   /** The stop shortcut (`thread.stop`, Ctrl+C by default): stops the agent's run. */
   readonly onStop?: () => void;
+  /** The steer shortcut: sends the next queued message into the run. False leaves the key alone. */
+  readonly onSteerQueued?: (repeat: boolean) => boolean;
+  /** The edit-queued shortcut, pressed at the start of the text: edits the newest queued message. */
+  readonly onEditQueued?: (repeat: boolean) => boolean;
+  /** Stored files a queued-message edit keeps, shown before the newly staged ones. */
+  readonly keptAttachments?: ReadonlyArray<{
+    readonly attachment: ChatAttachment;
+    readonly url: string | null;
+  }> | null;
+  readonly onRemoveKeptAttachment?: (id: string) => void;
   readonly placeholder: string;
   readonly inputLabel: string;
   readonly submitLabel: string;
@@ -143,6 +168,7 @@ export function BubbleComposer(props: {
   }, [text]);
   const frame = useRef<HTMLDivElement>(null);
   const editor = useRef<ComposerPromptEditorHandle>(null);
+  useImperativeHandle(props.ref, () => ({ focusAtEnd: () => editor.current?.focusAtEnd() }), []);
   const [cursor, setCursor] = useState(() => endOf(text));
   // Text set from outside the editor (voice, a pick) leaves the caret at its end.
   const replaceText = (next: string, nextCursor = endOf(next)) => {
@@ -508,6 +534,7 @@ export function BubbleComposer(props: {
       ref={frame}
       // Focusable, so a click anywhere in the bubble keeps the keyboard here and Escape still works.
       tabIndex={-1}
+      data-world-bubble=""
       className={cn(
         "flex w-108 flex-col gap-2 rounded-xl border border-border bg-popover p-2.5 outline-none",
         props.width === "narrow" && "w-96",
@@ -515,6 +542,29 @@ export function BubbleComposer(props: {
         "text-popover-foreground shadow-lg",
         dropping && "border-primary",
       )}
+      // Caught before the text editor, which would take Shift+Enter as a new line.
+      onKeyDownCapture={(event) => {
+        if (props.onSteerQueued === undefined && props.onEditQueued === undefined) return;
+        if (event.nativeEvent.isComposing) return;
+        const composerFocus =
+          event.target instanceof Element &&
+          event.target.closest('[data-testid="composer-editor"]') !== null;
+        const command = resolveShortcutCommand(event.nativeEvent, keybindings, {
+          context: { composerFocus },
+        });
+        if (command === "thread.steerQueuedMessage") {
+          if (!props.onSteerQueued?.(event.repeat)) return;
+        } else if (command === "thread.editQueuedMessage") {
+          // Anywhere else in the text the key keeps moving the caret, as in the chat.
+          const range = editor.current?.readSelectionRange();
+          if (range === undefined || range.start !== 0 || range.end !== 0) return;
+          if (!props.onEditQueued?.(event.repeat)) return;
+        } else {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+      }}
       onKeyDown={(event) => {
         if (
           props.onStop !== undefined &&
@@ -564,8 +614,10 @@ export function BubbleComposer(props: {
       {props.header}
       <ChipAttachmentRemovalPopover removal={chipRemoval} />
       <BubbleAttachmentList
+        kept={props.keptAttachments ?? []}
         attachments={attachments.attachments}
         disabled={busy}
+        onRemoveKept={props.onRemoveKeptAttachment}
         onRemove={removeAttachment}
       />
       {/* Above the rest of the bubble, whose picker icons stack at z-30, so the list covers them. */}
