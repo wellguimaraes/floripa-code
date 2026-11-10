@@ -723,6 +723,10 @@ export default function WorldCanvas(props: {
           scale: root.scale.y,
           facing: root.rotation.y,
           shades: palette.families[hue]!,
+          hat:
+            character.facts.worktreePath === null
+              ? null
+              : (island?.hats.get(character.facts.worktreePath) ?? null),
         },
       ];
     });
@@ -766,6 +770,8 @@ export default function WorldCanvas(props: {
             scale: definition.movement.characterScale,
             facing: slot.facing,
             shades: palette.families[thread.hue]!,
+            // Its worktree's hat is not decided until it lands.
+            hat: null,
           },
         ],
         arriving: { landed: false, at: slot.position },
@@ -793,27 +799,68 @@ export default function WorldCanvas(props: {
   const { archiveThread } = useThreadActions();
   // Archive, not delete: each can be undone from its toast or Settings → Archived.
   const archiveAll = async (
-    characters: ReadonlyArray<WorldCharacter>,
+    chosen: ReadonlyArray<WorldCharacter>,
     /** Subagents the world draws as one figure. They leave with it, without a figure of their own. */
-    extras: ReadonlyArray<CharacterFacts> = [],
+    chosenExtras: ReadonlyArray<CharacterFacts> = [],
   ) => {
     setPicked(new Set());
     setBubbleKey(null);
-    const facts = [...characters.map((character) => character.facts), ...extras];
+    // An agent's idle subagents leave with it: the server archives them along with it.
+    // A busy one stays, and so does the figure standing for it.
+    const members = chosen.map((character) =>
+      character.facts.kid ? [] : (collapsed.subagentsOf.get(character.facts.key) ?? []),
+    );
+    const family = members.flatMap((kids) => kids.filter(isResting));
+    const figureKeys = new Set(
+      members.flatMap((kids) => (kids.every(isResting) ? kids.map((kid) => kid.key) : [])),
+    );
+    const figures = islands
+      .flatMap((island) => island.characters)
+      .filter((character) => figureKeys.has(character.facts.key));
+    const characters = [
+      ...new Map(
+        [...chosen, ...figures].map((character) => [character.facts.key, character]),
+      ).values(),
+    ];
+    const facts = [
+      ...new Map(
+        [...characters.map((character) => character.facts), ...chosenExtras, ...family].map(
+          (fact) => [fact.key, fact],
+        ),
+      ).values(),
+    ];
     const keys = new Set(facts.map((fact) => fact.key));
+    // An idle one leaves with the furthest ancestor leaving too, which archives the ones
+    // under it; a busy one picked by hand is archived itself, since the server leaves it.
+    const parentOf = new Map(islandFacts.map((fact) => [fact.key, fact.parentKey]));
+    const leadOf = (fact: CharacterFacts) => {
+      let lead = fact.key;
+      if (!isResting(fact)) return lead;
+      let key: string | null | undefined = parentOf.get(fact.key) ?? fact.parentKey;
+      for (let depth = 0; key != null && depth < 32; depth += 1) {
+        if (keys.has(key)) lead = key;
+        key = parentOf.get(key);
+      }
+      return lead;
+    };
     // The open chat closes when its agent is archived, maybe before the archive call
     // returns; the map stays where it is rather than going back to its view before the chat.
     if (selectedKey !== null && keys.has(selectedKey)) holdViewOnClose.current?.();
     // Only the drawn characters keep their spots. The hidden subagents were never placed.
     setArchiving((all) => [...all, ...characters.map((character) => character.facts)]);
     const results = await Promise.all(
-      facts.map(async (fact) => ({
-        fact,
-        result: await archiveThread(fact.ref),
-      })),
+      facts
+        .filter((fact) => leadOf(fact) === fact.key)
+        .map(async (fact) => ({
+          fact,
+          result: await archiveThread(fact.ref),
+        })),
+    );
+    const succeeded = new Set(
+      results.flatMap(({ fact, result }) => (result._tag === "Success" ? [fact.key] : [])),
     );
     const archivedKeys = new Set(
-      results.flatMap(({ fact, result }) => (result._tag === "Success" ? [fact.key] : [])),
+      facts.flatMap((fact) => (succeeded.has(leadOf(fact)) ? [fact.key] : [])),
     );
     const archived = characters.filter((character) => archivedKeys.has(character.facts.key));
     try {

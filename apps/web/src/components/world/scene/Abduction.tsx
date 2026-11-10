@@ -14,6 +14,7 @@ import { CharacterModel } from "./CharacterModel";
 import { CharacterGlow } from "./lighting";
 import { drawSoon } from "./frames";
 import { geometry } from "./geometries";
+import { Hat } from "./Hat";
 import { type FamilyShades, palette } from "./palette";
 
 const DESCEND = 1;
@@ -32,6 +33,8 @@ export interface AbductedFigure {
   /** The way the character faced, so the stand-in turns up exactly as it stood. */
   readonly facing: number;
   readonly shades: FamilyShades;
+  /** The worktree's hat it wore; null in the project checkout. */
+  readonly hat: number | null;
 }
 
 const up = new Vector3(0, 1, 0);
@@ -162,7 +165,12 @@ export function Abduction(props: {
         >
           <Suspense fallback={null}>
             <CharacterGlow>
-              <CharacterModel pose="stand" shades={figure.shades} isWalking={() => false} />
+              <CharacterModel
+                pose="stand"
+                shades={figure.shades}
+                isWalking={() => false}
+                headItem={figure.hat === null ? undefined : <Hat style={figure.hat} />}
+              />
             </CharacterGlow>
           </Suspense>
         </group>
