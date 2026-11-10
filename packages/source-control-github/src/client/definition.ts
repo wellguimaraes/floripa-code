@@ -37,6 +37,7 @@ export const definition = defineSourceControlClient({
     "draft",
     "close",
     "reopen",
+    "delete-branch",
     "update-branch",
     "enable-auto-merge",
     "disable-auto-merge",

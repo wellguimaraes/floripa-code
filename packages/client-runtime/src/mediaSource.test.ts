@@ -31,6 +31,14 @@ describe("resolveMediaSource", () => {
       });
     });
 
+    it.each(["https://cdn.example.com/tone.mp3", "data:audio/wav;base64,AAAA", "tone.wav"])(
+      "keeps audio %s out of the image and video viewer",
+      (href) => {
+        expect(resolveMediaSource(href, { threadId })).toBeNull();
+        expect(resolveMediaSource(href, { threadId, imageEmbed: true })).toBeNull();
+      },
+    );
+
     it("accepts extensionless image embeds only when asked", () => {
       const href = "https://cdn.example.com/render?id=42";
       expect(resolveMediaSource(href, { threadId })).toBeNull();

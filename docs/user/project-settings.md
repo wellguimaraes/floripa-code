@@ -38,6 +38,21 @@ Settings that are environment-wide stay read-only while a project is selected. W
 targets disagree, a control shows **Mixed** until you choose one value. Appearance, keyboard,
 and other phone-only settings ignore the filter.
 
+## Pin and archive projects
+
+Pinned projects come first in the project pickers: the project picker on a new thread, the
+new-thread list, the command palette, the sidebar project filter, and the world's new-agent
+picker. Pin or unpin a project from its row in those lists, from **Lands** in the world, or press
+the thread pin shortcut on the highlighted row. **Settings → Projects** has a **Pin** switch too.
+
+Archive a project you are done with in **Settings → Projects** or **Lands** in the world. It
+leaves the project pickers and, in the world, its island leaves the map. Its threads, settings,
+and files stay as they are. Archived projects still show in the Settings project list marked
+**Archived**, and under **Archived** in **Lands**. Choose one and select **Unarchive** to bring
+it back.
+
+A project on several machines must have every machine connected to pin or archive it.
+
 ## Worktree branch names
 
 In **Settings → Source Control → Worktree branch naming**, choose a static prefix,
@@ -61,11 +76,21 @@ taken, the temporary branch name remains.
 
 ## Scheduled tasks on mobile
 
-Open **Settings → Scheduled tasks** to create recurring tasks or manage existing
+Open **Settings → Scheduled tasks** to create scheduled tasks or manage existing
 ones across your connected environments. Use the settings filter to narrow the
 list by environment or project. Each task runs on the environment you choose,
 using its project, model, and workspace settings. Fixed-time schedules use that
-environment's time zone, which may differ from your phone's.
+environment's time zone, which may differ from your phone's. Choose **Once**
+to run a task a single time at a date and time in your own time zone. If the
+environment is offline then, the task runs when it is back.
+
+Under **Destination**, choose where runs go. **New thread each run** keeps every
+run separate. **One thread, continuing the conversation** starts a thread on the
+first run and posts later runs there, in the same conversation. Moving such a task
+to another project starts a new thread there on its next run. Deleting a thread
+that a task posts into leaves the task starting a new thread on its next run.
+**One thread, fresh session each run** is offered once the server can start
+each run without the earlier runs' context.
 
 You can edit, pause, resume, run immediately, or delete a task from the list.
 Webhook tasks only run when their URL is called, so they can't be run
@@ -93,6 +118,29 @@ same secret in the repository's webhook settings with content type
 `application/json`. Requests without a valid signature are rejected. Set this
 up on desktop or web; mobile keeps an existing signature check but can't turn
 one on.
+
+To run only for some requests, add **Filters**. Each one tests a value named
+like a placeholder, without the braces, such as `headers.x-github-event` equals
+`pull_request` or `body.action` is one of `opened, reopened`. A task runs only
+when every filter matches; other requests are answered normally, logged as
+**Filtered** with the first filter that failed, and start nothing. Values
+compare as text, and a value that is an object or a list only passes
+**exists**. Separate **is one of** values with commas; a value can't contain
+a comma or start or end with a space.
+
+To suppress repeated deliveries, set a **Replay key** template, such as
+`{{headers.delivery-id}}`. The same key is ignored for seven days per task.
+To combine a burst, set a **Coalesce key**, such as `{{body.id}}`, and a window
+of 10–3600 seconds (120 by default). One run uses the latest body, headers,
+and query when the window from the first delivery closes; later requests
+do not extend it. Pending windows survive a server restart. Keys must contain
+request placeholders; if any placeholder is missing, or the render is empty,
+that key's rule is skipped. Clear the templates to turn dedupe off.
+
+Duplicate and coalesced log entries share a limit of 10 per task per minute.
+Additional deliveries are accepted without a log entry, and coalesced deliveries
+always replace the persisted payload. Coalesced updates count toward a separate
+60-per-minute validation limit; exceeding it receives HTTP 429.
 
 On desktop and web, pick **Deliveries** from a task's menu to see recent
 requests and the prompt each one produced.
@@ -148,9 +196,10 @@ Inherit follows each machine's rules; Off keeps that project's worktrees until y
 manually. Custom applies separate worktree rules to the selected project or checkout. Browser
 captures and log retention remain machine-wide.
 
-Worktrees can be removed after a chosen number of inactive days, after merging, or when they
-have no commits beyond the default branch. Only T3-managed worktrees are eligible. Active
-sessions and shared worktrees prevent removal. **Keep worktrees with local changes** defaults
+Worktrees can be removed after a chosen number of inactive days, after a thread settles, after
+merging, or when they have no commits beyond the default branch. Set settled retention to 0 days
+to remove a worktree at the next cleanup after settlement. Only T3-managed worktrees are eligible.
+Active sessions and shared worktrees prevent removal. **Keep worktrees with local changes** defaults
 to **Uncommitted changes**, which protects tracked edits and untracked files but deletes ignored
 files such as `.env` and build output. **Any local files** also protects ignored files other than
 `node_modules`. **Edited tracked files** protects only tracked edits and allows untracked and

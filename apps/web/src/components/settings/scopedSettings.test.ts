@@ -18,6 +18,7 @@ import {
   planScopedSettingsClear,
   planScopedSettingsPatch,
   resolveScopedSettingsTargets,
+  scopedIdleCompaction,
   scopedSettingsAreMixed,
   scopedSettingsSource,
   selectScopedSettingsEnvironments,
@@ -49,6 +50,13 @@ function environment(
             },
           },
   };
+}
+
+// An environment whose server predates `idleCompaction` sends only the legacy field.
+function beforeModes(compactIdleThreads: ServerSettings["compactIdleThreads"]) {
+  const base = environment("Old", { settings: { compactIdleThreads } });
+  const { idleCompaction: _modes, ...settings } = base.serverConfig!.settings;
+  return { ...base, serverConfig: { ...base.serverConfig!, settings } };
 }
 
 const laptop = environment("Laptop");
@@ -94,6 +102,8 @@ const group: SidebarProjectSnapshot = {
   allRemoteMembersAreDesktopLocal: false,
   allRemoteMembersAreWsl: false,
   remoteEnvironmentLabels: [server.label, laptop.label],
+  pinned: false,
+  archived: false,
 };
 const project = resolveSettingsScope({ project: group.projectKey }, [group], environments);
 const checkout = resolveSettingsScope(
@@ -157,6 +167,7 @@ describe("scoped settings writes", () => {
           mode: "custom",
           rules: {
             worktreeAfterDays: 12,
+            worktreeSettledAfterDays: null,
             worktreeOnDelete: true,
             worktreeOnMerge: true,
             worktreeUnchanged: false,
@@ -181,6 +192,7 @@ describe("scoped settings writes", () => {
     expect(policies).toEqual([
       {
         worktreeAfterDays: 12,
+        worktreeSettledAfterDays: null,
         worktreeOnDelete: false,
         worktreeOnMerge: true,
         worktreeUnchanged: false,
@@ -188,6 +200,7 @@ describe("scoped settings writes", () => {
       },
       {
         worktreeAfterDays: null,
+        worktreeSettledAfterDays: null,
         worktreeOnDelete: false,
         worktreeOnMerge: false,
         worktreeUnchanged: false,
@@ -212,6 +225,43 @@ describe("scoped settings writes", () => {
       ],
     ]);
     expect(persistClient).not.toHaveBeenCalled();
+  });
+
+  it("compares idle compaction by mode, and offers Never only where every server stores it", () => {
+    const fixed = {
+      settings: {
+        ...DEFAULT_SERVER_SETTINGS,
+        compactIdleThreads: false,
+        idleCompaction: "onReturn" as const,
+      },
+    };
+    const { idleCompaction: _unset, ...withoutField } = DEFAULT_SERVER_SETTINGS;
+    const modes = { settings: { ...withoutField, compactIdleThreads: "onReturn" as const } };
+    // A server from before modes sends no `idleCompaction` at all.
+    const { idleCompaction: _modes, ...beforeModes } = DEFAULT_SERVER_SETTINGS;
+    const legacy = { settings: { ...beforeModes, compactIdleThreads: false } };
+    expect(scopedIdleCompaction([fixed, modes])).toEqual({ mixed: false, neverAvailable: true });
+    expect(scopedIdleCompaction([fixed, legacy])).toEqual({ mixed: false, neverAvailable: false });
+    expect(
+      scopedIdleCompaction([fixed, { settings: { ...fixed.settings, idleCompaction: "off" } }])
+        .mixed,
+    ).toBe(true);
+  });
+
+  it("sends an idle compaction mode in the form each environment's server reads", () => {
+    const targets = [
+      environment("Fixed", { settings: { compactIdleThreads: false, idleCompaction: "onReturn" } }),
+      { ...beforeModes("onReturn"), environmentId: EnvironmentId.make("Modes"), label: "Modes" },
+      { ...beforeModes(false), environmentId: EnvironmentId.make("Switch"), label: "Switch" },
+    ];
+    const plan = planScopedSettingsPatch(resolveSettingsScope({}, [], targets), targets, {
+      idleCompaction: "beforeCacheExpires",
+    });
+    expect(plan.serverWrites.map((write) => write.patch)).toEqual([
+      { idleCompaction: "beforeCacheExpires" },
+      { compactIdleThreads: "beforeCacheExpires" },
+      { compactIdleThreads: true },
+    ]);
   });
 
   it("writes an aggregate preference only to connected environments with loaded configuration", async () => {
@@ -295,6 +345,7 @@ describe("scoped settings writes", () => {
               mode: "custom",
               rules: {
                 worktreeAfterDays: 8,
+                worktreeSettledAfterDays: null,
                 worktreeOnDelete: false,
                 worktreeOnMerge: true,
                 worktreeUnchanged: false,
@@ -308,6 +359,15 @@ describe("scoped settings writes", () => {
     const plan = planScopedSettingsPatch(project, [machine, customized], {
       worktreeCleanup: { mode: "custom", rules: { worktreeOnDelete: true } },
     });
+    const settledPlan = planScopedSettingsPatch(project, [machine, customized], {
+      worktreeCleanup: { mode: "custom", rules: { worktreeSettledAfterDays: 0 } },
+    });
+    expect(
+      settledPlan.serverWrites.map((write) => write.patch.projectSettingsOverrides),
+    ).toMatchObject([
+      { [projectId]: { worktreeCleanup: { rules: { worktreeSettledAfterDays: 0 } } } },
+      { [laptopProjectId]: { worktreeCleanup: { rules: { worktreeSettledAfterDays: 0 } } } },
+    ]);
     expect(plan.serverWrites.map((write) => write.patch.projectSettingsOverrides)).toEqual([
       {
         [projectId]: {
@@ -316,6 +376,7 @@ describe("scoped settings writes", () => {
             mode: "custom",
             rules: {
               worktreeAfterDays: 8,
+              worktreeSettledAfterDays: null,
               worktreeOnDelete: true,
               worktreeOnMerge: true,
               worktreeUnchanged: false,
@@ -330,6 +391,7 @@ describe("scoped settings writes", () => {
             mode: "custom",
             rules: {
               worktreeAfterDays: 30,
+              worktreeSettledAfterDays: null,
               worktreeOnDelete: true,
               worktreeOnMerge: false,
               worktreeUnchanged: false,

@@ -85,12 +85,30 @@ function parseBody(request: WebhookRequest): unknown {
   }
 }
 
+const WILDCARD = /^(.*)\[\]$/;
+
+/**
+ * Walks `segments` from `root`. A segment ending in `[]` names an array and
+ * the rest of the path applies to each element, so `labels[].name` resolves
+ * to the list of every label's name. Elements without the rest of the path
+ * are dropped; a wildcard on a non-array resolves to undefined.
+ */
 function lookup(root: unknown, segments: ReadonlyArray<string>): unknown {
   let current = root;
-  for (const segment of segments) {
+  for (const [index, segment] of segments.entries()) {
     if (current === null || typeof current !== "object") return undefined;
-    if (!Object.hasOwn(current, segment)) return undefined;
-    current = (current as Record<string, unknown>)[segment];
+    const wildcard = WILDCARD.exec(segment);
+    const key = wildcard ? wildcard[1]! : segment;
+    if (!Object.hasOwn(current, key)) return undefined;
+    current = (current as Record<string, unknown>)[key];
+    if (!wildcard) continue;
+    if (!Array.isArray(current)) return undefined;
+    const rest = segments.slice(index + 1);
+    return current.flatMap((element) => {
+      const value = rest.length === 0 ? element : lookup(element, rest);
+      if (value === undefined) return [];
+      return rest.some((part) => WILDCARD.test(part)) && Array.isArray(value) ? value : [value];
+    });
   }
   return current;
 }
@@ -114,15 +132,17 @@ function formatWebhookRequest(request: WebhookRequest): string {
   ].join("\n");
 }
 
-export function renderWebhookPrompt(
-  template: string,
+/**
+ * Resolves a placeholder expression (`body.action`, `headers.x-github-event`)
+ * against the request. Webhook filters share it, so both read the same value.
+ */
+export function webhookExpressionResolver(
   request: WebhookRequest,
-): RenderedWebhookPrompt {
-  const missing: string[] = [];
+): (expression: string) => unknown {
   let body: { parsed: unknown } | undefined;
   const parsedBody = () => (body ??= { parsed: parseBody(request) }).parsed;
 
-  const resolve = (expression: string): unknown => {
+  return (expression) => {
     const [root, ...segments] = expression.split(".");
     switch (root) {
       case "request":
@@ -143,10 +163,19 @@ export function renderWebhookPrompt(
         return undefined;
     }
   };
+}
+
+export function renderWebhookPrompt(
+  template: string,
+  request: WebhookRequest,
+  raw = false,
+): RenderedWebhookPrompt {
+  const missing: string[] = [];
+  const resolve = webhookExpressionResolver(request);
 
   const prompt = template.replace(PLACEHOLDER, (_match, expression: string) => {
     const value = resolve(expression);
-    if (value === undefined || value === null) {
+    if (value === undefined || value === null || (raw && stringify(value) === "")) {
       if (!missing.includes(expression)) missing.push(expression);
       return "";
     }

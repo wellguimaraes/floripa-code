@@ -1,3 +1,4 @@
+import type { ToolCallDiffTarget } from "../../diffPanelStore";
 import type {
   EnvironmentId,
   OrchestrationV2ProjectedTurnItem,
@@ -35,6 +36,8 @@ interface V2ItemInspectorProps {
   readonly workspaceRoot?: string | undefined;
   readonly onOpenThread: (threadId: ThreadId) => void;
   readonly onOpenTurnDiff: (runId: RunId, filePath?: string) => void;
+  /** Opens this one tool call's own diff; absent where the diff panel is unavailable. */
+  readonly onOpenToolDiff?: ((target: ToolCallDiffTarget) => void) | undefined;
   readonly onRollbackCheckpoint?:
     | ((input: { readonly checkpointId: string; readonly scopeId: string }) => void)
     | undefined;
@@ -264,11 +267,17 @@ export const V2ItemInspector = memo(function V2ItemInspector(props: V2ItemInspec
                 <span className="text-destructive">-{item.deletions ?? 0}</span>
               </span>
             ) : null}
-            {item.runId !== null ? (
+            {props.onOpenToolDiff ? (
               <Button
                 size="xs"
                 variant="outline"
-                onClick={() => props.onOpenTurnDiff(item.runId!, item.fileName)}
+                onClick={() =>
+                  props.onOpenToolDiff?.({
+                    threadId: props.projectedItem.sourceThreadId,
+                    itemId: props.projectedItem.sourceItemId,
+                    revision: turnItemDetailRevision(item),
+                  })
+                }
               >
                 Open diff
               </Button>

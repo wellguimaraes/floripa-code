@@ -1,4 +1,8 @@
-import { type EnvironmentId, UsageLimitSourceId } from "@t3tools/contracts";
+import {
+  type EnvironmentId,
+  type SettingsSecretValue,
+  UsageLimitSourceId,
+} from "@t3tools/contracts";
 import { useState } from "react";
 
 import { useUpdateEnvironmentSettings } from "../../hooks/useSettings";
@@ -14,6 +18,7 @@ import {
 } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
+import { SecretSourceInput, useSecretSources } from "./SecretSourceInput";
 
 /**
  * Stable per hub and readable in settings.json. Dots and dashes in the host
@@ -53,9 +58,11 @@ export function AddUsageLimitSourceDialog({
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
   const [label, setLabel] = useState("");
   const [url, setUrl] = useState("");
-  const [managementKey, setManagementKey] = useState("");
+  const secretSources = useSecretSources(environmentId);
+  const [managementKey, setManagementKey] = useState<SettingsSecretValue>("");
   const trimmedUrl = url.trim();
-  const canSave = trimmedUrl.length > 0 && managementKey.trim().length > 0;
+  const canSave =
+    trimmedUrl.length > 0 && (typeof managementKey === "object" || managementKey.trim().length > 0);
 
   const reset = () => {
     setLabel("");
@@ -73,7 +80,7 @@ export function AddUsageLimitSourceDialog({
           kind: "cliproxy",
           ...(label.trim() ? { label: label.trim() } : {}),
           url: trimmedUrl,
-          managementKey: managementKey.trim(),
+          managementKey: typeof managementKey === "string" ? managementKey.trim() : managementKey,
           enabled: true,
         },
       },
@@ -118,12 +125,16 @@ export function AddUsageLimitSourceDialog({
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor="usage-source-key">Management key</Label>
-              <Input
+              <SecretSourceInput
                 id="usage-source-key"
                 type="password"
                 autoComplete="off"
+                size="sm"
+                aria-label="Management key"
                 value={managementKey}
-                onChange={(event) => setManagementKey(event.target.value)}
+                sources={secretSources}
+                onLiteralCommit={setManagementKey}
+                onSecretChange={(secret) => setManagementKey(secret ?? "")}
               />
             </div>
             <div className="grid gap-1.5">

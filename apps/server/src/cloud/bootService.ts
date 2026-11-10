@@ -4,6 +4,7 @@ import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -32,7 +33,7 @@ import {
 } from "./serviceProtocol.ts";
 
 const BOOT_SERVICE_NAME = "floripacode";
-const BOOT_SERVICE_UNIT_FILE = `${BOOT_SERVICE_NAME}.service`;
+export const BOOT_SERVICE_UNIT_FILE = `${BOOT_SERVICE_NAME}.service`;
 // `.service` suffix keeps the label distinct from the desktop app's bundle id
 // (com.floripacode), so launchd and TCC records never collide.
 const BOOT_SERVICE_LAUNCHD_LABEL = "com.floripacode.service";
@@ -118,6 +119,12 @@ export function renderBootServiceUnit(plan: BootServicePlan): string {
     // server responsive while agents saturate CPU or disk.
     "CPUWeight=1000",
     "IOWeight=1000",
+    // Reclaim takes the agents' unprotected pages first. The kernel caps this at the
+    // protection of user.slice and user@.service, which only root can grant.
+    "MemoryLow=1536M",
+    // A user manager's own score, the lowest it may set: below its other services (200) and agents (800).
+    // `t3 service protect` lowers it further through a drop-in.
+    "OOMScoreAdjust=100",
     // systemd-oomd only honors this when the cgroup it watches is owned by the
     // same user. Distros watch user-1000.slice, which root owns, so there it is
     // ignored. The agent scopes are what keep oomd off the server.
@@ -547,6 +554,16 @@ export class BootService extends Context.Service<
      * restarted.
      */
     readonly restart: Effect.Effect<boolean, BootServiceError>;
+    /**
+     * Run `operation` while this home's installed service is stopped, then
+     * start it again when it was enabled (systemd) or loaded (launchd)
+     * beforehand. A service that belongs to another home is left alone. The
+     * service is started again even when stopping it failed; the operation's
+     * own failure is reported ahead of a failure to restart.
+     */
+    readonly withStopped: <A, E, R>(
+      operation: Effect.Effect<A, E, R>,
+    ) => Effect.Effect<A, E | BootServiceError, R>;
     readonly uninstall: Effect.Effect<boolean, BootServiceError>;
     readonly status: Effect.Effect<BootServiceStatus, BootServiceError>;
   }
@@ -931,6 +948,61 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
     Effect.withSpan("cloud.boot_service.restart"),
   );
 
+  const withStopped = <A, E, R>(
+    operation: Effect.Effect<A, E, R>,
+  ): Effect.Effect<A, E | BootServiceError, R> =>
+    Effect.gen(function* () {
+      if (detectedManager === undefined) return yield* operation;
+      const manager = detectedManager;
+      const unit = yield* fs.readFileString(unitPath).pipe(Effect.option);
+      if (Option.isNone(unit)) return yield* operation;
+      const installedBaseDir = bootServiceBaseDirOf(unit.value);
+      if (
+        installedBaseDir === undefined ||
+        path.resolve(installedBaseDir) !== path.resolve(input.baseDir)
+      ) {
+        return yield* operation;
+      }
+      // `is-active` fails while a crash-looping unit sits in `activating
+      // (auto-restart)`, and a throttled launchd job is loaded without a pid;
+      // both would start the server mid-repair. So the unit is always
+      // stopped, and started again when it was active, enabled or loaded
+      // before; a disabled unit caught crash-looping stays stopped.
+      const restore =
+        manager.kind === "systemd"
+          ? yield* Effect.map(
+              Effect.all(
+                [
+                  probe("systemctl", ["--user", "is-enabled", BOOT_SERVICE_UNIT_FILE]),
+                  probe("systemctl", ["--user", "is-active", BOOT_SERVICE_UNIT_FILE]),
+                ],
+                { concurrency: "unbounded" },
+              ),
+              ([enabled, active]) => succeeded(active) || succeeded(enabled),
+            )
+          : succeeded(
+              yield* probe("launchctl", ["print", `gui/${uid}/${BOOT_SERVICE_LAUNCHD_LABEL}`]),
+            );
+      return yield* Effect.acquireUseRelease(
+        // Every stop step is required when the service is to be restored: a
+        // step that was fine to skip during uninstall would leave the server
+        // holding the database. A stop that fails (a timeout, say) may still
+        // have stopped the service, so the restore below runs either way.
+        // Nothing to restore means nothing is expected to be loaded, and the
+        // stop is best-effort (launchd's bootout fails on an unloaded job).
+        runSteps(manager.stop.map((step) => ({ ...step, optional: !restore }))).pipe(Effect.exit),
+        (stopped): Effect.Effect<A, E | BootServiceError, R> =>
+          Exit.isSuccess(stopped) ? operation : Effect.failCause(stopped.cause),
+        (_, exit) => {
+          if (!restore) return Effect.void;
+          // Start only: `activate` would also enable a unit the user disabled.
+          // When the operation itself failed, its error is the one worth reporting.
+          const start = runSteps(manager.restart);
+          return Exit.isFailure(exit) ? Effect.ignore(start) : start;
+        },
+      );
+    }).pipe(Effect.withSpan("cloud.boot_service.with_stopped"));
+
   const uninstall: BootService["Service"]["uninstall"] = Effect.gen(function* () {
     const manager = yield* requireManager;
     if (
@@ -994,7 +1066,7 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
     Effect.withSpan("cloud.boot_service.status"),
   );
 
-  return BootService.of({ install, restart, uninstall, status });
+  return BootService.of({ install, restart, withStopped, uninstall, status });
 });
 
 export const layer = (input: {

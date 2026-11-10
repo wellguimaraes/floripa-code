@@ -1,5 +1,9 @@
 import type { AssetResource, ThreadId } from "@t3tools/contracts";
-import { mediaMimeType, mediaMimeTypeFromExtension } from "@t3tools/shared/filePreview";
+import {
+  filePreviewKind,
+  mediaMimeType,
+  mediaMimeTypeFromExtension,
+} from "@t3tools/shared/filePreview";
 
 import {
   classifyMarkdownImageSource,
@@ -73,8 +77,11 @@ export function resolveMediaSource(
       : extensionIndex < 0
         ? null
         : mediaMimeTypeFromExtension(basename.slice(extensionIndex));
+  if (classified._tag === "WorkspaceFile" && filePreviewKind({ name: basename }) === "audio")
+    return null;
   const mimeType = detectedMimeType ?? (input.imageEmbed ? "image/*" : null);
-  if (mimeType === null) return null;
+  // Audio plays through its own inline player, not the image and video surfaces.
+  if (mimeType === null || mimeType.startsWith("audio/")) return null;
   const kind = mimeType.startsWith("video/") ? "video" : "image";
 
   const reference =

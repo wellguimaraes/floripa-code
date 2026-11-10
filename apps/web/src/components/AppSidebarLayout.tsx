@@ -37,6 +37,7 @@ import { useThreadVisitedMigration } from "../hooks/useThreadVisitedMigration";
 import ThreadSidebar from "./Sidebar";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
 import { WorldHost } from "./world/WorldHost";
+import { HistorySwipeNavigation } from "./HistorySwipeNavigation";
 import { SidebarBrandWidthProbe, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { MainAppLocationTracker } from "./sidebar/mainAppLocation";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
@@ -332,7 +333,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         defaultOpen={sidebarStartsOpen}
         style={sidebarProviderStyle}
       >
-        <SidebarBrandWidthProbe onWidthChange={setBrandWidth} />
+        <SidebarBrandWidthProbe isElectron={isElectron} onWidthChange={setBrandWidth} />
         <ProjectProjectionRetention />
         <Sidebar
           side="left"
@@ -369,6 +370,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         {/* The world has no sidebar: it takes the whole window. */}
         {worldShown ? null : <SidebarControl />}
         <NavigationHistoryShortcuts />
+        {isElectron ? <HistorySwipeNavigation /> : null}
         <MainAppLocationTracker />
       </SidebarProvider>
     </PanelAnimationSuppressionProvider>

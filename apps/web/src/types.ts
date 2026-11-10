@@ -105,6 +105,8 @@ export interface ChatMessage {
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly inputIntent?: OrchestrationV2UserMessageInputIntent | undefined;
+  /** The message started a new provider session; earlier messages stay visible. */
+  readonly freshContext?: boolean;
 }
 
 export interface ProposedPlan {

@@ -25,6 +25,7 @@
  */
 import {
   defaultInstanceIdForDriver,
+  isSecretReference,
   type ProviderInstanceConfig,
   type ProviderInstanceConfigMap,
   ServerSettings,
@@ -33,6 +34,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 
+import * as SecretResolver from "../secrets/SecretResolver.ts";
 import * as Settings from "../serverSettings.ts";
 import { BUILT_IN_DRIVERS, type BuiltInDriversEnv } from "./builtInDrivers.ts";
 import * as ProviderInstanceRegistry from "./ProviderInstanceRegistry.ts";
@@ -77,6 +79,53 @@ export const deriveProviderInstanceConfigMap = (
 };
 
 /**
+ * `configMap` with every environment variable that names a secret replaced by the secret, read
+ * in one batch. A variable that cannot be read keeps its reference, which makes the registry
+ * mark that instance unavailable instead of starting it on another credential.
+ */
+export const resolveProviderInstanceSecrets = Effect.fn(
+  "ProviderInstanceRegistryHydration.resolveSecrets",
+)(function* (
+  resolver: SecretResolver.SecretResolver["Service"],
+  configMap: ProviderInstanceConfigMap,
+) {
+  const pending = Object.entries(configMap).flatMap(([instanceId, instance]) =>
+    (instance.environment ?? []).flatMap((variable, index) =>
+      isSecretReference(variable.value) ? [{ instanceId, index, reference: variable.value }] : [],
+    ),
+  );
+  if (pending.length === 0) return configMap;
+  const values = yield* resolver.read(pending.map(({ reference }) => reference));
+  const resolved: Record<string, ProviderInstanceConfig> = { ...configMap };
+  pending.forEach(({ instanceId, index }, position) => {
+    const value = values[position];
+    const instance = resolved[instanceId];
+    const variable = instance?.environment?.[index];
+    if (instance === undefined || variable === undefined) return;
+    if (value === undefined || value.trim() === "") return;
+    resolved[instanceId] = {
+      ...instance,
+      environment: (instance.environment ?? []).map((entry, at) =>
+        at === index ? { ...entry, value, sensitive: true } : entry,
+      ),
+    };
+  });
+  return resolved as ProviderInstanceConfigMap;
+});
+
+/** Reads every secret again, so a vault unlocked or fixed since the last read applies now. */
+export const reloadProviderInstanceSecrets = Effect.gen(function* () {
+  const resolver = yield* SecretResolver.SecretResolver;
+  const mutator = yield* ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutator;
+  const serverSettings = yield* Settings.ServerSettingsService;
+  const settings = yield* serverSettings.getSettings;
+  yield* resolver.invalidate();
+  yield* mutator.reconcile(
+    yield* resolveProviderInstanceSecrets(resolver, deriveProviderInstanceConfigMap(settings)),
+  );
+});
+
+/**
  * Layer that consumes `ProviderInstanceRegistryMutator` and forks a
  * settings-watcher fiber. The fiber's lifetime is tied to the enclosing
  * layer scope (process lifetime in production), so it is interrupted on
@@ -90,17 +139,17 @@ export const deriveProviderInstanceConfigMap = (
 const layerSettingsWatcher = Layer.effectDiscard(
   Effect.gen(function* () {
     const mutator = yield* ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutator;
+    const resolver = yield* SecretResolver.SecretResolver;
     const serverSettings = yield* Settings.ServerSettingsService;
     const settingsChanges = yield* serverSettings.subscribeChanges;
     yield* settingsChanges.pipe(
       Stream.runForEach((next) =>
-        mutator
-          .reconcile(deriveProviderInstanceConfigMap(next))
-          .pipe(
-            Effect.catchCause((cause) =>
-              Effect.logError("ProviderInstanceRegistry reconcile failed", cause),
-            ),
+        resolveProviderInstanceSecrets(resolver, deriveProviderInstanceConfigMap(next)).pipe(
+          Effect.flatMap(mutator.reconcile),
+          Effect.catchCause((cause) =>
+            Effect.logError("ProviderInstanceRegistry reconcile failed", cause),
           ),
+        ),
       ),
       Effect.forkScoped,
     );
@@ -124,7 +173,8 @@ const layerSettingsWatcher = Layer.effectDiscard(
  * it, so the visibility leak is harmless in practice.
  */
 export const layer: Layer.Layer<
-  ProviderInstanceRegistry.ProviderInstanceRegistry,
+  | ProviderInstanceRegistry.ProviderInstanceRegistry
+  | ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutator,
   never,
   ProviderInstanceRegistryHydrationEnv
 > = Layer.unwrap(
@@ -133,10 +183,14 @@ export const layer: Layer.Layer<
     const initialSettings: ServerSettings | undefined = yield* serverSettings.getSettings.pipe(
       Effect.orElseSucceed(() => undefined),
     );
+    const resolver = yield* SecretResolver.SecretResolver;
     const initialConfigMap =
       initialSettings === undefined
         ? ({} as ProviderInstanceConfigMap)
-        : deriveProviderInstanceConfigMap(initialSettings);
+        : yield* resolveProviderInstanceSecrets(
+            resolver,
+            deriveProviderInstanceConfigMap(initialSettings),
+          );
 
     const layerMutable = ProviderInstanceRegistry.layer({
       drivers: BUILT_IN_DRIVERS,
@@ -149,8 +203,12 @@ export const layer: Layer.Layer<
 
     return layerSettingsWatcher.pipe(Layer.provideMerge(layerMutable));
   }),
+).pipe(
+  // Layers build once per graph, so every consumer of the resolver shares its read cache.
+  Layer.provide(SecretResolver.layer),
 ) as Layer.Layer<
-  ProviderInstanceRegistry.ProviderInstanceRegistry,
+  | ProviderInstanceRegistry.ProviderInstanceRegistry
+  | ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutator,
   never,
   ProviderInstanceRegistryHydrationEnv
 >;

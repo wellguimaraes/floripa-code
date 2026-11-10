@@ -21,6 +21,10 @@ task lists, quotes, headings and rules; ` ``` ` followed by Enter opens a code
 block. What you typed is what the agent receives, markers and numbering
 included, and `#1234` without a space still looks up a pull request.
 
+To see the plain Markdown instead, press the paragraph button beside the send button or
+`mod+/`. Press it again to return to styled text. It is the same setting as **Settings → Chat →
+Rich text composer**.
+
 Enter sends. In a list or quote, **Shift+Enter** continues it, and Shift+Enter
 on an empty line leaves it; **Tab** nests a list item. In a code block, Enter
 starts a new line at the current indentation, **Tab** and **Shift+Tab** indent
@@ -210,6 +214,14 @@ Provider commands must start the message to run. Floripa Code commands such as
 
 Send `/compact` in an existing conversation to reduce context usage when the
 provider supports it. Web and desktop also offer compaction from the context meter.
+Claude instances can also compact idle threads for you. See
+[compact idle threads](./providers-claude.md#compact-idle-threads).
+
+Send `/clear` on its own, or pick it from the slash menu, to start a fresh session
+in the same thread. Your next message goes to a new provider session that doesn't see the
+earlier messages, and the thread marks where it began with **New session**.
+Earlier messages and diffs stay in the thread. Dismiss the notice above the
+composer to keep the current session instead.
 
 ## Goals
 

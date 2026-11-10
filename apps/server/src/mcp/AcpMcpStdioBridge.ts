@@ -6,6 +6,7 @@ import * as NodeReadline from "node:readline";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { discardResponseBody, responsePayloads } from "@t3tools/shared/mcpResponsePayloads";
 
@@ -64,6 +65,112 @@ function protocolVersionOf(entry: unknown): string | null {
   return typeof version === "string" && version.length > 0 ? version : null;
 }
 
+export interface McpToolSessionOptions {
+  readonly endpoint: string;
+  readonly authorization: string;
+  readonly clientName: string;
+  readonly fetchImplementation?: (url: string, init?: RequestInit) => Promise<Response>;
+}
+
+export interface McpToolSession {
+  /** Resolves to the JSON-RPC `result` of `tools/call`, a `CallToolResult`. */
+  readonly call: (
+    tool: string,
+    args: Readonly<Record<string, unknown>>,
+  ) => Effect.Effect<unknown, AcpMcpBridgeError>;
+}
+
+/**
+ * One initialized MCP session over Floripa Code's HTTP endpoint, terminated
+ * when the scope closes. Used by the ACP terminal fallback and `t3 thread`.
+ */
+export const mcpToolSession = (
+  options: McpToolSessionOptions,
+): Effect.Effect<McpToolSession, AcpMcpBridgeError, Scope.Scope> => {
+  const fetchImplementation = options.fetchImplementation ?? fetch;
+  let sessionId: string | null = null;
+  let protocolVersion: string | null = null;
+  let nextId = 0;
+
+  const headers = () => ({
+    accept: "application/json, text/event-stream",
+    authorization: options.authorization,
+    ...(sessionId === null ? {} : { "mcp-session-id": sessionId }),
+    ...(protocolVersion === null ? {} : { "mcp-protocol-version": protocolVersion }),
+  });
+
+  const send = (message: unknown): Effect.Effect<ReadonlyArray<unknown>, AcpMcpBridgeError> =>
+    Effect.gen(function* () {
+      const response = yield* Effect.tryPromise({
+        try: () =>
+          fetchImplementation(options.endpoint, {
+            method: "POST",
+            headers: { "content-type": "application/json", ...headers() },
+            body: JSON.stringify(message),
+          }),
+        catch: bridgeError,
+      });
+      sessionId = response.headers.get("mcp-session-id") ?? sessionId;
+      if (!response.ok) {
+        yield* discardResponseBody(response);
+        return yield* Effect.fail(
+          new AcpMcpBridgeError(
+            `Floripa Code MCP endpoint responded with HTTP ${response.status}.`,
+          ),
+        );
+      }
+      const payloads = yield* Stream.runCollect(responsePayloads(response, bridgeError));
+      for (const payload of payloads) {
+        protocolVersion = protocolVersionOf(payload) ?? protocolVersion;
+      }
+      return payloads;
+    });
+
+  const request = (
+    method: string,
+    params: unknown,
+  ): Effect.Effect<JsonRpcEnvelope, AcpMcpBridgeError> =>
+    Effect.gen(function* () {
+      const id = `t3-cli-${nextId++}`;
+      const responses = yield* send({ jsonrpc: "2.0", id, method, params });
+      const envelope = asEnvelope(responses.find((entry) => asEnvelope(entry)?.id === id));
+      if (envelope === null || envelope.error !== undefined) {
+        return yield* Effect.fail(
+          new AcpMcpBridgeError(
+            `Floripa Code MCP ${method} failed${envelope?.error === undefined ? "." : `: ${JSON.stringify(envelope.error)}`}`,
+          ),
+        );
+      }
+      return envelope;
+    });
+
+  const terminate = Effect.suspend(() =>
+    sessionId === null
+      ? Effect.void
+      : Effect.tryPromise(() =>
+          fetchImplementation(options.endpoint, { method: "DELETE", headers: headers() }),
+        ).pipe(Effect.flatMap(discardResponseBody), Effect.ignore),
+  );
+
+  // Registered before the handshake so a session the server opened is ended
+  // even when the handshake fails.
+  return Effect.gen(function* () {
+    yield* Effect.addFinalizer(() => terminate);
+    yield* request("initialize", {
+      protocolVersion: MCP_PROTOCOL_VERSION,
+      capabilities: {},
+      clientInfo: { name: options.clientName, version: "0.0.0" },
+    });
+    yield* send({ jsonrpc: "2.0", method: "notifications/initialized" });
+    return {
+      call: (tool, args) =>
+        request("tools/call", { name: tool, arguments: args }).pipe(
+          Effect.map((envelope) => envelope.result),
+        ),
+    } satisfies McpToolSession;
+  });
+};
+
 export interface AcpMcpToolCallOptions {
   readonly endpoint: string;
   readonly authorization: string;
@@ -82,83 +189,10 @@ export interface AcpMcpToolCallOptions {
 export function callAcpMcpTool(
   options: AcpMcpToolCallOptions,
 ): Effect.Effect<unknown, AcpMcpBridgeError> {
-  const fetchImplementation = options.fetchImplementation ?? fetch;
-  return Effect.gen(function* () {
-    // The bridge is single-fibered at creation time; concurrent sends only
-    // read these after the sequential handshake, so plain locals suffice.
-    let sessionId: string | null = null;
-    let protocolVersion: string | null = null;
-
-    const send = (message: unknown): Effect.Effect<ReadonlyArray<unknown>, AcpMcpBridgeError> =>
-      Effect.gen(function* () {
-        const response = yield* Effect.tryPromise({
-          try: () =>
-            fetchImplementation(options.endpoint, {
-              method: "POST",
-              headers: {
-                "content-type": "application/json",
-                accept: "application/json, text/event-stream",
-                authorization: options.authorization,
-                ...(sessionId === null ? {} : { "mcp-session-id": sessionId }),
-                ...(protocolVersion === null ? {} : { "mcp-protocol-version": protocolVersion }),
-              },
-              body: JSON.stringify(message),
-            }),
-          catch: bridgeError,
-        });
-        sessionId = response.headers.get("mcp-session-id") ?? sessionId;
-        if (!response.ok) {
-          yield* discardResponseBody(response);
-          return yield* Effect.fail(
-            new AcpMcpBridgeError(
-              `Floripa Code MCP endpoint responded with HTTP ${response.status}.`,
-            ),
-          );
-        }
-        const payloads = yield* Stream.runCollect(responsePayloads(response, bridgeError));
-        for (const payload of payloads) {
-          protocolVersion = protocolVersionOf(payload) ?? protocolVersion;
-        }
-        return payloads;
-      });
-
-    const initializeId = "t3-acp-cli-initialize";
-    const initialized = yield* send({
-      jsonrpc: "2.0",
-      id: initializeId,
-      method: "initialize",
-      params: {
-        protocolVersion: MCP_PROTOCOL_VERSION,
-        capabilities: {},
-        clientInfo: { name: "floripa-code-acp-cli", version: "0.0.0" },
-      },
-    });
-    const initializeResponse = initialized.find((entry) => asEnvelope(entry)?.id === initializeId);
-    if (initializeResponse === undefined || asEnvelope(initializeResponse)?.error !== undefined) {
-      return yield* Effect.fail(
-        new AcpMcpBridgeError("Floripa Code MCP endpoint rejected initialization."),
-      );
-    }
-    yield* send({ jsonrpc: "2.0", method: "notifications/initialized" });
-
-    const callId = "t3-acp-cli-tool-call";
-    const responses = yield* send({
-      jsonrpc: "2.0",
-      id: callId,
-      method: "tools/call",
-      params: { name: options.tool, arguments: options.arguments },
-    });
-    const response = responses.find((entry) => asEnvelope(entry)?.id === callId);
-    const envelope = asEnvelope(response);
-    if (envelope === null || envelope.error !== undefined) {
-      return yield* Effect.fail(
-        new AcpMcpBridgeError(
-          `Floripa Code MCP tool call failed${envelope?.error === undefined ? "." : `: ${JSON.stringify(envelope.error)}`}`,
-        ),
-      );
-    }
-    return envelope.result;
-  });
+  return mcpToolSession({ ...options, clientName: "floripa-code-acp-cli" }).pipe(
+    Effect.flatMap((session) => session.call(options.tool, options.arguments)),
+    Effect.scoped,
+  );
 }
 
 export function runAcpMcpStdioBridge(options: AcpMcpStdioBridgeOptions): Effect.Effect<void> {

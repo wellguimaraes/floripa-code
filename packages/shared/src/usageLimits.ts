@@ -7,6 +7,8 @@
  */
 import {
   type EnvironmentId,
+  type ModelSelection,
+  type ServerSettings,
   type UsageLimitsReport,
   type ProviderInstanceId,
   type ProviderConsumeResetCreditInput,
@@ -20,9 +22,98 @@ import {
 
 import * as DateTime from "effect/DateTime";
 
+import { isModelSelectionProviderEnabled } from "./serverSettings.ts";
+
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
+
+/** The first usage window that is full and has not reset yet, scoped to the model's pool when it has one. */
+export function exhaustedUsageWindow(
+  provider: ServerProvider | undefined,
+  now: number,
+  model?: string,
+) {
+  const exhausted = (provider?.usageLimits?.windows ?? []).filter(
+    (window) =>
+      (window.usedPercent ?? 0) >= 100 &&
+      (!window.resetsAt ||
+        !Number.isFinite(Date.parse(window.resetsAt)) ||
+        Date.parse(window.resetsAt) > now),
+  );
+  if (model === undefined) return exhausted[0];
+  switch (provider?.driver) {
+    case "cursor": {
+      const api = exhausted.find((window) => window.id === "apiPercentUsed");
+      const auto = exhausted.find((window) => window.id === "autoPercentUsed");
+      return /^(auto|default|grok|composer)/.test(model) ? auto && api : api;
+    }
+    case "antigravity": {
+      const family = model.match(/^(gemini|claude|gpt)-/)?.[1];
+      return exhausted.find((window) => {
+        const pool = window.id.match(/^(gemini|claude|gpt|3p)-/)?.[1];
+        return (
+          pool === undefined ||
+          family === undefined ||
+          pool === family ||
+          (pool === "3p" && (family === "claude" || family === "gpt"))
+        );
+      });
+    }
+    case "opencode":
+      return exhausted.find(
+        (window) => !window.id.startsWith("go_") || model.startsWith("opencode-go/"),
+      );
+    default:
+      return exhausted[0];
+  }
+}
+
+/** Whether a provider can take work right now, ignoring its usage. */
+function isUsableFallbackProvider(
+  provider: ServerProvider | undefined,
+): provider is ServerProvider {
+  return (
+    provider?.enabled === true &&
+    provider.installed &&
+    provider.auth.status !== "unauthenticated" &&
+    isProviderAvailable(provider)
+  );
+}
+
+/**
+ * The model a new thread starts on: the default, or the fallback when the default's provider is
+ * out of usage and the fallback's is not. An explicit choice is never replaced.
+ */
+export function resolveNewThreadModelSelection(input: {
+  readonly defaultSelection: ModelSelection | null;
+  readonly explicitSelection?: ModelSelection | null;
+  readonly fallbackSelection: ModelSelection | null;
+  readonly providers: readonly ServerProvider[];
+  readonly now: number;
+  readonly settings?: ServerSettings;
+}) {
+  const selection = input.explicitSelection ?? input.defaultSelection;
+  const unchanged = { selection, fallback: null };
+  if (input.explicitSelection || !selection || !input.fallbackSelection) return unchanged;
+  const provider = input.providers.find((entry) => entry.instanceId === selection.instanceId);
+  const window = exhaustedUsageWindow(provider, input.now, selection.model);
+  const fallback = input.providers.find(
+    (entry) => entry.instanceId === input.fallbackSelection?.instanceId,
+  );
+  if (
+    !provider ||
+    !window ||
+    !isUsableFallbackProvider(fallback) ||
+    exhaustedUsageWindow(fallback, input.now, input.fallbackSelection.model) ||
+    (input.settings && !isModelSelectionProviderEnabled(input.settings, input.fallbackSelection))
+  )
+    return unchanged;
+  return {
+    selection: input.fallbackSelection,
+    fallback: { provider, resetsAt: window.resetsAt ?? null },
+  };
+}
 
 export const CHATGPT_USAGE_URL = "https://chatgpt.com/#settings/Usage";
 
@@ -397,6 +488,17 @@ export interface LimitPool {
 
 /** Show Cursor's two usable pools instead of a combined percentage when both are available. */
 export function displayLimitWindows(pool: LimitPool) {
+  if (pool.driver === "antigravity") {
+    // Keep each model group's five-hour and weekly buckets next to one another.
+    return [...pool.windows].sort(
+      (left, right) =>
+        Number(!left.id.startsWith("gemini-")) - Number(!right.id.startsWith("gemini-")) ||
+        left.id
+          .replace(/-(5h|weekly|quota)$/, "")
+          .localeCompare(right.id.replace(/-(5h|weekly|quota)$/, "")) ||
+        WINDOW_KIND_ORDER[left.kind] - WINDOW_KIND_ORDER[right.kind],
+    );
+  }
   if (pool.driver !== "cursor") return pool.windows;
   const hasAuto = pool.windows.some((window) => window.id === "autoPercentUsed");
   const hasApi = pool.windows.some((window) => window.id === "apiPercentUsed");
@@ -560,6 +662,15 @@ export function elapsedShare(window: ServerProviderUsageWindow, now: number): nu
   const length = window.windowDurationMins * MINUTE;
   if (length <= 0) return null;
   return Math.max(0, Math.min(1, (length - (resetsAt - now)) / length));
+}
+
+// Bars show quota remaining, so even pace tracks time remaining.
+export function paceRemainingPercent(
+  window: ServerProviderUsageWindow,
+  now: number,
+): number | null {
+  const elapsed = elapsedShare(window, now);
+  return elapsed === null ? null : Math.round((1 - elapsed) * 100);
 }
 
 export type LimitPace = "ahead" | "on" | "under";

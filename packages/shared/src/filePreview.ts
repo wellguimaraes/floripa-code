@@ -7,6 +7,19 @@ export type FilePreviewKind =
   | "pdf"
   | "html"
   | "markdown"
+  | "mermaid"
+  | "font"
+  | "archive"
+  | "sqlite"
+  | "docx"
+  | "xlsx"
+  | "pptx"
+  | "odt"
+  | "ods"
+  | "odp"
+  | "rtf"
+  | "epub"
+  | "ipynb"
   | "text"
   | "unsupported";
 
@@ -19,9 +32,15 @@ export function filePreviewKind(file: {
   const name = file.name.toLowerCase();
   const extension = name.slice(name.lastIndexOf("."));
   const generic = !mime || mime === "application/octet-stream" || mime === "text/plain";
+  const office = officePreviewKind(file);
+  if (office) return office;
   if (mime === "application/pdf") return "pdf";
   if (mime === "text/html") return "html";
   if (mime === "text/markdown" || mime === "text/x-markdown") return "markdown";
+  if (mime === "text/vnd.mermaid") return "mermaid";
+  if (mime.startsWith("font/")) return "font";
+  const binary = binaryPreviewKind(file);
+  if (binary) return binary;
   if (mime.startsWith("image/")) return "image";
   if (mime.startsWith("video/")) return "video";
   if (mime.startsWith("audio/")) return "audio";
@@ -29,6 +48,8 @@ export function filePreviewKind(file: {
     if (extension === ".pdf") return "pdf";
     if (/^\.html?$/.test(extension)) return "html";
     if (/^\.(md|markdown|mdown|mkd|mdx)$/.test(extension)) return "markdown";
+    if (/^\.(mmd|mermaid)$/.test(extension)) return "mermaid";
+    if (isWorkspaceFontPreviewPath(name)) return "font";
     const media = mediaMimeTypeFromExtension(extension);
     if (media?.startsWith("image/")) return "image";
     if (media?.startsWith("video/")) return "video";
@@ -53,6 +74,80 @@ export function filePreviewKind(file: {
   return "unsupported";
 }
 
+const OFFICE_MIME_TYPES = {
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  odt: "application/vnd.oasis.opendocument.text",
+  ods: "application/vnd.oasis.opendocument.spreadsheet",
+  odp: "application/vnd.oasis.opendocument.presentation",
+  rtf: "application/rtf",
+  epub: "application/epub+zip",
+  ipynb: "application/x-ipynb+json",
+} as const;
+
+export type OfficePreviewKind = keyof typeof OFFICE_MIME_TYPES;
+
+/** Documents the viewer renders from their bytes in a worker. A generic type falls back to the extension. */
+export function officePreviewKind(file: {
+  readonly name: string;
+  readonly mimeType?: string;
+}): OfficePreviewKind | null {
+  const mime = file.mimeType?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+  const generic = !mime || mime === "application/octet-stream" || mime === "text/plain";
+  const name = file.name.toLowerCase();
+  if (mime === "text/rtf") return "rtf";
+  for (const kind of Object.keys(OFFICE_MIME_TYPES) as OfficePreviewKind[]) {
+    if (mime === OFFICE_MIME_TYPES[kind]) return kind;
+    // Servers commonly label a notebook as plain JSON.
+    if ((generic || (kind === "ipynb" && mime === "application/json")) && name.endsWith(`.${kind}`))
+      return kind;
+  }
+  return null;
+}
+
+export function isOfficePreviewKind(kind: FilePreviewKind): kind is OfficePreviewKind {
+  return Object.hasOwn(OFFICE_MIME_TYPES, kind);
+}
+
+const BINARY_MIME_TYPES = new Map([
+  [".zip", "application/zip"],
+  [".jar", "application/java-archive"],
+  [".tar", "application/x-tar"],
+  [".gz", "application/gzip"],
+  [".tgz", "application/gzip"],
+  [".sqlite", "application/vnd.sqlite3"],
+  [".sqlite3", "application/vnd.sqlite3"],
+  [".db", "application/vnd.sqlite3"],
+]);
+
+/** Archives and databases the viewer opens by reading the bytes in a worker. */
+export function binaryPreviewKind(file: {
+  readonly name: string;
+  readonly mimeType?: string;
+}): "archive" | "sqlite" | null {
+  const mime = file.mimeType?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+  if (["application/vnd.sqlite3", "application/x-sqlite3", "application/x-sqlite"].includes(mime))
+    return "sqlite";
+  if (
+    [
+      "application/zip",
+      "application/x-zip-compressed",
+      "application/java-archive",
+      "application/x-java-archive",
+      "application/x-tar",
+      "application/gzip",
+      "application/x-gzip",
+      "application/x-compressed-tar",
+    ].includes(mime)
+  )
+    return "archive";
+  if (mime && mime !== "application/octet-stream" && mime !== "text/plain") return null;
+  const extension = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+  const inferred = BINARY_MIME_TYPES.get(extension);
+  return inferred === "application/vnd.sqlite3" ? "sqlite" : inferred ? "archive" : null;
+}
+
 export const FILE_TEXT_PREVIEW_MAX_BYTES = 1024 * 1024;
 
 /** Reject binary data rather than displaying replacement characters as a document. */
@@ -75,23 +170,33 @@ export const WORKSPACE_BROWSER_PREVIEW_EXTENSIONS = [".htm", ".html", ".pdf"] as
 
 export const WORKSPACE_IMAGE_PREVIEW_EXTENSIONS = [
   ".avif",
+  ".bmp",
   ".gif",
+  ".heic",
+  ".heif",
   ".ico",
   ".jpeg",
   ".jpg",
   ".png",
   ".svg",
+  ".tif",
+  ".tiff",
   ".webp",
 ] as const;
 
 const IMAGE_MIME_TYPE_BY_EXTENSION = new Map([
   [".avif", "image/avif"],
+  [".bmp", "image/bmp"],
+  [".heic", "image/heic"],
+  [".heif", "image/heif"],
   [".gif", "image/gif"],
   [".ico", "image/x-icon"],
   [".jpeg", "image/jpeg"],
   [".jpg", "image/jpeg"],
   [".png", "image/png"],
   [".svg", "image/svg+xml"],
+  [".tif", "image/tiff"],
+  [".tiff", "image/tiff"],
   [".webp", "image/webp"],
 ]);
 
@@ -112,6 +217,17 @@ const AUDIO_MIME_TYPE_BY_EXTENSION = new Map([
   [".opus", "audio/ogg"],
   [".aiff", "audio/aiff"],
 ]);
+
+const FONT_MIME_TYPE_BY_EXTENSION = new Map([
+  [".ttf", "font/ttf"],
+  [".otf", "font/otf"],
+  [".woff", "font/woff"],
+  [".woff2", "font/woff2"],
+]);
+
+export function isWorkspaceFontPreviewPath(path: string): boolean {
+  return /\.(ttf|otf|woff2?)$/i.test(path);
+}
 
 /** Audio a player can request inline; the server serves these with byte ranges like video. */
 export function audioMimeTypeFromExtension(extension: string): string | null {
@@ -135,6 +251,11 @@ export function hostPreviewMimeTypeFromExtension(extension: string): string | nu
     mediaMimeTypeFromExtension(extension) ??
     audioMimeTypeFromExtension(extension) ??
     BROWSER_MIME_TYPE_BY_EXTENSION.get(extension.toLowerCase()) ??
+    FONT_MIME_TYPE_BY_EXTENSION.get(extension.toLowerCase()) ??
+    BINARY_MIME_TYPES.get(extension.toLowerCase()) ??
+    (Object.hasOwn(OFFICE_MIME_TYPES, extension.toLowerCase().slice(1))
+      ? OFFICE_MIME_TYPES[extension.toLowerCase().slice(1) as OfficePreviewKind]
+      : null) ??
     null
   );
 }
@@ -143,7 +264,7 @@ export function hostPreviewMimeTypeFromExtension(extension: string): string | nu
 export function mediaMimeType(path: string): string | null {
   const trimmed = path.trim();
   const source = trimmed.startsWith("<") && trimmed.endsWith(">") ? trimmed.slice(1, -1) : trimmed;
-  const dataMimeType = /^data:((?:image|video)\/[\w.+-]+)[;,]/i.exec(source)?.[1];
+  const dataMimeType = /^data:((?:image|video|audio)\/[\w.+-]+)[;,]/i.exec(source)?.[1];
   if (dataMimeType) return dataMimeType.toLowerCase();
 
   let sourcePath = source.split(/[?#]/, 1)[0] ?? "";
@@ -161,13 +282,20 @@ export function mediaMimeType(path: string): string | null {
   }
   const basename = sourcePath.split(/[\\/]/).at(-1) ?? "";
   const extensionIndex = basename.lastIndexOf(".");
-  return extensionIndex < 0 ? null : mediaMimeTypeFromExtension(basename.slice(extensionIndex));
+  return extensionIndex < 0
+    ? null
+    : (mediaMimeTypeFromExtension(basename.slice(extensionIndex)) ??
+        audioMimeTypeFromExtension(basename.slice(extensionIndex)));
 }
 
-export function mediaKindFromPath(path: string): "image" | "video" | null {
+export function mediaKindFromPath(path: string): "image" | "video" | "audio" | null {
   const mimeType = mediaMimeType(path);
   if (mimeType === null) return null;
-  return mimeType.startsWith("video/") ? "video" : "image";
+  return mimeType.startsWith("audio/")
+    ? "audio"
+    : mimeType.startsWith("video/")
+      ? "video"
+      : "image";
 }
 
 function hasPreviewExtension(path: string, extensions: ReadonlyArray<string>): boolean {
@@ -194,5 +322,11 @@ export function isWorkspaceAudioPreviewPath(path: string): boolean {
 }
 
 export function isWorkspacePreviewEntryPath(path: string): boolean {
-  return isWorkspaceBrowserPreviewPath(path) || isWorkspaceImagePreviewPath(path);
+  return (
+    isWorkspaceBrowserPreviewPath(path) ||
+    isWorkspaceImagePreviewPath(path) ||
+    isWorkspaceFontPreviewPath(path) ||
+    binaryPreviewKind({ name: path }) !== null ||
+    officePreviewKind({ name: path }) !== null
+  );
 }

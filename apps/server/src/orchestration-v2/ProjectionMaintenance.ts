@@ -230,6 +230,7 @@ export const layer: Layer.Layer<
     ];
 
     const supersedableThreadEventTypes = new Set(SUPERSEDABLE_THREAD_EVENT_TYPES);
+    // Keep subagent.updated and turn-item.updated rows: slimmed payloads reference their prompts.
     const COMPACTION_PAGE_SIZE = 500;
 
     /**
@@ -250,6 +251,7 @@ export const layer: Layer.Layer<
       let throughSequence = bounds[0]?.event_sequence ?? 0;
       let throughReceiptRowId = bounds[0]?.receipt_row_id ?? 0;
       const retainedThreadIds = new Set<string>();
+      const retainedTagThreadIds = new Set<string>();
       const retainedEntityKeys = new Set<string>();
       let deletedEventCount = 0;
       let deletedReceiptCount = 0;
@@ -301,6 +303,14 @@ export const layer: Layer.Layer<
             ) {
               if (retainedThreadIds.has(row.stream_id)) obsolete.push(row.sequence);
               else retainedThreadIds.add(row.stream_id);
+            } else if (
+              row.aggregate_kind === "thread" &&
+              row.event_type === "thread.tags-updated"
+            ) {
+              // Older clients skip tag events, so these supersede only each other.
+              if (retainedThreadIds.has(row.stream_id) || retainedTagThreadIds.has(row.stream_id)) {
+                obsolete.push(row.sequence);
+              } else retainedTagThreadIds.add(row.stream_id);
             } else if (row.event_type === "message.updated" || row.event_type === "node.updated") {
               const key = encodeEntityKey([row.event_type, row.stream_id, row.entity_id]);
               if (retainedEntityKeys.has(key)) obsolete.push(row.sequence);

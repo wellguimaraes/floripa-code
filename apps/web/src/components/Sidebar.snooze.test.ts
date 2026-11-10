@@ -1,3 +1,4 @@
+import { EnvironmentId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { resolveSnoozePresets, snoozeWakeDescription } from "./Sidebar.snooze";
@@ -7,66 +8,49 @@ function localDate(year: number, month: number, day: number, hour: number, minut
   return new Date(year, month - 1, day, hour, minute, 0, 0);
 }
 
+const environmentId = EnvironmentId.make("environment-local");
+
 describe("resolveSnoozePresets", () => {
-  it("offers one hour, three hours, evening, tomorrow, and next week in the morning", () => {
+  it("offers the default options in the morning, soonest first", () => {
     // Wednesday 2026-04-08 10:00 local.
-    const presets = resolveSnoozePresets(localDate(2026, 4, 8, 10), "locale");
+    const presets = resolveSnoozePresets(localDate(2026, 4, 8, 10), "locale", environmentId);
     expect(presets.map((preset) => preset.id)).toEqual([
-      "hour",
-      "three-hours",
-      "evening",
-      "tomorrow",
-      "next-week",
+      "after:60",
+      "after:180",
+      "at:today:18:00",
+      "at:tomorrow:09:00",
+      "at:monday:09:00",
     ]);
-    const threeHours = presets.find((preset) => preset.id === "three-hours");
+    const threeHours = presets.find((preset) => preset.id === "after:180");
     expect(new Date(threeHours!.snoozedUntil).getHours()).toBe(13);
-    const evening = presets.find((preset) => preset.id === "evening");
-    expect(new Date(evening!.snoozedUntil).getHours()).toBe(18);
-    const tomorrow = presets.find((preset) => preset.id === "tomorrow");
-    const tomorrowDate = new Date(tomorrow!.snoozedUntil);
-    expect(tomorrowDate.getDate()).toBe(9);
-    expect(tomorrowDate.getHours()).toBe(9);
-    const nextWeek = presets.find((preset) => preset.id === "next-week");
-    const nextWeekDate = new Date(nextWeek!.snoozedUntil);
-    expect(nextWeekDate.getDay()).toBe(1);
-    expect(nextWeekDate.getDate()).toBe(13);
-  });
-
-  it("whenLabel complements the label instead of repeating it", () => {
-    const presets = resolveSnoozePresets(localDate(2026, 4, 8, 10), "locale");
-    for (const preset of presets) {
-      // Day words live in the label column; the time column is time-only
-      // (plus a weekday for next week, which names a different day).
-      expect(preset.whenLabel.toLowerCase()).not.toContain("tomorrow");
-    }
-    const tomorrow = presets.find((preset) => preset.id === "tomorrow");
-    expect(tomorrow!.whenLabel).toMatch(/9/);
-    const nextWeek = presets.find((preset) => preset.id === "next-week");
-    expect(nextWeek!.whenLabel).toMatch(/Mon/);
-  });
-
-  it("drops the evening preset once evening is near or past", () => {
-    expect(
-      resolveSnoozePresets(localDate(2026, 4, 8, 17, 30), "locale").map((preset) => preset.id),
-    ).toEqual(["hour", "three-hours", "tomorrow", "next-week"]);
-    expect(
-      resolveSnoozePresets(localDate(2026, 4, 8, 21), "locale").map((preset) => preset.id),
-    ).toEqual(["hour", "three-hours", "tomorrow", "next-week"]);
-  });
-
-  it("puts next week a full week out when today is Monday", () => {
-    // Monday 2026-04-06.
-    const presets = resolveSnoozePresets(localDate(2026, 4, 6, 10), "locale");
-    const nextWeek = new Date(presets.find((preset) => preset.id === "next-week")!.snoozedUntil);
+    const tomorrow = new Date(presets.find((p) => p.id === "at:tomorrow:09:00")!.snoozedUntil);
+    expect(tomorrow.getDate()).toBe(9);
+    expect(tomorrow.getHours()).toBe(9);
+    const nextWeek = new Date(presets.find((p) => p.id === "at:monday:09:00")!.snoozedUntil);
     expect(nextWeek.getDay()).toBe(1);
     expect(nextWeek.getDate()).toBe(13);
   });
-  it("formats preset times with the selected clock preference", () => {
-    const twelveHour = resolveSnoozePresets(localDate(2026, 4, 8, 10), "12-hour");
-    const twentyFourHour = resolveSnoozePresets(localDate(2026, 4, 8, 10), "24-hour");
 
-    expect(twelveHour.find((preset) => preset.id === "evening")!.whenLabel).toMatch(/PM/i);
-    expect(twentyFourHour.find((preset) => preset.id === "evening")!.whenLabel).toBe("18:00");
+  it("drops the evening option once its time has passed", () => {
+    expect(
+      resolveSnoozePresets(localDate(2026, 4, 8, 21), "locale", environmentId).map(
+        (preset) => preset.id,
+      ),
+    ).toEqual(["after:60", "after:180", "at:tomorrow:09:00", "at:monday:09:00"]);
+  });
+
+  it("formats preset times with the selected clock preference", () => {
+    const twelveHour = resolveSnoozePresets(localDate(2026, 4, 8, 10), "12-hour", environmentId);
+    const twentyFourHour = resolveSnoozePresets(
+      localDate(2026, 4, 8, 10),
+      "24-hour",
+      environmentId,
+    );
+
+    expect(twelveHour.find((preset) => preset.id === "at:today:18:00")!.whenLabel).toMatch(/PM/i);
+    expect(twentyFourHour.find((preset) => preset.id === "at:today:18:00")!.whenLabel).toBe(
+      "18:00",
+    );
   });
 });
 

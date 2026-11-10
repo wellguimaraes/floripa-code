@@ -774,6 +774,29 @@ describe("chat/editor shortcuts", () => {
     );
   });
 
+  it("toggles composer Markdown source by default without taking terminal keystrokes", () => {
+    for (const platform of ["MacIntel", "Win32", "Linux"]) {
+      const input = event({
+        key: "/",
+        metaKey: platform === "MacIntel",
+        ctrlKey: platform !== "MacIntel",
+      });
+      assert.strictEqual(
+        resolveShortcutCommand(input, DEFAULT_RESOLVED_KEYBINDINGS, {
+          platform,
+          context: { terminalFocus: false },
+        }),
+        "composer.toggleRichText",
+      );
+      assert.isNull(
+        resolveShortcutCommand(input, DEFAULT_RESOLVED_KEYBINDINGS, {
+          platform,
+          context: { terminalFocus: true },
+        }),
+      );
+    }
+  });
+
   it("toggles the thread panel by default without taking terminal keystrokes", () => {
     for (const platform of ["MacIntel", "Win32", "Linux"]) {
       const input = event({

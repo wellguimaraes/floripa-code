@@ -15,6 +15,7 @@ import {
   DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
   DEFAULT_MODEL_BY_PROVIDER,
   DEFAULT_SERVER_SETTINGS,
+  globalIdleCompaction,
   ModelSelection,
   type OpenRouterApiKeyProblem,
   ProjectId,
@@ -22,7 +23,9 @@ import {
   ProjectSettingsOverrides,
   type ProviderInstanceConfig,
   type ProviderInstanceEnvironmentVariable,
+  type SettingsSecretValue,
   type UsageLimitSourceConfig,
+  withIdleCompaction,
   type ProviderInstanceMutation,
   defaultInstanceIdForDriver,
   isProviderDriverKind,
@@ -130,6 +133,7 @@ const normalizeServerSettings = (
   encodeServerSettings(settings).pipe(
     Effect.flatMap(decodeServerSettings),
     Effect.map(foldProviderInstanceEnabledFlags),
+    Effect.map((next) => withIdleCompaction(next, globalIdleCompaction(next))),
     Effect.map((next) => ({ ...next, ...deriveLegacyProjectOverrides(next) })),
     Effect.mapError(
       (cause) =>
@@ -226,10 +230,14 @@ function recordOpenRouterResponseWith(
 
 const redactSecret = (value: string) => (value.length > 0 ? SECRET_REDACTED : "");
 
+// A secret reference only names where the secret lives, so clients get it as written.
+const redactSettingsSecret = (value: SettingsSecretValue) =>
+  typeof value === "string" ? redactSecret(value) : value;
+
 function redactProviderEnvironmentVariable(
   variable: ProviderInstanceEnvironmentVariable,
 ): ProviderInstanceEnvironmentVariable {
-  if (!variable.sensitive) {
+  if (!variable.sensitive || typeof variable.value !== "string") {
     const { valueRedacted: _omit, ...rest } = variable;
     return rest;
   }
@@ -258,7 +266,7 @@ export function redactServerSettingsForClient(settings: ServerSettings): ServerS
       id,
       {
         ...source,
-        managementKey: redactSecret(source.managementKey),
+        managementKey: redactSettingsSecret(source.managementKey),
       },
     ]),
   );
@@ -270,7 +278,10 @@ export function redactServerSettingsForClient(settings: ServerSettings): ServerS
   const github = {
     ...settings.github,
     tokens: Object.fromEntries(
-      Object.entries(settings.github.tokens).map(([host, token]) => [host, redactSecret(token)]),
+      Object.entries(settings.github.tokens).map(([host, token]) => [
+        host,
+        redactSettingsSecret(token),
+      ]),
     ),
   };
   const voice = {
@@ -609,6 +620,7 @@ const ATOMIC_SETTINGS_KEYS: ReadonlySet<string> = new Set([
   "providerHealthRefreshInterval",
   "sourceControlWriterModelSelection",
   "textGenerationModelSelection",
+  "fallbackModelSelection",
   "pullRequestMergeMethod",
 ]);
 
@@ -824,7 +836,7 @@ const make = Effect.gen(function* () {
       }
       const tokens = { ...settings.github.tokens };
       for (const [host, value] of Object.entries(tokens)) {
-        if (value.length === 0 || value === SECRET_REDACTED) continue;
+        if (typeof value !== "string" || value.length === 0 || value === SECRET_REDACTED) continue;
         const stored = yield* secretStore
           .set(gitHubTokenSecretName(host), textEncoder.encode(value))
           .pipe(
@@ -890,6 +902,10 @@ const make = Effect.gen(function* () {
         settings = decoded.value;
       }
     }
+    // Settings saved by a server that kept the mode in `compactIdleThreads` move
+    // it to `idleCompaction`, so that switch goes to clients as a boolean. The
+    // defaults gain the field too, which tells clients this server reads modes.
+    settings = withIdleCompaction(settings, globalIdleCompaction(settings));
 
     const providerHistory = yield* sql<{
       readonly providerName: string;
@@ -1038,7 +1054,7 @@ const make = Effect.gen(function* () {
           );
         bitbucket[field] = Option.isSome(secret) ? textDecoder.decode(secret.value) : "";
       }
-      const tokens: Record<string, string> = {};
+      const tokens: Record<string, SettingsSecretValue> = {};
       for (const [host, value] of Object.entries(settings.github.tokens)) {
         if (value !== SECRET_REDACTED) {
           tokens[host] = value;
@@ -1113,7 +1129,8 @@ const make = Effect.gen(function* () {
         const environment: ProviderInstanceEnvironmentVariable[] = [];
         for (const variable of instance.environment) {
           const secretName = providerEnvironmentSecretName({ instanceId, name: variable.name });
-          if (!variable.sensitive) {
+          // A secret reference is stored as written; any literal stored before it goes.
+          if (!variable.sensitive || typeof variable.value !== "string") {
             changes.push({
               kind: "remove",
               secretName,
@@ -1133,7 +1150,10 @@ const make = Effect.gen(function* () {
               )
             : undefined;
           const inlineValue =
-            previous?.sensitive && !previous.valueRedacted && previous.value.length > 0
+            previous?.sensitive &&
+            !previous.valueRedacted &&
+            typeof previous.value === "string" &&
+            previous.value.length > 0
               ? previous.value
               : undefined;
           const value = inlineValue ?? variable.value;
@@ -1191,6 +1211,11 @@ const make = Effect.gen(function* () {
           usageLimitSources[sourceId] = source;
           continue;
         }
+        if (typeof source.managementKey !== "string") {
+          changes.push({ kind: "remove", secretName, operation: "remove-secret" });
+          usageLimitSources[sourceId] = source;
+          continue;
+        }
         if (source.managementKey.length === 0) {
           changes.push({ kind: "remove", secretName, operation: "remove-secret" });
           usageLimitSources[sourceId] = source;
@@ -1231,13 +1256,17 @@ const make = Effect.gen(function* () {
         bitbucket[field] = SECRET_REDACTED;
       }
 
-      const tokens: Record<string, string> = {};
+      const tokens: Record<string, SettingsSecretValue> = {};
       for (const [rawHost, raw] of Object.entries(next.github.tokens)) {
         const host = rawHost.trim().toLowerCase();
         let value = raw;
         if (value === SECRET_REDACTED) {
           // The marker keeps what is saved; a hand-edited plaintext token moves into the store.
           const inline = current.github.tokens[host];
+          if (typeof inline !== "string" && inline !== undefined) {
+            tokens[host] = inline;
+            continue;
+          }
           if (inline === undefined || inline === SECRET_REDACTED || inline.length === 0) {
             tokens[host] = SECRET_REDACTED;
             continue;
@@ -1245,6 +1274,12 @@ const make = Effect.gen(function* () {
           value = inline;
         }
         const secretName = gitHubTokenSecretName(host);
+        if (typeof value !== "string") {
+          // A reference is stored as written; any token stored before it goes.
+          changes.push({ kind: "remove", secretName, operation: "remove-secret" });
+          tokens[host] = value;
+          continue;
+        }
         if (value.length === 0) {
           changes.push({ kind: "remove", secretName, operation: "remove-secret" });
           continue;

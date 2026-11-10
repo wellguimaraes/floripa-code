@@ -1,5 +1,6 @@
 import { expect, it } from "@effect/vitest";
 import {
+  DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
   ProjectId,
   ProviderInstanceId,
@@ -19,14 +20,24 @@ import * as Stream from "effect/Stream";
 import * as ThreadLaunch from "../../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as ServerConfig from "../../../config.ts";
+import * as ServerSettings from "../../../serverSettings.ts";
 import * as Project from "../../../project/ProjectService.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
 import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
+import * as ProviderRegistry from "../../../provider/ProviderRegistry.ts";
 import * as VcsProcess from "../../../vcs/VcsProcess.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as ProjectHandlers from "./handlers.ts";
 import { ProjectToolkit } from "./tools.ts";
+
+// The project handlers read the usage fallback setting when a launch uses a project default.
+const usageFallbackDependencies = [
+  Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
+  Layer.mock(ServerSettings.ServerSettingsService)({
+    getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
+  }),
+] as const;
 
 it.effect("attributes a launched thread's first message to the calling thread", () =>
   Effect.gen(function* () {
@@ -47,6 +58,7 @@ it.effect("attributes a launched thread's first message to the calling thread", 
     } as OrchestrationV2ThreadShell;
     let launchedSender: ThreadId | undefined;
     const layerDependencies = Layer.mergeAll(
+      ...usageFallbackDependencies,
       NodeCrypto.layer,
       Layer.succeed(McpInvocationContext.McpInvocationContext, {
         environmentId: EnvironmentId.make("environment"),
@@ -76,6 +88,7 @@ it.effect("attributes a launched thread's first message to the calling thread", 
           } as unknown as ThreadLaunch.ThreadLaunchResult);
         },
       }),
+      ServerSettings.layerTest(),
       Layer.mock(Project.ProjectService)({}),
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/projects" }),
       Layer.mock(GitVcsDriver.GitVcsDriver)({}),
@@ -118,6 +131,7 @@ it.effect("launches a scratch thread into the Scratch project", () =>
     } as OrchestrationV2ThreadShell;
     const launched: Array<ThreadLaunch.ThreadLaunchInput> = [];
     const layerDependencies = Layer.mergeAll(
+      ...usageFallbackDependencies,
       NodeCrypto.layer,
       Layer.succeed(McpInvocationContext.McpInvocationContext, {
         environmentId: EnvironmentId.make("environment"),
@@ -147,6 +161,7 @@ it.effect("launches a scratch thread into the Scratch project", () =>
           } as unknown as ThreadLaunch.ThreadLaunchResult);
         },
       }),
+      ServerSettings.layerTest(),
       Layer.mock(Project.ProjectService)({}),
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
         namedProjectsRoot: "/projects",
@@ -215,6 +230,7 @@ it.effect("starts a project from just a title when workspaceRoot is omitted", ()
       deletedAt: null,
     };
     const layerDependencies = Layer.mergeAll(
+      ...usageFallbackDependencies,
       NodeCrypto.layer,
       Layer.succeed(McpInvocationContext.McpInvocationContext, {
         environmentId: EnvironmentId.make("environment"),
@@ -232,6 +248,7 @@ it.effect("starts a project from just a title when workspaceRoot is omitted", ()
         getThreadShell: () => Effect.succeed(caller),
       }),
       Layer.mock(ThreadLaunch.ThreadLaunchService)({}),
+      ServerSettings.layerTest(),
       Layer.mock(Project.ProjectService)({
         create: (input) =>
           Effect.sync(() => {
@@ -304,8 +321,12 @@ const clientLaunchHarness = (input: {
   readonly checkWorktreeBase?: ThreadLaunch.ThreadLaunchService["Service"]["checkWorktreeBase"];
 }) => {
   const projectId = ProjectId.make("project:client-target");
-  const modelSelection = { instanceId: ProviderInstanceId.make("claude"), model: "claude-opus" };
+  const modelSelection = {
+    instanceId: ProviderInstanceId.make("claudeAgent"),
+    model: "claude-opus",
+  };
   const layerDependencies = Layer.mergeAll(
+    ...usageFallbackDependencies,
     NodeCrypto.layer,
     Layer.succeed(McpInvocationContext.McpInvocationContext, {
       environmentId: EnvironmentId.make("environment"),
@@ -337,6 +358,9 @@ const clientLaunchHarness = (input: {
           resumed: false,
         } as unknown as ThreadLaunch.ThreadLaunchResult);
       },
+    }),
+    ServerSettings.layerTest({
+      projectSettingsOverrides: { [projectId]: { defaultModelSelection: modelSelection } },
     }),
     Layer.mock(Project.ProjectService)({
       getById: (id) =>

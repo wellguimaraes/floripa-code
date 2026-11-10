@@ -1,4 +1,6 @@
 import {
+  globalIdleCompaction,
+  type IdleCompactionMode,
   isProviderAvailable,
   isUnconfiguredDefaultInstanceEnabled,
   resolveProviderInstanceEnabled,
@@ -10,6 +12,7 @@ import {
   type ServerProvider,
   ServerSettings,
   type ServerSettingsPatch,
+  withIdleCompaction,
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -253,6 +256,22 @@ function translateLegacyProjectOverridePatch(
   } as ServerSettingsPatch;
 }
 
+/**
+ * A client from before `idleCompaction` patches the old boolean switch. Turning
+ * it off keeps "Never" rather than reverting to the default.
+ */
+function patchedIdleCompaction(
+  current: ServerSettings,
+  patch: ServerSettingsPatch,
+): IdleCompactionMode {
+  if (patch.idleCompaction !== undefined) return patch.idleCompaction;
+  const legacy = patch.compactIdleThreads;
+  if (legacy === undefined) return globalIdleCompaction(current);
+  if (typeof legacy === "string") return legacy;
+  if (legacy) return "beforeCacheExpires";
+  return globalIdleCompaction(current) === "off" ? "off" : "onReturn";
+}
+
 export function applyServerSettingsPatch(
   current: ServerSettings,
   rawPatch: ServerSettingsPatch,
@@ -267,6 +286,7 @@ export function applyServerSettingsPatch(
     worktreeCleanup: worktreeCleanupPatch,
     // Merged per entry below; its `null` removals must not reach deepMerge.
     usageLimitSources: usageLimitSourcesPatch,
+    secretProviders: secretProvidersPatch,
     usagePriceOverrides: usagePriceOverridesPatch,
     usageModelAliases: usageModelAliasesPatch,
     // Entry replacement: deepMerge would keep keys the client meant to clear.
@@ -326,6 +346,7 @@ export function applyServerSettingsPatch(
                   rules: {
                     worktreeKeepWhen: next.storageCleanup.worktreeKeepWhen,
                     worktreeAfterDays: next.storageCleanup.worktreeAfterDays,
+                    worktreeSettledAfterDays: next.storageCleanup.worktreeSettledAfterDays,
                     worktreeOnMerge: next.storageCleanup.worktreeOnMerge,
                     worktreeOnDelete: next.storageCleanup.worktreeOnDelete,
                     worktreeUnchanged: next.storageCleanup.worktreeUnchanged,
@@ -383,6 +404,9 @@ export function applyServerSettingsPatch(
     ...(patch.defaultModelSelection !== undefined
       ? { defaultModelSelection: patch.defaultModelSelection }
       : {}),
+    ...(patch.fallbackModelSelection !== undefined
+      ? { fallbackModelSelection: patch.fallbackModelSelection }
+      : {}),
     ...(patch.defaultProjectScripts !== undefined
       ? { defaultProjectScripts: patch.defaultProjectScripts }
       : {}),
@@ -393,6 +417,9 @@ export function applyServerSettingsPatch(
             usageLimitSourcesPatch,
           ),
         }
+      : {}),
+    ...(secretProvidersPatch !== undefined
+      ? { secretProviders: mergeSettingsEntries(current.secretProviders, secretProvidersPatch) }
       : {}),
     ...(usagePriceOverridesPatch !== undefined
       ? {
@@ -423,7 +450,7 @@ export function applyServerSettingsPatch(
     normalizedBackgroundActivity,
   );
   const nextWithReplacements = {
-    ...nextWithReplacementsBase,
+    ...withIdleCompaction(nextWithReplacementsBase, patchedIdleCompaction(current, patch)),
     ...deriveLegacyProjectOverrides(nextWithReplacementsBase),
     backgroundActivity: normalizedBackgroundActivity,
     automaticGitFetchInterval: resolvedBackgroundActivity.automaticGitFetchInterval,

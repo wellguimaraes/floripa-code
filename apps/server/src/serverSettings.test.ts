@@ -7,8 +7,10 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   resolveProviderInstanceEnabled,
+  SecretProviderId,
   ServerSettings,
   ServerSettingsPatch,
+  UsageLimitSourceId,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { assert, it } from "@effect/vitest";
@@ -130,6 +132,29 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       );
       assert.equal(persisted.responseStreamingMode, "turn");
       assert.deepEqual(persisted.projectSettingsOverrides, settings.projectSettingsOverrides);
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect("moves an idle compaction mode saved in the legacy switch to its own field", () =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const fs = yield* FileSystem.FileSystem;
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      yield* fs.writeFileString(config.settingsPath, `{ "compactIdleThreads": "off" }`);
+
+      const settings = yield* service.getSettings;
+      // Shipped clients decode the switch as a boolean and drop the config otherwise.
+      assert.strictEqual(settings.compactIdleThreads, false);
+      assert.equal(settings.idleCompaction, "off");
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect("tells clients it reads idle compaction modes before any settings are saved", () =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const settings = yield* service.getSettings;
+      assert.equal(settings.idleCompaction, "onReturn");
+      assert.strictEqual(settings.compactIdleThreads, false);
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
@@ -512,7 +537,12 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           .pipe(Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(ServerSettings))));
 
         yield* serverSettings.updateSettings({ usagePriceOverrides: { "example-model": prices } });
+        yield* serverSettings.updateSettings({
+          storageCleanup: { worktreeSettledAfterDays: 0, worktreeKeepWhen: "any-local-files" },
+        });
         const persisted = yield* readPersisted;
+        assert.equal(persisted.storageCleanup.worktreeSettledAfterDays, 0);
+        assert.equal(persisted.storageCleanup.worktreeKeepWhen, "any-local-files");
         assert.deepStrictEqual(persisted.usagePriceOverrides, { "example-model": prices });
 
         yield* serverSettings.updateSettings({ usagePriceOverrides: { "example-model": null } });
@@ -1488,8 +1518,8 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         assert.notInclude(raw, "ghp_ghe");
 
         const forClient = ServerSettingsModule.redactServerSettingsForClient(saved).github;
-        assert.notInclude(forClient.tokens["github.com"]!, "ghp_dotcom");
-        assert.isAbove(forClient.tokens["github.com"]!.length, 0);
+        assert.notInclude(String(forClient.tokens["github.com"]), "ghp_dotcom");
+        assert.isAbove(String(forClient.tokens["github.com"]).length, 0);
 
         // Echoing the redacted values back keeps them; host and account changes leave tokens alone.
         yield* serverSettings.updateSettings({ github: { tokens: forClient.tokens } });
@@ -1512,6 +1542,94 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         );
         assert.isTrue(Option.isNone(remaining[0]!));
         assert.isTrue(Option.isSome(remaining[1]!));
+      }).pipe(Effect.provide(layerServerSettingsWithSecrets())),
+  );
+
+  it.effect(
+    "stores secret references as written, tells clients where they point, and drops the literal they replace",
+    () =>
+      Effect.gen(function* () {
+        const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+        const secrets = yield* ServerSecretStore.ServerSecretStore;
+        const serverConfig = yield* ServerConfig.ServerConfig;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const instanceId = ProviderInstanceId.make("codex_vault");
+        const sourceId = UsageLimitSourceId.make("hub");
+        const tokenReference = {
+          provider: SecretProviderId.make("personal"),
+          reference: "op://P/GH/token",
+        };
+        const keyReference = {
+          provider: SecretProviderId.make("personal"),
+          reference: "op://P/Hub/key",
+        };
+        const variableReference = {
+          provider: SecretProviderId.make("personal"),
+          reference: "op://P/OA/key",
+        };
+        const githubSecret = `github-token-${Buffer.from("github.com", "utf8").toString("base64url")}`;
+
+        // A literal saved first leaves the store once a reference replaces it.
+        yield* serverSettings.updateSettings({
+          github: { tokens: { "github.com": "ghp_literal" } },
+          usageLimitSources: {
+            [sourceId]: {
+              kind: "cliproxy",
+              url: "https://hub.test",
+              managementKey: "hub-literal",
+              enabled: true,
+            },
+          },
+        });
+        assert.isTrue(Option.isSome(yield* secrets.get(githubSecret)));
+
+        yield* serverSettings.updateProviderInstance({
+          operation: "upsert",
+          instanceId,
+          instance: {
+            driver: ProviderDriverKind.make("codex"),
+            environment: [{ name: "OPENAI_API_KEY", value: variableReference, sensitive: false }],
+            config: {},
+          },
+        });
+        const saved = yield* serverSettings.updateSettings({
+          github: { tokens: { "github.com": tokenReference } },
+          usageLimitSources: {
+            [sourceId]: {
+              kind: "cliproxy",
+              url: "https://hub.test",
+              managementKey: keyReference,
+              enabled: true,
+            },
+          },
+        });
+
+        assert.deepEqual(saved.github.tokens["github.com"], tokenReference);
+        assert.deepEqual(saved.usageLimitSources[sourceId]?.managementKey, keyReference);
+        assert.isTrue(Option.isNone(yield* secrets.get(githubSecret)));
+        assert.isTrue(
+          Option.isNone(
+            yield* secrets.get(
+              `usage-limit-source-${Buffer.from(sourceId, "utf8").toString("base64url")}`,
+            ),
+          ),
+        );
+
+        // The reference is stored in settings.json as written, and a stored reference is sensitive.
+        const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
+        assert.include(raw, "op://P/GH/token");
+        assert.notInclude(raw, "ghp_literal");
+        assert.notInclude(raw, "hub-literal");
+        const variable = saved.providerInstances[instanceId]?.environment?.[0];
+        assert.deepEqual(variable?.value, variableReference);
+        assert.isTrue(variable?.sensitive);
+
+        const forClient = ServerSettingsModule.redactServerSettingsForClient(saved);
+        assert.deepEqual(forClient.github.tokens["github.com"], tokenReference);
+        assert.deepEqual(forClient.usageLimitSources[sourceId]?.managementKey, keyReference);
+        const clientVariable = forClient.providerInstances[instanceId]?.environment?.[0];
+        assert.deepEqual(clientVariable?.value, variableReference);
+        assert.isUndefined(clientVariable?.valueRedacted);
       }).pipe(Effect.provide(layerServerSettingsWithSecrets())),
   );
 

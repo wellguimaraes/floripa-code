@@ -22,6 +22,7 @@ import { findProjectForChangeRequest, useOpenPrLink } from "~/lib/openPullReques
 import { cn } from "~/lib/utils";
 import { useShortcutModifierState } from "~/shortcutModifierState";
 import { useProjects, useServerConfigs, useThreadShell } from "~/state/entities";
+import { PullRequestChangeBreakdownStat } from "./PullRequestChangeBreakdownStat";
 import { PullRequestsUnavailableState } from "./PullRequestsUnavailableState";
 import { threadEnvironment } from "~/state/threads";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -198,11 +199,26 @@ function LinkRow({
           // verdict by the author. Each is absent rather than neutral when the host said
           // nothing, so a row without them reads as unknown, not as fine.
           status={
-            <PullRequestDiffStat
-              additions={snapshot?.additions ?? 0}
-              deletions={snapshot?.deletions ?? 0}
-              className="font-mono"
-            />
+            projectId === null ? (
+              <PullRequestDiffStat
+                additions={snapshot?.additions ?? 0}
+                deletions={snapshot?.deletions ?? 0}
+                className="font-mono"
+              />
+            ) : (
+              <PullRequestChangeBreakdownStat
+                environmentId={threadRef.environmentId}
+                reference={{
+                  projectId,
+                  host: link.host,
+                  repository: link.repository,
+                  number: link.number,
+                }}
+                additions={snapshot?.additions ?? 0}
+                deletions={snapshot?.deletions ?? 0}
+                className="font-mono"
+              />
+            )
           }
           meta={
             <>

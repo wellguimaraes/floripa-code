@@ -33,6 +33,12 @@ Branch, worktree, and diff controls stay hidden because these folders are not
 Git repositories. This is unavailable when the folder's parent sits inside a
 Git checkout.
 
+When the work grows into something real, pick **Turn into project** from the
+thread's menu. The thread's folder becomes a project where it is, so nothing
+moves and the agent keeps working in the same place. Other threads in that folder
+move with it. Rename the project in its settings, and use **Initialize Git** to
+get branch and diff controls.
+
 ### Start in the background
 
 In a desktop browser or the desktop app, press `Cmd+Enter` on macOS or `Ctrl+Enter`
@@ -195,8 +201,14 @@ The linked pull request participates in automatic settlement.
 ## Find and reference work
 
 On web and desktop, open the command palette with `Cmd/Ctrl+K` to search threads
-across connected environments. Message search starts after two characters and
-includes your messages and final agent responses.
+across connected environments by title, branch, pull request, or project.
+Threads you open often or recently rank higher, and for three weeks the thread
+you last picked for a query ranks higher when you type that query again.
+Threads whose messages contain all your words (yours and final agent
+responses) appear below, under **In messages**, and open at the matching
+message. Message search needs at least one word of three or more letters, or two
+for Chinese, Japanese, and Korean. Typing in the palette also searches the
+options inside its submenus.
 
 Use **Settings → Keybindings** to find or customize shortcuts for searching files
 and copying a thread reference. A copied reference uses the thread's pull request
@@ -248,7 +260,21 @@ Expand a tool call in the conversation to see its full command and output.
 Summaries shorten shell wrappers and can still describe the latest call after it
 finishes; the call's own result shows its status.
 
+## Tag threads and hide them
+
+Name the tags you use in **Settings → General → Hidden thread tags**, then pick
+**Tags** from a thread's menu to add or remove one. Turn on **Hide tagged threads**
+to leave every thread with one of those tags out of the sidebar, world, palette
+and thread links, for example while recording a demo. Subagents and forks follow
+their parent. Turn it off to bring them back. Tagging the open thread closes it.
+
 ## Snooze until later
+
+To change the choices in the snooze menu, open **Settings → General → Snooze options**.
+Each option is a duration, such as 3 hours, or a time on a day, such as 9:00 PM
+tomorrow. A weekday means the next one after today. Menus list the options soonest
+first and hide a today option after its time passes. Saved with **All environments**
+selected, the options apply to every connected environment.
 
 Choose **Snooze → Custom…** from a thread's menu to pick a date and time in your
 local time zone, or a duration in minutes, hours, or days. Durations start when

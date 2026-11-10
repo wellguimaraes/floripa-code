@@ -7,6 +7,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Terminal from "effect/Terminal";
+import * as TestConsole from "effect/testing/TestConsole";
 import { Command } from "effect/cli";
 import { afterEach, vi } from "vite-plus/test";
 
@@ -102,6 +103,7 @@ function makeTestService(serviceStatus: BootService.BootServiceStatus) {
   const restarts: Array<true> = [];
   const service = BootService.BootService.of({
     status: Effect.succeed(serviceStatus),
+    withStopped: (operation) => operation,
     restart: Effect.sync(() => {
       restarts.push(true);
       return serviceStatus.installed;
@@ -173,6 +175,37 @@ it.layer(Layer.mergeAll(NodeServices.layer, NetService.layer))("service commands
         });
         expect(installOptions).toEqual([]);
       }),
+  );
+
+  it.effect("protect refuses root before creating any T3 directories", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const parent = yield* fs.makeTempDirectoryScoped({ prefix: "t3-service-cli-test-" });
+      const baseDir = `${parent}/t3`;
+      vi.spyOn(BootService, "layer").mockReturnValue(
+        Layer.succeed(BootService.BootService, makeTestService(status).service),
+      );
+
+      const output = yield* Command.runWith(serviceCommand, { version: packageJson.version })([
+        "protect",
+        "--base-dir",
+        baseDir,
+      ]).pipe(
+        Effect.andThen(TestConsole.logLines),
+        Effect.map((lines) => lines.join("\n")),
+        Effect.provideService(HostProcess.Environment, {}),
+        Effect.provideService(HostProcess.Platform, "linux"),
+        Effect.provideService(HostProcess.UserId, 0),
+        Effect.provide(
+          Layer.mergeAll(
+            ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })),
+            Layer.fresh(TestConsole.layer),
+          ),
+        ),
+      );
+      expect(output).toContain("without sudo");
+      expect(yield* fs.exists(baseDir)).toBe(false);
+    }),
   );
 
   it.effect.each(["install", "update"] as const)("%s allows an explicit downgrade", (command) =>

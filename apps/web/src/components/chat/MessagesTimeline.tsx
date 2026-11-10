@@ -1,4 +1,21 @@
+import type { ToolCallDiffTarget } from "../../diffPanelStore";
+import type { PendingApproval as ThreadPendingApproval } from "../../session-logic";
+import type { ProviderApprovalDecision, RuntimeRequestId } from "@t3tools/contracts";
+import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
+
+export interface PendingApprovalRows {
+  readonly pending: ReadonlyMap<RuntimeRequestId, ThreadPendingApproval>;
+  readonly responding: ReadonlyArray<string>;
+  readonly canRespond: boolean;
+  readonly onRespond: (
+    requestId: RuntimeRequestId,
+    decision: ProviderApprovalDecision,
+  ) => Promise<unknown>;
+}
 import { ThreadFindTimelineContext } from "./ThreadFindProvider";
+import { isSvgAttachment } from "@t3tools/shared/image";
+import { filePreviewKind } from "@t3tools/shared/filePreview";
+import { InlineAudioPreview } from "../files/InlineAudioPreview";
 import { shouldPreserveAssistantLineBreaks } from "@t3tools/shared/markdownPipeline";
 import { MarkdownFindContext, useFindRevealRef } from "./markdownFindContext";
 import { ComputerUseAppIcon } from "~/components/Icons";
@@ -128,9 +145,12 @@ import { T3Wordmark } from "../T3Wordmark";
 import { ThreadContextChip } from "../ThreadContextChip";
 import {
   BotIcon,
+  EraserIcon,
   BrainIcon,
   CheckIcon,
+  CalendarClockIcon,
   ChevronDownIcon,
+  MessagesSquareIcon,
   ChevronRightIcon,
   ChevronUpIcon,
   CircleAlertIcon,
@@ -185,6 +205,8 @@ import { formatCompactDiffCount, hasNonZeroStat } from "./DiffStatLabel";
 import { summarizeTurnDiffStats } from "../../lib/turnDiffTree";
 import { useFileContextMenuHandler } from "../../fileContextMenu";
 import { useProject, useThreadShell } from "../../state/entities";
+import { useEnvironmentQuery } from "../../state/query";
+import { serverEnvironment } from "../../state/server";
 import {
   CHAT_TIMELINE_ANCHOR_OFFSET,
   readTimelinePosition,
@@ -296,6 +318,7 @@ import {
   SubagentAvatar,
   SubagentElapsed,
   SubagentNotificationLink,
+  ModelSwitchRow,
   V2LifecycleRow,
   type HandoffTimelineRun,
 } from "./V2LifecycleRow";
@@ -349,6 +372,9 @@ interface TimelineRowSharedState {
   onImageExpand: (preview: ExpandedImagePreview) => void;
   displayThreadKey?: string;
   onOpenTurnDiff: (runId: RunId, filePath?: string) => void;
+  onOpenToolDiff: ((target: ToolCallDiffTarget) => void) | undefined;
+  /** Pending approvals by request id, so an approval row can answer where it sits. */
+  pendingApprovalRows: PendingApprovalRows | undefined;
   onOpenThread: (threadId: OrchestrationV2TurnItem["threadId"]) => void;
   /** Absent where a response can't be forked from, which hides the button. */
   onForkFromRun:
@@ -427,14 +453,28 @@ const TIMELINE_LIST_FADE_HEADER = (
 );
 function TimelineListFooter({
   composerInset,
+  onGrow,
   children,
 }: {
   readonly composerInset: number;
+  readonly onGrow: (() => void) | undefined;
   readonly children?: ReactNode;
 }) {
+  const contentRef = useRef<HTMLDivElement>(null);
+  // Reports growth of the footer's content, which the list does not follow.
+  useLayoutEffect(() => {
+    const content = contentRef.current;
+    if (!content || !onGrow) return;
+    let height = content.offsetHeight;
+    return observeResize(content, () => {
+      const next = content.offsetHeight;
+      if (next > height) onGrow();
+      height = next;
+    });
+  }, [onGrow]);
   return (
     <div>
-      {children}
+      <div ref={contentRef}>{children}</div>
       <div aria-hidden style={{ height: composerInset }} />
       <div aria-hidden className="h-3 sm:h-4" />
     </div>
@@ -456,6 +496,7 @@ const TIMELINE_MAINTAIN_SCROLL_AT_END = {
 } as const satisfies MaintainScrollAtEndOptions;
 const EMPTY_TIMELINE_RUNS: ReadonlyArray<HandoffTimelineRun> = [];
 const EMPTY_RUN_IDS: ReadonlySet<RunId> = new Set();
+const EMPTY_REQUEST_IDS: ReadonlySet<RuntimeRequestId> = new Set();
 // Streamed text lands a paragraph at a time. A smooth scroll to the end
 // turns each landing into a short glide instead of a jump. Thread switches
 // and layout settles keep the instant variant so nothing visibly travels.
@@ -509,6 +550,8 @@ interface MessagesTimelineProps {
   routeThreadKey: string;
   displayThreadKey?: string;
   onOpenTurnDiff: (runId: RunId, filePath?: string) => void;
+  onOpenToolDiff?: ((target: ToolCallDiffTarget) => void) | undefined;
+  pendingApprovalRows?: PendingApprovalRows | undefined;
   onOpenThread: (threadId: OrchestrationV2TurnItem["threadId"]) => void;
   parentThreadLink?: {
     readonly threadId: ThreadId;
@@ -557,6 +600,8 @@ interface MessagesTimelineProps {
    */
   onContentOverflowChange?: (overflows: boolean) => void;
   onToolOutputCollapsedAtEnd?: () => void;
+  /** The footer's content grew, such as a new status line. */
+  onFooterGrow?: () => void;
   onManualNavigation: () => void;
   findOpen?: boolean;
   cancelPositionRestoreRef?: React.RefObject<(() => void) | null> | undefined;
@@ -623,6 +668,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
   routeThreadKey,
   displayThreadKey,
   onOpenTurnDiff,
+  onOpenToolDiff,
+  pendingApprovalRows,
   onOpenThread,
   parentThreadLink = null,
   onForkFromRun,
@@ -652,6 +699,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   onContentOverflowChange,
   liveFollowEnabled,
   onToolOutputCollapsedAtEnd,
+  onFooterGrow,
   onManualNavigation,
   cancelPositionRestoreRef,
   hideEmptyPlaceholder = false,
@@ -876,9 +924,14 @@ const ConversationTimeline = memo(function ConversationTimeline({
     [activeFindAttemptId, paintedExpandedAttemptIds],
   );
 
+  const pendingApprovalRequestIds = useMemo(
+    () => new Set(pendingApprovalRows?.pending.keys()),
+    [pendingApprovalRows?.pending],
+  );
   const rows = useMessagesTimelineRows(
     {
       timelineEntries,
+      pendingApprovalRequestIds,
       latestRun,
       runningRunId,
       expandedRunIds: visibleExpandedRunIds,
@@ -1105,11 +1158,14 @@ const ConversationTimeline = memo(function ConversationTimeline({
   );
   const timelineListFooter = useMemo(
     () => (
-      <TimelineListFooter composerInset={anchoredEndSpace ? 0 : contentInsetEndAdjustment}>
+      <TimelineListFooter
+        composerInset={anchoredEndSpace ? 0 : contentInsetEndAdjustment}
+        onGrow={onFooterGrow}
+      >
         {footer}
       </TimelineListFooter>
     ),
-    [anchoredEndSpace, contentInsetEndAdjustment, footer],
+    [anchoredEndSpace, contentInsetEndAdjustment, footer, onFooterGrow],
   );
 
   const measureContentOverflow = useCallback(
@@ -1304,6 +1360,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
     onAppFullscreenChange,
     onFileDownload,
     onOpenTurnDiff,
+    onOpenToolDiff,
+    pendingApprovalRows,
     onOpenThread,
     onForkFromRun,
     onRollbackCheckpoint,
@@ -1601,6 +1659,7 @@ function useMessagesTimelineRows(
 ): MessagesTimelineRow[] {
   const {
     timelineEntries,
+    pendingApprovalRequestIds,
     latestRun,
     runningRunId,
     expandedRunIds,
@@ -1624,6 +1683,7 @@ function useMessagesTimelineRows(
     const projection = deriveMessagesTimelineRowsWithState(
       {
         timelineEntries,
+        pendingApprovalRequestIds,
         latestRun,
         runningRunId,
         expandedRunIds,
@@ -1646,6 +1706,7 @@ function useMessagesTimelineRows(
     threadKey,
     workspaceRoot,
     timelineEntries,
+    pendingApprovalRequestIds,
     latestRun,
     runningRunId,
     expandedRunIds,
@@ -1691,6 +1752,8 @@ function useTimelineRowSharedState(
     onAppFullscreenChange,
     onFileDownload,
     onOpenTurnDiff,
+    onOpenToolDiff,
+    pendingApprovalRows,
     onOpenThread,
     onForkFromRun,
     onRollbackCheckpoint,
@@ -1733,6 +1796,8 @@ function useTimelineRowSharedState(
       onFileDownload,
       openPullRequest,
       onOpenTurnDiff,
+      onOpenToolDiff,
+      pendingApprovalRows,
       onOpenThread,
       onForkFromRun,
       onRollbackCheckpoint,
@@ -1772,6 +1837,8 @@ function useTimelineRowSharedState(
       onFileDownload,
       openPullRequest,
       onOpenTurnDiff,
+      onOpenToolDiff,
+      pendingApprovalRows,
       onOpenThread,
       onForkFromRun,
       onRollbackCheckpoint,
@@ -1918,6 +1985,7 @@ export function InlineTimelineRows({
   const allRows = useMessagesTimelineRows(
     {
       timelineEntries,
+      pendingApprovalRequestIds: EMPTY_REQUEST_IDS,
       latestRun,
       runningRunId,
       expandedRunIds: EMPTY_RUN_IDS,
@@ -1974,6 +2042,8 @@ export function InlineTimelineRows({
     onSendAppMessage: undefined,
     onAppFullscreenChange: NOOP_APP_FULLSCREEN,
     onFileDownload: NOOP_OPEN_ATTACHMENT,
+    onOpenToolDiff: undefined,
+    pendingApprovalRows: undefined,
     onOpenTurnDiff,
     onOpenThread,
     onForkFromRun: undefined,
@@ -2791,6 +2861,20 @@ export function UserImageThumbnail({
 
 function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
+  const item = row.projectedItem?.item;
+  const modelSwitch = item?.type === "user_message" ? item.modelSwitch : undefined;
+  return (
+    <>
+      {modelSwitch ? (
+        <ModelSwitchRow providers={ctx.providerStatuses} modelSwitch={modelSwitch} />
+      ) : null}
+      <UserMessageContent row={row} />
+    </>
+  );
+}
+
+function UserMessageContent({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
+  const ctx = use(TimelineRowCtx);
   const { onImageExpand, onFileOpen } = ctx;
   const senderThreadId = row.message.senderThreadId;
   const messageWithPreviews = useMessageWithImagePreviews(
@@ -2808,11 +2892,33 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
     [row.message.attachments],
   );
   const userVideos = userFiles.filter(isVideoAttachment);
-  const otherUserFiles = userFiles.filter((file) => !isVideoAttachment(file));
+  const userAudio = userFiles.filter(isInlineAudioAttachment);
+  const otherUserFiles = userFiles.filter(
+    (file) => !isVideoAttachment(file) && !isInlineAudioAttachment(file),
+  );
   const unknownAttachments = (row.message.attachments ?? []).filter(
     (attachment) => !isImageAttachment(attachment) && !isFileAttachment(attachment),
   );
   const userMessage = resolveUserMessagePresentation(row.message);
+  // Automation prompts and messages from other agents are long, so they fold to one line and the
+  // user's own messages stay easy to find.
+  const folded = userMessage.attribution === "automation" || userMessage.attribution === "agent";
+  const [foldExpanded, setFoldExpanded] = useState(false);
+  const revealFold = useFindRevealRef(useCallback(() => setFoldExpanded(true), []));
+  const senderShell = useThreadShell(
+    userMessage.attribution === "agent" && senderThreadId
+      ? scopeThreadRef(ctx.activeThreadEnvironmentId, senderThreadId)
+      : null,
+  )?.source;
+  const scheduledTaskId = userMessage.scheduledTaskId;
+  const tasksQuery = useEnvironmentQuery(
+    userMessage.attribution === "automation" && scheduledTaskId
+      ? serverEnvironment.scheduledTasksLive({
+          environmentId: ctx.activeThreadEnvironmentId,
+          input: {},
+        })
+      : null,
+  );
   const resolvedContext = useMemo(() => resolveUserMessageContext(row.message), [row.message]);
   const previewImages = useMemo(
     () => userImages.filter((image) => image.name.startsWith("preview-annotation-")),
@@ -2928,134 +3034,167 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
 
   return (
     <div className="group flex flex-col items-end gap-1">
-      {userMessage.attribution === "automation" ? (
-        <p
-          className="me-1 text-2xs text-muted-foreground/70"
-          data-user-message-attribution="automation"
-        >
-          {userMessage.scheduledTaskId ? (
-            <Link
-              to="/settings/scheduled-tasks"
-              search={{
-                environmentId: ctx.activeThreadEnvironmentId,
-                taskId: userMessage.scheduledTaskId,
-              }}
-              className="rounded-sm hover:text-muted-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring"
-            >
-              Sent by automation
-            </Link>
-          ) : (
-            "Sent by automation"
-          )}
-        </p>
-      ) : userMessage.attribution === "floripacode" ? (
+      {userMessage.attribution === "floripacode" ? (
         <p
           className="me-1 text-2xs text-muted-foreground/70"
           data-user-message-attribution="floripacode"
         >
           Sent by Floripa Code
         </p>
-      ) : userMessage.attribution === "agent" ? (
-        <p className="me-1 text-2xs text-muted-foreground/70" data-user-message-attribution="agent">
-          {senderThreadId ? (
-            <InlineButton
-              onClick={() => ctx.onOpenThread(senderThreadId)}
-              tone="muted"
-              aria-label="Open sending thread"
-            >
-              Sent by another agent
-            </InlineButton>
-          ) : (
-            "Sent by another agent"
-          )}
-        </p>
+      ) : null}
+      {row.message.freshContext ? (
+        <TimelineSystemDivider label="New session" icon={EraserIcon} />
       ) : null}
       {row.message.inputIntent && row.message.inputIntent !== "turn_start" ? (
         <UserMessageIntentMarker intent={row.message.inputIntent} />
       ) : null}
-      <div className="relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground">
-        <MessageAuthorHeading>You</MessageAuthorHeading>
-        {(regularImages.length > 0 || userVideos.length > 0) && (
-          <div className="mb-2 grid max-w-[210px] grid-cols-2 gap-2">
-            {regularImages.map((image) => (
-              <UserImageThumbnail
-                key={image.id}
-                image={image}
-                images={regularImages}
-                onImageExpand={ctx.onImageExpand}
-              />
-            ))}
-            {userVideos.map((file) => (
-              <UserVideoAttachment key={file.id} file={file} />
-            ))}
-          </div>
+      <div
+        className={cn(
+          "relative min-w-0 max-w-[80%] rounded-2xl bg-message text-message-foreground",
+          !folded && "p-3",
+          folded && foldExpanded && "w-full",
         )}
-        {unchippedFiles.length > 0 || unknownAttachments.length > 0 ? (
-          <div className="mb-2 flex flex-col gap-1">
-            {unchippedFiles.map((file) => {
-              const fileIdentity = (
-                <>
-                  <PierreEntryIcon pathValue={file.name} kind="file" theme={ctx.resolvedTheme} />
-                  <span className="min-w-0 flex-1 truncate">{file.name}</span>
-                </>
-              );
-              if (file.downloadable !== false) {
-                return (
-                  <div key={file.id} className="flex min-w-0 items-center gap-1">
-                    <button
-                      type="button"
-                      aria-label={`Preview ${file.name}`}
-                      onClick={() => ctx.onFileOpen(file)}
-                      className="focus-visible:ring-ring/70 flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md py-1 text-left text-sm hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:outline-none"
-                    >
-                      {fileIdentity}
-                      <EyeIcon className="size-4 shrink-0" />
-                    </button>
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={
-                          <Button
-                            size="icon-xs"
-                            variant="ghost-muted"
-                            aria-label={`Download ${file.name}`}
-                            onClick={() => ctx.onFileDownload(file)}
-                          />
-                        }
-                      >
-                        <DownloadIcon />
-                      </TooltipTrigger>
-                      <TooltipPopup side="top">Download {file.name}</TooltipPopup>
-                    </Tooltip>
-                  </div>
-                );
-              }
-
-              return (
-                <div key={file.id} className="flex min-w-0 items-center gap-2 py-1 text-sm">
-                  {fileIdentity}
-                </div>
-              );
-            })}
-            {unknownAttachments.map((attachment) => (
-              <div key={attachment.id} className="flex min-w-0 items-center gap-2 py-1 text-sm">
-                <PierreEntryIcon
-                  pathValue={attachment.name}
-                  kind="file"
-                  theme={ctx.resolvedTheme}
-                />
-                <span className="min-w-0 flex-1 truncate">{attachment.name}</span>
+      >
+        {folded ? (
+          <FoldedMessageHeader
+            icon={userMessage.attribution === "automation" ? CalendarClockIcon : MessagesSquareIcon}
+            label={
+              userMessage.attribution === "automation"
+                ? "Automation"
+                : senderShell?.title.trim() || "Agent"
+            }
+            summary={
+              (userMessage.attribution === "automation"
+                ? tasksQuery.data?.tasks.find((task) => task.id === scheduledTaskId)?.title
+                : undefined) ??
+              (userMessage.text
+                .split(/\r?\n/)
+                .find((line) => line.trim().length > 0)
+                ?.trim() ||
+                "")
+            }
+            expanded={foldExpanded}
+            onToggle={() => setFoldExpanded((value) => !value)}
+          />
+        ) : null}
+        {/* Find reads the DOM, so a folded message stays mounted but hidden while find is open. */}
+        {!folded || foldExpanded || ctx.findActive ? (
+          <div
+            ref={folded ? revealFold : undefined}
+            hidden={folded && !foldExpanded}
+            className={cn(
+              folded && "px-3 pb-3",
+              folded && !ctx.findActive && "max-h-96 overflow-auto",
+            )}
+          >
+            <MessageAuthorHeading>You</MessageAuthorHeading>
+            {(regularImages.length > 0 || userVideos.length > 0) && (
+              <div className="mb-2 grid max-w-[210px] grid-cols-2 gap-2">
+                {regularImages.map((image) => (
+                  <UserImageThumbnail
+                    key={image.id}
+                    image={image}
+                    images={regularImages}
+                    onImageExpand={ctx.onImageExpand}
+                  />
+                ))}
+                {userVideos.map((file) => (
+                  <UserVideoAttachment key={file.id} file={file} />
+                ))}
               </div>
-            ))}
+            )}
+            {userAudio.length > 0 ? (
+              <div className="mb-2 flex max-w-full flex-col gap-1">
+                {userAudio.map((file) => (
+                  <InlineAudioPreview
+                    key={file.id}
+                    name={file.name}
+                    environmentId={ctx.activeThreadEnvironmentId}
+                    resource={{
+                      _tag: "attachment",
+                      attachmentId: file.id,
+                      fileName: file.name,
+                      mimeType: file.mimeType,
+                      disposition: "inline",
+                    }}
+                    onOpen={() => ctx.onFileOpen(file)}
+                  />
+                ))}
+              </div>
+            ) : null}
+            {unchippedFiles.length > 0 || unknownAttachments.length > 0 ? (
+              <div className="mb-2 flex flex-col gap-1">
+                {unchippedFiles.map((file) => {
+                  const fileIdentity = (
+                    <>
+                      <PierreEntryIcon
+                        pathValue={file.name}
+                        kind="file"
+                        theme={ctx.resolvedTheme}
+                      />
+                      <span className="min-w-0 flex-1 truncate">{file.name}</span>
+                    </>
+                  );
+                  if (file.downloadable !== false) {
+                    return (
+                      <div key={file.id} className="flex min-w-0 items-center gap-1">
+                        <button
+                          type="button"
+                          aria-label={`Preview ${file.name}`}
+                          onClick={() => ctx.onFileOpen(file)}
+                          className="focus-visible:ring-ring/70 flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md py-1 text-left text-sm hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:outline-none"
+                        >
+                          {fileIdentity}
+                          <EyeIcon className="size-4 shrink-0" />
+                        </button>
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <Button
+                                size="icon-xs"
+                                variant="ghost-muted"
+                                aria-label={`Download ${file.name}`}
+                                onClick={() => ctx.onFileDownload(file)}
+                              />
+                            }
+                          >
+                            <DownloadIcon />
+                          </TooltipTrigger>
+                          <TooltipPopup side="top">Download {file.name}</TooltipPopup>
+                        </Tooltip>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div key={file.id} className="flex min-w-0 items-center gap-2 py-1 text-sm">
+                      {fileIdentity}
+                    </div>
+                  );
+                })}
+                {unknownAttachments.map((attachment) => (
+                  <div key={attachment.id} className="flex min-w-0 items-center gap-2 py-1 text-sm">
+                    <PierreEntryIcon
+                      pathValue={attachment.name}
+                      kind="file"
+                      theme={ctx.resolvedTheme}
+                    />
+                    <span className="min-w-0 flex-1 truncate">{attachment.name}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            <div onCopyCapture={onBodyCopyCapture}>
+              <CollapsibleUserMessageBody
+                text={resolvedContext.text}
+                renderContextReference={renderContextReference}
+                skills={ctx.skills}
+                markdownCwd={ctx.markdownCwd}
+                collapsible={!folded}
+              />
+            </div>
           </div>
         ) : null}
-        <div onCopyCapture={onBodyCopyCapture}>
-          <CollapsibleUserMessageBody
-            text={resolvedContext.text}
-            renderContextReference={renderContextReference}
-            skills={ctx.skills}
-            markdownCwd={ctx.markdownCwd}
-          />
-        </div>
       </div>
       {row.projectedItem &&
       row.projectedItem.item.status !== "completed" &&
@@ -3067,18 +3206,63 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           </span>
         </div>
       ) : null}
-      <UserMessageActions
-        message={row.message}
-        environmentId={ctx.activeThreadEnvironmentId}
-        threadId={ctx.threadRef?.threadId}
-        timestampFormat={ctx.timestampFormat}
-        className="max-w-[80%]"
-      >
-        {typeof revertTurnCount === "number" && (
-          <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
-        )}
-      </UserMessageActions>
+      {!folded || foldExpanded ? (
+        <UserMessageActions
+          message={row.message}
+          environmentId={ctx.activeThreadEnvironmentId}
+          threadId={ctx.threadRef?.threadId}
+          timestampFormat={ctx.timestampFormat}
+          className="max-w-[80%]"
+        >
+          {folded && userMessage.attribution === "agent" && senderThreadId ? (
+            <InlineButton onClick={() => ctx.onOpenThread(senderThreadId)} tone="muted">
+              Open thread
+            </InlineButton>
+          ) : null}
+          {folded && scheduledTaskId ? (
+            <Link
+              to="/settings/scheduled-tasks"
+              search={{ environmentId: ctx.activeThreadEnvironmentId, taskId: scheduledTaskId }}
+              className="rounded-sm text-xs text-muted-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+            >
+              Open automation
+            </Link>
+          ) : null}
+          {typeof revertTurnCount === "number" && (
+            <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
+          )}
+        </UserMessageActions>
+      ) : null}
     </div>
+  );
+}
+
+function FoldedMessageHeader(props: {
+  icon: LucideIcon;
+  label: string;
+  summary: string;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const Icon = props.icon;
+  return (
+    <button
+      type="button"
+      aria-expanded={props.expanded}
+      data-scroll-anchor-ignore
+      onClick={props.onToggle}
+      className="flex w-full min-w-0 items-center gap-1.5 rounded-2xl px-3 py-2 text-left text-sm focus-visible:outline-2 focus-visible:outline-ring"
+    >
+      <Icon className="size-4 shrink-0 stroke-2 text-muted-foreground" />
+      <span className="max-w-1/2 shrink-0 truncate text-muted-foreground">{props.label}</span>
+      <span className="min-w-0 flex-1 truncate">{props.summary}</span>
+      <ChevronDownIcon
+        className={cn(
+          "size-3.5 shrink-0 text-muted-foreground transition-transform",
+          props.expanded && "rotate-180",
+        )}
+      />
+    </button>
   );
 }
 
@@ -3652,6 +3836,10 @@ function ProposedPlanTimelineRow({
   );
 }
 
+function isInlineAudioAttachment(file: ChatFileAttachment) {
+  return file.downloadable !== false && filePreviewKind(file) === "audio";
+}
+
 function HtmlRenderTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "html-render" }> }) {
   const ctx = use(TimelineRowCtx);
 
@@ -3662,7 +3850,6 @@ function HtmlRenderTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "htm
         key={row.htmlRender.attachmentId}
         environmentId={ctx.activeThreadEnvironmentId}
         htmlRender={row.htmlRender}
-        onOpen={ctx.onFileOpen}
       />
     </div>
   );
@@ -3877,6 +4064,7 @@ function V2EventTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "event"
               workspaceRoot={ctx.workspaceRoot}
               onOpenThread={ctx.onOpenThread}
               onOpenTurnDiff={ctx.onOpenTurnDiff}
+              onOpenToolDiff={ctx.onOpenToolDiff}
               onRollbackCheckpoint={ctx.onRollbackCheckpoint}
               onImageExpand={ctx.onImageExpand}
             />
@@ -3952,6 +4140,7 @@ function V2EventTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "event"
               workspaceRoot={ctx.workspaceRoot}
               onOpenThread={ctx.onOpenThread}
               onOpenTurnDiff={ctx.onOpenTurnDiff}
+              onOpenToolDiff={ctx.onOpenToolDiff}
               onRollbackCheckpoint={ctx.onRollbackCheckpoint}
               onImageExpand={ctx.onImageExpand}
             />
@@ -5145,6 +5334,7 @@ function UserMessageElementDetails({
 }
 
 interface UserMessageContextRenderContext {
+  environmentId: EnvironmentId;
   reference: ChatMarkdownContextReference;
   annotationImage: ChatImageAttachment | null;
   attachment: ChatImageAttachment | ChatFileAttachment | null;
@@ -5250,6 +5440,8 @@ const userMessageContextPresentationRegistry = createContextPresentationRegistry
           return <UnavailableUserMessageContextChip {...context} />;
         }
         const attachment = context.attachment;
+        // Audio plays in its own row above the prose, so its chip would only repeat it.
+        if (isInlineAudioAttachment(attachment)) return null;
         const isVideo = isVideoAttachment(attachment);
         const disabled =
           attachment.downloadable === false && (!isVideo || attachment.previewUrl === undefined);
@@ -5257,6 +5449,11 @@ const userMessageContextPresentationRegistry = createContextPresentationRegistry
         return (
           <FileChip
             name={record.name}
+            svgPreview={
+              isSvgAttachment(attachment)
+                ? { environmentId: context.environmentId, attachmentId: attachment.id }
+                : undefined
+            }
             size={size}
             isVideo={isVideo}
             theme={context.resolvedTheme}
@@ -5389,13 +5586,14 @@ function UserMessageContextReferenceChip(props: {
   onExpandVideo: (file: ChatFileAttachment) => void;
   onOpenFile: (file: ChatFileAttachment) => void;
 }) {
-  const { resolvedTheme } = use(UserMessageChipCtx);
+  const { resolvedTheme, activeThreadEnvironmentId } = use(UserMessageChipCtx);
   const copyMarkdown = formatComposerContextReference({
     kind: props.reference.kind,
     contextId: props.reference.contextId as ComposerContextId,
     label: props.reference.label,
   });
   return userMessageContextPresentationRegistry.render(props.reference.kind, props.record, {
+    environmentId: activeThreadEnvironmentId,
     reference: props.reference,
     annotationImage: props.annotationImage,
     attachment: props.attachment,
@@ -5412,6 +5610,7 @@ const COLLAPSED_USER_MESSAGE_FADE_MASK = `linear-gradient(to bottom, black calc(
 
 const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(props: {
   text: string;
+  collapsible?: boolean;
   renderContextReference: (reference: ChatMarkdownContextReference) => ReactNode;
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   markdownCwd: string | undefined;
@@ -5422,7 +5621,8 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
   const revealForFind = useCallback(() => setExpanded(true), []);
   const findRevealRef = useFindRevealRef(revealForFind);
   const hasVisibleBody = props.text.trim().length > 0;
-  const canCollapse = hasVisibleBody && shouldCollapseUserMessage(props.text);
+  const canCollapse =
+    props.collapsible !== false && hasVisibleBody && shouldCollapseUserMessage(props.text);
   const isCollapsed = canCollapse && !expanded;
   const showCollapseControl = canCollapse;
 
@@ -6185,6 +6385,11 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
     showWarningIndicator || showDestructiveRowStyle
       ? undefined
       : (workEntry.toolIcon ?? workEntry.toolSource?.icon);
+  const approvalItem = workEntry.projectedItem?.item;
+  const pendingApproval =
+    approvalItem?.type === "approval_request"
+      ? ctx.pendingApprovalRows?.pending.get(approvalItem.requestId)
+      : undefined;
   const isReasoning = workEntry.itemType === "reasoning";
   // The question is the row's identity: a generic "User input submitted"
   // label buries what was asked, so lead with the question text (even over a
@@ -6403,6 +6608,27 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
           !toolIconAcceptsTint(entryIconName, entryToolIcon) ? (
             <XIcon aria-hidden className={cn("size-3 shrink-0", failedToolIconClassName)} />
           ) : null}
+          {pendingApproval ? (
+            // Stops the row toggle: the buttons answer the request, they do not expand the row.
+            <span
+              className="flex shrink-0 items-center gap-1.5"
+              onClick={stopRowToggle}
+              onKeyDown={stopRowToggle}
+            >
+              <ComposerPendingApprovalActions
+                requestId={pendingApproval.requestId}
+                isResponding={
+                  ctx.pendingApprovalRows?.responding.includes(pendingApproval.requestId) ?? false
+                }
+                canRespond={
+                  (ctx.pendingApprovalRows?.canRespond ?? false) &&
+                  pendingApproval.responseCapability === "live"
+                }
+                options={pendingApproval.options}
+                onRespondToApproval={ctx.pendingApprovalRows!.onRespond}
+              />
+            </span>
+          ) : null}
           <TimelineRowTimestamp createdAt={workEntry.createdAt} timestampFormat={timestampFormat} />
           <span
             className={cn(
@@ -6454,6 +6680,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
               workspaceRoot={workspaceRoot}
               onOpenThread={ctx.onOpenThread}
               onOpenTurnDiff={ctx.onOpenTurnDiff}
+              onOpenToolDiff={ctx.onOpenToolDiff}
               onRollbackCheckpoint={ctx.onRollbackCheckpoint}
               onImageExpand={ctx.onImageExpand}
             />

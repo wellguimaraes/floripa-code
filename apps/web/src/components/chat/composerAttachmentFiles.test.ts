@@ -16,6 +16,28 @@ import {
 } from "./composerAttachmentFiles";
 
 describe("composer attachment files", () => {
+  it("attaches SVG as a file and rejects other unsupported images", () => {
+    expect(classifyComposerAttachmentFile({ name: "diagram.svg", type: "image/svg+xml" })).toBe(
+      "file",
+    );
+    expect(classifyComposerAttachmentFile({ name: "diagram.SVG", type: "" })).toBe("file");
+    expect(
+      classifyComposerAttachmentFile({ name: "diagram.svg", type: "application/octet-stream" }),
+    ).toBe("file");
+    expect(classifyComposerAttachmentFile({ name: "photo.tiff", type: "image/tiff" })).toBe(
+      "unsupported-image",
+    );
+  });
+
+  it("claims SVG pastes even when text is present", () => {
+    expect(
+      shouldHandleComposerAttachmentPaste({
+        files: [new File(["svg"], "diagram.svg", { type: "image/svg+xml" })],
+        plainText: "Image caption",
+      }),
+    ).toBe(true);
+  });
+
   it("keeps inline non-media files out of the legacy attachment row", () => {
     const environmentId = EnvironmentId.make("env-1");
     const files = [
@@ -48,9 +70,6 @@ describe("composer attachment files", () => {
   });
 
   it("rejects unsupported image types instead of attaching them as generic files", () => {
-    expect(classifyComposerAttachmentFile({ name: "diagram.svg", type: "image/svg+xml" })).toBe(
-      "unsupported-image",
-    );
     expect(classifyComposerAttachmentFile({ name: "photo.tiff", type: "image/tiff" })).toBe(
       "unsupported-image",
     );

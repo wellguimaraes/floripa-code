@@ -1,4 +1,5 @@
 import { SettingsGroup } from "./SettingsGroup";
+import { scopedIdleCompaction } from "./scopedSettings";
 import { useScopedSettingsWriteAllowed } from "./useScopedSettings";
 import { NotificationSettings } from "./NotificationSettings";
 import { PRIVACY_POLICY_URL } from "../../legalLinks";
@@ -9,6 +10,8 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import {
   type BackgroundActivityProfile,
   type DesktopUpdateChannel,
+  globalIdleCompaction,
+  IDLE_COMPACTION_MODES,
   ProviderDriverKind,
   type ProviderInstanceId,
   type SidebarProjectGroupingMode,
@@ -74,6 +77,7 @@ import {
 } from "./useScopedSettings";
 import { useScopedModelDisabledReason } from "./useScopedModelAvailability";
 import { useSettingsScope } from "./SettingsScopeContext";
+import { SnoozePresetsRow } from "./SnoozePresetsSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
 import {
@@ -593,13 +597,29 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.sidebarAutoSettleOnMerge !== DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge
         ? ["Auto-settle merged threads"]
         : []),
+      ...(globalIdleCompaction(settings) !== globalIdleCompaction(DEFAULT_UNIFIED_SETTINGS)
+        ? ["Compact idle threads"]
+        : []),
       ...(settings.autoResumeLimitedThreads !== DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads
         ? ["Auto-resume limited threads"]
         : []),
       ...(settings.snoozeLimitedThreads !== DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads
         ? ["Snooze limited threads"]
         : []),
+      ...(!Equal.equals(settings.snoozePresets, DEFAULT_UNIFIED_SETTINGS.snoozePresets)
+        ? ["Snooze options"]
+        : []),
+      ...(settings.hideTaggedThreads !== DEFAULT_UNIFIED_SETTINGS.hideTaggedThreads
+        ? ["Hide tagged threads"]
+        : []),
+      ...(settings.hiddenThreadTags.join("\n") !==
+      DEFAULT_UNIFIED_SETTINGS.hiddenThreadTags.join("\n")
+        ? ["Hidden thread tags"]
+        : []),
       ...(settings.wordWrap !== DEFAULT_UNIFIED_SETTINGS.wordWrap ? ["Word wrap"] : []),
+      ...(settings.mathRenderingEnabled !== DEFAULT_UNIFIED_SETTINGS.mathRenderingEnabled
+        ? ["Render math"]
+        : []),
       ...(settings.persistComposerContextStrip !==
       DEFAULT_UNIFIED_SETTINGS.persistComposerContextStrip
         ? ["Composer context"]
@@ -730,8 +750,13 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.askToContinueThreadsAfterRestart,
       settings.sidebarAutoSettleAfterDays,
       settings.sidebarAutoSettleOnMerge,
+      settings.compactIdleThreads,
+      settings.idleCompaction,
       settings.autoResumeLimitedThreads,
       settings.snoozeLimitedThreads,
+      settings.snoozePresets,
+      settings.hideTaggedThreads,
+      settings.hiddenThreadTags,
       settings.sidebarProjectGroupingMode,
       settings.sidebarProjectSortOrder,
       settings.sidebarWorkingShelfEnabled,
@@ -741,6 +766,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.notificationMode,
       settings.inAppNotificationsEnabled,
       settings.wordWrap,
+      settings.mathRenderingEnabled,
       followSystem,
       theme,
       themeHalves,
@@ -818,6 +844,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       notificationMode: DEFAULT_UNIFIED_SETTINGS.notificationMode,
       inAppNotificationsEnabled: DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled,
       wordWrap: DEFAULT_UNIFIED_SETTINGS.wordWrap,
+      mathRenderingEnabled: DEFAULT_UNIFIED_SETTINGS.mathRenderingEnabled,
       persistComposerContextStrip: DEFAULT_UNIFIED_SETTINGS.persistComposerContextStrip,
       diffFilesCollapsed: DEFAULT_UNIFIED_SETTINGS.diffFilesCollapsed,
       diffIgnoreWhitespace: DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace,
@@ -837,8 +864,12 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
+      idleCompaction: globalIdleCompaction(DEFAULT_UNIFIED_SETTINGS),
       autoResumeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads,
       snoozeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads,
+      snoozePresets: DEFAULT_UNIFIED_SETTINGS.snoozePresets,
+      hideTaggedThreads: DEFAULT_UNIFIED_SETTINGS.hideTaggedThreads,
+      hiddenThreadTags: DEFAULT_UNIFIED_SETTINGS.hiddenThreadTags,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
@@ -1786,6 +1817,36 @@ function WordWrapRow() {
   );
 }
 
+function MathRenderingRow() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  return (
+    <SettingsRow
+      {...searchableSetting("math-rendering")}
+      description="Typeset LaTeX math, such as $x^2$ or $$x^2$$, in messages and Markdown previews."
+      resetAction={
+        settings.mathRenderingEnabled !== DEFAULT_UNIFIED_SETTINGS.mathRenderingEnabled ? (
+          <SettingResetButton
+            label="math rendering"
+            onClick={() =>
+              updateSettings({
+                mathRenderingEnabled: DEFAULT_UNIFIED_SETTINGS.mathRenderingEnabled,
+              })
+            }
+          />
+        ) : null
+      }
+      control={
+        <Switch
+          checked={settings.mathRenderingEnabled}
+          onCheckedChange={(checked) => updateSettings({ mathRenderingEnabled: Boolean(checked) })}
+          aria-label="Render math"
+        />
+      }
+    />
+  );
+}
+
 function FontSettingsGroup() {
   return (
     <>
@@ -1884,6 +1945,7 @@ function TypographySection() {
     >
       {advanced ? <FontSettingsGroup /> : <SimpleFontRows />}
       <WordWrapRow />
+      <MathRenderingRow />
     </SettingsSection>
   );
 }
@@ -2235,7 +2297,8 @@ export function GeneralSettingsPanel() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const navigate = useNavigate();
-  const { scope, environment, connectedEnvironments } = useSettingsScope();
+  const { scope, environment, connectedEnvironments, targets } = useSettingsScope();
+  const idleCompaction = scopedIdleCompaction(targets.length > 0 ? targets : [{ settings }]);
   // The representative environment supplies the provider list for pickers;
   // a fanned-out model choice is validated against every target before it
   // is written. Per-machine tuning (background activity overrides) still
@@ -2400,6 +2463,55 @@ export function GeneralSettingsPanel() {
 
         <SettingsRow
           serverScoped
+          settingKeys={["idleCompaction", "compactIdleThreads"]}
+          mixed={idleCompaction.mixed}
+          {...searchableSetting("compact-idle-threads")}
+          description="When to compact an idle Claude thread over 200,000 tokens: after you return, just before its prompt cache expires, or never. Each Claude provider can override this."
+          resetAction={
+            globalIdleCompaction(settings) !== globalIdleCompaction(DEFAULT_UNIFIED_SETTINGS) ? (
+              <SettingResetButton
+                label="compact idle threads"
+                onClick={() =>
+                  updateSettings({ idleCompaction: globalIdleCompaction(DEFAULT_UNIFIED_SETTINGS) })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={idleCompaction.mixed ? null : globalIdleCompaction(settings)}
+              onValueChange={(value) => {
+                const mode = IDLE_COMPACTION_MODES.find((candidate) => candidate.value === value);
+                if (mode) updateSettings({ idleCompaction: mode.value });
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Compact idle threads">
+                <SelectValue>
+                  {(value: string | null) =>
+                    value === null
+                      ? "Mixed"
+                      : IDLE_COMPACTION_MODES.find((mode) => mode.value === value)?.label
+                  }
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {IDLE_COMPACTION_MODES.map((mode) => (
+                  <SelectItem
+                    hideIndicator
+                    key={mode.value}
+                    value={mode.value}
+                    // A server from before modes has only the on/off switch, so it cannot store "Never".
+                    disabled={mode.value === "off" && !idleCompaction.neverAvailable}
+                  >
+                    {mode.label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          }
+        />
+        <SettingsRow
+          serverScoped
           {...searchableSetting("auto-resume-limited-threads")}
           description="Resume usage-limit stops at the reported reset time. Each thread can cancel its scheduled continuation."
           settingKeys={["autoResumeLimitedThreads"]}
@@ -2427,6 +2539,49 @@ export function GeneralSettingsPanel() {
                 updateSettings({ snoozeLimitedThreads: Boolean(checked) })
               }
               aria-label="Snooze limited threads"
+            />
+          }
+        />
+        <SnoozePresetsRow />
+        <SettingsRow
+          serverScoped
+          {...searchableSetting("hide-tagged-threads")}
+          description="Leave out threads with a hidden tag everywhere, for example while recording or sharing your screen. Tag a thread from its menu."
+          settingKeys={["hideTaggedThreads"]}
+          control={
+            <ScopedSwitch
+              settingKeys={["hideTaggedThreads"]}
+              checked={settings.hideTaggedThreads}
+              onCheckedChange={(checked) => updateSettings({ hideTaggedThreads: Boolean(checked) })}
+              aria-label="Hide tagged threads"
+            />
+          }
+        />
+        <SettingsRow
+          serverScoped
+          {...searchableSetting("hidden-thread-tags")}
+          description="Tags to hide, separated by commas. Each one also appears in a thread's Tags menu."
+          settingKeys={["hiddenThreadTags"]}
+          control={
+            <DraftInput
+              size="sm"
+              className="w-full sm:w-72"
+              value={settings.hiddenThreadTags.join(", ")}
+              onCommit={(next) =>
+                updateSettings({
+                  hiddenThreadTags: [
+                    ...new Set(
+                      next
+                        .split(",")
+                        .map((tag) => tag.trim())
+                        .filter((tag) => tag !== "" && tag.length <= 64),
+                    ),
+                  ],
+                })
+              }
+              placeholder="private, demo"
+              spellCheck={false}
+              aria-label="Hidden thread tags"
             />
           }
         />

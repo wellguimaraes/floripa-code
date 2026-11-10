@@ -35,6 +35,7 @@ const explicitHost = process.env.HOST?.trim();
 const host = explicitHost || "localhost";
 const configuredWsUrl = isSingleOriginDev ? undefined : process.env.VITE_WS_URL?.trim();
 const configuredHttpUrl = isSingleOriginDev ? undefined : process.env.VITE_HTTP_URL?.trim();
+const configuredFeatureSecrets = process.env.FLORIPACODE_FEATURE_SECRETS?.trim() || "";
 const configuredRelayUrl = repoEnv.VITE_FLORIPACODE_RELAY_URL?.trim() || "";
 const configuredClerkPublishableKey = repoEnv.VITE_CLERK_PUBLISHABLE_KEY?.trim() || "";
 const configuredClerkJwtTemplate = repoEnv.VITE_CLERK_JWT_TEMPLATE?.trim() || "";
@@ -192,6 +193,20 @@ export default defineConfig(() => {
         "@pierre/diffs",
         "@pierre/diffs/edit",
         "@pierre/diffs/react",
+        "heic-to/next",
+        "saxes",
+        "fast-xml-parser",
+        "entities",
+        "@betteroffice/docx/editor",
+        "@betteroffice/docx/layout",
+        "@betteroffice/docx/layout/render",
+        "@betteroffice/docx/yrs",
+        "@betteroffice/fonts",
+        "@betteroffice/pptx",
+        "@betteroffice/xlsx",
+        "@betteroffice/xlsx/headless",
+        "sql.js",
+        "tiff",
         "@pierre/diffs/worker/worker.js",
         "effect/Array",
         "effect/Order",
@@ -205,6 +220,7 @@ export default defineConfig(() => {
       // under single-origin dev this must stay empty even when a `.env`
       // supplies it, so the client falls back to window.location.origin.
       "import.meta.env.VITE_HTTP_URL": JSON.stringify(configuredHttpUrl ?? ""),
+      "import.meta.env.FLORIPACODE_FEATURE_SECRETS": JSON.stringify(configuredFeatureSecrets),
       "import.meta.env.VITE_FLORIPACODE_RELAY_URL": JSON.stringify(configuredRelayUrl),
       "import.meta.env.VITE_CLERK_PUBLISHABLE_KEY": JSON.stringify(configuredClerkPublishableKey),
       "import.meta.env.VITE_CLERK_JWT_TEMPLATE": JSON.stringify(configuredClerkJwtTemplate),
@@ -222,6 +238,13 @@ export default defineConfig(() => {
     },
     resolve: {
       tsconfigPaths: true,
+      alias: {
+        // The optional CJK font pack is not shipped; the stub keeps its dynamic import resolvable.
+        "@betteroffice/fonts-cjk": new URL(
+          "./src/components/files/office/fonts-cjk.ts",
+          import.meta.url,
+        ).pathname,
+      },
       dedupe: ["react", "react-dom"],
     },
     experimental: {
@@ -280,6 +303,8 @@ export default defineConfig(() => {
     css: {
       devSourcemap: buildSourcemap !== false,
     },
+    // Preview workers lazy-load heavy decoders, so they must be ES modules to code-split.
+    worker: { format: "es" },
     build: {
       outDir: "dist",
       emptyOutDir: true,

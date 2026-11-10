@@ -1,3 +1,4 @@
+import { freshSessionSupported } from "../scheduledTasks/freshSession.ts";
 import {
   EnvironmentId,
   ORCHESTRATION_PROTOCOL_VERSION,
@@ -230,6 +231,7 @@ export const make = Effect.gen(function* () {
       storageCleanup: true,
       storageCleanupRun: true,
       projectWorktreeCleanup: true,
+      settledWorktreeCleanup: true,
       worktreesDirectory: true,
       threadRestartContinuation: true,
       restartContinuationOffer: true,
@@ -255,6 +257,9 @@ export const make = Effect.gen(function* () {
       serverResolvedCommandContext: true,
       environmentIcon: true,
       projectCloneTracking: true,
+      oneTimeSchedules: true,
+      scheduledTaskThreadModes: true,
+      scheduledTaskFreshSession: freshSessionSupported,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
       ...(serverInstallation === null ? {} : { serverInstallation }),
       // V2 restart recovery uses the environment-owned opt-in. The old
@@ -264,6 +269,10 @@ export const make = Effect.gen(function* () {
         : {}),
       ...(desktopAppUpdate ? { desktopAppUpdate: true } : {}),
       serverBrowser: true,
+      freshContext: true,
+      threadProjectFromScratch: true,
+      threadTags: true,
+      projectOrganization: true,
     },
   };
 

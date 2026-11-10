@@ -11,6 +11,7 @@ import {
   type LimitPool,
   type LimitPoolMember,
   type LimitPoolWindow,
+  paceRemainingPercent,
   remainingPercent,
 } from "@t3tools/shared/usageLimits";
 import { AlertTriangleIcon, ExternalLinkIcon, TicketIcon } from "lucide-react";
@@ -37,6 +38,12 @@ import {
 
 /** Whether the numbers read as quota left or quota used. */
 export type LimitShows = "left" | "used";
+
+/** Where even spending would put the fill: time left on a "left" bar, time spent on a "used" bar. */
+function paceMarkPercent(window: LimitPoolMember["window"], now: number, shows: LimitShows) {
+  const timeLeft = paceRemainingPercent(window, now);
+  return timeLeft === null ? null : shows === "used" ? 100 - timeLeft : timeLeft;
+}
 
 function shownPercent(window: LimitPoolMember["window"], shows: LimitShows): number {
   const remaining = remainingPercent(window);
@@ -204,6 +211,11 @@ function SegmentPopover({
             {resetsIn ? ` · ${resetsIn.replace("resets in ", "in ")}` : ""}
           </Row>
         ) : null}
+        {paceMarkPercent(window, now, shows) !== null ? (
+          <Row label="Even pace">
+            {paceMarkPercent(window, now, shows)}% {shows === "used" ? "used" : "left"} by now
+          </Row>
+        ) : null}
         {reset && reset.restoresPercent > 0 ? (
           <Row label="Restores">+{reset.restoresPercent}% of pool</Row>
         ) : null}
@@ -256,6 +268,7 @@ function PoolSegment({
 }) {
   const [open, setOpen] = useState(false);
   const shown = shownPercent(window, shows);
+  const paceAt = paceMarkPercent(window, now, shows);
   const resetsIn = formatResetsIn(window, now);
   const credits = account.limits.resetCredits?.availableCount ?? 0;
   return (
@@ -266,17 +279,25 @@ function PoolSegment({
           <button
             type="button"
             style={{ gridColumn: index, gridRow: 1 }}
-            aria-label={`${account.displayName ?? (account.email ? accountInitials(account.email) : account.driver)}: ${shown}% ${shows}${resetsIn ? `, ${resetsIn}` : ""}${credits ? `, ${credits} reset ${credits === 1 ? "credit" : "credits"} banked` : ""}`}
-            className="relative h-2 min-w-0 cursor-pointer overflow-hidden rounded-full bg-foreground/15 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+            aria-label={`${account.displayName ?? (account.email ? accountInitials(account.email) : account.driver)}: ${shown}% ${shows}${resetsIn ? `, ${resetsIn}` : ""}${paceAt === null ? "" : `, even pace ${paceAt}% ${shows}`}${credits ? `, ${credits} reset ${credits === 1 ? "credit" : "credits"} banked` : ""}`}
+            className="relative h-2 min-w-0 cursor-pointer rounded-full bg-foreground/15 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
           />
         }
       >
         {/* Same fill as the top bar's meters, so the two read as one scale. */}
-        <div
-          aria-hidden
-          className="absolute inset-y-0 left-0 rounded-full"
-          style={{ width: `${shown}%`, backgroundColor: color }}
-        />
+        <div aria-hidden className="absolute inset-0 overflow-hidden rounded-full">
+          <div
+            className="absolute inset-y-0 left-0 rounded-full"
+            style={{ width: `${shown}%`, backgroundColor: color }}
+          />
+        </div>
+        {paceAt !== null ? (
+          <span
+            aria-hidden
+            className="absolute -inset-y-0.5 w-0.5 -translate-x-1/2 rounded-full bg-foreground"
+            style={{ left: `clamp(1px, ${paceAt}%, calc(100% - 1px))` }}
+          />
+        ) : null}
       </PopoverTrigger>
       {withLegend ? (
         <LegendRow

@@ -1,4 +1,5 @@
 import {
+  DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -19,11 +20,14 @@ import {
   collectLimitPools,
   displayLimitWindows,
   elapsedShare,
+  exhaustedUsageWindow,
   formatResetsIn,
   limitsNotice,
   paceOf,
+  paceRemainingPercent,
   providersWithLimits,
   remainingPercent,
+  resolveNewThreadModelSelection,
   usesChatGptSharing,
 } from "./usageLimits.ts";
 
@@ -55,9 +59,110 @@ function provider(overrides: Partial<ServerProvider>): ServerProvider {
   };
 }
 
+describe("new thread model fallback", () => {
+  const selection = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-6.1-sol" };
+  const fallback = { instanceId: ProviderInstanceId.make("claude"), model: "claude-fable-5-1" };
+  const limited = provider({
+    usageLimits: {
+      checkedAt: "2026-09-03T11:00:00.000Z",
+      windows: [{ ...window, usedPercent: 100 }],
+    },
+  });
+  const available = provider({
+    instanceId: fallback.instanceId,
+    driver: ProviderDriverKind.make("claudeAgent"),
+  });
+
+  const defaults = {
+    defaultSelection: selection,
+    fallbackSelection: fallback,
+    providers: [limited, available],
+    now,
+  };
+  it.each([
+    ["exhausted default", {}, fallback],
+    ["explicit selection", { explicitSelection: selection }, selection],
+    ["missing default", { defaultSelection: null }, null],
+    ["no fallback", { fallbackSelection: null }, selection],
+    ["expired window", { now: Date.parse("2026-09-04T00:00:00Z") }, selection],
+    [
+      "environment disabled",
+      {
+        settings: {
+          ...DEFAULT_SERVER_SETTINGS,
+          providerInstances: {
+            [fallback.instanceId]: { driver: available.driver, enabled: false, config: {} },
+          },
+        },
+      },
+      selection,
+    ],
+  ] as const)("resolves %s", (_name, overrides, expected) => {
+    expect(resolveNewThreadModelSelection({ ...defaults, ...overrides }).selection).toEqual(
+      expected,
+    );
+  });
+  it.each([
+    { enabled: false },
+    { installed: false },
+    { auth: { status: "unauthenticated" as const } },
+    { availability: "unavailable" as const },
+    { usageLimits: limited.usageLimits },
+  ])("rejects an unusable fallback: %j", (overrides) => {
+    expect(
+      resolveNewThreadModelSelection({
+        ...defaults,
+        providers: [limited, { ...available, ...overrides }],
+      }).selection,
+    ).toEqual(selection);
+  });
+  it.each([undefined, "invalid"])("treats an unknown reset as exhausted: %s", (resetsAt) => {
+    expect(
+      exhaustedUsageWindow(
+        provider({
+          usageLimits: {
+            checkedAt: limited.checkedAt,
+            windows: [{ ...window, usedPercent: 100, resetsAt }],
+          },
+        }),
+        now,
+      ),
+    ).toBeDefined();
+  });
+  it.each([
+    ["cursor", ["autoPercentUsed"], "claude-opus-5-5", false],
+    ["cursor", ["autoPercentUsed"], "composer-2.5", false],
+    ["cursor", ["autoPercentUsed", "apiPercentUsed"], "composer-2.5", true],
+    ["antigravity", ["gemini-weekly"], "claude-opus-5-5", false],
+    ["antigravity", ["3p-weekly"], "claude-opus-5-5", true],
+    ["antigravity", ["gemini-weekly"], "antigravity-default", true],
+    ["opencode", ["go_weekly"], "opencode/big-pickle", false],
+    ["opencode", ["go_weekly"], "opencode-go/big-pickle", true],
+  ] as const)("matches %s pools %s to %s", (driver, ids, model, usesFallback) => {
+    const defaultSelection = { ...selection, model };
+    expect(
+      resolveNewThreadModelSelection({
+        ...defaults,
+        defaultSelection,
+        providers: [
+          provider({
+            driver: ProviderDriverKind.make(driver),
+            usageLimits: {
+              checkedAt: limited.checkedAt,
+              windows: ids.map((id) => ({ ...window, id, usedPercent: 100 })),
+            },
+          }),
+          available,
+        ],
+      }).selection,
+    ).toEqual(usesFallback ? fallback : defaultSelection);
+  });
+});
+
 describe("pace", () => {
   it("places the clock three fifths through a five-hour window with two hours left", () => {
     expect(elapsedShare(window, now)).toBeCloseTo(0.6);
+    expect(paceRemainingPercent(window, now)).toBe(40);
     expect(paceOf(window, now)).toBe("under");
     expect(paceOf({ ...window, usedPercent: 62 }, now)).toBe("on");
     expect(paceOf({ ...window, usedPercent: 80 }, now)).toBe("ahead");
@@ -66,7 +171,14 @@ describe("pace", () => {
   it("has no pace without a reset or a duration", () => {
     expect(paceOf({ ...window, resetsAt: undefined }, now)).toBeNull();
     expect(paceOf({ ...window, windowDurationMins: undefined }, now)).toBeNull();
+    expect(paceRemainingPercent({ ...window, resetsAt: undefined }, now)).toBeNull();
+    expect(paceRemainingPercent({ ...window, windowDurationMins: undefined }, now)).toBeNull();
     expect(formatResetsIn({ ...window, resetsAt: undefined }, now)).toBeNull();
+  });
+
+  it("keeps pace marks within the bar before a window starts and after it expires", () => {
+    expect(paceRemainingPercent(window, Date.parse("2026-09-03T08:00:00.000Z"))).toBe(100);
+    expect(paceRemainingPercent(window, Date.parse("2026-09-03T15:00:00.000Z"))).toBe(0);
   });
 
   it("phrases the reset as a countdown", () => {
@@ -1393,5 +1505,63 @@ describe("ChatGPT sharing presentation", () => {
         auth: { status: "unauthenticated", subscriptionSharing: true },
       }),
     ).toBe(false);
+  });
+});
+
+describe("Antigravity limit presentation", () => {
+  it("keeps the shared Claude/GPT bucket separate from Gemini and pairs their windows", () => {
+    const antigravity = provider({
+      instanceId: ProviderInstanceId.make("antigravity"),
+      driver: ProviderDriverKind.make("antigravity"),
+      usageLimits: {
+        checkedAt: "2026-10-09T12:00:00.000Z",
+        windows: [
+          { ...window, id: "3p-5h", label: "Claude & GPT (shared) · 5-hour", usedPercent: 90 },
+          { ...window, id: "gemini-5h", label: "Gemini · 5-hour", usedPercent: 20 },
+          {
+            ...window,
+            id: "3p-weekly",
+            kind: "weekly",
+            label: "Claude & GPT (shared) · Weekly",
+            usedPercent: 100,
+          },
+          {
+            ...window,
+            id: "gemini-weekly",
+            kind: "weekly",
+            label: "Gemini · Weekly",
+            usedPercent: 10,
+          },
+        ],
+      },
+    });
+    const accounts = collectLimitAccounts(
+      new Map([
+        [
+          EnvironmentId.make("a"),
+          {
+            entry: { target: { label: "Local" } },
+            serverConfig: {
+              providers: [
+                provider({
+                  usageLimits: { checkedAt: "2026-10-09T12:00:00.000Z", windows: [window] },
+                }),
+                antigravity,
+              ],
+            },
+          },
+        ],
+      ]),
+    );
+    const pools = collectLimitPools(accounts, now);
+    expect(pools.map((pool) => pool.driver)).toEqual(["codex", "antigravity"]);
+    const windows = displayLimitWindows(pools[1]!);
+    expect(windows.map((window) => window.id)).toEqual([
+      "gemini-5h",
+      "gemini-weekly",
+      "3p-5h",
+      "3p-weekly",
+    ]);
+    expect(windows.map((window) => window.remainingPercent)).toEqual([80, 90, 10, 0]);
   });
 });

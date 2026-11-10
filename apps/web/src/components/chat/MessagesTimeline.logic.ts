@@ -50,6 +50,7 @@ import {
   type WorktreeSetupSnapshot,
   type OrchestrationV2ProjectedTurnItem,
   type RunAttemptId,
+  type RuntimeRequestId,
   RunId,
   type ThreadId,
   type TurnItemId,
@@ -1402,8 +1403,22 @@ function deriveTimelineTurnFolds(
   });
 }
 
+/** A prompt that only asks the provider to compact, so its turn is the compaction itself. */
+function isCompactCommand(message: {
+  readonly role: string;
+  readonly text: string;
+  readonly attachments?: ReadonlyArray<unknown> | undefined;
+}): boolean {
+  return (
+    message.role === "user" &&
+    message.text.trim().toLowerCase() === "/compact" &&
+    (message.attachments?.length ?? 0) === 0
+  );
+}
+
 export function deriveMessagesTimelineRows(input: {
   timelineEntries: ReadonlyArray<TimelineEntry>;
+  pendingApprovalRequestIds?: ReadonlySet<RuntimeRequestId>;
   latestRun?: TimelineLatestRun | null;
   runningRunId?: RunId | null;
   expandedRunIds?: ReadonlySet<RunId>;
@@ -1424,6 +1439,13 @@ export function deriveMessagesTimelineRows(input: {
   worktreeSetup?: WorktreeSetupSnapshot | null;
 }): MessagesTimelineRow[] {
   const timelineEntries = timelineRowEntries(input.timelineEntries);
+  const isPendingApproval = (entry: WorkLogEntry) => {
+    const item = entry.projectedItem?.item;
+    return (
+      item?.type === "approval_request" &&
+      input.pendingApprovalRequestIds?.has(item.requestId) === true
+    );
+  };
   const turnDiffSummaryByAssistantMessageId = new Map<MessageId, TurnDiffSummary>();
   for (const summary of input.turnDiffSummaries) {
     if (summary.assistantMessageId) {
@@ -1482,6 +1504,14 @@ export function deriveMessagesTimelineRows(input: {
       }
     }
   }
+  if (input.pendingApprovalRequestIds?.size) {
+    for (const entry of timelineEntries) {
+      if (entry.kind === "work" && isPendingApproval(entry.entry)) {
+        collapsedEntryIds.delete(entry.id);
+        collapsedSupersededEntryIds.delete(entry.id);
+      }
+    }
+  }
   const runIdIsActiveResponse = (runId: RunId | null | undefined) =>
     runId == null ? runlessWorkActive : activeVisualResponseRunIds.has(runId);
   const workEntryIsInActiveRun = (entry: WorkLogEntry) =>
@@ -1510,6 +1540,7 @@ export function deriveMessagesTimelineRows(input: {
         entry.entry.sourceActivityKind === "runtime.error" ||
         entry.entry.itemType === "system_notice" ||
         entry.entry.itemType === "notification" ||
+        isPendingApproval(entry.entry) ||
         !runIdIsActiveResponse(entry.entry.runId) ||
         entry.entry.sourceActivityKind === "context-compaction" ||
         collapsedEntryIds.has(entry.id) ||
@@ -1537,7 +1568,8 @@ export function deriveMessagesTimelineRows(input: {
   const latestToolKeepsActivityLive =
     latestRunningToolEntry !== undefined ||
     (latestVisibleToolEntry !== undefined &&
-      workEntryIndicatesToolSuccess(latestVisibleToolEntry.entry));
+      workEntryIndicatesToolSuccess(latestVisibleToolEntry.entry) &&
+      !input.pendingApprovalRequestIds?.size);
   const latestToolFailed =
     latestRunningToolEntry === undefined &&
     latestVisibleToolEntry !== undefined &&
@@ -1570,7 +1602,34 @@ export function deriveMessagesTimelineRows(input: {
   const activeWorkEntryIds = new Set(
     activeWorkRow !== null || latestToolFailed ? activeToolEntries.map((entry) => entry.id) : [],
   );
+  // A bare `/compact` turn is the compaction itself: one compaction row stands in for its prompt
+  // and for the working indicator, from the moment the turn starts.
+  const compactionCommandRunIds = new Set<RunId>();
+  const compactedRunIds = new Set<RunId>();
+  for (const entry of timelineEntries) {
+    if (
+      entry.kind === "message" &&
+      entry.message.runId !== null &&
+      isCompactCommand(entry.message)
+    ) {
+      compactionCommandRunIds.add(entry.message.runId);
+    } else if (
+      entry.kind === "work" &&
+      entry.entry.runId != null &&
+      entry.entry.sourceActivityKind === "context-compaction"
+    ) {
+      compactedRunIds.add(entry.entry.runId);
+    }
+  }
+  const runningCompactionRunId =
+    input.isWorking &&
+    unsettledRunId !== null &&
+    compactionCommandRunIds.has(unsettledRunId) &&
+    !compactedRunIds.has(unsettledRunId)
+      ? unsettledRunId
+      : null;
   const appendWorkingRow = () => {
+    if (runningCompactionRunId !== null) return;
     nextRows.push({
       kind: "working",
       id: "working-indicator-row",
@@ -1578,7 +1637,7 @@ export function deriveMessagesTimelineRows(input: {
     });
   };
   let hasActivityRow = false;
-  let hasActiveCompaction = false;
+  let hasActiveCompaction = runningCompactionRunId !== null;
   const appendActiveWorkRows = () => {
     if (activeWorkRow === null) return;
     nextRows.push(activeWorkRow);
@@ -1675,6 +1734,7 @@ export function deriveMessagesTimelineRows(input: {
 
     if (timelineEntry.kind === "work") {
       if (
+        isPendingApproval(timelineEntry.entry) ||
         (timelineEntry.entry.runId != null && failedRunIds.has(timelineEntry.entry.runId)) ||
         (timelineEntry.entry.itemType === "error" &&
           timelineEntry.entry.toolLifecycleStatus === "failed") ||
@@ -1704,6 +1764,7 @@ export function deriveMessagesTimelineRows(input: {
           nextEntry.entry.sourceActivityKind === "runtime.error" ||
           nextEntry.entry.itemType === "system_notice" ||
           nextEntry.entry.itemType === "notification" ||
+          isPendingApproval(nextEntry.entry) ||
           activeWorkEntryIds.has(nextEntry.id) ||
           collapsedEntryIds.has(nextEntry.id) ||
           collapsedSupersededEntryIds.has(nextEntry.id) ||
@@ -1880,6 +1941,22 @@ export function deriveMessagesTimelineRows(input: {
       continue;
     }
 
+    const compactionRunId = timelineEntry.message.runId;
+    if (compactionRunId !== null && isCompactCommand(timelineEntry.message)) {
+      // Once the provider records the compaction, its own row replaces this one.
+      if (!compactedRunIds.has(compactionRunId)) {
+        const pending = compactionRunId === runningCompactionRunId;
+        nextRows.push({
+          kind: "context-compaction",
+          id: `compaction:${compactionRunId}`,
+          createdAt: timelineEntry.createdAt,
+          label: pending ? "Compacting context" : "Context compaction",
+          active: pending,
+        });
+      }
+      continue;
+    }
+
     const assistantResponseStillInProgress =
       timelineEntry.message.role === "assistant" &&
       runIdIsActiveResponse(timelineEntry.message.runId);
@@ -1985,7 +2062,7 @@ export function deriveMessagesTimelineRows(input: {
     input.isWorking &&
     !setupOwnsWorkingSlot &&
     !hasActiveCompaction &&
-    (!hasActivityRow || latestToolFailed)
+    (latestToolFailed || (!hasActivityRow && !input.pendingApprovalRequestIds?.size))
   ) {
     // A failed latest tool hands the row back to thinking, but its group
     // stays reachable through the same disclosure the live row offers.
@@ -2149,6 +2226,7 @@ function replaceStreamingMessageRows(
     expandedRunIds: previousExpandedRuns,
     expandedAttemptIds: previousExpandedAttempts,
     expandedWorkGroupIds: previousExpandedGroups,
+    pendingApprovalRequestIds: previousPendingApprovalRequestIds,
     ...previousContext
   } = previous.input;
   const {
@@ -2158,6 +2236,7 @@ function replaceStreamingMessageRows(
     expandedRunIds,
     expandedAttemptIds,
     expandedWorkGroupIds,
+    pendingApprovalRequestIds,
     ...context
   } = input;
   // V2 shell and checkpoint selectors produce fresh summaries for each event.
@@ -2169,6 +2248,7 @@ function replaceStreamingMessageRows(
     !shallow(previousExpandedRuns, expandedRunIds) ||
     !shallow(previousExpandedAttempts, expandedAttemptIds) ||
     !shallow(previousExpandedGroups, expandedWorkGroupIds) ||
+    !shallow(previousPendingApprovalRequestIds, pendingApprovalRequestIds) ||
     !sameCheckpointSummaries(previousCheckpoints, turnDiffSummaries)
   ) {
     return null;

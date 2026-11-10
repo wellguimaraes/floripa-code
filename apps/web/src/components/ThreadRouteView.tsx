@@ -1,4 +1,5 @@
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { threadKey } from "@t3tools/client-runtime/state/entities";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
@@ -14,7 +15,12 @@ import {
   useComposerDraftStore,
 } from "../composerDraftStore";
 import { useSidebarPendingFileDropStore } from "../sidebarPendingFileDropStore";
-import { useEnvironmentThreadRefs, useThreadRefs, useThreadShell } from "../state/entities";
+import {
+  useEnvironmentThreadRefs,
+  useHiddenThreadKeys,
+  useThreadRefs,
+  useThreadShell,
+} from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import { environmentShell } from "../state/shell";
 import {
@@ -102,6 +108,10 @@ export function ThreadRouteView({
   if (nextChatViewKey !== chatViewKey) {
     setChatViewKey(nextChatViewKey);
   }
+  // A thread the tag filter hides never opens, and tagging the open one closes it.
+  const hiddenThreadKeys = useHiddenThreadKeys();
+  const hiddenByTagFilter =
+    serverThreadRef !== null && hiddenThreadKeys.has(threadKey(serverThreadRef));
   const environmentHasDraftThreads = useComposerDraftStore((store) =>
     serverThreadRef ? store.hasDraftThreadsInEnvironment(serverThreadRef.environmentId) : false,
   );
@@ -140,6 +150,12 @@ export function ThreadRouteView({
       cancelled = true;
     };
   }, [canonicalThreadRef, navigate]);
+
+  useEffect(() => {
+    if (target.kind === "server" && hiddenByTagFilter) {
+      void navigate({ to: "/", replace: true });
+    }
+  }, [hiddenByTagFilter, navigate, target.kind]);
 
   useEffect(() => {
     if (target.kind !== "draft" || draftSession || canonicalThreadRef) {
@@ -185,6 +201,8 @@ export function ThreadRouteView({
         />
       );
     }
+  } else if (hiddenByTagFilter) {
+    view = null;
   } else if (renderState === "ready" || (renderState === "loading" && serverThreadShell !== null)) {
     view = (
       <ChatView

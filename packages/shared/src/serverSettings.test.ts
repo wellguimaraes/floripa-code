@@ -3,6 +3,8 @@ import {
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
+  SecretProviderId,
+  SecretProviderKind,
   UsageLimitSourceId,
   type ServerProvider,
 } from "@t3tools/contracts";
@@ -24,6 +26,35 @@ import {
 const FOLDED_SERVER_SETTINGS = { ...DEFAULT_SERVER_SETTINGS, projectSettingsFolded: true };
 
 describe("serverSettings helpers", () => {
+  it("translates a shipped client's idle compaction switch into a mode", () => {
+    const off = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, { idleCompaction: "off" });
+    expect([off.idleCompaction, off.compactIdleThreads]).toEqual(["off", false]);
+    // Turning the old switch off keeps "Never" rather than reverting to the default.
+    const stillOff = applyServerSettingsPatch(off, { compactIdleThreads: false });
+    expect(stillOff.idleCompaction).toBe("off");
+    const on = applyServerSettingsPatch(off, { compactIdleThreads: true });
+    expect([on.idleCompaction, on.compactIdleThreads]).toEqual(["beforeCacheExpires", true]);
+  });
+
+  it("replaces and clears the fallback model without carrying model options", () => {
+    const fallbackModelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "new" };
+    const settings = applyServerSettingsPatch(
+      {
+        ...DEFAULT_SERVER_SETTINGS,
+        fallbackModelSelection: {
+          ...fallbackModelSelection,
+          model: "old",
+          options: [{ id: "effort", value: "high" }],
+        },
+      },
+      { fallbackModelSelection },
+    );
+    expect(settings.fallbackModelSelection).toEqual(fallbackModelSelection);
+    expect(
+      applyServerSettingsPatch(settings, { fallbackModelSelection: null }).fallbackModelSelection,
+    ).toBeNull();
+  });
+
   it("changes a cleanup rule without replacing the machine's other rules", () => {
     const enabled = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
       storageCleanup: { worktreeAfterDays: 8, worktreeOnMerge: true, logsAfterDays: 30 },
@@ -34,6 +65,7 @@ describe("serverSettings helpers", () => {
       }).storageCleanup,
     ).toEqual({
       worktreeAfterDays: null,
+      worktreeSettledAfterDays: null,
       worktreeOnMerge: true,
       worktreeOnDelete: false,
       worktreeUnchanged: false,
@@ -568,6 +600,26 @@ describe("serverSettings helpers", () => {
 
     const removed = applyServerSettingsPatch(added, { usageLimitSources: { [hubA]: null } });
     expect(Object.keys(removed.usageLimitSources)).toEqual([hubB]);
+  });
+
+  it("upserts and removes secretProviders per entry", () => {
+    const entry = (account: string) => ({
+      kind: SecretProviderKind.make("one_password"),
+      label: account,
+      config: { account },
+    });
+    const personal = SecretProviderId.make("personal");
+    const work = SecretProviderId.make("work");
+    const current = {
+      ...DEFAULT_SERVER_SETTINGS,
+      secretProviders: { [personal]: entry("a.1password.com") },
+    };
+    const added = applyServerSettingsPatch(current, {
+      secretProviders: { [work]: entry("b.1password.com") },
+    });
+    expect(Object.keys(added.secretProviders)).toEqual([personal, work]);
+    const removed = applyServerSettingsPatch(added, { secretProviders: { [personal]: null } });
+    expect(Object.keys(removed.secretProviders)).toEqual([work]);
   });
 
   it("replaces and removes individual usage prices without clobbering other models", () => {

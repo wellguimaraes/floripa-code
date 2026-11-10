@@ -23,6 +23,7 @@ import * as Settings from "./serverSettings.ts";
 import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
+import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import { ServerActivation } from "./serverActivation.ts";
 import { describe, expect, it } from "@effect/vitest";
@@ -34,6 +35,7 @@ import {
   ThreadId,
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
+import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import {
   storageCleanupActivityAt,
@@ -269,6 +271,9 @@ const cleanupFixture = Effect.gen(function* () {
       getShellSnapshot: (input?: { location?: string }) =>
         Effect.sync(() => ({ threads: input?.location === "archive" ? [] : threads })),
     } as unknown as ProjectionStore.ProjectionStoreV2["Service"]),
+    Effect.provideService(ProviderSessionManager.ProviderSessionManagerV2, {
+      isLive: () => Effect.succeed(false),
+    } as unknown as ProviderSessionManager.ProviderSessionManagerV2["Service"]),
     Effect.provideService(Orchestrator.OrchestratorV2, {
       streamDomainEvents: Stream.empty,
     } as unknown as Orchestrator.OrchestratorV2["Service"]),
@@ -303,6 +308,16 @@ const cleanupFixture = Effect.gen(function* () {
     },
     setPolicy: (worktreeKeepWhen: WorktreeKeepWhen) => {
       settings = { ...settings, storageCleanup: { ...settings.storageCleanup, worktreeKeepWhen } };
+    },
+    setSettledAfterDays: (worktreeSettledAfterDays: number | null) => {
+      settings = {
+        ...settings,
+        storageCleanup: {
+          ...settings.storageCleanup,
+          worktreeAfterDays: null,
+          worktreeSettledAfterDays,
+        },
+      };
     },
     disable: () => {
       settings = {
@@ -650,6 +665,130 @@ describe("storage cleanup reports and local file policies", () => {
           "browser-artifacts",
           "logs",
         ]);
+      }),
+    ),
+  );
+});
+
+describe("settled worktree cleanup", () => {
+  // Offsets are in days before now; 0 is now. The service reads the real clock.
+  const run = (input: {
+    readonly settledAfterDays: number | null;
+    readonly settledAt: number | null;
+    readonly updatedAt: number;
+  }) =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const now = yield* Clock.currentTimeMillis;
+        const daysAgo = (days: number) => DateTime.makeUnsafe(now - days * DAY_MS);
+        const fixture = yield* cleanupFixture;
+        fixture.setSettledAfterDays(input.settledAfterDays);
+        fixture.setThreads([
+          shell({
+            branch: "feature",
+            worktreePath: fixture.worktree,
+            settledAt: input.settledAt === null ? null : daysAgo(input.settledAt),
+            updatedAt: daysAgo(input.updatedAt),
+          }),
+        ]);
+        const report = yield* fixture.service.runNow;
+        return { report, exists: yield* fixture.fs.exists(fixture.worktree) };
+      }),
+    );
+
+  it.live("removes a worktree once its thread has been settled long enough", () =>
+    Effect.gen(function* () {
+      const { report, exists } = yield* run({
+        settledAfterDays: 2,
+        settledAt: 3,
+        updatedAt: 3,
+      });
+      expect(report.entries[0]).toMatchObject({
+        outcome: "removed",
+        reason: "Settled for 3 days",
+      });
+      expect(exists).toBe(false);
+    }),
+  );
+
+  it.live("keeps the worktree of a thread that is not settled or settled too recently", () =>
+    Effect.gen(function* () {
+      const unsettled = yield* run({
+        settledAfterDays: 2,
+        settledAt: null,
+        updatedAt: 30,
+      });
+      expect(unsettled.report.entries[0]).toMatchObject({ outcome: "kept", reason: "Not settled" });
+      expect(unsettled.exists).toBe(true);
+      const recent = yield* run({
+        settledAfterDays: 2,
+        settledAt: 1,
+        updatedAt: 1,
+      });
+      expect(recent.report.entries[0]).toMatchObject({
+        outcome: "kept",
+        reason: "Settled for 1 of 2 days",
+      });
+      expect(recent.exists).toBe(true);
+    }),
+  );
+
+  it.live("waits out the settle-script grace period even with zero days of retention", () =>
+    Effect.gen(function* () {
+      const justSettled = yield* run({
+        settledAfterDays: 0,
+        settledAt: 1,
+        updatedAt: 0,
+      });
+      expect(justSettled.report.entries[0]).toMatchObject({
+        outcome: "kept",
+        reason: "Settled moments ago",
+      });
+      expect(justSettled.exists).toBe(true);
+      const settledEarlier = yield* run({
+        settledAfterDays: 0,
+        settledAt: 1,
+        updatedAt: 1,
+      });
+      expect(settledEarlier.report.entries[0]).toMatchObject({ outcome: "removed" });
+      expect(settledEarlier.exists).toBe(false);
+    }),
+  );
+});
+
+describe("settled cleanup and unpushed work", () => {
+  it.live("keeps a settled worktree whose commits exist on no remote", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const now = yield* Clock.currentTimeMillis;
+        const longAgo = DateTime.makeUnsafe(now - 3 * DAY_MS);
+        const fixture = yield* cleanupFixture;
+        const remote = yield* fixture.fs.makeTempDirectoryScoped({ prefix: "cleanup-remote-" });
+        yield* fixture.command(remote, ["init", "--bare", "-b", "main"]);
+        yield* fixture.command(fixture.worktree, ["remote", "add", "origin", remote]);
+        yield* fixture.command(fixture.worktree, ["push", "origin", "main", "feature"]);
+        yield* fixture.fs.writeFileString(`${fixture.worktree}/local.txt`, "local\n");
+        yield* fixture.command(fixture.worktree, ["add", "."]);
+        yield* fixture.command(fixture.worktree, ["commit", "-m", "local only"]);
+        fixture.setSettledAfterDays(2);
+        fixture.setThreads([
+          shell({
+            branch: "feature",
+            worktreePath: fixture.worktree,
+            settledAt: longAgo,
+            updatedAt: longAgo,
+          }),
+        ]);
+        const kept = yield* fixture.service.runNow;
+        expect(kept.entries[0]).toMatchObject({
+          outcome: "kept",
+          reason: "Has commits that are not pushed",
+        });
+        expect(yield* fixture.fs.exists(fixture.worktree)).toBe(true);
+        yield* fixture.command(fixture.worktree, ["push", "origin", "feature"]);
+        const removed = yield* fixture.service.runNow;
+        expect(removed.entries[0]).toMatchObject({ outcome: "removed" });
+        expect(yield* fixture.fs.exists(fixture.worktree)).toBe(false);
       }),
     ),
   );

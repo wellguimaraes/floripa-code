@@ -1,3 +1,4 @@
+import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { deriveThreadTitleSeed } from "@t3tools/client-runtime/operations";
 import {
@@ -118,7 +119,12 @@ function resolveWorldAgentSetup(
 ): WorldAgentSetup | null {
   const { stickyActiveProvider, stickyModelSelectionByProvider } = useComposerDraftStore.getState();
   const preferred: ModelSelection | null =
-    projectSettings.defaultModelSelection ??
+    resolveNewThreadModelSelection({
+      defaultSelection: projectSettings.defaultModelSelection ?? null,
+      fallbackSelection: settings.fallbackModelSelection,
+      providers,
+      now: Date.now(),
+    }).selection ??
     (stickyActiveProvider ? (stickyModelSelectionByProvider[stickyActiveProvider] ?? null) : null);
   const { selectedProviderEntry: provider } = resolveComposerProviderSelection({
     entries: sortProviderInstanceEntries(

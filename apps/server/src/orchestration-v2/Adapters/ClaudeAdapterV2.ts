@@ -4,6 +4,13 @@ import {
   formatReadToolLabel,
   formatSearchToolLabel,
 } from "@t3tools/shared/toolActivity";
+import { field, text } from "../unknownField.ts";
+import {
+  CLAUDE_WORKFLOW_TASK_TYPE,
+  hasClaudeWorkflowSnapshot,
+  mergeClaudeWorkflowProgress,
+  parseClaudeWorkflowRunHandles,
+} from "./claudeWorkflowProgress.ts";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
 import { normalizeClaudeTurnTokenUsage } from "../../provider/ClaudeTurnTokenUsage.ts";
 import {
@@ -58,6 +65,7 @@ import {
   type OrchestrationV2RuntimeRequest,
   type OrchestrationV2UserInputQuestion,
   type OrchestrationV2Subagent,
+  type OrchestrationV2WorkflowRunHandles,
   type OrchestrationV2TurnItem,
   type OrchestrationV2WebSearchResult,
   type ProviderApprovalDecision,
@@ -67,6 +75,7 @@ import {
   type ProviderUserInputAnswers,
   type ProviderThreadId,
   type ThreadId,
+  resolveIdleCompaction,
 } from "@t3tools/contracts";
 
 import * as Cause from "effect/Cause";
@@ -90,6 +99,7 @@ import { resolveClaudeSdkExecutablePath } from "../../provider/Drivers/ClaudeExe
 import { planClaudeSkillDispatch } from "../../provider/Drivers/ClaudeSkillDispatch.ts";
 import { discoverClaudeSkills } from "../../provider/Drivers/ClaudeSkills.ts";
 import { compileClaudeModelSelection } from "../../claudeModelOptions.ts";
+import * as ServerSettings from "../../serverSettings.ts";
 import * as ServerConfig from "../../config.ts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import {
@@ -156,21 +166,46 @@ function claudeContextWindow(modelSelection: ModelSelection): number | null {
   );
 }
 
+interface ClaudeCacheCreation {
+  readonly ephemeral_1h_input_tokens: number;
+  readonly ephemeral_5m_input_tokens: number;
+}
+
+// Claude Code writes 1h cache entries on a subscription within its limits and
+// 5m entries otherwise (API key, Bedrock, Vertex, extra usage). A response
+// that wrote nothing leaves the TTL unknown.
+function claudePromptCacheTtlMs(
+  cacheCreation: ClaudeCacheCreation | null | undefined,
+): number | undefined {
+  if (!cacheCreation) return undefined;
+  if (cacheCreation.ephemeral_1h_input_tokens > 0) return 60 * 60_000;
+  if (cacheCreation.ephemeral_5m_input_tokens > 0) return 5 * 60_000;
+  return undefined;
+}
+
 export function claudeProviderTurnTokenUsage(
   usage: {
     readonly input_tokens: number;
     readonly cache_creation_input_tokens?: number | null;
     readonly cache_read_input_tokens?: number | null;
+    readonly cache_creation?: ClaudeCacheCreation | null;
     readonly output_tokens: number;
   },
   modelSelection: ModelSelection,
   updatedAt: string,
+  requestedAt?: DateTime.Utc,
 ) {
   const inputTokens =
     usage.input_tokens +
     (usage.cache_creation_input_tokens ?? 0) +
     (usage.cache_read_input_tokens ?? 0);
   const outputTokens = usage.output_tokens;
+  const promptCacheTtlMs = claudePromptCacheTtlMs(usage.cache_creation);
+  // The cache lifetime starts with the request, not when its response ends.
+  const promptCacheExpiresAt =
+    promptCacheTtlMs === undefined || requestedAt === undefined
+      ? undefined
+      : DateTime.formatIso(DateTime.add(requestedAt, { milliseconds: promptCacheTtlMs }));
   return {
     usedTokens: inputTokens + outputTokens,
     maxTokens: claudeContextWindow(modelSelection),
@@ -178,6 +213,8 @@ export function claudeProviderTurnTokenUsage(
     cachedInputTokens: usage.cache_read_input_tokens ?? 0,
     outputTokens,
     reasoningOutputTokens: 0,
+    ...(promptCacheTtlMs === undefined ? {} : { promptCacheTtlMs }),
+    ...(promptCacheExpiresAt === undefined ? {} : { promptCacheExpiresAt }),
     updatedAt,
   };
 }
@@ -2853,6 +2890,8 @@ interface ActiveClaudeTurnContext {
       { readonly startedAt: DateTime.Utc; readonly ordinal: number; text: string }
     >;
   };
+  // When the latest root request started streaming; its prompt cache lifetime starts then.
+  streamRequest: { readonly messageId: string; readonly requestedAt: DateTime.Utc } | null;
   readonly toolCalls: Map<string, ActiveClaudeToolCall>;
   readonly ignoredTaskIds: Set<string>;
   readonly announcedUsageLimits: Set<string>;
@@ -3183,6 +3222,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
   adapterOptions: ClaudeAdapterV2Options,
 ) {
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
+  const serverSettings = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
   const { attachmentsDir, fileSystem, path, crypto, idAllocator, queryRunner } = adapterOptions;
   // Subagent model names and effort levels, including the instance's custom models.
   const subagentModelCatalog = scopeClaudeModelCatalog(
@@ -4294,6 +4334,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           readonly effort?: string;
           readonly owner?: ActiveClaudeSubagent;
           readonly progress?: string;
+          /** Raw SDK frame, folded into the coordinator's workflow snapshot. */
+          readonly workflowFrame?: unknown;
+          readonly workflowName?: string;
+          readonly workflowRunHandles?: OrchestrationV2WorkflowRunHandles;
           readonly result?: string;
           readonly status: Extract<
             OrchestrationV2ExecutionNode["status"],
@@ -4390,6 +4434,17 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     existingSubagent.task,
                   )
                 : existingSubagent.task;
+          // Workflow telemetry is cumulative: fold this frame into whatever the
+          // coordinator already carried, so a usage-only frame cannot blank the
+          // member roster the user is watching.
+          const workflow = mergeClaudeWorkflowProgress({
+            previous: priorTask?.workflow,
+            ...(input.workflowName === undefined ? {} : { name: input.workflowName }),
+            ...(input.workflowRunHandles === undefined
+              ? {}
+              : { runHandles: input.workflowRunHandles }),
+            message: input.workflowFrame,
+          });
           const effort =
             existingSubagent === undefined
               ? (input.effort ??
@@ -4449,6 +4504,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 }
               : {}),
             ...(input.progress === undefined ? {} : { progress: input.progress }),
+            ...(workflow === undefined ? {} : { workflow }),
             ...(input.result === undefined ? {} : { result: input.result }),
             ...(isReopen ? { startedAt: now } : {}),
             completedAt: input.status === "running" ? null : (priorTask?.completedAt ?? now),
@@ -6056,6 +6112,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             if (event.type === "message_start") {
               reasoning.messageId = event.message.id;
               reasoning.streamBlocks.clear();
+              context.streamRequest = {
+                messageId: event.message.id,
+                requestedAt: yield* DateTime.now,
+              };
             } else if (
               event.type === "content_block_start" &&
               event.content_block.type === "thinking" &&
@@ -6309,6 +6369,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     message.message.usage,
                     context.input.modelSelection,
                     DateTime.formatIso(now),
+                    // A snapshot with no matching stream start leaves the expiry unknown.
+                    context.streamRequest?.messageId === message.message.id
+                      ? context.streamRequest.requestedAt
+                      : undefined,
                   ),
                 },
               });
@@ -6404,6 +6468,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               // With no model of its own, a nested subagent runs on its
               // owner's (the SDK's default for a subagent's Agent call).
               const model = launch?.model ?? owner?.task.model ?? undefined;
+              // `meta.name` from the workflow script; only workflow tasks carry it.
+              const workflowName =
+                claudeTaskTypeFromSdkMessage(message) === CLAUDE_WORKFLOW_TASK_TYPE
+                  ? text(field(message, "workflow_name"))
+                  : undefined;
               // A nested subagent's end goes to its owner, so it never wakes the root.
               if (
                 message.is_backgrounded === true &&
@@ -6428,6 +6497,14 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 ...(model === undefined ? {} : { model }),
                 ...(launch?.effort === undefined ? {} : { effort: launch.effort }),
                 ...(owner === undefined ? {} : { owner }),
+                // A workflow coordinator is marked as one the moment it starts, so
+                // Lineage can expand it before the first member spawns.
+                ...(claudeTaskTypeFromSdkMessage(message) === CLAUDE_WORKFLOW_TASK_TYPE
+                  ? {
+                      workflowFrame: message,
+                      ...(workflowName === undefined ? {} : { workflowName }),
+                    }
+                  : {}),
                 title: message.description,
                 status: "running",
                 reopen: true,
@@ -6441,8 +6518,14 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               liveQuery.nativeThreadId,
               message.task_id,
             );
+            // A workflow frame is worth an update even with an empty description:
+            // it carries the phase plan, the member roster and the run's usage.
+            const carriesWorkflowTelemetry = hasClaudeWorkflowSnapshot(message);
+            const isWorkflowCoordinator =
+              (yield* Ref.get(sessionSubagentsByTaskId)).get(message.task_id)?.task.workflow !==
+              undefined;
             if (
-              progress.length > 0 &&
+              (carriesWorkflowTelemetry || (progress.length > 0 && !isWorkflowCoordinator)) &&
               !context.ignoredTaskIds.has(message.task_id) &&
               !isBackgroundTask
             ) {
@@ -6450,7 +6533,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 context,
                 taskId: message.task_id,
                 ...(message.tool_use_id === undefined ? {} : { toolUseId: message.tool_use_id }),
-                progress,
+                ...(progress.length === 0 || isWorkflowCoordinator ? {} : { progress }),
+                workflowFrame: message,
                 status: "running",
               });
             }
@@ -6505,6 +6589,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 taskId: message.task_id,
                 ...(message.tool_use_id === undefined ? {} : { toolUseId: message.tool_use_id }),
                 result: message.summary,
+                // Terminal usage totals arrive here, after the last snapshot.
+                workflowFrame: message,
                 status:
                   message.status === "completed"
                     ? "completed"
@@ -6574,6 +6660,18 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             // that settled last, which never saw a subagent an earlier turn
             // launched (a nested one whose Agent call returns now).
             const subagent = yield* resolveSubagentByToolUseId(context, toolResult.tool_use_id);
+            // The Workflow tool's launch acknowledgement is the only carrier of
+            // the run's filesystem handles, so harvest them wherever it arrives.
+            const runHandles = parseClaudeWorkflowRunHandles(claudeNativeToolOutputValue(output));
+            if (subagent !== undefined && runHandles !== undefined) {
+              yield* updateClaudeSubagentNode({
+                context,
+                taskId: subagent.task.nativeTaskRef?.nativeId ?? String(subagent.task.id),
+                toolUseId: toolResult.tool_use_id,
+                workflowRunHandles: runHandles,
+                status: "running",
+              });
+            }
             // A resume task_started reuses the resuming tool call's
             // tool_use_id (e.g. SendMessage), whose tool_result only
             // acknowledges delivery. Only the Agent launch's tool_result may
@@ -7344,6 +7442,17 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               if (request.dialogKind !== "resume_return") {
                 return { behavior: "cancelled" as const };
               }
+              const idleCompaction = Option.isSome(serverSettings)
+                ? yield* serverSettings.value.getSettings.pipe(
+                    Effect.map((settings) =>
+                      resolveIdleCompaction(settings, adapterOptions.instanceId),
+                    ),
+                    Effect.orElseSucceed(() => adapterOptions.settings.idleCompaction),
+                  )
+                : adapterOptions.settings.idleCompaction;
+              if (idleCompaction === "off") {
+                return { behavior: "completed" as const, result: "continue" as const };
+              }
               const ageMinutes =
                 typeof request.payload.sessionAgeMinutes === "number" &&
                 Number.isFinite(request.payload.sessionAgeMinutes)
@@ -7724,6 +7833,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 snapshots: new Set(),
                 blocks: new Map(),
               },
+              streamRequest: null,
               toolCalls: new Map(),
               ignoredTaskIds: new Set(),
               announcedUsageLimits: new Set(),

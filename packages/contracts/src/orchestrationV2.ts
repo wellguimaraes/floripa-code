@@ -1,4 +1,5 @@
 import { OrchestrationMessageContext } from "./composerContext.ts";
+import { StoredThreadTags, ThreadTag } from "./threadTags.ts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SchemaAST from "effect/SchemaAST";
@@ -218,6 +219,8 @@ export const OrchestrationV2TurnCapabilities = Schema.Struct({
   supportsActiveSteering: Schema.Boolean,
   // Some native steering mechanisms cancel pending tools before consuming the message.
   activeSteeringInterruptsTools: Schema.optional(Schema.Boolean),
+  // Some take text only, so a steer with attachments restarts the turn instead.
+  activeSteeringAcceptsAttachments: Schema.optional(Schema.Boolean),
   supportsSteeringByInterruptRestart: Schema.Boolean,
   supportsQueuedMessages: Schema.Boolean,
   terminalStatusQuality: Schema.Literals(["strong", "weak", "none"]),
@@ -361,6 +364,28 @@ export const OrchestrationV2LimitRecoveryUpdate = Schema.Struct({
 );
 export type OrchestrationV2LimitRecoveryUpdate = typeof OrchestrationV2LimitRecoveryUpdate.Type;
 
+/**
+ * How often the user opens a thread, for search ranking. `score` is an open
+ * count that halves every two weeks, as of `openedAt`. `picks` holds the last
+ * few palette queries that picked the thread, folded to lowercase, newest
+ * first, each with when it was picked. Times are epoch milliseconds: ranking
+ * does arithmetic on them.
+ */
+export const OrchestrationV2ThreadOpens = Schema.Struct({
+  openedAt: Schema.Finite,
+  score: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
+  picks: Schema.Array(
+    Schema.Struct({ query: Schema.String.check(Schema.isMaxLength(32)), at: Schema.Finite }),
+  ).check(Schema.isMaxLength(3)),
+});
+export type OrchestrationV2ThreadOpens = typeof OrchestrationV2ThreadOpens.Type;
+
+// Open stats only rank search results, so a value this build cannot read (an
+// older or newer shape) becomes null instead of failing the whole thread.
+const LenientThreadOpens = Schema.NullOr(OrchestrationV2ThreadOpens).pipe(
+  Schema.catchDecoding(() => Effect.succeedSome(null)),
+);
+
 export const OrchestrationV2AppThread = Schema.Struct({
   ...OrchestrationV2CreationFields,
   id: ThreadId,
@@ -414,9 +439,12 @@ export const OrchestrationV2AppThread = Schema.Struct({
   pinOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   /** Fractional-index slot in the user-arranged active order. */
   activeOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  /** Absent on threads written before tags existed; read as empty. */
+  tags: Schema.optional(StoredThreadTags),
   lastVisitedAt: Schema.NullOr(Schema.DateTimeUtc).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
+  opens: Schema.optional(LenientThreadOpens),
   /** A person or agent named the thread, so automatic retitling leaves it alone. */
   titleManual: Schema.optional(Schema.Boolean),
   /** In-flight title regeneration marker; cleared when a new title lands. */
@@ -587,6 +615,8 @@ export const OrchestrationV2Run = Schema.Struct({
   delegatedCompletion: Schema.optional(OrchestrationV2DelegatedCompletionCohort),
   /** How a launch prepares this run's workspace; prepared-run.retry repeats it. */
   workspacePreparation: Schema.optional(OrchestrationV2ThreadLaunchWorkspaceStrategy),
+  /** Starts a new provider conversation; earlier runs stay visible but never reach the provider. */
+  freshContext: Schema.optional(Schema.Boolean),
 });
 export type OrchestrationV2Run = typeof OrchestrationV2Run.Type;
 
@@ -666,6 +696,74 @@ export const OrchestrationV2ExecutionNode = Schema.Struct({
 });
 export type OrchestrationV2ExecutionNode = typeof OrchestrationV2ExecutionNode.Type;
 
+/**
+ * One entry of a dynamic workflow's phase plan. The plan grows while the run
+ * executes: a phase a script only reaches at runtime joins the list when it
+ * starts, so a client must treat the list as append-only rather than as a
+ * fixed arc declared up front.
+ */
+export const OrchestrationV2WorkflowPhase = Schema.Struct({
+  index: NonNegativeInt,
+  title: TrimmedNonEmptyString,
+});
+export type OrchestrationV2WorkflowPhase = typeof OrchestrationV2WorkflowPhase.Type;
+
+/**
+ * One agent inside a workflow run. Timestamps are epoch milliseconds rather
+ * than `DateTimeUtc` because only the top-level entity fields are remapped for
+ * the JSON wire shape (see `OrchestrationV2SubagentJson`), so a nested
+ * `DateTimeUtc` would never be encoded.
+ */
+export const OrchestrationV2WorkflowAgent = Schema.Struct({
+  /** Spawn ordinal within the run. Stable identity: an agent keeps it across updates. */
+  index: NonNegativeInt,
+  label: TrimmedNonEmptyString,
+  /** Provider-assigned id, absent until the agent actually starts. */
+  agentId: Schema.optional(TrimmedNonEmptyString),
+  /** The member's own thread, when the provider gave it one. */
+  childThreadId: Schema.optional(ThreadId),
+  state: Schema.Literals(["queued", "running", "completed", "failed"]),
+  phaseIndex: Schema.optional(NonNegativeInt),
+  phaseTitle: Schema.optional(TrimmedNonEmptyString),
+  model: Schema.optional(TrimmedNonEmptyString),
+  /** Retry counter; > 1 means the agent was restarted after a provider error. */
+  attempt: Schema.optional(NonNegativeInt),
+  totalTokens: Schema.optional(NonNegativeInt),
+  toolCalls: Schema.optional(NonNegativeInt),
+  durationMs: Schema.optional(NonNegativeInt),
+  queuedAt: Schema.optional(NonNegativeInt),
+  startedAt: Schema.optional(NonNegativeInt),
+  completedAt: Schema.optional(NonNegativeInt),
+  /** Prompt and result excerpts; both are capped by the CLI at a few hundred characters. */
+  prompt: Schema.optional(Schema.NonEmptyString),
+  result: Schema.optional(Schema.NonEmptyString),
+});
+export type OrchestrationV2WorkflowAgent = typeof OrchestrationV2WorkflowAgent.Type;
+
+/** Filesystem handles the provider reports when a workflow run launches. */
+export const OrchestrationV2WorkflowRunHandles = Schema.Struct({
+  runId: Schema.optional(TrimmedNonEmptyString),
+  transcriptDir: Schema.optional(TrimmedNonEmptyString),
+  scriptPath: Schema.optional(TrimmedNonEmptyString),
+});
+export type OrchestrationV2WorkflowRunHandles = typeof OrchestrationV2WorkflowRunHandles.Type;
+
+/**
+ * Workflow-run shape carried by the coordinator subagent. The snapshot is the
+ * provider's own replace-in-full view of the run; clients derive member rows
+ * from it.
+ */
+export const OrchestrationV2SubagentWorkflow = Schema.Struct({
+  name: Schema.optional(TrimmedNonEmptyString),
+  runHandles: Schema.optional(OrchestrationV2WorkflowRunHandles),
+  phases: Schema.Array(OrchestrationV2WorkflowPhase),
+  agents: Schema.Array(OrchestrationV2WorkflowAgent),
+  totalTokens: Schema.optional(NonNegativeInt),
+  toolCalls: Schema.optional(NonNegativeInt),
+  durationMs: Schema.optional(NonNegativeInt),
+});
+export type OrchestrationV2SubagentWorkflow = typeof OrchestrationV2SubagentWorkflow.Type;
+
 export const OrchestrationV2Subagent = Schema.Struct({
   id: NodeId,
   threadId: ThreadId,
@@ -700,6 +798,8 @@ export const OrchestrationV2Subagent = Schema.Struct({
     "interrupted",
   ]),
   progress: Schema.optional(Schema.String),
+  /** Present only on a workflow coordinator task; absent on ordinary subagents. */
+  workflow: Schema.optional(OrchestrationV2SubagentWorkflow),
   result: Schema.NullOr(Schema.String),
   startedAt: Schema.NullOr(Schema.DateTimeUtc),
   completedAt: Schema.NullOr(Schema.DateTimeUtc),
@@ -981,6 +1081,11 @@ export const OrchestrationV2ProviderTurnTokenUsage = Schema.Struct({
   cachedInputTokens: Schema.optional(NonNegativeInt),
   outputTokens: Schema.optional(NonNegativeInt),
   reasoningOutputTokens: Schema.optional(NonNegativeInt),
+  /** Prompt cache lifetime the provider wrote with this report. Clients treat
+      the cache as cold once `updatedAt` is this old. */
+  promptCacheTtlMs: Schema.optional(PositiveInt),
+  /** ISO time the cache entry written by the provider's latest request expires; absent when unknown. */
+  promptCacheExpiresAt: Schema.optional(Schema.String),
   /** ISO timestamp of the provider's report; string so wire encoding is stable. */
   updatedAt: Schema.String,
 });
@@ -1321,6 +1426,13 @@ export const OrchestrationV2UserMessageInputIntent = Schema.Literals([
 export type OrchestrationV2UserMessageInputIntent =
   typeof OrchestrationV2UserMessageInputIntent.Type;
 
+/** A same-harness model or effort change that took effect with this message. */
+export const OrchestrationV2ModelSwitch = Schema.Struct({
+  from: ModelSelection,
+  to: ModelSelection,
+});
+export type OrchestrationV2ModelSwitch = typeof OrchestrationV2ModelSwitch.Type;
+
 const OrchestrationV2TurnItemBaseFields = {
   toolNonExecutionKind: Schema.optional(Schema.String),
   toolSurface: Schema.optional(ToolActivitySurface),
@@ -1369,11 +1481,15 @@ export type OrchestrationV2SecretRequestStatus = typeof OrchestrationV2SecretReq
  * A secret an agent asked the user for. The value never passes through
  * orchestration: the item carries only what was asked and how it was answered.
  */
+/** `file`: the value goes to an owner-only file the agent's shell commands can read. */
+export const OrchestrationV2SecretRequestDelivery = Schema.Literal("file");
+
 const OrchestrationV2SecretRequestFields = {
   type: Schema.Literal("secret_request"),
   label: TrimmedNonEmptyString,
   reason: Schema.String,
   placeholder: Schema.optional(Schema.String),
+  delivery: Schema.optional(OrchestrationV2SecretRequestDelivery),
   secretStatus: OrchestrationV2SecretRequestStatus,
 } as const;
 
@@ -1390,10 +1506,12 @@ export const OrchestrationV2TurnItem = Schema.Union([
     messageId: MessageId,
     scheduledTaskId: Schema.optional(ScheduledTaskId),
     senderThreadId: Schema.optional(ThreadId),
+    freshContext: OrchestrationV2Run.fields.freshContext,
     inputIntent: OrchestrationV2UserMessageInputIntent,
     text: Schema.String,
     context: Schema.optional(OrchestrationMessageContext),
     attachments: Schema.Array(ChatAttachment),
+    modelSwitch: Schema.optional(OrchestrationV2ModelSwitch),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
@@ -1671,6 +1789,7 @@ export const OrchestrationV2DomainEvent = Schema.Union([
       "thread.unpinned",
       "thread.pin-reordered",
       "thread.active-reordered",
+      "thread.tags-updated",
       "thread.visited",
       "thread.marked-unread",
       "thread.metadata-updated",
@@ -1918,11 +2037,14 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   pinOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   /** Slot in the user-arranged active order; omitted by pre-reorder servers. */
   activeOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  /** Absent on threads written before tags existed; read as empty. */
+  tags: Schema.optional(StoredThreadTags),
   /**
    * Omitted by servers that predate server-side visited tracking; clients fall
    * back to their local visited state when the field is absent.
    */
   lastVisitedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
+  opens: Schema.optional(LenientThreadOpens),
   /** In-flight title regeneration marker; null/absent when no request is pending. */
   titleRegeneration: Schema.optional(
     Schema.NullOr(
@@ -2013,6 +2135,7 @@ export const OrchestrationV2AppThreadJson = OrchestrationV2AppThread.mapFields((
   lastVisitedAt: Schema.NullOr(Schema.DateTimeUtcFromString).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
+  opens: Schema.optional(LenientThreadOpens),
   titleRegeneration: Schema.optional(
     Schema.NullOr(
       Schema.Struct({
@@ -2169,10 +2292,12 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     messageId: MessageId,
     scheduledTaskId: Schema.optional(ScheduledTaskId),
     senderThreadId: Schema.optional(ThreadId),
+    freshContext: OrchestrationV2Run.fields.freshContext,
     inputIntent: OrchestrationV2UserMessageInputIntent,
     text: Schema.String,
     context: Schema.optional(OrchestrationMessageContext),
     attachments: Schema.Array(ChatAttachment),
+    modelSwitch: Schema.optional(OrchestrationV2ModelSwitch),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,
@@ -2436,6 +2561,7 @@ export const OrchestrationV2ThreadShellJson = OrchestrationV2ThreadShell.mapFiel
   pinnedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   autoSettleDisabledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   lastVisitedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
+  opens: Schema.optional(LenientThreadOpens),
   titleRegeneration: Schema.optional(
     Schema.NullOr(
       Schema.Struct({
@@ -2491,6 +2617,7 @@ export const OrchestrationV2DomainEventJson = Schema.Union([
       "thread.unpinned",
       "thread.pin-reordered",
       "thread.active-reordered",
+      "thread.tags-updated",
       "thread.visited",
       "thread.marked-unread",
       "thread.pull-request-synced",
@@ -2714,6 +2841,13 @@ export const OrchestrationV2Command = Schema.Union([
     threadId: ThreadId,
   }),
   Schema.Struct({
+    type: Schema.Literal("thread.tag.set"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    tag: ThreadTag,
+    tagged: Schema.Boolean,
+  }),
+  Schema.Struct({
     type: Schema.Literal("thread.pin.reorder"),
     commandId: CommandId,
     threadId: ThreadId,
@@ -2739,6 +2873,10 @@ export const OrchestrationV2Command = Schema.Union([
      * values, so replays and out-of-order deliveries cannot move it backwards.
      */
     visitedAt: IsoDateTime,
+    // The user opened the thread, as opposed to new activity on an open one.
+    // Older servers ignore both fields and only move the read watermark.
+    opened: Schema.optional(Schema.Boolean),
+    searchQuery: Schema.optional(Schema.String.check(Schema.isMaxLength(200))),
   }),
   Schema.Struct({
     type: Schema.Literal("thread.mark-unread"),
@@ -2853,6 +2991,8 @@ export const OrchestrationV2Command = Schema.Union([
     ...OrchestrationV2CreationFields,
     scheduledTaskId: Schema.optional(ScheduledTaskId),
     senderThreadId: Schema.optional(ThreadId),
+    /** Start a new provider session without the thread's earlier context. Never steers. */
+    freshContext: Schema.optional(Schema.Boolean),
     commandId: CommandId,
     threadId: ThreadId,
     messageId: MessageId,
@@ -3031,6 +3171,7 @@ export const OrchestrationV2Command = Schema.Union([
     modelSelection: ModelSelection,
     runtimeMode: RuntimeMode,
     interactionMode: ProviderInteractionMode,
+    workspaceStrategy: Schema.optional(OrchestrationV2ThreadLaunchWorkspaceStrategy),
     // Omitted behaves as "settled_only" (no wake while the parent has a live
     // run); producers that want fire-and-forget wakes must set "always".
     completionWake: Schema.optional(Schema.Literals(["always", "settled_only"])),
@@ -3081,6 +3222,13 @@ export type OrchestrationV2Command = typeof OrchestrationV2Command.Type;
  * send them.
  */
 const OrchestrationV2InternalCommand = Schema.Union([
+  /** Moves a thread to a project rooted at the folder it already works in, so its cwd never changes. */
+  Schema.Struct({
+    type: Schema.Literal("thread.project.adopt-folder"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    projectId: ProjectId,
+  }),
   /**
    * Records what a pull request watch saw, and wakes the agent in the same transaction when
    * `wake` is set. Rejected once the watch started at `startedAt` has ended, and a wake is
@@ -3148,6 +3296,7 @@ const OrchestrationV2InternalCommand = Schema.Union([
     label: TrimmedNonEmptyString,
     reason: Schema.String,
     placeholder: Schema.optional(Schema.String),
+    delivery: Schema.optional(OrchestrationV2SecretRequestDelivery),
     secretStatus: OrchestrationV2SecretRequestStatus,
   }),
 ]);

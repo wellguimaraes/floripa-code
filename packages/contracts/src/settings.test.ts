@@ -1,17 +1,24 @@
 import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
-import type { CommandId, ProjectId } from "./baseSchemas.ts";
+import { type CommandId, ProjectId } from "./baseSchemas.ts";
+import { isSecretReferenceForKind } from "./secretProviders.ts";
+import { SecretProviderId } from "./secretReference.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 import {
   ClientSettingsSchema,
   ClientSettingsPatch,
   ClaudeSettings,
   DEFAULT_SERVER_SETTINGS,
+  globalIdleCompaction,
+  idleCompactionPatch,
   requiredScopesForProjectMutation,
+  resolveIdleCompaction,
+  requiredScopesForServerSettingsPatch,
   resolveProviderInstanceEnabled,
   ServerSettings,
   ServerSettingsPatch,
+  withIdleCompaction,
 } from "./settings.ts";
 
 const decodeClientSettings = Schema.decodeUnknownSync(ClientSettingsSchema);
@@ -55,6 +62,7 @@ describe("storage cleanup settings", () => {
     expect(decodeServerSettings({}).worktreeCleanup).toBeNull();
     expect(decodeServerSettings({}).storageCleanup).toEqual({
       worktreeAfterDays: null,
+      worktreeSettledAfterDays: null,
       worktreeOnMerge: false,
       worktreeOnDelete: false,
       worktreeUnchanged: false,
@@ -71,6 +79,9 @@ describe("storage cleanup settings", () => {
     expect(decodeServerSettingsPatch({ storageCleanup: { worktreeAfterDays: null } })).toEqual({
       storageCleanup: { worktreeAfterDays: null },
     });
+    expect(decodeServerSettingsPatch({ storageCleanup: { worktreeSettledAfterDays: 0 } })).toEqual({
+      storageCleanup: { worktreeSettledAfterDays: 0 },
+    });
   });
 
   it("accepts partial custom patches but requires complete stored project rules", () => {
@@ -86,6 +97,26 @@ describe("storage cleanup settings", () => {
         },
       }),
     ).toThrow();
+    expect(
+      decodeServerSettings({
+        projectSettingsOverrides: {
+          project: {
+            worktreeCleanup: {
+              mode: "custom",
+              rules: {
+                worktreeAfterDays: null,
+                worktreeOnMerge: false,
+                worktreeOnDelete: false,
+                worktreeUnchanged: false,
+              },
+            },
+          },
+        },
+      }).projectSettingsOverrides[ProjectId.make("project")]?.worktreeCleanup,
+    ).toMatchObject({
+      mode: "custom",
+      rules: { worktreeSettledAfterDays: null, worktreeKeepWhen: "uncommitted-changes" },
+    });
   });
 
   it("decodes older custom rules with the default local-file policy", () => {
@@ -116,6 +147,21 @@ describe("storage cleanup settings", () => {
       decodeServerSettingsPatch({ storageCleanup: { browserArtifactsAfterDays: days } }),
     ).toThrow();
   });
+
+  it.each([-1, 1.5, 3651])("rejects invalid settled retention %s", (days) => {
+    expect(() =>
+      decodeServerSettingsPatch({ storageCleanup: { worktreeSettledAfterDays: days } }),
+    ).toThrow();
+  });
+});
+
+it("drops a hand-edited non-string hidden tag and keeps the rest of the settings", () => {
+  const settings = decodeServerSettings({
+    hiddenThreadTags: ["private", 123],
+    hideTaggedThreads: true,
+  });
+  expect(settings.hiddenThreadTags).toEqual(["private"]);
+  expect(settings.hideTaggedThreads).toBe(true);
 });
 
 describe("ClientSettings rich text composer", () => {
@@ -157,6 +203,55 @@ describe("ServerSettings default permissions", () => {
         projectSettingsOverrides: { project: { defaultRuntimeMode: "unsupported" } },
       }),
     ).toThrow();
+  });
+});
+
+describe("resolveIdleCompaction", () => {
+  it("lets a Claude instance override the global default", () => {
+    const settings = decodeServerSettings({
+      idleCompaction: "off",
+      providerInstances: {
+        claude_work: { driver: "claudeAgent", config: { idleCompaction: "onReturn" } },
+        claude_personal: { driver: "claudeAgent" },
+      },
+    });
+    expect(resolveIdleCompaction(settings, ProviderInstanceId.make("claude_work"))).toBe(
+      "onReturn",
+    );
+    expect(resolveIdleCompaction(settings, ProviderInstanceId.make("claude_personal"))).toBe("off");
+    expect(resolveIdleCompaction(settings, ProviderInstanceId.make("claudeAgent"))).toBe("off");
+  });
+
+  it("reads the mode from the legacy switch, in either form servers saved it", () => {
+    expect(globalIdleCompaction(decodeServerSettings({ compactIdleThreads: true }))).toBe(
+      "beforeCacheExpires",
+    );
+    expect(globalIdleCompaction(decodeServerSettings({ compactIdleThreads: "off" }))).toBe("off");
+    expect(globalIdleCompaction(decodeServerSettings({}))).toBe("onReturn");
+  });
+
+  it("keeps the legacy switch a boolean, as shipped clients decode it", () => {
+    const encode = Schema.encodeSync(Schema.toCodecJson(ServerSettings));
+    for (const mode of ["onReturn", "beforeCacheExpires", "off"] as const) {
+      const encoded = encode(withIdleCompaction(DEFAULT_SERVER_SETTINGS, mode)) as {
+        readonly compactIdleThreads: unknown;
+        readonly idleCompaction: unknown;
+      };
+      expect(encoded.compactIdleThreads).toBe(mode === "beforeCacheExpires");
+      expect(encoded.idleCompaction).toBe(mode);
+    }
+  });
+
+  it("patches the field the server reads", () => {
+    expect(
+      idleCompactionPatch({ compactIdleThreads: false, idleCompaction: "onReturn" }, "off"),
+    ).toEqual({ idleCompaction: "off" });
+    expect(idleCompactionPatch({ compactIdleThreads: "onReturn" }, "off")).toEqual({
+      compactIdleThreads: "off",
+    });
+    expect(idleCompactionPatch({ compactIdleThreads: false }, "beforeCacheExpires")).toEqual({
+      compactIdleThreads: true,
+    });
   });
 });
 
@@ -209,6 +304,17 @@ describe("ServerSettings usage price overrides", () => {
     ]) {
       expect(() => decodeServerSettingsPatch({ usagePriceOverrides })).toThrow();
     }
+  });
+
+  it("ignores an invalid model filter without dropping the other settings", () => {
+    const valid = { include: [{ provider: "newer-provider", model: "orbit-1" }] };
+    expect(decodeServerSettings({ usageModelFilter: valid }).usageModelFilter).toEqual(valid);
+    const settings = decodeServerSettings({
+      usageModelFilter: { exclude: [{ model: "" }] },
+      usageModelAliases: { "drift-9": "orbit-1" },
+    });
+    expect(settings.usageModelFilter).toBeUndefined();
+    expect(settings.usageModelAliases).toEqual({ "drift-9": "orbit-1" });
   });
 });
 
@@ -1069,5 +1175,46 @@ describe("requiredScopesForProjectMutation", () => {
         scripts: [],
       }),
     ).toEqual(["orchestration:operate", "settings:write"]);
+  });
+});
+
+describe("secret providers", () => {
+  it("accepts a 1Password provider and its removal in a patch", () => {
+    expect(
+      decodeServerSettingsPatch({
+        secretProviders: {
+          personal: {
+            kind: "one_password",
+            label: "Personal",
+            config: { account: "my.1password.com" },
+          },
+          old: null,
+        },
+      }).secretProviders?.["old" as SecretProviderId],
+    ).toBeNull();
+  });
+
+  it("rejects writes for unknown kinds, bad configs, and option-like accounts", () => {
+    for (const entry of [
+      { kind: "vault", label: "Vault", config: {} },
+      { kind: "one_password", label: "Personal", config: {} },
+      { kind: "one_password", label: "Personal", config: { account: "--config=/tmp" } },
+    ]) {
+      expect(() => decodeServerSettingsPatch({ secretProviders: { x: entry } } as never)).toThrow();
+    }
+  });
+
+  it("requires the providers grant to change secret providers", () => {
+    expect(
+      requiredScopesForServerSettingsPatch({
+        secretProviders: { [SecretProviderId.make("x")]: null },
+      }),
+    ).toEqual(["providers:manage"]);
+  });
+
+  it("only reads 1Password references of the op:// form", () => {
+    expect(isSecretReferenceForKind("one_password", "op://Private/GitHub/token")).toBe(true);
+    expect(isSecretReferenceForKind("one_password", "op://Private/{{x}}/token")).toBe(false);
+    expect(isSecretReferenceForKind("vault", "op://Private/GitHub/token")).toBe(false);
   });
 });

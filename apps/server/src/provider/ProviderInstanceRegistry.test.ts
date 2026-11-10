@@ -34,6 +34,7 @@ import {
   ProviderDriverKind,
   type ProviderInstanceConfigMap,
   ProviderInstanceId,
+  SecretProviderId,
 } from "@t3tools/contracts";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
@@ -122,6 +123,7 @@ const makeClaudeConfig = (overrides: Partial<ClaudeSettings>): ClaudeSettings =>
   customModels: [],
   launchArgs: "",
   autoCompactWindow: "",
+  idleCompaction: "default",
   ...overrides,
 });
 
@@ -381,6 +383,34 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
       // The usage read fails, so the re-probe cannot confirm new limits.
       yield* codex!.snapshot.refresh;
       expect(yield* codex!.consumeResetCredit!()).toBe("alreadyRedeemed");
+    }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.live("marks an instance unavailable while a secret it reads cannot be resolved", () =>
+    Effect.gen(function* () {
+      const instanceId = ProviderInstanceId.make("codex_vault");
+      const { registry } = yield* makeProviderInstanceRegistry({
+        drivers: [CodexDriver],
+        configMap: {
+          [instanceId]: {
+            driver: ProviderDriverKind.make("codex"),
+            enabled: true,
+            environment: [
+              {
+                name: "OPENAI_API_KEY",
+                value: { provider: SecretProviderId.make("personal"), reference: "op://P/OA/key" },
+                sensitive: true,
+              },
+            ],
+            config: makeCodexConfig({ enabled: true }),
+          },
+        },
+      });
+      expect(yield* registry.getInstance(instanceId)).toBeUndefined();
+      const unavailable = yield* registry.listUnavailable;
+      expect(unavailable.map((provider) => provider.instanceId)).toEqual([instanceId]);
+      expect(unavailable[0]?.message).toContain("OPENAI_API_KEY");
+      expect(JSON.stringify(unavailable)).not.toContain("op://P/OA/key");
     }).pipe(Effect.provide(layerTest)),
   );
 

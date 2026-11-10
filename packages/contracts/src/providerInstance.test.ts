@@ -5,6 +5,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceConfig,
   ProviderInstanceConfigMap,
+  ProviderInstanceEnvironmentVariable,
   ProviderInstanceId,
   ProviderInstanceRef,
 } from "./providerInstance.ts";
@@ -202,5 +203,28 @@ describe("ProviderInstanceConfigMap", () => {
         "1codex": { driver: "codex" },
       }),
     ).toThrow();
+  });
+});
+
+describe("ProviderInstanceEnvironmentVariable", () => {
+  const decodeVariable = Schema.decodeUnknownSync(ProviderInstanceEnvironmentVariable);
+  const encodeVariable = Schema.encodeUnknownSync(ProviderInstanceEnvironmentVariable);
+  const secret = { provider: "onepassword", reference: "op://Private/item/field" };
+
+  it("treats a stored reference as sensitive even when the flag is missing or false", () => {
+    expect(decodeVariable({ name: "API_KEY", secret })).toMatchObject({
+      value: secret,
+      sensitive: true,
+    });
+    expect(decodeVariable({ name: "API_KEY", sensitive: false, secret }).sensitive).toBe(true);
+  });
+
+  it("stores a reference beside an empty value so older builds still decode it", () => {
+    expect(encodeVariable(decodeVariable({ name: "API_KEY", secret }))).toEqual({
+      name: "API_KEY",
+      value: "",
+      sensitive: true,
+      secret,
+    });
   });
 });

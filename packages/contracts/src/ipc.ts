@@ -1135,6 +1135,7 @@ export interface DesktopBridge {
   requestNotificationPermission?: () => Promise<boolean>;
   /** Opens the OS notification settings for this app; false where there is none to open. */
   openNotificationSettings?: () => Promise<boolean>;
+  onTrackpadScrollBegin?: (listener: () => void) => () => void;
   onTrackpadScrollEnd?: (listener: () => void) => () => void;
   /**
    * The OS locale as a BCP-47 tag, which the renderer cannot read for itself:

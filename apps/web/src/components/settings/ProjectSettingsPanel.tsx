@@ -30,6 +30,8 @@ import { projectEnvironment } from "../../state/projects";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
+import { Switch } from "../ui/switch";
+import { useProjectGroupUpdate, type ProjectGroupUpdate } from "../../hooks/useProjectGroupUpdate";
 import { Input } from "../ui/input";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import {
@@ -155,6 +157,7 @@ export function ProjectSettingsPanel({
     <ProjectDetail
       key={`${selected.projectKey}:${environmentId ?? "all"}:${checkoutKey ?? "all"}`}
       group={scopedGroup}
+      allMembers={selected.memberProjects}
       hasOtherMembers={members.length < selected.memberProjects.length}
     />
   );
@@ -162,9 +165,12 @@ export function ProjectSettingsPanel({
 
 function ProjectDetail({
   group,
+  allMembers,
   hasOtherMembers,
 }: {
   group: SidebarProjectSnapshot;
+  /** Pin and archive belong to the whole project, even when one machine is picked. */
+  allMembers: ReadonlyArray<SidebarProjectGroupMember>;
   hasOtherMembers: boolean;
 }) {
   const navigate = useNavigate({ from: "/settings" });
@@ -178,6 +184,17 @@ function ProjectDetail({
   const canEditGroup = group.memberProjects.every((member) =>
     editableIds.has(member.environmentId),
   );
+  const allEditableIds = useEnvironmentsWithScope(allMembers, AuthOrchestrationOperateScope);
+  const { updateProjectGroup, canOrganizeProjectGroup } = useProjectGroupUpdate();
+  const canOrganize =
+    allMembers.every((member) => allEditableIds.has(member.environmentId)) &&
+    canOrganizeProjectGroup(allMembers);
+  const [isOrganizing, setIsOrganizing] = useState(false);
+  const organize = async (input: ProjectGroupUpdate, failureTitle: string) => {
+    setIsOrganizing(true);
+    await updateProjectGroup(allMembers, input, failureTitle);
+    setIsOrganizing(false);
+  };
   const representative =
     group.memberProjects.find(
       (member) => environmentById.get(member.environmentId)?.serverConfig != null,
@@ -535,6 +552,52 @@ function ProjectDetail({
               </div>
             }
           />
+          {canOrganize ? (
+            <>
+              <SettingsRow
+                title="Pin"
+                description="Pinned projects come first in project pickers."
+                control={
+                  <Switch
+                    checked={group.pinned}
+                    disabled={isOrganizing}
+                    onCheckedChange={(checked) =>
+                      void organize(
+                        { pinned: Boolean(checked) },
+                        checked ? "Failed to pin project" : "Failed to unpin project",
+                      )
+                    }
+                    aria-label="Pin project"
+                  />
+                }
+              />
+              <SettingsRow
+                title="Archive"
+                description={
+                  group.archived
+                    ? "Hidden from project pickers. Threads and files are kept."
+                    : "Hides the project from project pickers. Threads and files are kept."
+                }
+                control={
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={isOrganizing}
+                    onClick={() =>
+                      void organize(
+                        { archived: !group.archived },
+                        group.archived
+                          ? "Failed to unarchive project"
+                          : "Failed to archive project",
+                      )
+                    }
+                  >
+                    {group.archived ? "Unarchive" : "Archive"}
+                  </Button>
+                }
+              />
+            </>
+          ) : null}
         </SettingsSection>
         <ProjectDefaultsSettings category="project" />
         <ProjectActionsSettings />

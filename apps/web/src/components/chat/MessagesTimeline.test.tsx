@@ -1378,10 +1378,10 @@ describe("MessagesTimeline", () => {
 
     expect(markup).not.toContain("Show full message");
     expect(markup).toContain('data-user-message-collapsible="false"');
-    expect(markup).toContain("rounded-2xl bg-message p-3");
+    expect(markup).toContain("rounded-2xl bg-message text-message-foreground p-3");
   });
 
-  it("identifies user-role messages sent by another agent", async () => {
+  it("folds user-role messages sent by another agent to one line", async () => {
     const { MessagesTimeline } = await import("./MessagesTimeline");
     const entry = buildUserTimelineEntry("Review this area");
     const agentMarkup = renderToStaticMarkup(
@@ -1399,9 +1399,10 @@ describe("MessagesTimeline", () => {
       <MessagesTimeline {...buildProps()} timelineEntries={[entry]} />,
     );
 
-    expect(agentMarkup).toContain('data-user-message-attribution="agent"');
-    expect(agentMarkup).toContain("Sent by another agent");
-    expect(userMarkup).not.toContain("Sent by another agent");
+    expect(agentMarkup).toContain('aria-expanded="false"');
+    expect(agentMarkup).toContain("Review this area");
+    expect(agentMarkup).toContain("hidden");
+    expect(userMarkup).not.toContain('aria-expanded="false"');
   });
 
   it("keeps a subagent parent-thread link at the top of an empty timeline", async () => {

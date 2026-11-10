@@ -925,6 +925,39 @@ describe("deriveMessagesTimelineRows", () => {
       expect(rows.some((row) => row.kind === "event")).toBe(false);
       expect(workRows[0]).not.toMatchObject({ expanded: true });
       expect(workRows[0]).not.toMatchObject({ isExpandedToolGroup: true });
+      const pendingApprovalRequestIds = new Set([RuntimeRequestId.make("approval-request")]);
+      const pendingRows = deriveMessagesTimelineRows({
+        timelineEntries: entries,
+        pendingApprovalRequestIds,
+        isWorking: status === "waiting",
+        runningRunId: fixture.runId,
+        activeTurnStartedAt: fixture.time(0),
+        turnDiffSummaries: [],
+        supportsConversationRollback: false,
+      });
+      // A pending approval stays on its own row so its buttons are reachable.
+      expect(pendingRows.filter((row) => row.kind === "work")).toContainEqual(
+        expect.objectContaining({
+          groupedEntries: [expect.objectContaining({ itemType: "approval_request" })],
+          isExpandedToolGroup: false,
+        }),
+      );
+      expect(
+        pendingRows
+          .filter((row) => row.kind === "work-live")
+          .flatMap((row) => row.groupedEntries)
+          .some((entry) => entry.itemType === "approval_request"),
+      ).toBe(false);
+      const approvalOnlyRows = deriveMessagesTimelineRows({
+        timelineEntries: entries.slice(1, 2),
+        pendingApprovalRequestIds,
+        isWorking: status === "waiting",
+        runningRunId: fixture.runId,
+        activeTurnStartedAt: fixture.time(0),
+        turnDiffSummaries: [],
+        supportsConversationRollback: false,
+      });
+      expect(approvalOnlyRows.some((row) => row.kind === "thinking")).toBe(false);
     },
   );
 
@@ -1059,6 +1092,36 @@ describe("deriveMessagesTimelineRows", () => {
         active: false,
       },
     ]);
+  });
+
+  it("shows a bare /compact turn as one live compaction row without its prompt or a working row", () => {
+    const fixture = makeStreamingTimelineFixture();
+    const liveUser = fixture.visibleTurnItems[3]!;
+    if (liveUser.item.type !== "user_message") throw new Error("Expected user fixture");
+    const rowsFor = (text: string) =>
+      deriveMessagesTimelineRows({
+        timelineEntries: deriveTimelineEntriesFromVisibleTurnItems({
+          visibleTurnItems: [
+            { ...liveUser, item: { ...liveUser.item, text } as typeof liveUser.item },
+          ],
+          optimisticMessages: [],
+        }),
+        isWorking: true,
+        runningRunId: fixture.runId,
+        latestRun: {
+          runId: fixture.runId,
+          status: "running",
+          startedAt: fixture.time(5),
+          completedAt: null,
+        },
+        activeTurnStartedAt: fixture.time(5),
+        turnDiffSummaries: [],
+        supportsConversationRollback: false,
+      });
+    const compacting = rowsFor("/compact");
+    expect(compacting.map((row) => row.kind)).toEqual(["context-compaction"]);
+    expect(compacting[0]).toMatchObject({ active: true, label: "Compacting context" });
+    expect(rowsFor("compact the history").some((row) => row.kind === "message")).toBe(true);
   });
 
   it("gives live compaction the activity slot and restores Thinking when it completes", () => {

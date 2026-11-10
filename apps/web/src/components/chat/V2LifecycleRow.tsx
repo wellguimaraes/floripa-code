@@ -10,11 +10,17 @@ import { environmentThreadDetails } from "../../state/threads";
 import { MiddleTruncate } from "../ui/middle-truncate";
 import * as DateTime from "effect/DateTime";
 import { WorkLogRow } from "./WorkLog";
-import { resolveHandoffEndpoints, type HandoffTimelineRun } from "@t3tools/client-runtime/handoff";
+import {
+  resolveHandoffEndpoints,
+  resolveModelSwitchChange,
+  type HandoffTimelineRun,
+} from "@t3tools/client-runtime/handoff";
 import { Fragment } from "react";
 import { formatSubagentDisplayTitle } from "@t3tools/client-runtime/state/subagent-display";
 import {
   ProviderDriverKind,
+  type ModelSelection,
+  type OrchestrationV2ModelSwitch,
   type OrchestrationV2Notification,
   type OrchestrationV2TurnItem,
   type OrchestrationV2Subagent,
@@ -566,6 +572,28 @@ function SubagentTimelineTooltip(
       childThread={child}
       parentProject={parentProject ?? undefined}
       childProject={childProject ?? undefined}
+    />
+  );
+}
+
+/** A same-harness model or effort change. Shows only what changed. */
+export function ModelSwitchRow(props: {
+  readonly providers: ReadonlyArray<ServerProvider>;
+  readonly modelSwitch: OrchestrationV2ModelSwitch;
+}) {
+  const change = resolveModelSwitchChange(props.modelSwitch, props.providers);
+  if (change === null) return null;
+  const describe = (selection: ModelSelection, effort: string | undefined) => {
+    const model = getProviderInstanceEntry(props.providers, selection.instanceId)?.models.find(
+      (candidate) => candidate.slug === selection.model,
+    );
+    const modelName = model ? getTriggerDisplayModelName(model) : selection.model;
+    return [change.modelChanged ? modelName : null, effort].filter(Boolean).join(" ");
+  };
+  const { from, to } = props.modelSwitch;
+  return (
+    <TimelineSystemDivider
+      label={`${describe(from, change.effort?.from)} → ${describe(to, change.effort?.to)}`}
     />
   );
 }

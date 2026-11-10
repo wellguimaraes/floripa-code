@@ -10,6 +10,7 @@ import * as Option from "effect/Option";
 import { useMemo } from "react";
 
 import { environmentCatalog } from "../connection/catalog";
+import { appAtomRegistry } from "../rpc/atomRegistry";
 import {
   environmentPresentations,
   environmentSummaries,
@@ -58,6 +59,16 @@ export function useEnvironments() {
     environments,
     presentationById,
   };
+}
+
+/** Current presentation of one environment, for event handlers that cannot use a hook. */
+export function readEnvironment(environmentId: EnvironmentId): EnvironmentPresentation | null {
+  const presentation = appAtomRegistry
+    .get(environmentPresentations.presentationsAtom)
+    .get(environmentId);
+  return presentation === undefined
+    ? null
+    : projectEnvironmentPresentation(environmentId, presentation);
 }
 
 export function usePrimaryEnvironmentId(): EnvironmentId | null {
