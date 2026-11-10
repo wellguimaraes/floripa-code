@@ -1,26 +1,47 @@
-import type { ArchivedSnapshotEntry } from "@t3tools/client-runtime/state/threads";
+import {
+  archivedThreadFamilies,
+  archivedThreadSortTime,
+  type ArchivedSnapshotEntry,
+} from "@t3tools/client-runtime/state/threads";
 import {
   scopeProject,
   scopeThreadShell,
   type EnvironmentProject,
   type EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { ArchivedThreadSortOrder, EnvironmentId } from "@t3tools/contracts";
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
 
 import { scopedProjectKey } from "../../lib/scopedEntities";
 
-export type ArchivedThreadSortOrder = "newest" | "oldest";
+export interface ArchivedThreadSort {
+  /** What the list orders by. */
+  readonly by: ArchivedThreadSortOrder;
+  readonly direction: "newest" | "oldest";
+}
+
+export const DEFAULT_ARCHIVED_THREAD_SORT: ArchivedThreadSort = {
+  by: "archived_at",
+  direction: "newest",
+};
+
+/** One row: an archived agent, or one of its archived subagents nested under it. */
+export interface ArchivedThreadRowEntry {
+  readonly thread: EnvironmentThreadShell;
+  readonly nested: boolean;
+  /** How many archived subagents sit under it; 0 for a nested row. */
+  readonly subagentCount: number;
+}
 
 export interface ArchivedThreadGroup {
   readonly key: string;
   readonly project: EnvironmentProject;
-  readonly threads: ReadonlyArray<EnvironmentThreadShell>;
+  readonly rows: ReadonlyArray<ArchivedThreadRowEntry>;
 }
 
-function archiveTimestamp(thread: EnvironmentThreadShell): number {
-  const timestamp = Date.parse(thread.archivedAt ?? thread.updatedAt);
+function sortTimestamp(thread: EnvironmentThreadShell, by: ArchivedThreadSortOrder): number {
+  const timestamp = Date.parse(archivedThreadSortTime(thread, by));
   return Number.isNaN(timestamp) ? 0 : timestamp;
 }
 
@@ -33,7 +54,7 @@ export function buildArchivedThreadGroups(input: {
   readonly environmentLabels: Readonly<Record<string, string>>;
   readonly environmentId: EnvironmentId | null;
   readonly searchQuery: string;
-  readonly sortOrder: ArchivedThreadSortOrder;
+  readonly sort: ArchivedThreadSort;
 }): ReadonlyArray<ArchivedThreadGroup> {
   const query = input.searchQuery.trim().toLocaleLowerCase();
   const groups: ArchivedThreadGroup[] = [];
@@ -72,32 +93,28 @@ export function buildArchivedThreadGroups(input: {
         continue;
       }
 
-      const timestampOrder = input.sortOrder === "newest" ? Order.flip(Order.Number) : Order.Number;
+      const families = archivedThreadFamilies(matchingThreads, input.sort.by, {
+        oldestFirst: input.sort.direction === "oldest",
+      });
       groups.push({
         key: scopedProjectKey(project.environmentId, project.id),
         project,
-        threads: Arr.sort(
-          matchingThreads,
-          Order.mapInput(
-            Order.Struct({ timestamp: timestampOrder, title: Order.String, id: Order.String }),
-            (thread: EnvironmentThreadShell) => ({
-              timestamp: archiveTimestamp(thread),
-              title: thread.title,
-              id: thread.id,
-            }),
-          ),
-        ),
+        rows: families.flatMap((family) => [
+          { thread: family.thread, nested: false, subagentCount: family.subagents.length },
+          ...family.subagents.map((thread) => ({ thread, nested: true, subagentCount: 0 })),
+        ]),
       });
     }
   }
 
-  const timestampOrder = input.sortOrder === "newest" ? Order.flip(Order.Number) : Order.Number;
+  const timestampOrder =
+    input.sort.direction === "newest" ? Order.flip(Order.Number) : Order.Number;
   return Arr.sort(
     groups,
     Order.mapInput(
       Order.Struct({ timestamp: timestampOrder, title: Order.String, key: Order.String }),
       (group: ArchivedThreadGroup) => ({
-        timestamp: group.threads[0] ? archiveTimestamp(group.threads[0]) : 0,
+        timestamp: group.rows[0] ? sortTimestamp(group.rows[0].thread, input.sort.by) : 0,
         title: group.project.title,
         key: group.key,
       }),

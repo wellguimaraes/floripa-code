@@ -27,6 +27,7 @@ function makeThread(
   input: Pick<OrchestrationV2ThreadShell, "id" | "projectId" | "title"> & {
     readonly branch?: string | null;
     readonly archivedAt?: string | null;
+    readonly lineage?: OrchestrationV2ThreadShell["lineage"];
   },
 ): OrchestrationV2ThreadShell {
   const archivedAt = input.archivedAt === undefined ? "2026-06-02T00:00:00.000Z" : input.archivedAt;
@@ -72,10 +73,10 @@ describe("buildArchivedThreadGroups", () => {
       environmentLabels: { [environmentId]: "Julius's MacBook Pro" },
       environmentId: null,
       searchQuery: "",
-      sortOrder: "newest",
+      sort: { by: "archived_at", direction: "newest" },
     });
 
-    expect(result[0]?.threads.map((thread) => thread.id)).toEqual(["thread-newer", "thread-older"]);
+    expect(result[0]?.rows.map((row) => row.thread.id)).toEqual(["thread-newer", "thread-older"]);
   });
 
   it("filters by environment and matches project, thread, and branch text", () => {
@@ -106,12 +107,12 @@ describe("buildArchivedThreadGroups", () => {
       },
       environmentId,
       searchQuery: "archive-screen",
-      sortOrder: "oldest",
+      sort: { by: "archived_at", direction: "oldest" },
     });
 
     expect(result).toHaveLength(1);
     expect(result[0]?.project.environmentId).toBe(environmentId);
-    expect(result[0]?.threads.map((thread) => thread.id)).toEqual(["thread-1"]);
+    expect(result[0]?.rows.map((row) => row.thread.id)).toEqual(["thread-1"]);
   });
 
   it("ignores non-archived entries returned in a snapshot", () => {
@@ -128,9 +129,41 @@ describe("buildArchivedThreadGroups", () => {
       environmentLabels: {},
       environmentId: null,
       searchQuery: "",
-      sortOrder: "newest",
+      sort: { by: "archived_at", direction: "newest" },
     });
 
     expect(result).toEqual([]);
+  });
+
+  it("nests archived subagents under their archived agent", () => {
+    const project = makeProject({ id: ProjectId.make("project-1"), title: "Floripa Code" });
+    const agent = makeThread({
+      id: ThreadId.make("thread-agent"),
+      projectId: project.id,
+      title: "Agent",
+    });
+    const subagent = makeThread({
+      id: ThreadId.make("thread-subagent"),
+      projectId: project.id,
+      title: "Subagent",
+      lineage: {
+        parentThreadId: agent.id,
+        relationshipToParent: "subagent",
+        rootThreadId: agent.id,
+      },
+    });
+
+    const result = buildArchivedThreadGroups({
+      snapshots: [makeSnapshot([project], [subagent, agent])],
+      environmentLabels: {},
+      environmentId: null,
+      searchQuery: "",
+      sort: { by: "last_activity", direction: "newest" },
+    });
+
+    expect(result[0]?.rows.map((row) => [row.thread.id, row.nested, row.subagentCount])).toEqual([
+      ["thread-agent", false, 1],
+      ["thread-subagent", true, 0],
+    ]);
   });
 });

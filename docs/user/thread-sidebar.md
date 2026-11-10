@@ -231,6 +231,9 @@ retry and the normal snooze choices.
 On web and desktop, use **Agents** to follow work delegated to subagents.
 Stop on a thread also stops the subagents it delegated to. Archiving a thread
 also archives its idle subagents; a subagent that is still working stays active.
+Restoring the thread brings its archived subagents back. In **Settings →
+Archived**, archived subagents are tagged and listed under their thread. Sort the
+list by **Date archived** or **Last activity**, the thread's latest run.
 
 Each project keeps at most 20 active threads, not counting subagents. Past that,
 the threads that have rested longest are archived automatically: only finished

@@ -4,6 +4,7 @@ import type {
 } from "@t3tools/client-runtime/state/shell";
 import { LegendList } from "@legendapp/list/react-native";
 import {
+  type ArchivedThreadSortOrder,
   AuthOrchestrationOperateScope,
   type EnvironmentId,
   type EnvironmentMachineKind,
@@ -29,11 +30,16 @@ import { EmptyState } from "../../components/EmptyState";
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { relativeTime } from "../../lib/time";
+import { archivedThreadSortTime, isArchivedSubagent } from "@t3tools/client-runtime/state/threads";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useServerConfigs } from "../../state/entities";
 import { useEnvironmentScope } from "../../state/session";
 import { ThreadSwipeable } from "../home/thread-swipe-actions";
-import type { ArchivedThreadGroup, ArchivedThreadSortOrder } from "./archivedThreadList";
+import {
+  DEFAULT_ARCHIVED_THREAD_SORT,
+  type ArchivedThreadGroup,
+  type ArchivedThreadSort,
+} from "./archivedThreadList";
 import { SettingsScreenContent } from "../settings/components/SettingsScreen";
 
 export interface ArchivedThreadsHeaderEnvironment {
@@ -45,15 +51,18 @@ function ArchivedThreadsHeader(props: {
   readonly environments: ReadonlyArray<ArchivedThreadsHeaderEnvironment>;
   readonly searchQuery: string;
   readonly selectedEnvironmentId: EnvironmentId | null;
-  readonly sortOrder: ArchivedThreadSortOrder;
+  readonly sort: ArchivedThreadSort;
   readonly onEnvironmentChange: (environmentId: EnvironmentId | null) => void;
   readonly onRefresh: () => void;
   readonly onSearchQueryChange: (query: string) => void;
-  readonly onSortOrderChange: (sortOrder: ArchivedThreadSortOrder) => void;
+  readonly onSortChange: (sort: ArchivedThreadSort) => void;
 }) {
   const navigation = useNavigation();
   const { width } = useWindowDimensions();
-  const hasCustomFilter = props.selectedEnvironmentId !== null || props.sortOrder !== "newest";
+  const hasCustomFilter =
+    props.selectedEnvironmentId !== null ||
+    props.sort.by !== DEFAULT_ARCHIVED_THREAD_SORT.by ||
+    props.sort.direction !== DEFAULT_ARCHIVED_THREAD_SORT.direction;
   return (
     <ScreenHeader
       title="Archived threads"
@@ -94,19 +103,37 @@ function ArchivedThreadsHeader(props: {
             },
             {
               id: "sort",
-              title: "Sort by archived date",
+              title: "Sort by",
               items: [
                 {
-                  id: "sort:newest",
-                  title: "Newest first",
-                  selected: props.sortOrder === "newest",
-                  onPress: () => props.onSortOrderChange("newest"),
+                  id: "sort:archived_at",
+                  title: "Date archived",
+                  selected: props.sort.by === "archived_at",
+                  onPress: () => props.onSortChange({ ...props.sort, by: "archived_at" }),
                 },
                 {
-                  id: "sort:oldest",
+                  id: "sort:last_activity",
+                  title: "Last activity",
+                  selected: props.sort.by === "last_activity",
+                  onPress: () => props.onSortChange({ ...props.sort, by: "last_activity" }),
+                },
+              ],
+            },
+            {
+              id: "order",
+              title: "Order",
+              items: [
+                {
+                  id: "order:newest",
+                  title: "Newest first",
+                  selected: props.sort.direction === "newest",
+                  onPress: () => props.onSortChange({ ...props.sort, direction: "newest" }),
+                },
+                {
+                  id: "order:oldest",
                   title: "Oldest first",
-                  selected: props.sortOrder === "oldest",
-                  onPress: () => props.onSortOrderChange("oldest"),
+                  selected: props.sort.direction === "oldest",
+                  onPress: () => props.onSortChange({ ...props.sort, direction: "oldest" }),
                 },
               ],
             },
@@ -140,6 +167,8 @@ type ArchivedThreadListItem =
       readonly environmentLabel: string | null;
       readonly isFirst: boolean;
       readonly isLast: boolean;
+      readonly nested: boolean;
+      readonly subagentCount: number;
       readonly thread: EnvironmentThreadShell;
     };
 
@@ -184,6 +213,10 @@ function ArchivedThreadRow(props: {
   readonly environmentLabel: string | null;
   readonly isFirst: boolean;
   readonly isLast: boolean;
+  /** A subagent sitting under its archived agent's row. */
+  readonly nested: boolean;
+  readonly subagentCount: number;
+  readonly sortBy: ArchivedThreadSortOrder;
   readonly onDelete: () => void;
   readonly onSwipeableClose: (methods: SwipeableMethods) => void;
   readonly onSwipeableWillOpen: (methods: SwipeableMethods) => void;
@@ -197,13 +230,18 @@ function ArchivedThreadRow(props: {
     props.thread.environmentId,
     AuthOrchestrationOperateScope,
   );
-  const timestamp = relativeTime(props.thread.archivedAt ?? props.thread.updatedAt);
-  const subtitle = [props.environmentLabel, props.thread.branch].filter((part): part is string =>
-    Boolean(part),
-  );
+  // The row shows the time the list is ordered by.
+  const timestamp = relativeTime(archivedThreadSortTime(props.thread, props.sortBy));
+  const subtitle = [
+    props.environmentLabel,
+    props.thread.branch,
+    props.subagentCount === 0
+      ? null
+      : `${props.subagentCount} ${props.subagentCount === 1 ? "subagent" : "subagents"}`,
+  ].filter((part): part is string => Boolean(part));
   const rowContent = (
     <View
-      className={`flex-row items-center gap-3 bg-grouped-card px-4 py-3 ${props.isLast ? "" : "border-b border-separator"}`}
+      className={`flex-row items-center gap-3 bg-grouped-card py-3 pr-4 ${props.nested ? "pl-10" : "pl-4"} ${props.isLast ? "" : "border-b border-separator"}`}
     >
       <View className="h-[34px] w-[34px] items-center justify-center rounded-[11px] bg-subtle">
         <SymbolView
@@ -222,6 +260,11 @@ function ArchivedThreadRow(props: {
           >
             {props.thread.title}
           </Text>
+          {isArchivedSubagent(props.thread) ? (
+            <View className="rounded-md bg-subtle px-1.5 py-0.5">
+              <Text className="text-2xs font-t3-medium text-foreground-muted">Subagent</Text>
+            </View>
+          ) : null}
           <Text className="min-w-[30px] text-right text-xs tabular-nums text-foreground-tertiary">
             {timestamp}
           </Text>
@@ -300,12 +343,12 @@ export function ArchivedThreadsScreen(props: {
   readonly isLoading: boolean;
   readonly searchQuery: string;
   readonly selectedEnvironmentId: EnvironmentId | null;
-  readonly sortOrder: ArchivedThreadSortOrder;
+  readonly sort: ArchivedThreadSort;
   readonly onDeleteThread: (thread: EnvironmentThreadShell) => void;
   readonly onEnvironmentChange: (environmentId: EnvironmentId | null) => void;
   readonly onRefresh: () => void;
   readonly onSearchQueryChange: (query: string) => void;
-  readonly onSortOrderChange: (sortOrder: ArchivedThreadSortOrder) => void;
+  readonly onSortChange: (sort: ArchivedThreadSort) => void;
   readonly onUnarchiveThread: (thread: EnvironmentThreadShell) => void;
 }) {
   const { onDeleteThread, onUnarchiveThread } = props;
@@ -333,14 +376,16 @@ export function ArchivedThreadsScreen(props: {
         project: group.project,
       });
 
-      group.threads.forEach((thread, index) => {
+      group.rows.forEach((row, index) => {
         items.push({
           kind: "thread",
-          key: `${thread.environmentId}:${thread.id}`,
+          key: `${row.thread.environmentId}:${row.thread.id}`,
           environmentLabel,
           isFirst: index === 0,
-          isLast: index === group.threads.length - 1,
-          thread,
+          isLast: index === group.rows.length - 1,
+          nested: row.nested,
+          subagentCount: row.subagentCount,
+          thread: row.thread,
         });
       });
     }
@@ -378,6 +423,9 @@ export function ArchivedThreadsScreen(props: {
           environmentLabel={item.environmentLabel}
           isFirst={item.isFirst}
           isLast={item.isLast}
+          nested={item.nested}
+          subagentCount={item.subagentCount}
+          sortBy={props.sort.by}
           onDelete={() => onDeleteThread(item.thread)}
           onSwipeableClose={handleSwipeableClose}
           onSwipeableWillOpen={handleSwipeableWillOpen}
@@ -393,6 +441,7 @@ export function ArchivedThreadsScreen(props: {
       handleSwipeableWillOpen,
       onDeleteThread,
       onUnarchiveThread,
+      props.sort.by,
     ],
   );
   const listEmptyComponent = useMemo(() => {
@@ -427,9 +476,9 @@ export function ArchivedThreadsScreen(props: {
         onEnvironmentChange={props.onEnvironmentChange}
         onRefresh={props.onRefresh}
         onSearchQueryChange={props.onSearchQueryChange}
-        onSortOrderChange={props.onSortOrderChange}
+        onSortChange={props.onSortChange}
         selectedEnvironmentId={props.selectedEnvironmentId}
-        sortOrder={props.sortOrder}
+        sort={props.sort}
       />
 
       <SettingsScreenContent>

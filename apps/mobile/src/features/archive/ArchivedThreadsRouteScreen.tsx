@@ -10,7 +10,11 @@ import {
   ArchivedThreadsScreen,
   type ArchivedThreadsHeaderEnvironment,
 } from "./ArchivedThreadsScreen";
-import { buildArchivedThreadGroups, type ArchivedThreadSortOrder } from "./archivedThreadList";
+import {
+  buildArchivedThreadGroups,
+  DEFAULT_ARCHIVED_THREAD_SORT,
+  type ArchivedThreadSort,
+} from "./archivedThreadList";
 import {
   refreshArchivedThreadsForEnvironment,
   useArchivedThreadSnapshots,
@@ -20,7 +24,7 @@ export function ArchivedThreadsRouteScreen() {
   const { savedConnectionsById } = useSavedRemoteConnections();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedEnvironmentId, setSelectedEnvironmentId] = useState<EnvironmentId | null>(null);
-  const [sortOrder, setSortOrder] = useState<ArchivedThreadSortOrder>("newest");
+  const [sort, setSort] = useState<ArchivedThreadSort>(DEFAULT_ARCHIVED_THREAD_SORT);
   const environments = useMemo<ReadonlyArray<ArchivedThreadsHeaderEnvironment>>(
     () =>
       Arr.sort(
@@ -53,9 +57,9 @@ export function ArchivedThreadsRouteScreen() {
         environmentLabels,
         environmentId: selectedEnvironmentId,
         searchQuery,
-        sortOrder,
+        sort,
       }),
-    [environmentLabels, searchQuery, selectedEnvironmentId, snapshots, sortOrder],
+    [environmentLabels, searchQuery, selectedEnvironmentId, snapshots, sort],
   );
   const refreshChangedEnvironment = useCallback(
     (thread: { readonly environmentId: EnvironmentId }) => {
@@ -82,11 +86,11 @@ export function ArchivedThreadsRouteScreen() {
       onEnvironmentChange={setSelectedEnvironmentId}
       onRefresh={refresh}
       onSearchQueryChange={setSearchQuery}
-      onSortOrderChange={setSortOrder}
+      onSortChange={setSort}
       onUnarchiveThread={unarchiveThread}
       searchQuery={searchQuery}
       selectedEnvironmentId={selectedEnvironmentId}
-      sortOrder={sortOrder}
+      sort={sort}
     />
   );
 }
