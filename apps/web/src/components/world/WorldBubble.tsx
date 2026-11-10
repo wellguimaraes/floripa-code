@@ -597,7 +597,7 @@ export function WorldBubble(props: {
                   />
                 }
               >
-                <ArchiveIcon />
+                <ArchiveIcon className="text-warning" />
               </TooltipTrigger>
               <TooltipPopup side="top">
                 <span className="flex items-center gap-2">

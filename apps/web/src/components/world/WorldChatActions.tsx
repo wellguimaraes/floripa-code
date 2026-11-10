@@ -91,7 +91,7 @@ export const WorldArchiveButton = memo(function WorldArchiveButton({
           />
         }
       >
-        <ArchiveIcon className="size-4" />
+        <ArchiveIcon className="size-4 text-warning" />
       </TooltipTrigger>
       <TooltipPopup side="top">
         <span className="flex items-center gap-2">
