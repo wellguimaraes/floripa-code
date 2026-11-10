@@ -100,6 +100,8 @@ const NO_MODIFIERS = {
 };
 // Handled by the composer's Enter key.
 const EXPAND_SHORTCUT = formatShortcutLabel({ ...NO_MODIFIERS, key: "enter", modKey: true });
+// How long after your input a scroll still counts as yours.
+const SCROLLED_BY_YOU_MS = 300;
 
 /**
  * A quick reply box beside a character: send a message without leaving the
@@ -148,6 +150,11 @@ export function WorldBubble(props: {
   const exchangeContent = useRef<HTMLDivElement>(null);
   const exchangeFooter = useRef<HTMLDivElement>(null);
   const followingEnd = useRef(true);
+  // When you last wheeled, touched, clicked or keyed in the exchange: a scroll right after is yours.
+  const scrolledByYouAt = useRef(Number.NEGATIVE_INFINITY);
+  const markScrolledByYou = () => {
+    scrolledByYouAt.current = performance.now();
+  };
   // Scrolled up away from the latest words: offers a way back down.
   const [awayFromEnd, setAwayFromEnd] = useState(false);
   const { resolvedTheme } = useTheme();
@@ -616,10 +623,19 @@ export function WorldBubble(props: {
                 (pin) => (pin.parentElement?.getBoundingClientRect().top ?? top) < top,
               );
               pins.forEach((pin, index) => pin.toggleAttribute("data-stuck", stuck[index]));
-              followingEnd.current =
-                element.scrollHeight - element.scrollTop - element.clientHeight < 4;
+              // Only you scrolling away stops the follow. Layout moving the box, as when an earlier
+              // exchange drops off the top on send, leaves it be, and the next resize rejoins the end.
+              if (element.scrollHeight - element.scrollTop - element.clientHeight < 4) {
+                followingEnd.current = true;
+              } else if (performance.now() - scrolledByYouAt.current < SCROLLED_BY_YOU_MS) {
+                followingEnd.current = false;
+              }
               setAwayFromEnd(!followingEnd.current);
             }}
+            onWheel={markScrolledByYou}
+            onTouchMove={markScrolledByYou}
+            onPointerDown={markScrolledByYou}
+            onKeyDown={markScrolledByYou}
             // No scroll anchoring: it pins whatever row is in view as the oldest exchange drops off
             // the top on send, which reads as scrolling up and stops following the end.
             className="-mx-2.5 mt-1 flex h-(--bubble-body-height) flex-col overflow-y-auto [overflow-anchor:none] border-b border-border px-2.5 text-bubble has-[>[data-exchange]:empty]:hidden"
