@@ -48,7 +48,7 @@ export function BubbleApproval(props: {
   };
 
   return (
-    <ComposerBanner.Root placement="floating" variant="warning" density="spacious" className="mt-2">
+    <ComposerBanner.Root placement="floating" variant="warning" density="spacious">
       <ComposerBanner.Row layout="approval">
         <ComposerBanner.Icon>
           <ShieldIcon />

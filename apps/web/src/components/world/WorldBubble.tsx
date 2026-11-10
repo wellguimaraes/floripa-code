@@ -696,6 +696,31 @@ export function WorldBubble(props: {
                   />
                 )}
               />
+              {/* What the agent waits on you for ends the conversation, as in the chat: the
+                  approval first, then the question. */}
+              {approval !== null ? (
+                <BubbleApproval
+                  key={approval.requestId}
+                  threadRef={facts.ref}
+                  approval={approval}
+                  pendingCount={pending?.approvals.length ?? 1}
+                  onError={showError}
+                />
+              ) : null}
+              {question.request !== null ? (
+                <ComposerBanner.Root placement="floating">
+                  <ComposerPendingUserInputPanel
+                    pendingUserInputs={[question.request]}
+                    disabled={!question.answerable}
+                    respondingRequestIds={question.responding ? [question.request.requestId] : []}
+                    answers={question.answers}
+                    questionIndex={question.questionIndex}
+                    onToggleOption={question.toggleOption}
+                    onAdvance={question.advance}
+                    onDismiss={question.dismiss}
+                  />
+                </ComposerBanner.Root>
+              ) : null}
             </div>
             {/* Pinned to the rule below while the turn scrolls: what the agent is still running and
                   what is queued behind it, sitting on the rule, and the way back to the end above. */}
@@ -764,29 +789,6 @@ export function WorldBubble(props: {
               />
             </div>
           </div>
-          {approval !== null ? (
-            <BubbleApproval
-              key={approval.requestId}
-              threadRef={facts.ref}
-              approval={approval}
-              pendingCount={pending?.approvals.length ?? 1}
-              onError={showError}
-            />
-          ) : null}
-          {question.request !== null ? (
-            <ComposerBanner.Root placement="floating" className="mt-2">
-              <ComposerPendingUserInputPanel
-                pendingUserInputs={[question.request]}
-                disabled={!question.answerable}
-                respondingRequestIds={question.responding ? [question.request.requestId] : []}
-                answers={question.answers}
-                questionIndex={question.questionIndex}
-                onToggleOption={question.toggleOption}
-                onAdvance={question.advance}
-                onDismiss={question.dismiss}
-              />
-            </ComposerBanner.Root>
-          ) : null}
         </>
       }
     />

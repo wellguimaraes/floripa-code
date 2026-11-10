@@ -60,12 +60,16 @@ function Surface({
         placement === "floating" && "[--chat-composer-attachment-overlap:0px] before:rounded-lg",
         placement === "docked" && "[--chat-composer-attachment-overlap:0px] before:rounded-t-lg",
         "before:pointer-events-none before:absolute before:inset-0 before:-z-1 before:border before:border-(--chat-composer-attached-outline)",
+        placement === "attached" &&
+          "before:bg-(--chat-composer-attached-surface)/(--glass-opacity) before:backdrop-blur-(--glass-blur) before:backdrop-saturate-(--glass-saturation)",
+        // Floating cards sit flat in a world bubble, on the solid fill of its queued messages.
+        placement === "floating" && "before:bg-accent",
         placement !== "docked" &&
-          "before:bg-(--chat-composer-attached-surface)/(--glass-opacity) before:bg-linear-to-b before:from-(--chat-composer-attached-tint) before:to-(--chat-composer-attached-tint) before:backdrop-blur-(--glass-blur) before:backdrop-saturate-(--glass-saturation)",
-        placement !== "docked" && "before:shadow-composer dark:before:shadow-composer-dark",
-        placement !== "docked" &&
+          "before:bg-linear-to-b before:from-(--chat-composer-attached-tint) before:to-(--chat-composer-attached-tint)",
+        placement === "attached" && "before:shadow-composer dark:before:shadow-composer-dark",
+        placement === "attached" &&
           "dark:supports-[(backdrop-filter:blur(1px))_or_(-webkit-backdrop-filter:blur(1px))]:before:bg-composer-seam-above",
-        placement !== "docked" &&
+        placement === "attached" &&
           "not-supports-[((backdrop-filter:blur(1px))_or_(-webkit-backdrop-filter:blur(1px)))]:before:bg-(--chat-composer-attached-surface)",
         // Docked sits on a divider, which is its bottom edge: no shadow or seam shading onto it,
         // and the solid muted fill of the chat composer's header rather than glass.
