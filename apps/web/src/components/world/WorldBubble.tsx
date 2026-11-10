@@ -258,6 +258,9 @@ export function WorldBubble(props: {
     if (message === "" && !hasAttachments) return;
     if (thread === null || state.phase === "sending" || attachments.preparing) return;
     setState({ phase: "sending" });
+    // What you send is the newest words: the exchange follows it down, even from up the scroll.
+    followingEnd.current = true;
+    setAwayFromEnd(false);
     let outgoing;
     try {
       outgoing = await attachments.prepareForSend(message);
@@ -521,7 +524,9 @@ export function WorldBubble(props: {
                 element.scrollHeight - element.scrollTop - element.clientHeight < 4;
               setAwayFromEnd(!followingEnd.current);
             }}
-            className="-mx-2.5 mt-1 flex h-(--bubble-body-height) flex-col overflow-y-auto border-b border-border px-2.5 text-bubble has-[>[data-exchange]:empty]:hidden"
+            // No scroll anchoring: it pins whatever row is in view as the oldest exchange drops off
+            // the top on send, which reads as scrolling up and stops following the end.
+            className="-mx-2.5 mt-1 flex h-(--bubble-body-height) flex-col overflow-y-auto [overflow-anchor:none] border-b border-border px-2.5 text-bubble has-[>[data-exchange]:empty]:hidden"
           >
             {/* Sat at the bottom, as the chat reads, while the conversation is shorter than the box. */}
             <div
