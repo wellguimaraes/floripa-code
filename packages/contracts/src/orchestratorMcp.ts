@@ -128,15 +128,6 @@ export const OrchestratorMcpTarget = Schema.Struct({
 });
 export type OrchestratorMcpTarget = typeof OrchestratorMcpTarget.Type;
 
-export const OrchestratorMcpRuntimeMode = Schema.Union([Schema.Literal("inherit"), RuntimeMode]);
-export type OrchestratorMcpRuntimeMode = typeof OrchestratorMcpRuntimeMode.Type;
-
-export const OrchestratorMcpInteractionMode = Schema.Union([
-  Schema.Literal("inherit"),
-  ProviderInteractionMode,
-]);
-export type OrchestratorMcpInteractionMode = typeof OrchestratorMcpInteractionMode.Type;
-
 export const OrchestratorMcpTaskRole = Schema.Literals([
   "implementation",
   "research",
@@ -185,8 +176,6 @@ export const OrchestratorMcpDelegateTaskInput = Schema.Struct({
       "Wait budget for mode=wait only. Default 10 minutes. Elapsing it returns waitTimedOut=true on that call and does not cancel the child.",
   }),
   clientRequestId: Schema.optional(OrchestratorMcpClientRequestId),
-  runtimeMode: Schema.optional(OrchestratorMcpRuntimeMode),
-  interactionMode: Schema.optional(OrchestratorMcpInteractionMode),
 });
 export type OrchestratorMcpDelegateTaskInput = typeof OrchestratorMcpDelegateTaskInput.Type;
 
@@ -235,8 +224,6 @@ export const OrchestratorMcpCreateThreadRequest = Schema.Struct({
   prompt: Schema.optional(OrchestratorMcpPrompt),
   title: Schema.optional(OrchestratorMcpTitle),
   target: Schema.optional(OrchestratorMcpTarget),
-  runtimeMode: Schema.optional(OrchestratorMcpRuntimeMode),
-  interactionMode: Schema.optional(OrchestratorMcpInteractionMode),
 });
 export type OrchestratorMcpCreateThreadRequest = typeof OrchestratorMcpCreateThreadRequest.Type;
 

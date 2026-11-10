@@ -32,8 +32,6 @@ describe("orchestrator MCP contracts", () => {
       mode: "wait",
       timeoutMs: 5_000,
       clientRequestId: "delegate-1",
-      runtimeMode: "inherit",
-      interactionMode: "inherit",
     });
     const result = decodeDelegateTaskResult({
       taskId: "node-task-1",
@@ -116,7 +114,6 @@ describe("orchestrator MCP contracts", () => {
         {
           prompt: "Review the API.",
           target: { driverKind: "claudeAgent" },
-          runtimeMode: "approval-required",
         },
       ],
     });

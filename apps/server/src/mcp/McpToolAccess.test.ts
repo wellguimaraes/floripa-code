@@ -3,8 +3,6 @@ import {
   EnvironmentId,
   OrchestratorMcpFailure,
   ProviderInstanceId,
-  ProviderInteractionMode,
-  RuntimeMode,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -91,13 +89,7 @@ const ProbeToolkit = Toolkit.make(
     ...probe,
     parameters: Schema.Struct({ threadId: Schema.optional(ThreadId) }),
   }),
-  Tool.make("starts_threads", {
-    ...probe,
-    parameters: Schema.Struct({
-      runtimeMode: Schema.optional(RuntimeMode),
-      interactionMode: Schema.optional(ProviderInteractionMode),
-    }),
-  }),
+  Tool.make("starts_threads", probe),
   Tool.make("writes_environment", probe),
 );
 const ran = Effect.succeed({ ran: "ran" });
@@ -110,9 +102,8 @@ const probeHandlers: McpToolAccess.Handlers<typeof ProbeToolkit.tools> = {
     (input) => [input.threadId],
     () => ran,
   ),
-  starts_threads: McpToolAccess.startsThreads(
-    (input) => input,
-    (_, modes) => Effect.succeed({ ran: `${modes.runtimeMode}/${modes.interactionMode}` }),
+  starts_threads: McpToolAccess.startsThreads((_, modes) =>
+    Effect.succeed({ ran: `${modes.runtimeMode}/${modes.interactionMode}` }),
   ),
   writes_environment: McpToolAccess.writesEnvironment(() => ran),
 };
@@ -246,16 +237,13 @@ it.effect.each([
   // A thread that does not exist is the tool's to report.
   ["writes_threads", supervised, { threadId: "thread:missing" }, "ran"],
 
-  // Starting a thread: the caller's own modes or narrower.
+  // Starting a thread: always with the caller's own modes.
   ["starts_threads", supervised, {}, "approval-required/default"],
-  ["starts_threads", supervised, { runtimeMode: "full-access" }, "runtime_mode_escalation_denied"],
   ["starts_threads", plan, {}, "approval-required/plan"],
-  ["starts_threads", plan, { interactionMode: "default" }, "interaction_mode_escalation_denied"],
-  ["starts_threads", fullAccess, { runtimeMode: "auto", interactionMode: "plan" }, "auto/plan"],
+  ["starts_threads", fullAccess, {}, "full-access/default"],
   ["starts_threads", ended, {}, "parent_not_active"],
   ["starts_threads", supervisedClient, {}, "approval-required/default"],
-  ["starts_threads", supervisedClient, { runtimeMode: "auto" }, "runtime_mode_escalation_denied"],
-  ["starts_threads", fullAccessClient, { runtimeMode: "full-access" }, "full-access/default"],
+  ["starts_threads", fullAccessClient, {}, "full-access/default"],
 
   // Projects and environment settings need full access.
   ["writes_environment", fullAccess, {}, "ran"],

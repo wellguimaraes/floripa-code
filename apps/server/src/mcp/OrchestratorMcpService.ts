@@ -18,13 +18,11 @@ import {
   type OrchestratorMcpCreatedThread,
   type OrchestratorMcpDelegateTaskInput,
   type OrchestratorMcpDelegateTaskResult,
-  type OrchestratorMcpInteractionMode,
   type OrchestratorMcpDeleteScheduledTaskInput,
   type OrchestratorMcpRequestSecretInput,
   type OrchestratorMcpRequestSecretResult,
   type OrchestratorMcpDeleteScheduledTaskResult,
   type OrchestratorMcpListScheduledTasksResult,
-  type OrchestratorMcpRuntimeMode,
   type OrchestratorMcpScheduledTask,
   type OrchestratorMcpScheduleTaskInput,
   type OrchestratorMcpScheduleTaskResult,
@@ -533,9 +531,9 @@ function interactionModeRank(mode: ProviderInteractionMode): number {
 
 export function resolveRuntimeMode(
   parentMode: RuntimeMode,
-  requested: OrchestratorMcpRuntimeMode | undefined,
+  requested: RuntimeMode | undefined,
 ): Effect.Effect<RuntimeMode, OrchestratorMcpFailure> {
-  const resolved = requested === undefined || requested === "inherit" ? parentMode : requested;
+  const resolved = requested ?? parentMode;
   return runtimeModeRank(resolved) > runtimeModeRank(parentMode)
     ? Effect.fail(
         failure(
@@ -548,9 +546,9 @@ export function resolveRuntimeMode(
 
 export function resolveInteractionMode(
   parentMode: ProviderInteractionMode,
-  requested: OrchestratorMcpInteractionMode | undefined,
+  requested: ProviderInteractionMode | undefined,
 ): Effect.Effect<ProviderInteractionMode, OrchestratorMcpFailure> {
-  const resolved = requested === undefined || requested === "inherit" ? parentMode : requested;
+  const resolved = requested ?? parentMode;
   return interactionModeRank(resolved) > interactionModeRank(parentMode)
     ? Effect.fail(
         failure(
@@ -1883,11 +1881,8 @@ const make = Effect.gen(function* () {
           target: input.target,
           providers,
         });
-        const runtimeMode = yield* resolveRuntimeMode(parent.thread.runtimeMode, input.runtimeMode);
-        const interactionMode = yield* resolveInteractionMode(
-          parent.thread.interactionMode,
-          input.interactionMode,
-        );
+        // A child runs with the modes of the thread that started it.
+        const { runtimeMode, interactionMode } = parent.thread;
         const key = yield* requestKey(input.clientRequestId);
         const commandId = stableCommandId({
           scope,
@@ -2165,14 +2160,6 @@ const make = Effect.gen(function* () {
                 target: request.target,
                 providers,
               });
-              const runtimeMode = yield* resolveRuntimeMode(
-                parent.thread.runtimeMode,
-                request.runtimeMode,
-              );
-              const interactionMode = yield* resolveInteractionMode(
-                parent.thread.interactionMode,
-                request.interactionMode,
-              );
               const threadId = stableThreadId({
                 scope,
                 requestKey: key,
@@ -2199,8 +2186,8 @@ const make = Effect.gen(function* () {
                   projectId: parent.thread.projectId,
                   title,
                   modelSelection: target.modelSelection,
-                  runtimeMode,
-                  interactionMode,
+                  runtimeMode: parent.thread.runtimeMode,
+                  interactionMode: parent.thread.interactionMode,
                   branch: parent.thread.branch,
                   worktreePath: parent.thread.worktreePath,
                 })

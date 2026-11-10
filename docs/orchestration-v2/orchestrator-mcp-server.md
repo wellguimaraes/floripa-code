@@ -225,13 +225,11 @@ type DelegateTaskInput = {
   mode?: "async" | "wait";
   timeoutMs?: number;
   clientRequestId?: string;
-  runtimeMode?: "inherit" | "approval-required" | "auto-accept-edits" | "full-access";
-  interactionMode?: "inherit" | "plan" | "default";
 };
 ```
 
-Provider, model, runtime mode, and interaction mode inherit from the parent
-when omitted. A driver-only target inherits the parent's provider instance
+Provider and model inherit from the parent when omitted. The child always runs
+with the parent's runtime and interaction modes; see [Policy](#policy-and-idempotency). A driver-only target inherits the parent's provider instance
 when it can run child tasks, and otherwise selects an available instance of
 that driver; an explicit `providerInstanceId` is honored exactly and fails
 when unavailable. Selecting a different provider without a model uses that
@@ -310,14 +308,13 @@ type CreateThreadsInput = {
       driverKind?: string;
       model?: string;
     };
-    runtimeMode?: "inherit" | "approval-required" | "auto-accept-edits" | "full-access";
-    interactionMode?: "inherit" | "plan" | "default";
   }>;
   clientRequestId?: string;
 };
 ```
 
-Each entry independently resolves provider, model, and modes. The new threads
+Each entry independently resolves provider and model, and runs with the
+parent's modes. The new threads
 inherit the parent's project, branch, and worktree path, but they have no
 sub-agent lineage. Entries with a prompt immediately dispatch a run; entries
 without a prompt remain idle.
@@ -331,11 +328,11 @@ project root (`root`, also the default). The thread is bound to that workspace
 before the agent starts. Creating a worktree in the task prompt does not update
 this binding.
 
-Pass the task in `message`. Project, model, and modes inherit when omitted;
-workspace does not. `scratch: true` launches without a project, in a folder of
+Pass the task in `message`. Project and model inherit when omitted; workspace
+does not. `scratch: true` launches without a project, in a folder of
 its own under the environment's Scratch project. For stacked PRs, use the parent branch as `baseRef` with
-`startFromOrigin: false`. The new thread may not run with broader runtime or
-interaction modes than the caller. Launch has no retry key, so inspect existing threads after a failed or lost response before
+`startFromOrigin: false`. The new thread runs with the caller's runtime and
+interaction modes. Launch has no retry key, so inspect existing threads after a failed or lost response before
 launching again. `create_threads` remains the batch option for a shared checkout.
 
 ### `t3_thread_list`
@@ -450,10 +447,11 @@ results use the latest assistant content from the final work turn.
 
 ## Policy And Idempotency
 
-- A child runtime mode may stay equal to or become narrower than the parent
-  mode. It may not escalate privileges.
-- A child interaction mode may stay equal to or narrow from `default` to
-  `plan`. It may not escalate from `plan` to `default`.
+- A thread an agent starts (`delegate_task`, `create_threads`,
+  `t3_thread_launch`, `schedule_task`) runs with exactly the caller's runtime
+  and interaction modes. An agent cannot raise them, and it cannot lower them
+  either: a narrower child stalls on approvals or plans that nobody started it
+  to answer. The user changes a thread's modes directly.
 - Thread tools take any thread in the environment as a target. For a thread
   caller, list and search cover one project: its own unless `projectId` is given.
 - A tool that changes another thread needs the calling thread's live run, and

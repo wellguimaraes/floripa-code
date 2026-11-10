@@ -1,9 +1,4 @@
-import {
-  OrchestratorMcpFailure,
-  type ProviderInteractionMode,
-  type RuntimeMode,
-  type ThreadId,
-} from "@t3tools/contracts";
+import { OrchestratorMcpFailure, type ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Ref from "effect/Ref";
 import * as Struct from "effect/Struct";
@@ -16,12 +11,12 @@ import {
   type DispatchModeRefusal,
 } from "../orchestration-v2/DispatchModeLimit.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
-import { resolveInteractionMode, resolveRuntimeMode } from "./OrchestratorMcpService.ts";
 import {
   assertFullAccess,
   assertLiveCaller,
   assertTargetWithinLimits,
   type Caller,
+  type CallerLimits,
   loadCaller,
   readCaller,
   unavailable,
@@ -73,8 +68,9 @@ let handlersLayer: <Tools extends Record<string, Tool.Any>, EX, RX>(
  *
  * Parameters choose the target; the caller sets the limits: a thread caller
  * its own runtime and interaction modes, an outside client the ceiling it was
- * approved with. Nothing a caller starts or changes may run with broader
- * modes, and a thread caller changes things only while its own run is live.
+ * approved with. What a caller starts runs with exactly those modes, nothing
+ * it changes may run with broader ones, and a thread caller changes things
+ * only while its own run is live.
  * A refusal is an `OrchestratorMcpFailure`, so the compiler requires it in the
  * tool's failure schema, and `ThreadManagementService` in its dependencies.
  *
@@ -206,33 +202,15 @@ const escalationDenied = (refusal: DispatchModeRefusal) =>
     message: `Thread ${refusal.threadId} now runs in ${refusal.runtimeMode}/${refusal.interactionMode} mode, above this caller's. Its user changed it while this call ran.`,
   });
 
-/** The modes a started thread runs with: those requested, else the caller's own. */
-export interface StartedModes {
-  readonly runtimeMode: RuntimeMode;
-  readonly interactionMode: ProviderInteractionMode;
-}
-
-/** Starts threads with the modes `modes` requests, which may not be broader than the caller's. */
+/**
+ * Starts threads, which run with the caller's own modes: an agent's threads
+ * inherit the access of the thread that started them, never more or less.
+ */
 export const startsThreads = <P, A, E, R>(
-  modes: (params: P) => {
-    readonly runtimeMode?: RuntimeMode | undefined;
-    readonly interactionMode?: ProviderInteractionMode | undefined;
-  },
-  handle: (params: P, modes: StartedModes) => Effect.Effect<A, E, R>,
+  handle: (params: P, modes: CallerLimits) => Effect.Effect<A, E, R>,
 ) =>
   declare((params: P) =>
-    Effect.gen(function* () {
-      const { limits } = yield* writingCaller;
-      const requested = modes(params);
-      const started: StartedModes = {
-        runtimeMode: yield* resolveRuntimeMode(limits.runtimeMode, requested.runtimeMode),
-        interactionMode: yield* resolveInteractionMode(
-          limits.interactionMode,
-          requested.interactionMode,
-        ),
-      };
-      return yield* handle(params, started);
-    }),
+    writingCaller.pipe(Effect.flatMap(({ limits }) => handle(params, limits))),
   );
 
 const fullAccessRequired =
