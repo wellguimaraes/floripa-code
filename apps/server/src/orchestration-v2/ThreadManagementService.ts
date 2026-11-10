@@ -385,11 +385,20 @@ export interface ThreadManagementServiceShape {
     readonly reason?: string | undefined;
   }) => Effect.Effect<void, Orchestrator.OrchestratorV2Error>;
   /**
-   * Archives the delegated tasks of an archived thread that have no live or queued run. A busy
-   * task stays active. Each archive cascades the same way to that task's own tasks. Command IDs
-   * derive from `commandId`; all tasks are tried, then the first failure fails the call.
+   * Archives the subagents of an archived thread, delegated or provider-native, that have no live
+   * or queued run. A busy one stays active. Each archive cascades the same way to that subagent's
+   * own subagents. Command IDs derive from `commandId`; all subagents are tried, then the first
+   * failure fails the call.
    */
-  readonly archiveIdleDelegatedTasks: (input: {
+  readonly archiveSubagents: (input: {
+    readonly threadId: ThreadId;
+    readonly commandId: CommandId;
+  }) => Effect.Effect<void, Orchestrator.OrchestratorV2Error>;
+  /**
+   * The way back from `archiveSubagents`: restores every archived subagent of a restored thread,
+   * each restore cascading the same way. Failures are handled like `archiveSubagents`.
+   */
+  readonly unarchiveSubagents: (input: {
     readonly threadId: ThreadId;
     readonly commandId: CommandId;
   }) => Effect.Effect<void, Orchestrator.OrchestratorV2Error>;
@@ -913,14 +922,12 @@ const make = Effect.gen(function* () {
       if (failures[0] !== undefined) return yield* Effect.fail(failures[0]);
     });
 
-  const archiveIdleDelegatedTasks: ThreadManagementServiceShape["archiveIdleDelegatedTasks"] = (
-    input,
-  ) =>
+  const archiveSubagents: ThreadManagementServiceShape["archiveSubagents"] = (input) =>
     Effect.gen(function* () {
       const { subagents } = yield* orchestrator.getThreadRecords(input.threadId, ["subagents"]);
       const failures: Array<Orchestrator.OrchestratorV2Error> = [];
       for (const task of subagents) {
-        if (task.origin !== "app_owned" || task.childThreadId === null) continue;
+        if (task.childThreadId === null) continue;
         const threadId = task.childThreadId;
         yield* orchestrator.getThreadRecords(threadId, ["runs"]).pipe(
           Effect.flatMap((child) =>
@@ -935,7 +942,36 @@ const make = Effect.gen(function* () {
                 }),
           ),
           Effect.catch((error) =>
-            Effect.logWarning("Unable to archive a delegated task", {
+            Effect.logWarning("Unable to archive a subagent", {
+              parentThreadId: input.threadId,
+              threadId,
+              error,
+            }).pipe(Effect.andThen(Effect.sync(() => failures.push(error)))),
+          ),
+        );
+      }
+      if (failures[0] !== undefined) return yield* Effect.fail(failures[0]);
+    });
+
+  const unarchiveSubagents: ThreadManagementServiceShape["unarchiveSubagents"] = (input) =>
+    Effect.gen(function* () {
+      const { subagents } = yield* orchestrator.getThreadRecords(input.threadId, ["subagents"]);
+      const failures: Array<Orchestrator.OrchestratorV2Error> = [];
+      for (const task of subagents) {
+        if (task.childThreadId === null) continue;
+        const threadId = task.childThreadId;
+        yield* orchestrator.getThreadRecords(threadId, []).pipe(
+          Effect.flatMap((child) =>
+            child.thread.archivedAt === null || child.thread.deletedAt !== null
+              ? Effect.void
+              : dispatch({
+                  type: "thread.unarchive",
+                  commandId: CommandId.make(`${input.commandId}:unarchive:${threadId}`),
+                  threadId,
+                }),
+          ),
+          Effect.catch((error) =>
+            Effect.logWarning("Unable to restore a subagent", {
               parentThreadId: input.threadId,
               threadId,
               error,
@@ -999,7 +1035,8 @@ const make = Effect.gen(function* () {
     interruptThread,
     archiveWorktreeThreads,
     stopDelegatedTasks,
-    archiveIdleDelegatedTasks,
+    archiveSubagents,
+    unarchiveSubagents,
     getThreadEventSequence: orchestrator.getThreadEventSequence,
     recoverDelegatedTask: orchestrator.recoverDelegatedTask,
     delegatedTaskResultPending: orchestrator.delegatedTaskResultPending,

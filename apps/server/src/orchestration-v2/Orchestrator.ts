@@ -3459,6 +3459,17 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         } satisfies PendingOrchestrationEffectV2,
       ]);
     }
+    if (command.type === "thread.unarchive") {
+      yield* Ref.update(effects, (existing) => [
+        ...existing,
+        {
+          id: `effect:${command.commandId}:delegated-tasks.unarchive`,
+          commandId: command.commandId,
+          threadId: command.threadId,
+          request: { type: "delegated-tasks.unarchive" },
+        } satisfies PendingOrchestrationEffectV2,
+      ]);
+    }
   });
 
   const dispatchProviderSessionDetach = Effect.fn("orchestrationV2.dispatch.providerSessionDetach")(

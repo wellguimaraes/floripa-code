@@ -515,7 +515,23 @@ export const layerExecutor: Layer.Layer<
               );
           case "delegated-tasks.archive":
             return threads
-              .archiveIdleDelegatedTasks({
+              .archiveSubagents({
+                threadId: effect.threadId,
+                commandId: effect.commandId,
+              })
+              .pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new OrchestrationEffectExecutionError({
+                      effectId: effect.id,
+                      effectType: effect.request.type,
+                      cause,
+                    }),
+                ),
+              );
+          case "delegated-tasks.unarchive":
+            return threads
+              .unarchiveSubagents({
                 threadId: effect.threadId,
                 commandId: effect.commandId,
               })

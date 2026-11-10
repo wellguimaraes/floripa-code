@@ -119,9 +119,13 @@ export const OrchestrationEffectRequestV2 = Schema.Union([
     type: Schema.Literal("delegated-tasks.stop"),
     reason: Schema.optional(Schema.String),
   }),
-  /** Follows an archive: archives every idle delegated task under the archived thread. */
+  /** Follows an archive: archives every idle subagent under the archived thread. */
   Schema.Struct({
     type: Schema.Literal("delegated-tasks.archive"),
+  }),
+  /** Follows a restore: restores every archived subagent under the restored thread. */
+  Schema.Struct({
+    type: Schema.Literal("delegated-tasks.unarchive"),
   }),
 ]);
 export type OrchestrationEffectRequestV2 = typeof OrchestrationEffectRequestV2.Type;
@@ -137,6 +141,7 @@ export const REPLAY_SAFE_EFFECT_TYPES_AFTER_PROCESS_LOSS = [
   "thread-title.generate",
   "delegated-tasks.stop",
   "delegated-tasks.archive",
+  "delegated-tasks.unarchive",
 ] as const satisfies ReadonlyArray<OrchestrationEffectRequestV2["type"]>;
 
 export const PROCESS_BOUND_EFFECT_TYPES = [
