@@ -571,13 +571,14 @@ export function BubbleComposer(props: {
       {/* Above the rest of the bubble, whose picker icons stack at z-30, so the list covers them. */}
       <div ref={field} className="relative z-40">
         {/* Unframed: the bubble is the field, and its text lines up with the hints below, both
-            inset a little from the bubble's edge. */}
+            inset a little from the bubble's edge. The right padding holds the editor's -m-1
+            overhang, which would otherwise scroll this box sideways. */}
         {/* Resizable, this box scrolls the text instead of the editor, so it can stand taller
             than its text; a press in the empty part below the text still lands in the editor. */}
         <div
           {...(props.inputHeight === "resizable" && { [BUBBLE_BODY_ATTRIBUTE]: "" })}
           className={cn(
-            "py-1 pl-1.5",
+            "py-1 pr-1 pl-1.5",
             props.inputHeight === "resizable" &&
               "min-h-(--bubble-body-height) max-h-[max(10.5rem,var(--bubble-body-height))] cursor-text overflow-y-auto",
           )}
