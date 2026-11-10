@@ -10,6 +10,7 @@ import {
   useCallback,
   useEffect,
   useEffectEvent,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -802,7 +803,7 @@ export default function WorldCanvas(props: {
 
   const holdViewOnClose = useRef<(() => void) | null>(null);
   const keepInView = useRef<((points: ReadonlyArray<Vector3>) => void) | null>(null);
-  const panBy = useRef<((dx: number, dy: number) => void) | null>(null);
+  const makeRoom = useRef<MakeRoom | null>(null);
   const { archiveThread } = useThreadActions();
   // Archive, not delete: each can be undone from its toast or Settings → Archived.
   const archiveAll = async (
@@ -1560,13 +1561,18 @@ export default function WorldCanvas(props: {
       covered: coveredOf(container.getBoundingClientRect(), panel(), bars()),
     };
   }, [panel, bars]);
-  const moveBubble = useBubblePlacement(bubbleRef, visibleArea, bubble?.facts.key ?? null, panBy);
+  const moveBubble = useBubblePlacement(
+    bubbleRef,
+    visibleArea,
+    bubble?.facts.key ?? null,
+    makeRoom,
+  );
   const moveNewAgent = useBubblePlacement(
     newAgentRef,
     visibleArea,
     newAgent === null ? null : NEW_AGENT_KEY,
   );
-  const moveManager = useBubblePlacement(managerRef, visibleArea, managerKeys[0] ?? null, panBy);
+  const moveManager = useBubblePlacement(managerRef, visibleArea, managerKeys[0] ?? null, makeRoom);
   // The map zooms on wheel; overlays pass it on so that keeps working under the pointer.
   const forwardWheel = (event: React.WheelEvent) =>
     containerRef.current
@@ -1683,7 +1689,7 @@ export default function WorldCanvas(props: {
             zoomTo={zoomTo}
             holdViewOnClose={holdViewOnClose}
             keepInView={keepInView}
-            panBy={panBy}
+            makeRoom={makeRoom}
             reveal={reveal}
             layout={islandLayout}
           />
@@ -2725,16 +2731,17 @@ const BUBBLE_GAP_PX = 12;
  * the canvas the panel and the bars leave visible. Returns the tracker's `onMove`. The bubble's
  * wrapper (`anchor`'s first child) centres it above the point; a change in its size draws no
  * frame, so that places it again too. `subject` is the key of the point it is open over, null
- * while it is closed. Given `panBy`, a bubble that opens, or grows, pushed down over its
- * character by the top edge slides the map down to make room above it; a pan or zoom by hand
- * leaves the map alone.
+ * while it is closed. Given `makeRoom`, a bubble that opens, or grows, pushed down over its
+ * character by the top edge slides the map down to make room above it, and closing it gives the
+ * room back; a pan or zoom by hand leaves the map alone.
  */
 function useBubblePlacement(
   anchor: React.RefObject<HTMLDivElement | null>,
   visibleArea: () => VisibleArea | null,
   subject: string | null,
-  panBy?: React.RefObject<((dx: number, dy: number) => void) | null>,
+  makeRoom?: React.RefObject<MakeRoom | null>,
 ): (points: ReadonlyArray<ScreenPoint>) => void {
+  const owner = useId();
   const last = useRef<ScreenPoint | null>(null);
   const clearCharacter = useRef(false);
   // The size placement works from. A bubble resized by hand keeps the size it had before, so it
@@ -2777,7 +2784,7 @@ function useBubblePlacement(
       top - above,
       area.height - covered.bottom - KEEP_IN_VIEW_MARGIN - point.y,
     );
-    if (shift >= 1) panBy?.current?.(0, shift);
+    if (shift >= 1) makeRoom?.current?.push(owner, shift);
   };
   const placeOnResize = useEffectEvent(() => {
     const bubble = anchor.current?.firstElementChild;
@@ -2791,6 +2798,10 @@ function useBubblePlacement(
     // Observing reports the size at once, which places the bubble as it opens.
     return observeResize(bubble, () => placeOnResize());
   }, [anchor, subject]);
+  // Switching subjects keeps the room; only closing gives it back.
+  useEffect(() => {
+    if (subject === null) makeRoom?.current?.release(owner);
+  }, [makeRoom, owner, subject]);
   return (points: ReadonlyArray<ScreenPoint>) => {
     last.current = points[0] ?? null;
     place();
@@ -2814,7 +2825,7 @@ function WorldControls({
   zoomTo,
   holdViewOnClose,
   keepInView,
-  panBy,
+  makeRoom,
   reveal,
   layout,
 }: {
@@ -2834,8 +2845,8 @@ function WorldControls({
   readonly holdViewOnClose: React.RefObject<(() => void) | null>;
   /** Set here: moves the map as little as it takes to show every point, if any is hidden. */
   readonly keepInView: React.RefObject<((points: ReadonlyArray<Vector3>) => void) | null>;
-  /** Set here: glides the map so what shows moves `dx` right and `dy` down, in pixels. */
-  readonly panBy: React.RefObject<((dx: number, dy: number) => void) | null>;
+  /** Set here: slides the map down to make room above a bubble, and back when it closes. */
+  readonly makeRoom: React.RefObject<MakeRoom | null>;
   /** A spot that must show with room above it for the new-agent bubble; a new object checks again. */
   readonly reveal: { readonly islandKey: string; readonly position: Vec3 } | null;
   /**
@@ -2858,6 +2869,9 @@ function WorldControls({
   } | null>(null);
   const gesturing = useRef(false);
   const fitted = useRef(false);
+  // Pixels each open bubble slid the map down while on the zoom floor; framing every island
+  // keeps that room, so the floor's own recentring does not cover the character again.
+  const floorRoom = useRef(new Map<string, number>());
   const covered = useCallback(
     (): Covered => coveredOf(element.getBoundingClientRect(), panel(), bars()),
     [element, panel, bars],
@@ -2894,7 +2908,11 @@ function WorldControls({
             ? { sides: FRAME_ALL_GUTTER, right: FRAME_ALL_GUTTER + FRAME_ALL_RIGHT_EXTRA }
             : undefined,
       });
-      if (key === undefined) controls.minZoom = view.zoom;
+      if (key !== undefined) return view;
+      controls.minZoom = view.zoom;
+      let room = 0;
+      for (const shift of floorRoom.current.values()) room += shift;
+      if (room !== 0) view.target.add(targetShift(probeAt(camera, view), 0, room, view.zoom));
       return view;
     },
     [bounds, islands, camera, size, covered, signsOf],
@@ -3144,18 +3162,35 @@ function WorldControls({
     };
   }, [camera, size, covered, fly, keepInView]);
   useEffect(() => {
-    panBy.current = (dx, dy) => {
-      const controls = controlsRef.current;
-      // A hand on the map wins.
-      if (controls === null || gesturing.current) return;
-      const view = currentView(camera, controls);
-      const shift = targetShift(probeAt(camera, view), dx, dy, view.zoom);
-      fly({ target: view.target.add(shift), zoom: view.zoom });
+    const onFloor = (view: View, all: View | null) =>
+      all !== null && view.zoom <= all.zoom * FLOOR_SLACK;
+    makeRoom.current = {
+      push: (owner, dy) => {
+        const controls = controlsRef.current;
+        // A hand on the map wins.
+        if (controls === null || gesturing.current) return;
+        const view = currentView(camera, controls);
+        // On the floor, the room becomes part of framing every island, which the floor holds to.
+        if (onFloor(view, frame())) {
+          floorRoom.current.set(owner, (floorRoom.current.get(owner) ?? 0) + dy);
+          fly(frame());
+          return;
+        }
+        const shift = targetShift(probeAt(camera, view), 0, dy, view.zoom);
+        fly({ target: view.target.add(shift), zoom: view.zoom });
+      },
+      release: (owner) => {
+        if (!floorRoom.current.delete(owner)) return;
+        const controls = controlsRef.current;
+        if (controls === null || gesturing.current) return;
+        const all = frame();
+        if (onFloor(currentView(camera, controls), all)) fly(all);
+      },
     };
     return () => {
-      panBy.current = null;
+      makeRoom.current = null;
     };
-  }, [camera, fly, panBy]);
+  }, [camera, fly, frame, makeRoom]);
   const waitForPanel = useRef<(() => void) | null>(null);
   const stopWaiting = useCallback(() => {
     waitForPanel.current?.();
@@ -3252,6 +3287,12 @@ function WorldControls({
     if (reveal !== null) onReveal(reveal.islandKey, reveal.position);
   }, [reveal]);
   return null;
+}
+
+/** Slides the map `dy` pixels down for the bubble `owner`, and back once it closes. */
+interface MakeRoom {
+  readonly push: (owner: string, dy: number) => void;
+  readonly release: (owner: string) => void;
 }
 
 /** How close to the zoom floor counts as resting on it. */
