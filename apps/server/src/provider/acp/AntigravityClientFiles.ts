@@ -46,10 +46,21 @@ const resolveClientFilePath = Effect.fn("AntigravityClientFiles.resolveClientFil
             Effect.orElseSucceed(() => true),
           );
           if (entryExists) return yield* outside;
-          const parent = yield* input.fileSystem
-            .realPath(path.dirname(resolved))
-            .pipe(Effect.orElseSucceed(() => path.dirname(resolved)));
-          return path.join(parent, path.basename(resolved));
+          // A new file may sit under directories that do not exist yet. Resolve the
+          // nearest existing ancestor, so a symlinked prefix like macOS `/var` still
+          // compares against the resolved roots, then re-append the missing tail.
+          let ancestor = path.dirname(resolved);
+          let tail = path.basename(resolved);
+          for (;;) {
+            const real = yield* input.fileSystem
+              .realPath(ancestor)
+              .pipe(Effect.orElseSucceed(() => null));
+            if (real !== null) return path.join(real, tail);
+            const next = path.dirname(ancestor);
+            if (next === ancestor) return resolved;
+            tail = path.join(path.basename(ancestor), tail);
+            ancestor = next;
+          }
         }),
       ),
     );
