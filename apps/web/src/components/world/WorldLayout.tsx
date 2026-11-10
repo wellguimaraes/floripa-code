@@ -377,8 +377,10 @@ export function WorldLayout({
           </div>
         </Activity>
       ) : null}
-      {/* Over the chat panel and the top bar, in the canvas's box: the chat bubble goes here. */}
-      <div ref={setOverlay} className="pointer-events-none absolute inset-0 z-10" />
+      {/* Over the chat panel and the top bar, in the canvas's box: the chat bubble goes here.
+          z-40 clears the desktop browser's webviews, which the app root floats fixed at z-30
+          over the surfaces (see HostedBrowserWebview), and stays under dialogs and popups. */}
+      <div ref={setOverlay} className="pointer-events-none absolute inset-0 z-40" />
     </SidebarInset>
   );
 }
