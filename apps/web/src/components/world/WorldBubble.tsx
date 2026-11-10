@@ -10,7 +10,7 @@ import {
   type TimestampFormat,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
-import { ArchiveIcon, ChevronDownIcon, RefreshCwIcon } from "lucide-react";
+import { ArchiveIcon, ChevronDownIcon, PanelRightCloseIcon, RefreshCwIcon } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
@@ -602,6 +602,26 @@ export function WorldBubble(props: {
               <TooltipPopup side="top">
                 <span className="flex items-center gap-2">
                   Archive this thread <Kbd>{ARCHIVE_SHORTCUT}</Kbd>
+                </span>
+              </TooltipPopup>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label="Open full chat"
+                    aria-keyshortcuts="Control+Enter Meta+Enter"
+                    onClick={expand}
+                  />
+                }
+              >
+                <PanelRightCloseIcon />
+              </TooltipTrigger>
+              <TooltipPopup side="top">
+                <span className="flex items-center gap-2">
+                  Open full chat <Kbd>{EXPAND_SHORTCUT}</Kbd>
                 </span>
               </TooltipPopup>
             </Tooltip>
