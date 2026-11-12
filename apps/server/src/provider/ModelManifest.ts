@@ -280,7 +280,11 @@ export const make = Effect.gen(function* () {
       Effect.flatMap((response) => response.json),
       Effect.flatMap((json) => decodeManifest(json)),
       Effect.timeout(FETCH_TIMEOUT_MS),
-      Effect.catchCause(() => Effect.succeed(null)),
+      Effect.catchCause((cause) =>
+        Effect.logWarning("Model manifest refresh failed; keeping current manifest", cause).pipe(
+          Effect.as(null),
+        ),
+      ),
     );
     // A CDN can still serve an earlier edit after a release. Apply the same
     // freshness rule as the disk cache so it cannot undo bundled version gates.

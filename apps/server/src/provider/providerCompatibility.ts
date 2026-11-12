@@ -26,7 +26,8 @@ const VersionRange = TrimmedNonEmptyString.pipe(
 );
 const Policy = Schema.Struct({
   driver: TrimmedNonEmptyString,
-  floripaCodeRange: VersionRange,
+  // Wire key of the upstream remote manifest; renaming it makes every fetch fail to decode.
+  t3CodeRange: VersionRange,
   recommendedRange: Schema.optionalKey(VersionRange),
   recommendedVersion: Schema.optionalKey(StableVersion),
   ranges: Schema.Array(
@@ -64,7 +65,7 @@ export function resolveProviderCompatibility(
 ): ServerProviderCompatibilityAdvisory | undefined {
   const policy = policies?.find(
     (entry) =>
-      entry.driver === driver && satisfiesSemverRange(floripaCodeVersion, entry.floripaCodeRange),
+      entry.driver === driver && satisfiesSemverRange(floripaCodeVersion, entry.t3CodeRange),
   );
   if (!policy) return undefined;
   const unprefixed = version?.replace(/^v/, "");

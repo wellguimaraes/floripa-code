@@ -483,7 +483,7 @@ it.effect("caches valid compatibility policies and keeps them after a malformed 
     compatibility: [
       {
         driver: "codex",
-        floripaCodeRange: ">=0.0.42",
+        t3CodeRange: ">=0.0.42",
         recommendedVersion: "2.0.0",
         ranges: [{ range: "=2.0.0", status: "supported" }],
       },
