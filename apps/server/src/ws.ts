@@ -2940,7 +2940,10 @@ const layerWsRpc = (
         [WS_METHODS.reviewGetBranchCommits]: (input) => review.getBranchCommits(input),
         [WS_METHODS.reviewGetDiffPreview]: (input) => review.getDiffPreview(input),
         [WS_METHODS.reviewGetDiffFileContents]: (input) => review.getDiffFileContents(input),
-        [WS_METHODS.terminalOpen]: (input) => terminalManager.open(input),
+        [WS_METHODS.terminalOpen]: ({ command, ...input }) =>
+          command === undefined
+            ? terminalManager.open(input)
+            : terminalManager.run({ ...input, command }),
         [WS_METHODS.terminalAttach]: (input) =>
           Stream.callback<TerminalAttachStreamEvent, TerminalError>((queue) =>
             Effect.acquireRelease(
@@ -2953,6 +2956,8 @@ const layerWsRpc = (
         [WS_METHODS.terminalClear]: (input) => terminalManager.clear(input),
         [WS_METHODS.terminalRestart]: (input) => terminalManager.restart(input),
         [WS_METHODS.terminalClose]: (input) => terminalManager.close(input),
+        [WS_METHODS.terminalSetRestartOnRestore]: (input) =>
+          terminalManager.setRestartOnRestore(input),
         [WS_METHODS.terminalObserve]: (input) =>
           Stream.callback<TerminalAttachStreamEvent, TerminalError>((queue) =>
             Effect.acquireRelease(

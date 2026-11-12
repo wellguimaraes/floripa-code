@@ -145,6 +145,9 @@ interface RightPanelTabsProps {
    */
   previewRuntimeTabId?: ((tabId: string) => string) | undefined;
   terminalLabelsById: ReadonlyMap<string, string>;
+  /** Whether each terminal started with a command runs it again after a restart; absent for plain shells. */
+  terminalRestartOnRestoreById?: ReadonlyMap<string, boolean>;
+  onSetTerminalRestartOnRestore?: (terminalId: string, restartOnRestore: boolean) => void;
   /** With both, a split terminal tab shows each of its terminals as a button of its own. */
   onActivateTerminal?: (terminalId: string) => void;
   /** `anchor` is the clicked close button, for a confirmation to open beside it. */
@@ -241,6 +244,7 @@ type TabContextMenuAction =
   | "rename"
   | "copy-path"
   | "toggle-mute"
+  | "toggle-restart-on-restore"
   | PullRequestTabMenuAction
   | "close"
   | "close-others"
@@ -1404,6 +1408,17 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           }),
         });
       }
+      const restartOnRestore =
+        surface.kind === "terminal"
+          ? props.terminalRestartOnRestoreById?.get(surface.activeTerminalId)
+          : undefined;
+      if (restartOnRestore !== undefined && props.onSetTerminalRestartOnRestore) {
+        items.push({
+          id: "toggle-restart-on-restore",
+          label: "Restart on reopen",
+          checked: restartOnRestore,
+        });
+      }
       if (!tabsFollowThread) {
         items.push(
           { id: "close", label: "Close", separatorBefore: items.length > 0 },
@@ -1431,6 +1446,11 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       switch (action) {
         case "rename":
           setRenamingDevice(surface.id);
+          break;
+        case "toggle-restart-on-restore":
+          if (surface.kind === "terminal" && restartOnRestore !== undefined) {
+            props.onSetTerminalRestartOnRestore?.(surface.activeTerminalId, !restartOnRestore);
+          }
           break;
         case "copy-path":
           if (surface.kind === "file" && surface.attachment === undefined) {

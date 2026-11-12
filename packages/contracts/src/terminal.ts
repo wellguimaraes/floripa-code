@@ -44,6 +44,8 @@ const TerminalSessionInput = Schema.Struct({
 });
 export type TerminalSessionInput = Schema.Codec.Encoded<typeof TerminalSessionInput>;
 
+const TerminalCommandSchema = TrimmedNonEmptyStringSchema.check(Schema.isMaxLength(8_192));
+
 export const TerminalOpenInput = Schema.Struct({
   ...TerminalSessionInput.fields,
   cwd: TrimmedNonEmptyStringSchema,
@@ -52,8 +54,28 @@ export const TerminalOpenInput = Schema.Struct({
   rows: Schema.optional(TerminalRowsSchema),
   env: Schema.optional(TerminalEnvSchema),
   providerInstanceId: Schema.optional(ProviderInstanceId),
+  /**
+   * Typed into the shell once it is open. The server remembers it, so
+   * `restartOnRestore` can run it again in a fresh shell when the server next
+   * starts.
+   */
+  command: Schema.optional(TerminalCommandSchema),
+  restartOnRestore: Schema.optional(Schema.Boolean),
 });
 export type TerminalOpenInput = typeof TerminalOpenInput.Type;
+
+/** `TerminalOpenInput` with the command to type, as the terminal manager's `run` takes it. */
+export const TerminalRunInput = Schema.Struct({
+  ...TerminalOpenInput.fields,
+  command: TerminalCommandSchema,
+});
+export type TerminalRunInput = typeof TerminalRunInput.Type;
+
+export const TerminalSetRestartOnRestoreInput = Schema.Struct({
+  ...TerminalSessionInput.fields,
+  restartOnRestore: Schema.Boolean,
+});
+export type TerminalSetRestartOnRestoreInput = typeof TerminalSetRestartOnRestoreInput.Type;
 
 export const TerminalAttachInput = Schema.Struct({
   ...TerminalSessionInput.fields,
@@ -143,6 +165,12 @@ export const TerminalSummary = Schema.Struct({
   /** Server-computed display title (idle shell vs subprocess command). */
   label: Schema.String.check(Schema.isMaxLength(128)),
   updatedAt: Schema.String,
+  /** The command `terminal.run` typed into this shell, when it was started that way. */
+  command: Schema.optional(TerminalCommandSchema),
+  /** Whether the server runs `command` again in a fresh shell when it next starts. */
+  restartOnRestore: Schema.optional(Schema.Boolean),
+  /** Started by an agent through MCP, so clients show it without being asked. */
+  startedByAgent: Schema.optional(Schema.Boolean),
 });
 export type TerminalSummary = typeof TerminalSummary.Type;
 

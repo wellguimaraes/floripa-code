@@ -24,6 +24,7 @@ import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManag
 import * as ThreadLaunch from "./orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagement from "./orchestration-v2/ThreadManagementService.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
+import * as TerminalManager from "./terminal/Manager.ts";
 import * as ProjectService from "./project/ProjectService.ts";
 import * as AgentAwarenessRelay from "./relay/AgentAwarenessRelay.ts";
 import { ServerActivation } from "./serverActivation.ts";
@@ -166,6 +167,7 @@ it.effect("parks automatic pull until activation without delaying command readin
         NodeCrypto.layer,
         Layer.mock(EnvironmentAuth.EnvironmentAuth)({}),
         Layer.mock(ExternalLauncher.ExternalLauncher)({}),
+        Layer.mock(TerminalManager.TerminalManager)({ restoreSessions: Effect.void }),
         Layer.mock(HttpServer.HttpServer)({
           address: NetAddress.inetAddressFromIpStringUnsafe("127.0.0.1", 3773),
         }),

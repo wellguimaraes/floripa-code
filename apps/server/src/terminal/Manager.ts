@@ -32,7 +32,9 @@ import {
   type TerminalResizeInput,
   type ResourceMonitorProcessTableEntry,
   type TerminalRestartInput,
+  type TerminalRunInput,
   type TerminalSessionSnapshot,
+  type TerminalSetRestartOnRestoreInput,
   type TerminalSessionStatus,
   type TerminalSummary,
   type TerminalWriteInput,
@@ -40,6 +42,7 @@ import {
   CodexSettings,
   ProviderInstanceId,
 } from "@t3tools/contracts";
+import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import { makeKeyedCoalescingWorker } from "@t3tools/shared/KeyedCoalescingWorker";
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import { AgentScope } from "@t3tools/shared/AgentScope";
@@ -63,6 +66,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
+import * as Semaphore from "effect/Semaphore";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 
 import * as ServerConfig from "../config.ts";
@@ -205,6 +209,26 @@ export class TerminalManager extends Context.Service<
     ) => Effect.Effect<TerminalSessionSnapshot, TerminalError>;
 
     /**
+     * Open a terminal like `open`, then type `command` into its shell. With
+     * `restartOnRestore`, `restoreSessions` runs it again after a restart.
+     */
+    readonly run: (
+      input: TerminalRunInput & { readonly startedByAgent?: boolean },
+    ) => Effect.Effect<TerminalSessionSnapshot, TerminalError>;
+
+    /** Turn re-running a `run` terminal's command after a restart on or off. */
+    readonly setRestartOnRestore: (
+      input: TerminalSetRestartOnRestoreInput,
+    ) => Effect.Effect<void, TerminalError>;
+
+    /**
+     * Run again every command saved with `restartOnRestore`. Called once by
+     * server startup, never by layer construction, so CLI commands that build
+     * this layer do not start the user's dev servers.
+     */
+    readonly restoreSessions: Effect.Effect<void>;
+
+    /**
      * Close an active terminal session.
      *
      * When `terminalId` is omitted, closes all sessions for the thread.
@@ -331,6 +355,51 @@ interface TerminalSessionState {
   /** Normalized child command name when `hasRunningSubprocess`; cleared when idle. */
   childCommandLabel: string | null;
   runtimeEnv: Record<string, string> | null;
+  /** Set by `run`: the command it typed, and how to type it again after a restart. */
+  launch: TerminalLaunch | null;
+}
+
+interface TerminalLaunch {
+  readonly command: string;
+  readonly restartOnRestore: boolean;
+  readonly startedByAgent: boolean;
+  /** The caller's env and provider before resolution, so no resolved provider secret is saved. */
+  readonly env: Record<string, string> | undefined;
+  readonly providerInstanceId: ProviderInstanceId | undefined;
+}
+
+/** A `run` terminal saved to restart, as `restore.json` in the logs directory holds it. */
+const RestorableTerminal = Schema.Struct({
+  threadId: Schema.String,
+  scopeKey: Schema.optional(Schema.String),
+  terminalId: Schema.String,
+  cwd: Schema.String,
+  worktreePath: Schema.NullOr(Schema.String),
+  command: Schema.String,
+  startedByAgent: Schema.Boolean,
+  env: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  providerInstanceId: Schema.optional(ProviderInstanceId),
+});
+type RestorableTerminal = typeof RestorableTerminal.Type;
+const RestorableTerminalsJson = Schema.fromJsonString(Schema.Array(RestorableTerminal));
+const decodeRestorableTerminals = Schema.decodeUnknownEffect(RestorableTerminalsJson);
+const encodeRestorableTerminals = Schema.encodeEffect(RestorableTerminalsJson);
+
+function restorableTerminal(session: TerminalSessionState): RestorableTerminal | null {
+  const launch = session.launch;
+  if (!launch?.restartOnRestore) return null;
+  return {
+    ...ownerFields(session),
+    terminalId: session.terminalId,
+    cwd: session.cwd,
+    worktreePath: session.worktreePath,
+    command: launch.command,
+    startedByAgent: launch.startedByAgent,
+    ...(launch.env === undefined ? {} : { env: launch.env }),
+    ...(launch.providerInstanceId === undefined
+      ? {}
+      : { providerInstanceId: launch.providerInstanceId }),
+  };
 }
 
 interface PersistHistoryRequest {
@@ -431,6 +500,13 @@ function summary(session: TerminalSessionState): TerminalSummary {
     hasRunningSubprocess: session.hasRunningSubprocess,
     label: terminalWireLabel(session),
     updatedAt: session.updatedAt,
+    ...(session.launch === null
+      ? {}
+      : {
+          command: session.launch.command,
+          restartOnRestore: session.launch.restartOnRestore,
+          ...(session.launch.startedByAgent ? { startedByAgent: true } : {}),
+        }),
   };
 }
 
@@ -1641,6 +1717,31 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
 
   const readManagerState = SynchronizedRef.get(managerStateRef);
 
+  const restoreListPath = path.join(logsDir, "restore.json");
+  /** Saved entries `restoreSessions` has not run yet, kept so an earlier save cannot drop them. */
+  const pendingRestore = new Map<string, RestorableTerminal>();
+  const restoreListLock = yield* Semaphore.make(1);
+  // Reads the sessions under the lock, so the last write always holds the latest set.
+  const persistRestorableTerminals = Effect.gen(function* () {
+    const state = yield* readManagerState;
+    const entries = new Map(pendingRestore);
+    for (const [key, session] of state.sessions) {
+      const entry = restorableTerminal(session);
+      if (entry === null) entries.delete(key);
+      else entries.set(key, entry);
+    }
+    const contents = yield* encodeRestorableTerminals([...entries.values()]);
+    yield* writeFileStringAtomically({ filePath: restoreListPath, contents }).pipe(
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(Path.Path, path),
+    );
+  }).pipe(
+    restoreListLock.withPermits(1),
+    Effect.catchCause((cause) =>
+      Effect.logWarning("failed to save terminals to restore", { cause }),
+    ),
+  );
+
   const modifyManagerState = <A>(
     f: (state: TerminalManagerState) => readonly [A, TerminalManagerState],
   ) => SynchronizedRef.modify(managerStateRef, f);
@@ -2434,6 +2535,9 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   ) {
     const key = toSessionKey(owner, terminalId);
     const session = yield* getSession(owner, terminalId);
+    const wasRestorable =
+      pendingRestore.delete(key) ||
+      (Option.isSome(session) && session.value.launch?.restartOnRestore === true);
     const closedEventSequence = Option.isSome(session) ? session.value.eventSequence + 1 : 0;
     // Events name the session's opener, not the caller that closed it.
     const eventOwner = Option.isSome(session) ? ownerFields(session.value) : ownerFields(owner);
@@ -2467,6 +2571,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     if (deleteHistoryOnClose) {
       yield* deleteHistory(owner, terminalId);
     }
+    if (wasRestorable) yield* persistRestorableTerminals;
   });
 
   const pollSubprocessActivity = Effect.fn("terminal.pollSubprocessActivity")(function* () {
@@ -2670,6 +2775,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         hasRunningSubprocess: false,
         childCommandLabel: null,
         runtimeEnv: normalizedRuntimeEnv(input.env),
+        launch: null,
       };
 
       const createdSession = session;
@@ -3104,6 +3210,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           hasRunningSubprocess: false,
           childCommandLabel: null,
           runtimeEnv: normalizedRuntimeEnv(input.env),
+          launch: null,
         };
         const createdSession = session;
         yield* modifyManagerState((state) => {
@@ -3118,6 +3225,10 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         session.cwd = input.cwd;
         session.worktreePath = input.worktreePath ?? null;
         session.runtimeEnv = normalizedRuntimeEnv(input.env);
+        // A restart is a plain shell again; its old command no longer runs here.
+        const hadRestorableLaunch = session.launch?.restartOnRestore === true;
+        session.launch = null;
+        if (hadRestorableLaunch) yield* persistRestorableTerminals;
       }
 
       const cols = input.cols ?? session.cols;
@@ -3227,7 +3338,93 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       ),
     );
 
+  /** Tells metadata subscribers a session's launch changed, as subprocess activity does. */
+  const publishLaunchChange = (session: TerminalSessionState) =>
+    publishEvent({
+      type: "activity",
+      ...ownerFields(session),
+      terminalId: session.terminalId,
+      sequence: advanceEventSequence(session).sequence,
+      hasRunningSubprocess: session.hasRunningSubprocess,
+      label: terminalWireLabel(session),
+    });
+
+  const run: TerminalManager["Service"]["run"] = Effect.fn("terminal.run")(function* (input) {
+    const { command, restartOnRestore, startedByAgent, ...openInput } = input;
+    yield* open(openInput);
+    yield* write({
+      threadId: input.threadId,
+      ...(input.scopeKey === undefined ? {} : { scopeKey: input.scopeKey }),
+      terminalId: input.terminalId,
+      data: `${command}\r`,
+    });
+    const opened = yield* withOwnerLock(
+      input,
+      Effect.gen(function* () {
+        const session = yield* requireSession(input, input.terminalId);
+        session.launch = {
+          command,
+          restartOnRestore: restartOnRestore === true,
+          startedByAgent: startedByAgent === true,
+          env: input.env,
+          providerInstanceId: input.providerInstanceId,
+        };
+        yield* publishLaunchChange(session);
+        return snapshot(session);
+      }),
+    );
+    yield* persistRestorableTerminals;
+    return opened;
+  });
+
+  const setRestartOnRestore: TerminalManager["Service"]["setRestartOnRestore"] = (input) =>
+    withOwnerLock(
+      input,
+      Effect.gen(function* () {
+        const session = yield* requireSession(input, input.terminalId);
+        // Only a `run` terminal knows a command to run again.
+        if (session.launch === null || session.launch.restartOnRestore === input.restartOnRestore)
+          return;
+        session.launch = { ...session.launch, restartOnRestore: input.restartOnRestore };
+        yield* publishLaunchChange(session);
+        yield* persistRestorableTerminals;
+      }),
+    );
+
+  const restoreSessions: TerminalManager["Service"]["restoreSessions"] = Effect.gen(function* () {
+    if (!(yield* fileSystem.exists(restoreListPath))) return;
+    const saved = yield* decodeRestorableTerminals(
+      yield* fileSystem.readFileString(restoreListPath),
+    );
+    for (const entry of saved) pendingRestore.set(toSessionKey(entry, entry.terminalId), entry);
+    // One at a time: each opens a shell and starts what is usually a dev server.
+    yield* Effect.forEach(
+      saved,
+      ({ startedByAgent, ...entry }) =>
+        run({ ...entry, restartOnRestore: true, startedByAgent }).pipe(
+          Effect.catch((error) =>
+            Effect.logWarning("could not restore terminal", {
+              terminalId: entry.terminalId,
+              error: error.message,
+            }),
+          ),
+          Effect.ensuring(
+            Effect.sync(() => pendingRestore.delete(toSessionKey(entry, entry.terminalId))),
+          ),
+        ),
+      { discard: true },
+    );
+    // Drops entries whose checkout is gone, so they are not retried every start.
+    yield* persistRestorableTerminals;
+  }).pipe(
+    Effect.catchCause((cause) => Effect.logWarning("failed to restore terminals", { cause })),
+    Effect.withSpan("terminal.restoreSessions"),
+  );
+
   return TerminalManager.of({
+    run,
+    setRestartOnRestore,
+    restoreSessions,
     open,
     attachStream,
     observeStream,

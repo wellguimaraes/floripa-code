@@ -1211,6 +1211,10 @@ export default function ChatView(props: ChatViewProps) {
   const openTerminal = useAtomCommand(terminalEnvironment.open, "terminal open");
   const writeTerminal = useAtomCommand(terminalEnvironment.write, "terminal write");
   const closeTerminalMutation = useAtomCommand(terminalEnvironment.close, "terminal close");
+  const setTerminalRestartOnRestore = useAtomCommand(
+    terminalEnvironment.setRestartOnRestore,
+    "terminal restart on reopen",
+  );
   const createThread = useOrchestrationCommand(threadEnvironment.create, { reportFailure: false });
   const deleteThread = useOrchestrationCommand(threadEnvironment.delete, { reportFailure: false });
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
@@ -1819,6 +1823,30 @@ export default function ChatView(props: ChatViewProps) {
     }
     return labels;
   }, [activeThreadKnownSessions]);
+  // Only terminals started with a command can run it again, so only they get the toggle.
+  const activeTerminalRestartOnRestoreById = useMemo(() => {
+    const flags = new Map<string, boolean>();
+    for (const session of activeThreadKnownSessions) {
+      if (session.state.summary?.command === undefined) continue;
+      flags.set(session.target.terminalId, session.state.summary.restartOnRestore === true);
+    }
+    return flags;
+  }, [activeThreadKnownSessions]);
+  const setPanelTerminalRestartOnRestore = useCallback(
+    (terminalId: string, restartOnRestore: boolean) => {
+      if (!activeThreadRef) return;
+      void setTerminalRestartOnRestore({
+        environmentId: activeThreadRef.environmentId,
+        input: {
+          threadId: activeThreadRef.threadId,
+          terminalId,
+          ...terminalScopeInput,
+          restartOnRestore,
+        },
+      });
+    },
+    [activeThreadRef, setTerminalRestartOnRestore, terminalScopeInput],
+  );
   const activeEnvironmentServerBrowser = useEnvironmentSupportsServerBrowser(
     activeThreadRef?.environmentId ?? null,
   );
@@ -4350,6 +4378,8 @@ export default function ChatView(props: ChatViewProps) {
         ...(targetWorktreePath !== null ? { worktreePath: targetWorktreePath } : {}),
         env: runtimeEnv,
         ...(canReuseBaseTerminal ? {} : { cols: SCRIPT_TERMINAL_COLS, rows: SCRIPT_TERMINAL_ROWS }),
+        // The server types it once the shell is open, and can run it again on reopen.
+        command: script.command,
       };
 
       setTerminalLaunches((current) =>
@@ -4378,26 +4408,6 @@ export default function ChatView(props: ChatViewProps) {
         return;
       }
 
-      if (!hasTerminalWriteAccess()) return;
-      const writeResult = await writeTerminal({
-        environmentId,
-        input: {
-          threadId: activeThreadId,
-          terminalId: targetTerminalId,
-          ...terminalScopeInput,
-          data: `${script.command}\r`,
-        },
-      });
-      if (writeResult._tag === "Failure") {
-        if (!isAtomCommandInterrupted(writeResult)) {
-          const error = squashAtomCommandFailure(writeResult);
-          setThreadError(
-            activeThreadId,
-            error instanceof Error ? error.message : `Failed to run script "${script.name}".`,
-          );
-        }
-        return;
-      }
       if (script.autoOpenPreview && script.previewUrl && isPreviewSupportedInRuntime()) {
         const previewResult = await openUrlInPreview({
           threadRef: activeThreadRef,
@@ -4429,12 +4439,10 @@ export default function ChatView(props: ChatViewProps) {
       environmentId,
       openTerminal,
       openPreview,
-      hasTerminalWriteAccess,
       canReuseTerminal,
       allocateTerminalId,
       runningTerminalIds,
       terminalScopeInput,
-      writeTerminal,
     ],
   );
 
@@ -11860,6 +11868,8 @@ export default function ChatView(props: ChatViewProps) {
             desktopByTabId={activePreviewState.desktopByTabId}
             previewRuntimeTabId={resolvePreviewRuntimeTabId}
             terminalLabelsById={activeTerminalLabelsById}
+            terminalRestartOnRestoreById={activeTerminalRestartOnRestoreById}
+            onSetTerminalRestartOnRestore={setPanelTerminalRestartOnRestore}
             onActivateTerminal={activatePanelTerminal}
             onCloseTerminal={requestClosePanelTerminal}
             onActivate={activateRightPanelSurface}
@@ -11931,6 +11941,8 @@ export default function ChatView(props: ChatViewProps) {
               desktopByTabId={activePreviewState.desktopByTabId}
               previewRuntimeTabId={resolvePreviewRuntimeTabId}
               terminalLabelsById={activeTerminalLabelsById}
+              terminalRestartOnRestoreById={activeTerminalRestartOnRestoreById}
+              onSetTerminalRestartOnRestore={setPanelTerminalRestartOnRestore}
               onActivateTerminal={activatePanelTerminal}
               onCloseTerminal={requestClosePanelTerminal}
               onActivate={activateRightPanelSurface}

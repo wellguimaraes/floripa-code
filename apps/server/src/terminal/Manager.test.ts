@@ -687,6 +687,53 @@ it.layer(
     }),
   );
 
+  it.effect("runs saved commands again after a restart, and only those", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const { join } = yield* Path.Path;
+      const baseDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "floripacode-terminal-restore-",
+      });
+      const logsDir = join(baseDir, "logs");
+      const makeManager = (ptyAdapter: FakePtyAdapter) =>
+        TerminalManager.makeWithOptions({ logsDir, ptyAdapter, processKillGraceMs: 1 });
+      const inScope = (terminalId: string) => openInput({ scopeKey: "scope-a", terminalId });
+
+      // The first server: its scope closing is the shutdown that kills every shell.
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const manager = yield* makeManager(new FakePtyAdapter());
+          yield* manager.run({ ...inScope("dev"), command: "bun dev", restartOnRestore: true });
+          yield* manager.run({ ...inScope("tests"), command: "bun test" });
+          yield* manager.run({
+            ...inScope("closed"),
+            command: "bun watch",
+            restartOnRestore: true,
+          });
+          yield* manager.close({ threadId: "thread-1", scopeKey: "scope-a", terminalId: "closed" });
+        }),
+      );
+
+      const ptyAdapter = new FakePtyAdapter();
+      const manager = yield* makeManager(ptyAdapter);
+      // Building the service restarts nothing; only server startup asks for it.
+      expect(ptyAdapter.processes).toHaveLength(0);
+      yield* manager.restoreSessions;
+      expect(ptyAdapter.processes.map((process) => process.writes)).toEqual([["bun dev\r"]]);
+
+      // Turning the flag off takes it out of the next restore.
+      yield* manager.setRestartOnRestore({
+        threadId: "thread-1",
+        scopeKey: "scope-a",
+        terminalId: "dev",
+        restartOnRestore: false,
+      });
+      const next = new FakePtyAdapter();
+      yield* (yield* makeManager(next)).restoreSessions;
+      expect(next.processes).toHaveLength(0);
+    }),
+  );
+
   it.effect("forwards write and resize to active pty process", () =>
     Effect.gen(function* () {
       const { manager, ptyAdapter } = yield* createManager();

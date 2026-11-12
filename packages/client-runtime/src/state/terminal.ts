@@ -95,6 +95,12 @@ export function createTerminalEnvironmentAtoms<R, E>(
       scheduler: lifecycleScheduler,
       concurrency: lifecycleConcurrency,
     }),
+    setRestartOnRestore: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:terminal:set-restart-on-restore",
+      tag: WS_METHODS.terminalSetRestartOnRestore,
+      scheduler: lifecycleScheduler,
+      concurrency: lifecycleConcurrency,
+    }),
     close: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:terminal:close",
       tag: WS_METHODS.terminalClose,

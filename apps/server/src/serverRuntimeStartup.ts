@@ -43,6 +43,7 @@ import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as AgentAwarenessRelay from "./relay/AgentAwarenessRelay.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerSettings from "./serverSettings.ts";
+import * as TerminalManager from "./terminal/Manager.ts";
 import { forkParked, forkParkedFiber } from "./serverActivation.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
@@ -424,6 +425,7 @@ const make = (options?: StartupOptions) =>
     const agentAwarenessRelay = yield* AgentAwarenessRelay.AgentAwarenessRelay;
     const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
     const serverSettings = yield* ServerSettings.ServerSettingsService;
+    const terminalManager = yield* TerminalManager.TerminalManager;
     const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
     const crypto = yield* Crypto.Crypto;
     const launcher = yield* ServiceLauncherClient.ServiceLauncherClient;
@@ -552,6 +554,10 @@ const make = (options?: StartupOptions) =>
         ),
         forkParked,
       );
+
+      // Restarts terminals saved with restartOnRestore, such as an agent's dev
+      // server. After activation like auto-pull, so they never hold readiness.
+      yield* runStartupPhase("terminals.restore", terminalManager.restoreSessions).pipe(forkParked);
 
       const importPendingTranscripts = legacyV1ThreadImporter.importPendingTranscripts.pipe(
         Effect.tap((summary) =>
