@@ -58,12 +58,17 @@ stopped backends and replays the failure for the same token.
 
 ## Recovering interrupted threads
 
-Restart continuation is an environment-owned preference, off by default. The
+Restart continuation is an environment-owned preference, on by default. The
 [v2 recovery service](../../apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.ts)
 requires matching durable run, provider thread, session, and native resume identity.
 Queued runs never started, so recovery holds them and continues the run they wait
-behind. A finished run qualifies only when the restart cancelled its background work;
-its continuation tells the provider what will not report back.
+behind. Only a run cut mid-turn continues. A finished run stays asleep even when the
+restart cancelled its background work; its next user turn carries the note listing
+what will not report back. Waking it would spend a turn the user did not ask for.
+Long-running commands an agent should keep, such as a dev server, belong in an app
+terminal with restart on reopen, which the
+[terminal manager](../../apps/server/src/terminal/Manager.ts) runs again at startup
+without involving the agent.
 
 Recovery retires effects tied to the lost process and records continuation intent
 in the durable outbox. That intent survives another restart before provider startup.
