@@ -54,6 +54,35 @@ export function deriveAvailableInstanceId(
   }
 }
 
+/** Suffix a label with the next free number ("Claude" becomes "Claude 2") when another provider uses it. */
+export function deriveAvailableLabel(base: string, existing: ReadonlySet<string>): string {
+  const taken = new Set(Array.from(existing, (label) => label.trim().toLowerCase()));
+  if (!taken.has(base.trim().toLowerCase())) return base;
+  for (let suffix = 2; ; suffix += 1) {
+    const candidate = `${base} ${suffix}`;
+    if (!taken.has(candidate.toLowerCase())) return candidate;
+  }
+}
+
+/**
+ * Suggest a CLAUDE_CONFIG_DIR for a new Claude instance so it signs in to its own
+ * account instead of sharing the default login. "Claude Personal" gives
+ * `~/.claude_personal`; a leading "Claude" is dropped to avoid `~/.claude_claude_2`.
+ */
+export function suggestClaudeConfigDir(label: string, taken: ReadonlySet<string>): string {
+  const slug = label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/^claude(_|$)/, "");
+  const base = `~/.claude_${slug || "2"}`;
+  if (!taken.has(base)) return base;
+  for (let suffix = 2; ; suffix += 1) {
+    if (!taken.has(`${base}_${suffix}`)) return `${base}_${suffix}`;
+  }
+}
+
 export function isConfiguredAcpRegistryAgent(
   instances: Readonly<Record<string, { readonly driver: string; readonly config?: unknown }>>,
   agentId: string,

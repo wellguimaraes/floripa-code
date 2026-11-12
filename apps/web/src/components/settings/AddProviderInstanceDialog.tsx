@@ -42,8 +42,10 @@ import {
   ACP_REGISTRY_WIZARD_STEPS,
   LOCAL_ACP_WIZARD_STEPS,
   deriveAvailableInstanceId,
+  deriveAvailableLabel,
   resolveAcpRegistryWizardNavigation,
   resolveWizardNavigation,
+  suggestClaudeConfigDir,
   updateProviderIdentityDraft,
   type ProviderIdentityDraft,
   type WizardNavigation,
@@ -79,6 +81,8 @@ function deriveInstanceId(driver: ProviderDriverKind, label: string): string {
 const INSTANCE_ID_PATTERN = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
 const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
 const ACP_REGISTRY_DRIVER_KIND = ProviderDriverKind.make("acpRegistry");
+const CODEX_DRIVER_KIND = ProviderDriverKind.make("codex");
+const CLAUDE_DRIVER_KIND = ProviderDriverKind.make("claudeAgent");
 const DEFAULT_DRIVER_OPTION = providerClients.definitions[0]!;
 const EMPTY_CONFIG_DRAFT: Record<string, unknown> = {};
 /**
@@ -144,10 +148,26 @@ export function AddProviderInstanceDialog({
     [settings.providerInstances],
   );
 
+  // Codex and Claude show under their driver label before they are configured.
+  const existingLabels = useMemo(() => {
+    const labels = new Set<string>(
+      [CODEX_DRIVER_KIND, CLAUDE_DRIVER_KIND].flatMap(
+        (kind) => providerClients.get(kind)?.label ?? [],
+      ),
+    );
+    for (const instance of Object.values(settings.providerInstances ?? {})) {
+      const instanceLabel =
+        instance.displayName?.trim() || providerClients.get(instance.driver)?.label;
+      if (instanceLabel) labels.add(instanceLabel);
+    }
+    return labels;
+  }, [settings.providerInstances]);
+
   const driverOption = providerClients.get(driver) ?? DEFAULT_DRIVER_OPTION;
   const isAcpRegistry = driver === ACP_REGISTRY_DRIVER_KIND;
+  const defaultLabel = deriveAvailableLabel(driverOption.label, existingLabels);
   const defaultIdentity: ProviderIdentityDraft = {
-    label: driverOption.label,
+    label: defaultLabel,
     accentColor: "",
     instanceIdOverride: null,
   };
@@ -156,7 +176,11 @@ export function AddProviderInstanceDialog({
     instanceIdOverride ??
     deriveAvailableInstanceId(
       (candidateLabel) => {
-        if (!candidateLabel.trim() || candidateLabel === driverOption.label) {
+        if (
+          !candidateLabel.trim() ||
+          candidateLabel === driverOption.label ||
+          candidateLabel === defaultLabel
+        ) {
           return isAcpRegistry ? `${driver}_custom` : driver;
         }
         return deriveInstanceId(driver, candidateLabel);
@@ -210,6 +234,18 @@ export function AddProviderInstanceDialog({
     }));
   };
 
+  const seedClaudeConfigDir = () => {
+    if (typeof configDraft.homePath === "string" && configDraft.homePath.trim().length > 0) return;
+    const taken = new Set<string>();
+    for (const instance of Object.values(settings.providerInstances ?? {})) {
+      const homePath = (instance.config as { homePath?: unknown } | undefined)?.homePath;
+      if (instance.driver === CLAUDE_DRIVER_KIND && typeof homePath === "string") {
+        taken.add(homePath.trim());
+      }
+    }
+    setConfigDraft({ ...configDraft, homePath: suggestClaudeConfigDir(label, taken) });
+  };
+
   const applyWizardNavigation = (navigation: WizardNavigation) => {
     if (isSaving || isPreparingRegistryAgent || createdInstanceId) return;
     if (navigation.kind === "blocked") {
@@ -218,6 +254,10 @@ export function AddProviderInstanceDialog({
     if (isAcpRegistry && !isLocalAcp && navigation.kind === "navigate" && navigation.step === 2) {
       void handleSave();
       return;
+    }
+    // A second Claude login needs its own config dir, so offer one on reaching Config.
+    if (navigation.kind === "navigate" && navigation.step === 2 && driver === CLAUDE_DRIVER_KIND) {
+      seedClaudeConfigDir();
     }
     setWizardStep(navigation.step);
   };

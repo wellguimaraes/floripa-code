@@ -182,8 +182,35 @@ describe("AddProviderInstanceDialog environment routing", () => {
       instance: {
         driver: "codex",
         enabled: true,
-        displayName: "Codex",
+        displayName: "Codex 2",
         config: { setupMode: "existing" },
+      },
+    });
+  });
+
+  it("suggests a label and its own config directory for another Claude account", async () => {
+    settingsHooks.read.mockReturnValue({ providerInstances: {} });
+    let tree = render();
+    const group = visitElements(
+      tree,
+      (element) => element.props["aria-labelledby"] === "add-instance-driver-label",
+    );
+    (group!.props.onValueChange as (value: string) => void)("claudeAgent");
+    tree = render();
+    (findByChildren(tree, "Next").props.onClick as () => void)();
+    tree = render();
+    (findByChildren(tree, "Next").props.onClick as () => void)();
+    tree = render();
+    (findByChildren(tree, "Add instance").props.onClick as () => void)();
+    await Promise.resolve();
+    expect(settingsHooks.mutate).toHaveBeenCalledWith({
+      operation: "create",
+      instanceId: "claudeAgent_2",
+      instance: {
+        driver: "claudeAgent",
+        enabled: true,
+        displayName: "Claude 2",
+        config: { homePath: "~/.claude_2" },
       },
     });
   });

@@ -2,10 +2,12 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   deriveAvailableInstanceId,
+  deriveAvailableLabel,
   getProviderIdentityDraft,
   isConfiguredAcpRegistryAgent,
   resolveAcpRegistryWizardNavigation,
   resolveWizardNavigation,
+  suggestClaudeConfigDir,
   updateProviderIdentityDraft,
 } from "./AddProviderInstanceDialog.logic";
 
@@ -113,5 +115,22 @@ describe("ACP Registry wizard", () => {
       label: "Gemini CLI",
       instanceIdOverride: "acpRegistry_gemini_cli",
     });
+  });
+});
+
+describe("deriveAvailableLabel", () => {
+  it("keeps a free label and numbers a taken one, ignoring case", () => {
+    expect(deriveAvailableLabel("Claude", new Set(["Codex"]))).toBe("Claude");
+    expect(deriveAvailableLabel("Claude", new Set(["claude"]))).toBe("Claude 2");
+    expect(deriveAvailableLabel("Claude", new Set(["Claude", "Claude 2"]))).toBe("Claude 3");
+  });
+});
+
+describe("suggestClaudeConfigDir", () => {
+  it("derives the directory from the label and skips taken ones", () => {
+    expect(suggestClaudeConfigDir("Claude Personal", new Set())).toBe("~/.claude_personal");
+    expect(suggestClaudeConfigDir("Claude 2", new Set())).toBe("~/.claude_2");
+    expect(suggestClaudeConfigDir("Claude", new Set())).toBe("~/.claude_2");
+    expect(suggestClaudeConfigDir("Work", new Set(["~/.claude_work"]))).toBe("~/.claude_work_2");
   });
 });
