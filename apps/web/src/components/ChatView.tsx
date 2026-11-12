@@ -7619,6 +7619,18 @@ export default function ChatView(props: ChatViewProps) {
     useRightPanelStore.getState().setThreadPanelOpen(activeThreadRef, "popover", false);
   }, [activeThreadRef, isThreadFindActive, threadPanelPresentation]);
 
+  const closeActiveRightPanelSurface = useEffectEvent(() => {
+    if (!activeRightPanelSurface) return;
+    // Diff, the files tree and pull requests are not the reader's to close; closing hides the panel.
+    if (
+      activeRightPanelSurface.kind === "diff" ||
+      activeRightPanelSurface.kind === "files" ||
+      rightPanelSurfaceType(activeRightPanelSurface.kind) === "pull-request"
+    ) {
+      closePreviewPanel();
+    } else closeRightPanelSurface(activeRightPanelSurface);
+  });
+
   useEffect(() => {
     const handler = (event: globalThis.KeyboardEvent) => {
       if (preventRepeatedTerminalCloseShortcut(event, keybindings)) {
@@ -7770,15 +7782,7 @@ export default function ChatView(props: ChatViewProps) {
         if (!activeRightPanelSurface) return;
         event.preventDefault();
         event.stopPropagation();
-        if (event.repeat) return;
-        // Diff, the files tree and pull requests are not the reader's to close; closing hides the panel.
-        if (
-          activeRightPanelSurface.kind === "diff" ||
-          activeRightPanelSurface.kind === "files" ||
-          rightPanelSurfaceType(activeRightPanelSurface.kind) === "pull-request"
-        ) {
-          closePreviewPanel();
-        } else closeRightPanelSurface(activeRightPanelSurface);
+        if (!event.repeat) closeActiveRightPanelSurface();
         return;
       }
 
@@ -7989,8 +7993,6 @@ export default function ChatView(props: ChatViewProps) {
     canInterruptRunningThread,
     terminalPanelOpen,
     activeThreadId,
-    closePreviewPanel,
-    closeRightPanelSurface,
     requestClosePanelTerminal,
     runProjectScript,
     splitPanelTerminal,
@@ -8031,9 +8033,12 @@ export default function ChatView(props: ChatViewProps) {
       const shownType = RIGHT_PANEL_TYPE_COMMANDS[action];
       if (action === "rightPanel.toggle") toggleRightPanel();
       else if (action === "rightPanel.toggleMaximized") toggleChatCollapsed();
-      else if (shownType) activateRightPanelType(shownType);
+      else if (action === "rightPanel.close") {
+        if (worldChatShown) void navigate({ to: "/" });
+        else closeActiveRightPanelSurface();
+      } else if (shownType) activateRightPanelType(shownType);
     });
-  }, [activateRightPanelType, toggleChatCollapsed, toggleRightPanel]);
+  }, [activateRightPanelType, navigate, toggleChatCollapsed, toggleRightPanel, worldChatShown]);
 
   // Paste-to-focus: the resting composer blurs on a click into the timeline,
   // so a paste that follows has no editable target and would be dropped.

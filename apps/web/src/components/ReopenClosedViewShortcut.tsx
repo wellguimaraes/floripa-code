@@ -49,6 +49,7 @@ const PREVIEW_FORWARDED_LAYOUT_COMMANDS = [
   "rightPanel.toggle",
   "rightPanel.toggleMaximized",
   "rightPanel.new",
+  "rightPanel.close",
   "rightPanel.showBrowser",
   "rightPanel.showTerminal",
   "rightPanel.showPullRequests",
