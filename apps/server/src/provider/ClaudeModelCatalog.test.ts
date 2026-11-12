@@ -14,6 +14,7 @@ import {
   resolveClaudeModelSlug,
   resolveClaudeUpdateRequiredModels,
   scopeClaudeModelCatalog,
+  withClaudeDiscoveredModels,
 } from "./ClaudeModelCatalog.ts";
 
 /**
@@ -252,5 +253,46 @@ describe("Claude model catalog", () => {
       resolveClaudeModelsForVersion(catalog, "3.2.0").map((model) => model.slug),
       ["claude-synthetic-next", "claude-custom-tuned"],
     );
+  });
+
+  it("adds CLI-reported models the manifest lacks without duplicating known ones", () => {
+    const catalog = withClaudeDiscoveredModels(catalogFromManifest(manifest()), [
+      // Alias rows resolve to models the manifest already names.
+      {
+        value: "default",
+        resolvedModel: "claude-synthetic-later",
+        displayName: "Default",
+        description: "",
+      },
+      {
+        value: "synthetic",
+        resolvedModel: "claude-synthetic-next",
+        displayName: "Next",
+        description: "",
+      },
+      // A dated build of a known model.
+      { value: "claude-synthetic-next-20990101", displayName: "Next (dated)", description: "" },
+      {
+        value: "later",
+        resolvedModel: "claude-synthetic-later",
+        displayName: "Synthetic Later",
+        description: "",
+        supportsEffort: true,
+        supportedEffortLevels: ["low", "xhigh"],
+        supportsFastMode: true,
+      },
+    ]);
+
+    assert.deepStrictEqual(
+      resolveClaudeModelsForVersion(catalog, "3.2.0").map(({ slug, name }) => ({ slug, name })),
+      [
+        { slug: "claude-synthetic-next", name: "Claude Synthetic Next" },
+        { slug: "claude-synthetic-later", name: "Claude Synthetic Later" },
+      ],
+    );
+    // Reported options reach dispatch; an unset effort is left to Claude Code.
+    assert.strictEqual(resolveClaudeModelSlug(catalog, "later"), "claude-synthetic-later");
+    assert.strictEqual(resolveClaudeCatalogEffort(catalog, "later", "xhigh"), "xhigh");
+    assert.strictEqual(resolveClaudeCatalogEffort(catalog, "later", undefined), undefined);
   });
 });

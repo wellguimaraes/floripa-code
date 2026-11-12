@@ -19,6 +19,7 @@ import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
+import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import { HttpClient } from "effect/http";
 import { ChildProcessSpawner } from "effect/process";
@@ -46,7 +47,8 @@ import {
 } from "../ClaudeProvider.ts";
 import { makeManagedServerProvider } from "@t3tools/provider-core/server/managedProvider";
 import * as ModelCatalog from "@t3tools/provider-core/server/ModelCatalog";
-import { resolveClaudeModelCatalog } from "../ClaudeModelCatalog.ts";
+import { resolveClaudeModelCatalog, withClaudeDiscoveredModels } from "../ClaudeModelCatalog.ts";
+import type { ModelInfo as ClaudeModelInfo } from "@anthropic-ai/claude-agent-sdk";
 import {
   defaultProviderContinuationIdentity,
   type ProviderDriver,
@@ -128,9 +130,17 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       const latestVersions = yield* ProviderLatestVersions.ProviderLatestVersions;
       const resetCreditCoordinator = yield* ResetCreditCoordinator.ResetCreditCoordinator;
       const catalogService = yield* ModelCatalog.ModelCatalog;
-      const modelCatalog = catalogService
-        .current(DRIVER_KIND)
-        .pipe(Effect.map(resolveClaudeModelCatalog));
+      // Models the last capabilities probe saw, so turns and text generation
+      // resolve options for a model the manifest does not list yet.
+      const discoveredModels = yield* Ref.make<ReadonlyArray<ClaudeModelInfo>>([]);
+      const modelCatalog = Effect.all([
+        catalogService.current(DRIVER_KIND),
+        Ref.get(discoveredModels),
+      ]).pipe(
+        Effect.map(([catalog, discovered]) =>
+          withClaudeDiscoveredModels(resolveClaudeModelCatalog(catalog), discovered),
+        ),
+      );
       const processEnv = yield* mergeProviderInstanceEnvironment(environment);
       const fallbackContinuationIdentity = defaultProviderContinuationIdentity({
         driverKind: DRIVER_KIND,
@@ -179,7 +189,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
           enabled,
           config,
         },
-        { scopedLimitNames, onUsageLimits: (update) => snapshot.applyUsageLimits(update) },
+        {
+          scopedLimitNames,
+          modelCatalog,
+          onUsageLimits: (update) => snapshot.applyUsageLimits(update),
+        },
       ).pipe(
         Effect.mapError(
           (cause) =>
@@ -207,6 +221,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
             probeClaudeCapabilities(effectiveConfig, processEnv, cwd),
             ClaudeResetCredits.readClaudeOrganizationId(accountConfigPath),
           ]).pipe(
+            Effect.tap(([capabilities]) =>
+              capabilities?.models ? Ref.set(discoveredModels, capabilities.models) : Effect.void,
+            ),
             Effect.map(([capabilities, workspaceId]) =>
               capabilities && workspaceId ? { ...capabilities, workspaceId } : capabilities,
             ),

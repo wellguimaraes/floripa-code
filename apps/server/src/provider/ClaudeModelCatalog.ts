@@ -1,3 +1,4 @@
+import type { ModelInfo } from "@anthropic-ai/claude-agent-sdk";
 import {
   type CustomModelSetting,
   type ModelCapabilities,
@@ -126,6 +127,74 @@ export function scopeClaudeModelCatalog(
   }
 
   return { models: [...builtInModels, ...customCatalogModels] };
+}
+
+const CLAUDE_EFFORT_LABELS: Readonly<Record<string, string>> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra High",
+  max: "Max",
+};
+
+function discoveredModelCapabilities(info: ModelInfo): ModelCapabilities {
+  const levels = info.supportsEffort ? (info.supportedEffortLevels ?? []) : [];
+  return {
+    optionDescriptors: [
+      ...(levels.length > 0
+        ? [
+            {
+              id: "effort",
+              label: "Reasoning",
+              type: "select" as const,
+              // No default: an unset effort lets Claude Code apply its own.
+              options: levels.map((level) => ({
+                id: level,
+                label: CLAUDE_EFFORT_LABELS[level] ?? level,
+              })),
+            },
+          ]
+        : []),
+      ...(info.supportsFastMode
+        ? [{ id: "fastMode", label: "Fast Mode", type: "boolean" as const }]
+        : []),
+    ],
+  };
+}
+
+/**
+ * Appends models the installed Claude Code reports that the manifest does not
+ * know yet, so a new model is usable as soon as the CLI offers it. Manifest
+ * entries always win: alias rows (`default`, `opus`) resolve to a manifest slug
+ * and dated ids (`claude-haiku-4-5-20251001`) match their undated entry.
+ */
+export function withClaudeDiscoveredModels(
+  catalog: ClaudeModelCatalog,
+  discovered: ReadonlyArray<ModelInfo>,
+): ClaudeModelCatalog {
+  const known = new Set(
+    catalog.models.flatMap(({ model }) => [model.slug, ...(model.aliases ?? [])]),
+  );
+  const added: Array<ClaudeCatalogModel> = [];
+  for (const info of discovered) {
+    if (info.value === "default") continue;
+    const slug = (info.resolvedModel ?? info.value).trim();
+    if (!slug || known.has(slug) || known.has(slug.replace(/-\d{8}$/, ""))) continue;
+    known.add(slug);
+    const displayName = info.displayName.trim() || slug;
+    added.push({
+      model: {
+        slug,
+        name: displayName.startsWith("Claude") ? displayName : `Claude ${displayName}`,
+        ...(info.value !== slug && !known.has(info.value) ? { aliases: [info.value] } : {}),
+        isCustom: false,
+        capabilities: discoveredModelCapabilities(info),
+      },
+      runtime: {},
+      compatibility: {},
+    });
+  }
+  return added.length === 0 ? catalog : { models: [...catalog.models, ...added] };
 }
 
 function resolveClaudeCatalogModel(
