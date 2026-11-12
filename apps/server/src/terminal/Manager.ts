@@ -469,6 +469,13 @@ function normalizeChildCommandName(raw: string, platform: NodeJS.Platform): stri
 }
 
 function terminalWireLabel(session: TerminalSessionState): string {
+  // A `run` terminal's own command names it better than its current child,
+  // which for a shell loop or a script runner is often just `sleep` or `node`.
+  // Collapsed to one line: an agent may pass a multi-line script.
+  const command = session.launch?.command.replace(/\s+/g, " ").trim();
+  if (session.hasRunningSubprocess && command) {
+    return truncateTerminalWireLabel(command);
+  }
   if (session.hasRunningSubprocess && session.childCommandLabel) {
     const trimmed = session.childCommandLabel.trim();
     if (trimmed.length > 0) {

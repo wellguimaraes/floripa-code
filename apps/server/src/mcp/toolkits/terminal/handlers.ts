@@ -47,13 +47,17 @@ const callerCheckout = Effect.gen(function* () {
   };
 });
 
-/** The last `count` lines as plain text; a carriage return redraws its line, so only the final draw counts. */
+/**
+ * The last `count` lines as plain text; a carriage return redraws its line, so
+ * only the final draw counts. Trailing blank lines (a prompt stripped of its
+ * escape codes, say) are dropped so the last line is real output.
+ */
 function lastLines(history: string, count: number): string {
-  return stripTerminalControl(history)
+  const lines = stripTerminalControl(history)
     .split("\n")
-    .map((line) => line.slice(line.lastIndexOf("\r") + 1))
-    .slice(-count)
-    .join("\n");
+    .map((line) => line.slice(line.lastIndexOf("\r") + 1));
+  while (lines.length > 0 && lines.at(-1)?.trim() === "") lines.pop();
+  return lines.slice(-count).join("\n");
 }
 
 export const layer = McpToolAccess.toLayer(
