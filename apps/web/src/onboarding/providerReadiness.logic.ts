@@ -103,6 +103,14 @@ export function resolveOnboardingProviderInstallCommand(
   return platform === "windows" ? commands.windows : commands.posix;
 }
 
+/** Quote a POSIX path for an inline env assignment, keeping a leading `~/` expandable. */
+function quoteConfigDir(path: string): string {
+  const tilde = path.startsWith("~/");
+  const rest = tilde ? path.slice(2) : path;
+  const quoted = SAFE_SHELL_BINARY_PATTERN.test(rest) ? rest : `'${rest.replaceAll("'", `'"'"'`)}'`;
+  return tilde ? `~/${quoted}` : quoted;
+}
+
 /** Use the selected provider instance's binary when the setup terminal opens its login flow. */
 export function resolveOnboardingProviderLoginCommand(
   provider: ServerProvider,
@@ -114,7 +122,14 @@ export function resolveOnboardingProviderLoginCommand(
   if (provider.driver === "claudeAgent") {
     const config = decodeClaudeSettings(instance?.config ?? {});
     const binaryPath = Option.isSome(config) ? config.value.binaryPath : "claude";
-    return `${quoteProviderBinary(binaryPath, "claude", platform)} auth login`;
+    const login = `${quoteProviderBinary(binaryPath, "claude", platform)} auth login`;
+    const homePath = Option.isSome(config) ? config.value.homePath : "";
+    // Spell the config dir out so the login stays on this instance's account even
+    // if the shell profile exports its own CLAUDE_CONFIG_DIR. Windows shells differ
+    // too much for an inline assignment, so they rely on the terminal's injected env.
+    return homePath === "" || platform === "windows"
+      ? login
+      : `CLAUDE_CONFIG_DIR=${quoteConfigDir(homePath)} ${login}`;
   }
 
   if (provider.driver === "codex") {

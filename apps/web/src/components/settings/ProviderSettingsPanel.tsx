@@ -88,6 +88,7 @@ import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { AddProviderInstanceDialog } from "./AddProviderInstanceDialog";
+import { ClaudeSignInRow } from "./ClaudeSignInRow";
 import { ExpandableText } from "./ExpandableText";
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
 import { UsageProviderSettings } from "./UsageProviderSettings";
@@ -1043,6 +1044,17 @@ export function EnvironmentProviderSettings({
             <SettingsRow
               title="Cursor account"
               description="Using CURSOR_API_KEY. Remove it from this provider's environment to use browser sign-in."
+            />
+          ) : mode === "editor" &&
+            !readOnly &&
+            row.driver === "claudeAgent" &&
+            liveProvider?.installed === true &&
+            liveProvider.auth.status === "unauthenticated" ? (
+            <ClaudeSignInRow
+              key={`${environmentId}:${row.instanceId}`}
+              environmentId={environmentId}
+              environmentLabel={environmentLabel}
+              provider={liveProvider}
             />
           ) : null
         }

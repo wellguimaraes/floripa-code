@@ -190,6 +190,34 @@ describe("resolveOnboardingProviderLoginCommand", () => {
     ).toBe("/opt/claude-work/bin/claude auth login");
   });
 
+  it("names the Claude config directory so the login stays on this instance", () => {
+    const provider: ServerProvider = {
+      ...readyCodex,
+      driver: ProviderDriverKind.make("claudeAgent"),
+      instanceId: ProviderInstanceId.make("claude_personal"),
+    };
+    const loginWith = (homePath: string, platform: "linux" | "windows") =>
+      resolveOnboardingProviderLoginCommand(
+        provider,
+        {
+          ...DEFAULT_SERVER_SETTINGS,
+          providerInstances: {
+            [provider.instanceId]: { driver: provider.driver, config: { homePath } },
+          },
+        },
+        platform,
+      );
+
+    expect(loginWith("~/.claude_personal", "linux")).toBe(
+      "CLAUDE_CONFIG_DIR=~/.claude_personal claude auth login",
+    );
+    expect(loginWith("~/my claude", "linux")).toBe(
+      "CLAUDE_CONFIG_DIR=~/'my claude' claude auth login",
+    );
+    expect(loginWith("~/.claude_personal", "windows")).toBe("claude auth login");
+    expect(loginWith("", "linux")).toBe("claude auth login");
+  });
+
   it("quotes a Codex path with spaces for PowerShell", () => {
     expect(
       resolveOnboardingProviderLoginCommand(
