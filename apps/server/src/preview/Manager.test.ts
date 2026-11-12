@@ -710,10 +710,18 @@ it.effect("reopens desktop tabs after a restart", () =>
       }),
     );
 
-    const restored = yield* runManager((manager) => manager.list({ threadId }));
+    const { restored, opened } = yield* runManager((manager) =>
+      Effect.gen(function* () {
+        const restored = yield* manager.list({ threadId });
+        const opened = yield* manager.open({ threadId, url: "localhost:6000" });
+        return { restored, opened };
+      }),
+    );
     expect(restored.sessions).toHaveLength(1);
     const [tab] = restored.sessions;
-    expect(tab?.tabId).not.toBe(before.tabId);
+    // The saved id survives so clients' panel tabs still point at it.
+    expect(tab?.tabId).toBe(before.tabId);
+    expect(opened.tabId).not.toBe(before.tabId);
     expect(tab?.scopeKey).toBe(SCOPE_A);
     expect(tab?.profileId).toBe("work");
     expect(tab?.canGoBack).toBe(false);

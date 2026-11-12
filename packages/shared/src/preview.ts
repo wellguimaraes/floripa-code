@@ -18,6 +18,16 @@ export function newPreviewTabId(): string {
   return `${TAB_ID_PREFIX}${nextPreviewTabSequence.toString(36)}`;
 }
 
+/**
+ * Keeps ids handed out from now on clear of one an earlier process issued, so
+ * a tab restored under its saved id never collides with a new tab.
+ */
+export function reservePreviewTabId(tabId: string): void {
+  const sequence = /^tab_([0-9a-z]+)$/.exec(tabId)?.[1];
+  if (sequence === undefined) return;
+  nextPreviewTabSequence = Math.max(nextPreviewTabSequence, Number.parseInt(sequence, 36));
+}
+
 const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1"]);
 
 /** Internal — used by `lsof` parsing where the host string is wire-formatted. */

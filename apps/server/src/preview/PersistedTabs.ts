@@ -1,12 +1,12 @@
 /**
  * Desktop browser tabs saved across server restarts, so an app update or
  * relaunch reopens the tabs the user had. Only the address survives: pages
- * reload, history starts fresh, and tab ids are reassigned because they are
- * a per-process sequence.
+ * reload and history starts fresh. Tabs keep their ids, so clients' saved
+ * panel tabs, their order, and the selected tab still point at them.
  */
 import { PreviewSessionSnapshot } from "@t3tools/contracts";
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
-import { newPreviewTabId } from "@t3tools/shared/preview";
+import { reservePreviewTabId } from "@t3tools/shared/preview";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Schema from "effect/Schema";
@@ -22,12 +22,12 @@ const encodePersistedTabs = Schema.encodeEffect(PersistedTabsJson);
 export const isPersistableTab = (snapshot: PreviewSessionSnapshot): boolean =>
   snapshot.runtime !== "server" && snapshot.automationOwner === undefined;
 
-/** The tab as it reopens: loading its last address under a fresh id. */
+/** The tab as it reopens: loading its last address under its saved id. */
 export const restoreTab = (snapshot: PreviewSessionSnapshot): PreviewSessionSnapshot => {
   const { reveal: _reveal, revealRequest: _revealRequest, ...rest } = snapshot;
+  reservePreviewTabId(snapshot.tabId);
   return {
     ...rest,
-    tabId: newPreviewTabId(),
     navStatus:
       snapshot.navStatus._tag === "Idle"
         ? snapshot.navStatus

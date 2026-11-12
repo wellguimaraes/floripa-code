@@ -5,6 +5,7 @@ import {
   newPreviewTabId,
   normalizePreviewUrl,
   PreviewUrlNormalizationError,
+  reservePreviewTabId,
   resolveAddressBarInput,
 } from "./preview.ts";
 
@@ -63,6 +64,13 @@ describe("newPreviewTabId", () => {
     const b = newPreviewTabId();
     expect(a).not.toBe(b);
     expect(a.startsWith("tab_")).toBe(true);
+  });
+
+  it("never reissues an id restored from an earlier process", () => {
+    reservePreviewTabId("tab_zz");
+    reservePreviewTabId("tab_1");
+    reservePreviewTabId("tab_3_server-epoch");
+    expect(newPreviewTabId()).toBe("tab_100");
   });
 });
 
