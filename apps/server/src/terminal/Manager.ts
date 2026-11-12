@@ -2828,6 +2828,11 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         runtimeEnvChanged ||
         liveSession.worktreePath !== nextWorktreePath);
 
+    // A fresh shell no longer runs the old command; `run` records its own after this.
+    const relaunching =
+      launchContextChanged || liveSession.status === "exited" || liveSession.status === "error";
+    const droppedRestorableLaunch = relaunching && liveSession.launch?.restartOnRestore === true;
+    if (relaunching) liveSession.launch = null;
     if (launchContextChanged) {
       yield* stopProcess(liveSession);
       liveSession.cwd = input.cwd;
@@ -2849,6 +2854,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       liveSession.processEventDrainRunning = false;
       yield* persistHistory(liveSession, liveSession.terminalId, liveSession.history);
     }
+
+    if (droppedRestorableLaunch) yield* persistRestorableTerminals;
 
     if (!liveSession.process) {
       yield* startSession(
@@ -3359,16 +3366,18 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
 
   const run: TerminalManager["Service"]["run"] = Effect.fn("terminal.run")(function* (input) {
     const { command, restartOnRestore, startedByAgent, ...openInput } = input;
-    yield* open(openInput);
-    yield* write({
-      threadId: input.threadId,
-      ...(input.scopeKey === undefined ? {} : { scopeKey: input.scopeKey }),
-      terminalId: input.terminalId,
-      data: `${command}\r`,
-    });
+    // One lock across open, write, and launch, so a close or restart in between
+    // cannot leave this command recorded on a shell that never ran it.
     const opened = yield* withOwnerLock(
       input,
       Effect.gen(function* () {
+        yield* openLocked(yield* resolveLaunchInputEnvironment(openInput));
+        yield* write({
+          threadId: input.threadId,
+          ...(input.scopeKey === undefined ? {} : { scopeKey: input.scopeKey }),
+          terminalId: input.terminalId,
+          data: `${command}\r`,
+        });
         const session = yield* requireSession(input, input.terminalId);
         session.launch = {
           command,

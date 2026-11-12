@@ -1357,7 +1357,8 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   };
 
   const handleTabContextMenu = useCallback(
-    async (event: ReactMouseEvent, surface: RightPanelSurface) => {
+    // `terminalId` is the clicked pane of a split terminal tab; it defaults to the active one.
+    async (event: ReactMouseEvent, surface: RightPanelSurface, terminalId?: string) => {
       event.preventDefault();
       event.stopPropagation();
 
@@ -1408,10 +1409,12 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           }),
         });
       }
+      const menuTerminalId =
+        surface.kind === "terminal" ? (terminalId ?? surface.activeTerminalId) : null;
       const restartOnRestore =
-        surface.kind === "terminal"
-          ? props.terminalRestartOnRestoreById?.get(surface.activeTerminalId)
-          : undefined;
+        menuTerminalId === null
+          ? undefined
+          : props.terminalRestartOnRestoreById?.get(menuTerminalId);
       if (restartOnRestore !== undefined && props.onSetTerminalRestartOnRestore) {
         items.push({
           id: "toggle-restart-on-restore",
@@ -1448,8 +1451,8 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           setRenamingDevice(surface.id);
           break;
         case "toggle-restart-on-restore":
-          if (surface.kind === "terminal" && restartOnRestore !== undefined) {
-            props.onSetTerminalRestartOnRestore?.(surface.activeTerminalId, !restartOnRestore);
+          if (menuTerminalId !== null && restartOnRestore !== undefined) {
+            props.onSetTerminalRestartOnRestore?.(menuTerminalId, !restartOnRestore);
           }
           break;
         case "copy-path":
@@ -1654,6 +1657,9 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                             return (
                               <div
                                 key={terminalId}
+                                onContextMenu={(event) =>
+                                  void handleTabContextMenu(event, surface, terminalId)
+                                }
                                 className={cn(
                                   "flex h-full min-w-0 max-w-32 items-center gap-1 rounded-[5px] pr-0.5 pl-1",
                                   terminalActive

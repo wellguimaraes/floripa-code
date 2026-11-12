@@ -1841,9 +1841,17 @@ export default function ChatView(props: ChatViewProps) {
   );
   useEffect(() => {
     // Before the first metadata snapshot the list is empty, not known to be empty.
-    if (!activeThreadRef || activeThreadKnownSessionsRaw === null) return;
+    // Agent terminals belong to the checkout, so wait for its panel key too;
+    // the thread's own fallback key would get tabs the checkout never sees.
+    if (!activeThreadRef || activeThreadKnownSessionsRaw === null || !activeTerminalScopeKey)
+      return;
     useRightPanelStore.getState().showAgentTerminals(activeThreadRef, activeAgentTerminalIds);
-  }, [activeAgentTerminalIds, activeThreadKnownSessionsRaw, activeThreadRef]);
+  }, [
+    activeAgentTerminalIds,
+    activeTerminalScopeKey,
+    activeThreadKnownSessionsRaw,
+    activeThreadRef,
+  ]);
   const setPanelTerminalRestartOnRestore = useCallback(
     (terminalId: string, restartOnRestore: boolean) => {
       if (!activeThreadRef) return;

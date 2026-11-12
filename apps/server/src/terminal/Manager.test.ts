@@ -734,6 +734,32 @@ it.layer(
     }),
   );
 
+  it.effect("forgets a saved command once its terminal reopens as a plain shell", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const { join } = yield* Path.Path;
+      const baseDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "floripacode-terminal-restore-",
+      });
+      const logsDir = join(baseDir, "logs");
+      const makeManager = (ptyAdapter: FakePtyAdapter) =>
+        TerminalManager.makeWithOptions({ logsDir, ptyAdapter, processKillGraceMs: 1 });
+
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const manager = yield* makeManager(new FakePtyAdapter());
+          yield* manager.run({ ...openInput(), command: "bun dev", restartOnRestore: true });
+          // A new launch context relaunches the shell without the command.
+          yield* manager.open(openInput({ env: { DEBUG: "1" } }));
+        }),
+      );
+
+      const ptyAdapter = new FakePtyAdapter();
+      yield* (yield* makeManager(ptyAdapter)).restoreSessions;
+      expect(ptyAdapter.processes).toHaveLength(0);
+    }),
+  );
+
   it.effect("forwards write and resize to active pty process", () =>
     Effect.gen(function* () {
       const { manager, ptyAdapter } = yield* createManager();
