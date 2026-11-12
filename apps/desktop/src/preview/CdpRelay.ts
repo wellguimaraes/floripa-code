@@ -21,6 +21,8 @@ export interface CdpRelayTarget {
   readonly url: () => string;
   readonly title: () => string;
   readonly userAgent: () => string;
+  /** Reloads the tab's own page, optionally past its cache. */
+  readonly reload: (ignoreCache: boolean) => void;
   /**
    * Where the server wants this tab's downloads, named by their CDP guid. The
    * desktop app and the server it launched share a disk, so the server's
@@ -164,6 +166,13 @@ export function createCdpRelayConnection(
     // every new cross-site iframe and worker until this reaches it. Swallowing
     // it left sign-in checks and captchas, which run in such frames, frozen.
     if (command.method === "Runtime.runIfWaitingForDebugger" && child === undefined) {
+      return Promise.resolve({});
+    }
+    // Chromium runs `Page.reload` on the outermost page, which for a `<webview>`
+    // is the whole app window. Reload the guest itself; its navigation events
+    // still reach the server, so Playwright's `page.reload()` resolves as usual.
+    if (command.method === "Page.reload" && child === undefined) {
+      target.reload(command.params?.["ignoreCache"] === true);
       return Promise.resolve({});
     }
     return target.send(command.method, command.params ?? {}, child);

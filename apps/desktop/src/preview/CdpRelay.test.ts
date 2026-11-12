@@ -5,8 +5,10 @@ import { createCdpRelayConnection, type CdpRelayTarget } from "./CdpRelay.ts";
 const makeTarget = (
   send: CdpRelayTarget["send"],
   setDownloadDirectory: CdpRelayTarget["setDownloadDirectory"] = () => {},
+  reload: CdpRelayTarget["reload"] = () => {},
 ): CdpRelayTarget => ({
   send,
+  reload,
   targetId: async () => "GUEST-TARGET",
   url: () => "http://localhost:4719/",
   title: () => "Fixture",
@@ -95,6 +97,31 @@ describe("CDP relay", () => {
     );
     await settle();
     expect(send.mock.calls).toEqual([["Runtime.runIfWaitingForDebugger", {}, "iframe-session"]]);
+  });
+
+  it("reloads the tab itself, never the app window around it", async () => {
+    const send = vi.fn(async () => ({}));
+    const reload = vi.fn();
+    const written: Array<Record<string, unknown>> = [];
+    const relay = createCdpRelayConnection(makeTarget(send, undefined, reload), (raw) =>
+      written.push(JSON.parse(raw)),
+    );
+    relay.receive(
+      JSON.stringify({
+        id: 1,
+        method: "Page.reload",
+        params: { ignoreCache: true },
+        sessionId: "t3-preview-page",
+      }),
+    );
+    relay.receive(JSON.stringify({ id: 2, method: "Page.reload", sessionId: "t3-preview-page" }));
+    await settle();
+    expect(reload.mock.calls).toEqual([[true], [false]]);
+    expect(send).not.toHaveBeenCalled();
+    expect(written).toEqual([
+      { id: 1, result: {}, sessionId: "t3-preview-page" },
+      { id: 2, result: {}, sessionId: "t3-preview-page" },
+    ]);
   });
 
   it("routes tab events to the page session once the page is announced", async () => {

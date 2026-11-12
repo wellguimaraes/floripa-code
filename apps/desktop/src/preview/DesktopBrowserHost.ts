@@ -124,6 +124,8 @@ export const make = Effect.gen(function* () {
         url: () => webContents.getURL(),
         title: () => webContents.getTitle(),
         userAgent: () => webContents.getUserAgent(),
+        reload: (ignoreCache) =>
+          ignoreCache ? webContents.reloadIgnoringCache() : webContents.reload(),
         setDownloadDirectory: (directory) => {
           tab.downloadDirectory = directory;
         },
