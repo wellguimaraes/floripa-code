@@ -1832,6 +1832,18 @@ export default function ChatView(props: ChatViewProps) {
     }
     return flags;
   }, [activeThreadKnownSessions]);
+  const activeAgentTerminalIds = useMemo(
+    () =>
+      activeThreadKnownSessions
+        .filter((session) => session.state.summary?.startedByAgent === true)
+        .map((session) => session.target.terminalId),
+    [activeThreadKnownSessions],
+  );
+  useEffect(() => {
+    // Before the first metadata snapshot the list is empty, not known to be empty.
+    if (!activeThreadRef || activeThreadKnownSessionsRaw === null) return;
+    useRightPanelStore.getState().showAgentTerminals(activeThreadRef, activeAgentTerminalIds);
+  }, [activeAgentTerminalIds, activeThreadKnownSessionsRaw, activeThreadRef]);
   const setPanelTerminalRestartOnRestore = useCallback(
     (terminalId: string, restartOnRestore: boolean) => {
       if (!activeThreadRef) return;

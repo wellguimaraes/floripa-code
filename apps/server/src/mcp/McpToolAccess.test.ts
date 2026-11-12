@@ -91,6 +91,7 @@ const ProbeToolkit = Toolkit.make(
   }),
   Tool.make("starts_threads", probe),
   Tool.make("writes_environment", probe),
+  Tool.make("runs_commands_as_caller", probe),
 );
 const ran = Effect.succeed({ ran: "ran" });
 const probeHandlers: McpToolAccess.Handlers<typeof ProbeToolkit.tools> = {
@@ -106,6 +107,7 @@ const probeHandlers: McpToolAccess.Handlers<typeof ProbeToolkit.tools> = {
     Effect.succeed({ ran: `${modes.runtimeMode}/${modes.interactionMode}` }),
   ),
   writes_environment: McpToolAccess.writesEnvironment(() => ran),
+  runs_commands_as_caller: McpToolAccess.runsCommandsAsCaller(() => ran),
 };
 const layerProbeHandlers = McpToolAccess.toLayer(ProbeToolkit, probeHandlers);
 
@@ -146,6 +148,7 @@ export const refusedAtCompileTime = () => {
       writes_threads: unchecked,
       starts_threads: unchecked,
       writes_environment: unchecked,
+      runs_commands_as_caller: unchecked,
     }),
   );
 };
@@ -251,6 +254,13 @@ it.effect.each([
   ["writes_environment", plan, {}, "capability_denied"],
   ["writes_environment", fullAccessClient, {}, "ran"],
   ["writes_environment", supervisedClient, {}, "capability_denied"],
+
+  // Terminal commands escape the provider's sandbox, so only a live full-access thread runs them.
+  ["runs_commands_as_caller", fullAccess, {}, "ran"],
+  ["runs_commands_as_caller", supervised, {}, "capability_denied"],
+  ["runs_commands_as_caller", plan, {}, "capability_denied"],
+  ["runs_commands_as_caller", ended, {}, "parent_not_active"],
+  ["runs_commands_as_caller", fullAccessClient, {}, "thread_credential_required"],
 ] as const)("%s from %o with %o: %s", ([tool, scope, args, expected]) =>
   call(tool, scope, args).pipe(
     Effect.map((outcome) => expect(outcome).toBe(expected)),

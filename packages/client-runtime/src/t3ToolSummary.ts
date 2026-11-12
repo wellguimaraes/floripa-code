@@ -301,6 +301,15 @@ export function summarizeT3ToolCalls(
     case "worktree-status":
       label = phrase("Checked", "check", `worktree status ${times}`);
       break;
+    case "terminal-run":
+      label = phrase("Ran", "run", quantity(selected.length, "terminal command"));
+      break;
+    case "terminal-read":
+      label = phrase("Read", "read", `terminal output ${times}`);
+      break;
+    case "terminal-stop":
+      label = phrase("Stopped", "stop", quantity(selected.length, "terminal command"));
+      break;
     case "project-list":
       label = phrase("Listed", "list", `projects ${times}`);
       break;

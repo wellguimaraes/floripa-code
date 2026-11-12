@@ -149,6 +149,22 @@ export const actsAsCaller = <P, A, E, R>(handle: (params: P) => Effect.Effect<A,
     ),
   );
 
+const commandsNeedFullAccess =
+  "Running or stopping terminal commands needs a live full-access/default calling thread.";
+
+/**
+ * Runs or stops shell commands as the calling T3 thread. They run outside the
+ * provider's own sandbox and approvals, so only a full-access thread may.
+ */
+export const runsCommandsAsCaller = <P, A, E, R>(handle: (params: P) => Effect.Effect<A, E, R>) =>
+  declare((params: P) =>
+    requireThreadCaller.pipe(
+      Effect.flatMap(() => writingCaller),
+      Effect.tap((caller) => assertFullAccess(caller, commandsNeedFullAccess)),
+      Effect.flatMap(() => handle(params)),
+    ),
+  );
+
 /** Changes something that belongs to no thread, such as a pending upload or a scheduled task. */
 export const writes = <P, A, E, R>(handle: (params: P) => Effect.Effect<A, E, R>) =>
   declare((params: P) => orchestratingCaller.pipe(Effect.flatMap(() => handle(params))));

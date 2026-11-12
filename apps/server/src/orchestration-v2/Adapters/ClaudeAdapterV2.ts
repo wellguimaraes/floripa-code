@@ -1067,6 +1067,7 @@ export const CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS: ReadonlyArray<string> = [
   "mcp__floripa-code__t3_thread_transfers",
   "mcp__floripa-code__t3_worktree_status",
   "mcp__floripa-code__t3_worktree_list",
+  "mcp__floripa-code__t3_terminal_read",
   "mcp__floripa-code__t3_project_list",
   "mcp__floripa-code__t3_project_read",
   "mcp__floripa-code__t3_thread_search",

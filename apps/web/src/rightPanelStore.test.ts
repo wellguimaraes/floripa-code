@@ -400,6 +400,22 @@ describe("rightPanelStore", () => {
     expect(selectActiveRightPanel(useRightPanelStore.getState().byPanelKey, refA)).toBe("diff");
   });
 
+  it("gives an agent terminal one tab, and a closed one stays closed while it runs", () => {
+    const store = useRightPanelStore.getState();
+    const terminalTabs = () =>
+      selectThreadRightPanelState(useRightPanelStore.getState().byPanelKey, refA).surfaces.flatMap(
+        (surface) => (surface.kind === "terminal" ? surface.terminalIds : []),
+      );
+    store.showAgentTerminals(refA, ["agent-dev"]);
+    store.showAgentTerminals(refA, ["agent-dev"]);
+    expect(terminalTabs()).toEqual(["agent-dev"]);
+
+    // A client that cannot close terminals only drops the tab; the session stays live.
+    store.closeSurface(refA, "terminal:agent-dev");
+    store.showAgentTerminals(refA, ["agent-dev"]);
+    expect(terminalTabs()).toEqual([]);
+  });
+
   it("keeps a maximized panel per thread without counting it as a manual choice", () => {
     const store = useRightPanelStore.getState();
     store.open(refA, "preview");

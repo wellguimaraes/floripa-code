@@ -216,6 +216,14 @@ export class TerminalManager extends Context.Service<
       input: TerminalRunInput & { readonly startedByAgent?: boolean },
     ) => Effect.Effect<TerminalSessionSnapshot, TerminalError>;
 
+    /** A session's summary and output so far, without attaching to it. */
+    readonly read: (
+      input: TerminalObserveInput,
+    ) => Effect.Effect<
+      { readonly summary: TerminalSummary; readonly history: string },
+      TerminalError
+    >;
+
     /** Turn re-running a `run` terminal's command after a restart on or off. */
     readonly setRestartOnRestore: (
       input: TerminalSetRestartOnRestoreInput,
@@ -3377,6 +3385,14 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     return opened;
   });
 
+  const read: TerminalManager["Service"]["read"] = (input) =>
+    withOwnerLock(
+      input,
+      requireSession(input, input.terminalId).pipe(
+        Effect.map((session) => ({ summary: summary(session), history: session.history.value() })),
+      ),
+    );
+
   const setRestartOnRestore: TerminalManager["Service"]["setRestartOnRestore"] = (input) =>
     withOwnerLock(
       input,
@@ -3423,6 +3439,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
 
   return TerminalManager.of({
     run,
+    read,
     setRestartOnRestore,
     restoreSessions,
     open,

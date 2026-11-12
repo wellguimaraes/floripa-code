@@ -182,6 +182,8 @@ export interface ThreadRightPanelState {
   activeSurfaceIdByType?: Partial<Record<RightPanelSurfaceType, string>>;
   surfaces: RightPanelSurface[];
   dismissedDeviceSurfaceIds?: string[];
+  /** Live agent terminals this panel already gave a tab, so one the user closed stays closed. */
+  seenAgentTerminalIds?: string[];
   /** Kept with the thread so the layout survives a ChatView remount or a reload. */
   maximized?: true;
 }
@@ -236,6 +238,11 @@ interface RightPanelStoreState {
     },
   ) => void;
   openTerminal: (ref: ScopedThreadRef, terminalId: string) => void;
+  /**
+   * Gives each live agent-started terminal a tab once, the way agent browser
+   * tabs appear. `terminalIds` is every such terminal in the checkout.
+   */
+  showAgentTerminals: (ref: ScopedThreadRef, terminalIds: readonly string[]) => void;
   splitTerminal: (
     ref: ScopedThreadRef,
     surfaceId: string,
@@ -440,6 +447,7 @@ const isEmptyPanelState = (state: ThreadRightPanelState) =>
   state.activeSurfaceId === null &&
   state.surfaces.length === 0 &&
   !state.dismissedDeviceSurfaceIds?.length &&
+  !state.seenAgentTerminalIds?.length &&
   state.maximized === undefined;
 
 /** Keeps the active type and each type's last tab in step with the selected surface. */
@@ -826,6 +834,28 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
       openTerminal: (ref, terminalId) =>
         set((state) =>
           userAction(state, ref, (current) => upsertSurface(current, terminalSurface(terminalId))),
+        ),
+      showAgentTerminals: (ref, terminalIds) =>
+        set((state) =>
+          automaticUpdate(state, ref, (current) => {
+            const seen = current.seenAgentTerminalIds ?? [];
+            const shown = new Set(
+              current.surfaces.flatMap((surface) =>
+                surface.kind === "terminal" ? surface.terminalIds : [],
+              ),
+            );
+            const added = terminalIds.filter((id) => !seen.includes(id) && !shown.has(id));
+            // Ended terminals are forgotten, so the list stays as small as what is live.
+            const seenChanged =
+              seen.length !== terminalIds.length || seen.some((id) => !terminalIds.includes(id));
+            if (added.length === 0 && !seenChanged) return current;
+            const { seenAgentTerminalIds: _seen, ...rest } = current;
+            return {
+              ...rest,
+              surfaces: [...current.surfaces, ...added.map(terminalSurface)],
+              ...(terminalIds.length === 0 ? {} : { seenAgentTerminalIds: [...terminalIds] }),
+            };
+          }),
         ),
       splitTerminal: (ref, surfaceId, terminalId, direction = "horizontal") =>
         set((state) =>

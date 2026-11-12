@@ -10,7 +10,13 @@ import {
   type TimestampFormat,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
-import { ArchiveIcon, ChevronDownIcon, PanelRightCloseIcon, RefreshCwIcon } from "lucide-react";
+import {
+  ArchiveIcon,
+  ChevronDownIcon,
+  PanelRightCloseIcon,
+  RefreshCwIcon,
+  XIcon,
+} from "lucide-react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
@@ -590,6 +596,26 @@ export function WorldBubble(props: {
                   <Button
                     variant="ghost"
                     size="icon-xs"
+                    aria-label="Open full chat"
+                    aria-keyshortcuts="Control+Enter Meta+Enter"
+                    onClick={expand}
+                  />
+                }
+              >
+                <PanelRightCloseIcon />
+              </TooltipTrigger>
+              <TooltipPopup side="top">
+                <span className="flex items-center gap-2">
+                  Open full chat <Kbd>{EXPAND_SHORTCUT}</Kbd>
+                </span>
+              </TooltipPopup>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
                     aria-label="Archive this thread"
                     aria-keyshortcuts="Alt+A"
                     disabled={state.phase === "archiving"}
@@ -605,26 +631,9 @@ export function WorldBubble(props: {
                 </span>
               </TooltipPopup>
             </Tooltip>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    aria-label="Open full chat"
-                    aria-keyshortcuts="Control+Enter Meta+Enter"
-                    onClick={expand}
-                  />
-                }
-              >
-                <PanelRightCloseIcon />
-              </TooltipTrigger>
-              <TooltipPopup side="top">
-                <span className="flex items-center gap-2">
-                  Open full chat <Kbd>{EXPAND_SHORTCUT}</Kbd>
-                </span>
-              </TooltipPopup>
-            </Tooltip>
+            <Button variant="ghost" size="icon-xs" aria-label="Close" onClick={onClose}>
+              <XIcon />
+            </Button>
           </div>
           {/* The last exchange as the chat shows it: yours in a bubble on the right, then everything
               the agent did after it, with a few earlier exchanges above that load further as you

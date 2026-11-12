@@ -1,6 +1,7 @@
 import { ProjectId, type ProjectScript } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { worktreeScopeKey } from "@t3tools/shared/worktreeScope";
+import { stripTerminalControl } from "@t3tools/shared/terminalText";
 import {
   projectScriptRuntimeEnv,
   resolveProjectScripts,
@@ -143,20 +144,6 @@ function completionSentinel(token: string): string {
 
 function completionSentinelPattern(token: string): RegExp {
   return new RegExp(`${COMPLETION_SENTINEL_PREFIX}_${token}:(-?\\d+)`);
-}
-
-/** Removes ANSI escape sequences and cursor controls so lines can be shown as plain text. */
-function stripTerminalControl(text: string): string {
-  return (
-    text
-      .replace(
-        // eslint-disable-next-line no-control-regex -- ANSI escape sequences start with ESC.
-        /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Za-z0-9]|\x1b[=>]/g,
-        "",
-      )
-      // eslint-disable-next-line no-control-regex -- removing control characters is the point.
-      .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "")
-  );
 }
 
 type CompletionShell = "posix" | "fish" | "powershell";

@@ -31,6 +31,10 @@ Tool names may include a harness-normalized MCP prefix, such as \`mcp__floripa_c
 
 ACP fallback: some ACP agents accept the injected MCP server but fail to expose its tools. When the T3 tools are absent and \`T3_ACP_MCP_NODE\` is present, call the same tools through the terminal: \`ELECTRON_RUN_AS_NODE=1 "$T3_ACP_MCP_NODE" \${T3_ACP_MCP_ENTRYPOINT:+"$T3_ACP_MCP_ENTRYPOINT"} acp-mcp-call orchestrator_capabilities '{}'\` (\`T3_ACP_MCP_ENTRYPOINT\` is unset when T3 runs as a standalone executable). Delegate with \`acp-mcp-call delegate_task '{"task":"...","target":{"providerInstanceId":"...","model":"..."},"mode":"async","clientRequestId":"..."}'\`. This is the supported T3 transport fallback, not an ordinary shell-based substitute for delegation.
 
+### Long-running commands
+
+Start a dev server, watcher, or tunnel the user should see or keep using with \`t3_terminal_run\`, not your own background shell: it opens as a terminal tab the user can watch and stop, and it keeps running after your turn. Check it with \`t3_terminal_read\` and stop it with \`t3_terminal_stop\`. Set \`restartOnRestore\` only for processes that are safe to start twice, so the app runs them again after a restart; never for installs, migrations, deploys, or tests.
+
 ### Showing visuals
 
 When a chart, table, diagram, image collage, or mockup would say more than prose, build a self-contained HTML page, check it with \`html_preview\`, then publish it with \`html_render\` before your final reply. The reader sees the page above that reply, so don't announce or restate it; add only what it doesn't say.
