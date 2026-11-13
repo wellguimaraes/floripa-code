@@ -126,6 +126,7 @@ import { IslandBranchesPopover, type WorktreeSurfacesTarget } from "./IslandBran
 import { IdleAlarmPopover } from "./IdleAlarmPopover";
 import { IslandPullRequestDialog } from "./IslandPullRequestDialog";
 import { IslandPullRequestsPopover } from "./IslandPullRequestsPopover";
+import { SubagentsPopover } from "./SubagentsPopover";
 import type { IslandPullRequestAgent, IslandPullRequestRow } from "./islandPullRequests";
 import { useCreateIdleWorldThread } from "./useStartWorldAgent";
 import { canOperateIsland } from "./islandAccess";
@@ -595,10 +596,22 @@ export default function WorldCanvas(props: {
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   // The bubble opened by "Send voice command" starts listening right away.
   const [listenKey, setListenKey] = useState<string | null>(null);
-  const selectCharacter = (character: WorldCharacter) => {
+  // The figure standing for several subagents lists them, at the point it was clicked.
+  const [subagentsOn, setSubagentsOn] = useState<{
+    readonly parentKey: string;
+    readonly point: { readonly x: number; readonly y: number };
+  } | null>(null);
+  const selectCharacter = (character: WorldCharacter, point: { x: number; y: number }) => {
     const { key } = character.facts;
     setPicked(new Set());
     setListenKey(null);
+    if (character.facts.subagentCount > 1 && character.facts.parentKey !== null) {
+      setBubbleKey(null);
+      setNewAgent(null);
+      closeManager();
+      setSubagentsOn({ parentKey: character.facts.parentKey, point });
+      return;
+    }
     // With a chat shown, a click switches the chat to that character instead. A collapsed
     // chat stays collapsed: the click opens the bubble, whose expand button shows the chat.
     if (selectedKey !== null && !chatCollapsed) {
@@ -666,10 +679,11 @@ export default function WorldCanvas(props: {
       return next;
     });
   };
-  const openChat = (character: WorldCharacter) => {
+  const openChat = (character: WorldCharacter) => openThreadChat(character.facts);
+  const openThreadChat = (thread: { readonly key: string; readonly ref: ScopedThreadRef }) => {
     setBubbleKey(null);
-    useWorldModeStore.getState().focusChatOf(character.facts.key);
-    switchChat(character.facts);
+    useWorldModeStore.getState().focusChatOf(thread.key);
+    switchChat(thread);
   };
   // The ring moves to the clicked character (and its bubble closes) at once;
   // the chat, heavier to mount or swap, follows once that has been drawn.
@@ -945,10 +959,7 @@ export default function WorldCanvas(props: {
       number: row.number,
       url: row.url,
     });
-    const key = scopedThreadKey(ref);
-    setBubbleKey(null);
-    useWorldModeStore.getState().focusChatOf(key);
-    switchChat({ key, ref });
+    openThreadChat({ key: scopedThreadKey(ref), ref });
   };
   // The island whose preferences are open.
   const [prefsOn, setPrefsOn] = useState<string | null>(null);
@@ -2182,6 +2193,15 @@ export default function WorldCanvas(props: {
           onClose={() => setPullRequestsOn(null)}
         />
       ) : null}
+      {subagentsOn !== null && collapsed.subagentsOf.has(subagentsOn.parentKey) ? (
+        <SubagentsPopover
+          point={subagentsOn.point}
+          subagents={collapsed.subagentsOf.get(subagentsOn.parentKey) ?? []}
+          activeKey={chatKey}
+          onSelect={openThreadChat}
+          onClose={() => setSubagentsOn(null)}
+        />
+      ) : null}
       {pullRequestShown !== null ? (
         <IslandPullRequestDialog
           environmentId={pullRequestShown.environmentId}
@@ -2300,7 +2320,7 @@ export default function WorldCanvas(props: {
               onClick={(event) => {
                 if (event.altKey) openChat(character);
                 else if (event.metaKey || event.ctrlKey) togglePicked(character);
-                else selectCharacter(character);
+                else selectCharacter(character, { x: event.clientX, y: event.clientY });
               }}
               onContextMenu={(event) => {
                 event.preventDefault();

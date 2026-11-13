@@ -82,8 +82,8 @@ export function Character(props: {
   readonly surface: (x: number, z: number) => TerrainKind | null;
   readonly movement: WorldMovement;
   readonly selected: boolean;
-  /** A plain click. */
-  readonly onSelect: (character: WorldCharacter) => void;
+  /** A plain click, at that screen point. */
+  readonly onSelect: (character: WorldCharacter, point: { x: number; y: number }) => void;
   /** An option- or alt-click: straight to the character's chat. */
   readonly onOpen: (character: WorldCharacter) => void;
   /** A cmd- or ctrl-click: adds the character to the selection, or takes it out. */
@@ -282,10 +282,10 @@ export function Character(props: {
   const select = (event: ThreeEvent<MouseEvent>) => {
     if (event.delta > DRAG_CLICK_TOLERANCE_PX) return;
     event.stopPropagation();
-    const { altKey, metaKey, ctrlKey } = event.nativeEvent;
+    const { altKey, metaKey, ctrlKey, clientX, clientY } = event.nativeEvent;
     if (altKey) onOpen(character);
     else if (metaKey || ctrlKey) onPick(character);
-    else onSelect(character);
+    else onSelect(character, { x: clientX, y: clientY });
   };
   const openMenu = (event: ThreeEvent<MouseEvent>) => {
     event.stopPropagation();
