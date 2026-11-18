@@ -210,7 +210,6 @@ export default function WorldCanvas(props: {
     projectRecords,
     projectMembers,
     projectCheckouts,
-    projectPinned,
     projectArchived,
   } = useMemo(() => {
     const groups = buildProjectGroups({ projects, settings: groupingSettings });
@@ -259,8 +258,7 @@ export default function WorldCanvas(props: {
       // Signs show the main project's icon, as the sidebar does for the group.
       projectRecords: new Map(sorted.map((group) => [group.key, group.representative])),
       projectMembers: new Map(sorted.map((group) => [group.key, group.memberProjectRefs])),
-      // Pinned islands lead pickers and archived ones leave them; the map keeps its order.
-      projectPinned: new Map(sorted.map((group) => [group.key, group.pinned])),
+      // Archived islands leave pickers; the map keeps its order.
       projectArchived: new Map(sorted.map((group) => [group.key, group.archived])),
       // An icon is the group's, so changing it from the sign changes it on every checkout.
       projectCheckouts: new Map(
@@ -1442,12 +1440,8 @@ export default function WorldCanvas(props: {
   // Archived islands are not offered for new agents unless every island is archived.
   const pickableIslands = useMemo(() => {
     const open = islands.filter((island) => projectArchived.get(island.key) !== true);
-    const list = open.length > 0 ? open : islands;
-    return [
-      ...list.filter((island) => projectPinned.get(island.key) === true),
-      ...list.filter((island) => projectPinned.get(island.key) !== true),
-    ];
-  }, [islands, projectArchived, projectPinned]);
+    return open.length > 0 ? open : islands;
+  }, [islands, projectArchived]);
   const startOnIsland = (key: string) => {
     setPickingProject(false);
     const island = islands.find((i) => i.key === key);
@@ -2318,21 +2312,13 @@ export default function WorldCanvas(props: {
                   // The mainland is not a project you added, so it can only be hidden.
                   removable:
                     !mainland.has(key) && canOperateIsland(projectCheckouts.get(key) ?? []),
-                  // The mainland is a folder, not a project to favour or archive.
+                  // The mainland is a folder, not a project to archive.
                   organizable:
                     !mainland.has(key) &&
                     canOperateIsland(projectCheckouts.get(key) ?? []) &&
                     canOrganizeProjectGroup(projectCheckouts.get(key) ?? []),
-                  pinned: projectPinned.get(key) === true,
                   archived: projectArchived.get(key) === true,
                 }))}
-                onPin={(key, pinned) =>
-                  void updateProjectGroup(
-                    projectCheckouts.get(key) ?? [],
-                    { pinned },
-                    pinned ? "Failed to pin project" : "Failed to unpin project",
-                  )
-                }
                 onArchive={(key, archived) => void archiveIsland(key, archived)}
                 onRemove={(key) =>
                   void removeIsland(

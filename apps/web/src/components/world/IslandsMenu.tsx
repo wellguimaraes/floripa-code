@@ -5,8 +5,6 @@ import {
   EyeIcon,
   EyeOffIcon,
   Grid2x2Icon,
-  PinIcon,
-  PinOffIcon,
   Rows3Icon,
   Trash2Icon,
   type LucideIcon,
@@ -35,8 +33,8 @@ const ARRANGEMENTS: ReadonlyArray<{
 /**
  * Top bar pill that counts the islands on the map. Its popover picks how they line
  * up, and lists every project with its sign colour to show, hide, or remove it.
- * Removing asks first and is off without permission to change the project. Pinned projects
- * lead the list; archived ones trail it under their own heading, where they can be restored.
+ * Removing asks first and is off without permission to change the project. Archived
+ * projects trail the list under their own heading, where they can be restored.
  */
 export function IslandsMenu(props: {
   readonly projects: ReadonlyArray<{
@@ -44,13 +42,11 @@ export function IslandsMenu(props: {
     readonly title: string;
     readonly color: string;
     readonly removable: boolean;
-    /** Whether this connection and every server involved can pin and archive it. */
+    /** Whether this connection and every server involved can archive it. */
     readonly organizable: boolean;
-    readonly pinned: boolean;
     readonly archived: boolean;
   }>;
   readonly onRemove: (key: string) => void;
-  readonly onPin: (key: string, pinned: boolean) => void;
   readonly onArchive: (key: string, archived: boolean) => void;
 }) {
   const hidden = useWorldVisibilityStore((state) => state.hidden);
@@ -60,10 +56,9 @@ export function IslandsMenu(props: {
   const toggleHidden = useWorldVisibilityStore((state) => state.toggleHidden);
   const arrangement = useWorldArrangementStore((state) => state.arrangement);
   const setArrangement = useWorldArrangementStore((state) => state.setArrangement);
-  // Pinned first, archived last; each group keeps the map's order.
+  // Archived last; each group keeps the map's order.
   const orderedProjects = [
-    ...props.projects.filter((project) => !project.archived && project.pinned),
-    ...props.projects.filter((project) => !project.archived && !project.pinned),
+    ...props.projects.filter((project) => !project.archived),
     ...props.projects.filter((project) => project.archived),
   ];
   const shown = props.projects.filter((project) => !hidden[project.key]).length;
@@ -152,17 +147,6 @@ export function IslandsMenu(props: {
                         <EyeOffIcon className="size-3.5 shrink-0" />
                       )}
                     </button>
-                    {project.organizable && !project.archived ? (
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        aria-label={`${project.pinned ? "Unpin" : "Pin"} ${project.title}`}
-                        title={project.pinned ? "Unpin project" : "Pin project"}
-                        onClick={() => props.onPin(project.key, !project.pinned)}
-                      >
-                        {project.pinned ? <PinOffIcon /> : <PinIcon />}
-                      </Button>
-                    ) : null}
                     {project.organizable ? (
                       <Button
                         variant="ghost"

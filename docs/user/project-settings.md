@@ -41,8 +41,8 @@ and other phone-only settings ignore the filter.
 ## Pin and archive projects
 
 Pinned projects come first in the project pickers: the project picker on a new thread, the
-new-thread list, the command palette, the sidebar project filter, and the world's new-agent
-picker. Pin or unpin a project from its row in those lists, from **Lands** in the world, or press
+new-thread list, the command palette, and the sidebar project filter. Pin or unpin a project
+from its row in those lists, or press
 the thread pin shortcut on the highlighted row. **Settings → Projects** has a **Pin** switch too.
 
 Archive a project you are done with in **Settings → Projects** or **Lands** in the world. It
