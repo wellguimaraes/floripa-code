@@ -996,9 +996,9 @@ export default function WorldCanvas(props: {
     const place = onMainland ? "the mainland" : "this island";
     const clicked = await showContextMenuFallback(
       [
-        { id: "only", label: `Show only ${place}`, icon: "eye" },
-        { id: "hide", label: `Hide ${place}`, icon: "eye-off" },
-        { id: "zoom", label: `Zoom to ${place}`, icon: "zoom-in" },
+        { id: "only", label: `Show only ${place}`, keyword: "Show only", icon: "eye" },
+        { id: "hide", label: `Hide ${place}`, keyword: "Hide", icon: "eye-off" },
+        { id: "zoom", label: `Zoom to ${place}`, keyword: "Zoom", icon: "zoom-in" },
         // The mainland has no project to script or remove.
         ...(onMainland
           ? []
@@ -1006,6 +1006,7 @@ export default function WorldCanvas(props: {
               {
                 id: "run-script",
                 label: "Run script…",
+                keyword: "Run",
                 icon: "square-play",
                 disabled: scriptAgent === undefined,
                 separatorBefore: true,
@@ -1043,14 +1044,21 @@ export default function WorldCanvas(props: {
         {
           id: "archive-idle",
           label: `Archive ${idle.length} idle ${idle.length === 1 ? "agent" : "agents"}`,
+          keyword: "Archive",
           icon: "archive",
           disabled: idle.length === 0,
           separatorBefore: true,
         },
-        { id: "restore-archived", label: "Restore archived agent…", icon: "archive-restore" },
+        {
+          id: "restore-archived",
+          label: "Restore archived agent…",
+          keyword: "Restore",
+          icon: "archive-restore",
+        },
         {
           id: "prefs",
           label: onMainland ? "Mainland preferences…" : "Island preferences…",
+          keyword: "preferences",
           icon: "settings",
           separatorBefore: true,
         },
@@ -1061,6 +1069,7 @@ export default function WorldCanvas(props: {
               {
                 id: "remove",
                 label: "Remove project…",
+                keyword: "Remove",
                 icon: "trash",
                 disabled: !canOperateIsland(checkouts),
               },

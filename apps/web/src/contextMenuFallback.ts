@@ -508,7 +508,23 @@ export function showContextMenuFallback<T extends string>(
 
         const label = document.createElement("span");
         label.className = "min-w-0 flex-1 truncate";
-        label.textContent = item.label;
+        const keywordAt =
+          typeof item.keyword === "string" && item.keyword.length > 0
+            ? item.label.indexOf(item.keyword)
+            : -1;
+        if (keywordAt === -1 || item.keyword === undefined) {
+          label.textContent = item.label;
+        } else {
+          const keyword = document.createElement("span");
+          keyword.className = "font-semibold";
+          keyword.style.fontWeight = "600";
+          keyword.textContent = item.keyword;
+          label.append(
+            item.label.slice(0, keywordAt),
+            keyword,
+            item.label.slice(keywordAt + item.keyword.length),
+          );
+        }
         if (typeof item.description === "string") {
           // Two lines: the icon and chevron sit on the label's line, not the row's middle.
           button.style.alignItems = "flex-start";

@@ -37,6 +37,8 @@ export interface ContextMenuItem<T extends string = string> {
   trailing?: string;
   /** Muted second line under the label. A native sublabel on macOS. */
   description?: string;
+  /** Part of the label drawn semibold, such as its verb. Web fallback only — native menus show the plain label. */
+  keyword?: string;
   children?: readonly ContextMenuItem<T>[];
 }
 
@@ -55,6 +57,7 @@ export interface ContextMenuItemSchemaType {
   readonly checked?: boolean;
   readonly trailing?: string;
   readonly description?: string;
+  readonly keyword?: string;
   readonly children?: readonly ContextMenuItemSchemaType[];
 }
 
@@ -69,6 +72,7 @@ export const ContextMenuItemSchema: Schema.Codec<ContextMenuItemSchemaType> = Sc
   checked: Schema.optionalKey(Schema.Boolean),
   trailing: Schema.optionalKey(Schema.String),
   description: Schema.optionalKey(Schema.String),
+  keyword: Schema.optionalKey(Schema.String),
   children: Schema.optionalKey(
     Schema.Array(
       Schema.suspend((): Schema.Codec<ContextMenuItemSchemaType> => ContextMenuItemSchema),
