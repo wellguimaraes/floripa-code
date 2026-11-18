@@ -675,7 +675,7 @@ it.layer(layer)("PreviewManager", (it) => {
   );
 });
 
-it.effect("reopens desktop tabs after a restart", () =>
+it.effect("reopens user tabs after a restart", () =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-preview-restore-" });
@@ -705,8 +705,15 @@ it.effect("reopens desktop tabs after a restart", () =>
         });
         const closed = yield* manager.open({ threadId, url: "localhost:3000" });
         yield* manager.close({ threadId, tabId: closed.tabId });
-        yield* manager.open({ threadId, url: "localhost:4000", runtime: "server" });
-        return kept;
+        // The desktop app opens its own server's tabs in the server runtime.
+        const server = yield* manager.open({ threadId, url: "localhost:4000", runtime: "server" });
+        yield* manager.open({
+          threadId,
+          url: "localhost:4100",
+          runtime: "server",
+          automationOwner: "agent-1",
+        });
+        return { kept, server };
       }),
     );
 
@@ -717,11 +724,19 @@ it.effect("reopens desktop tabs after a restart", () =>
         return { restored, opened };
       }),
     );
-    expect(restored.sessions).toHaveLength(1);
-    const [tab] = restored.sessions;
+    // Agent-owned tabs end with their session; the closed tab stays closed.
+    expect(restored.sessions.map((session) => session.tabId).toSorted()).toEqual(
+      [before.kept.tabId, before.server.tabId].toSorted(),
+    );
+    const tab = restored.sessions.find((session) => session.tabId === before.kept.tabId);
     // The saved id survives so clients' panel tabs still point at it.
-    expect(tab?.tabId).toBe(before.tabId);
-    expect(opened.tabId).not.toBe(before.tabId);
+    expect(opened.tabId).not.toBe(before.kept.tabId);
+    expect(
+      restored.sessions.find((session) => session.tabId === before.server.tabId),
+    ).toMatchObject({
+      runtime: "server",
+      navStatus: { _tag: "Loading", url: "http://localhost:4000/" },
+    });
     expect(tab?.scopeKey).toBe(SCOPE_A);
     expect(tab?.profileId).toBe("work");
     expect(tab?.canGoBack).toBe(false);

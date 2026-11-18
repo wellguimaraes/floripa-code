@@ -1,5 +1,5 @@
 /**
- * PreviewManager implementation. State lives in memory; desktop tabs are also
+ * PreviewManager implementation. State lives in memory; user tabs are also
  * saved to the state directory so they reopen after a restart (see
  * `PersistedTabs`).
  *

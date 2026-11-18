@@ -1,5 +1,5 @@
 /**
- * Desktop browser tabs saved across server restarts, so an app update or
+ * Browser tabs saved across server restarts, so an app update or
  * relaunch reopens the tabs the user had. Only the address survives: pages
  * reload and history starts fresh. Tabs keep their ids, so clients' saved
  * panel tabs, their order, and the selected tab still point at them.
@@ -16,11 +16,12 @@ const decodePersistedTabs = Schema.decodeUnknownEffect(PersistedTabsJson);
 const encodePersistedTabs = Schema.encodeEffect(PersistedTabsJson);
 
 /**
- * Server-runtime tabs live in the server's own browser and agent-owned tabs
- * belong to a provider session; neither outlives the process.
+ * Agent-owned tabs belong to a provider session and do not outlive it. Every
+ * other tab reopens, including server-runtime ones: the desktop app opens its
+ * own server's tabs in that runtime and draws them natively.
  */
 export const isPersistableTab = (snapshot: PreviewSessionSnapshot): boolean =>
-  snapshot.runtime !== "server" && snapshot.automationOwner === undefined;
+  snapshot.automationOwner === undefined;
 
 /** The tab as it reopens: loading its last address under its saved id. */
 export const restoreTab = (snapshot: PreviewSessionSnapshot): PreviewSessionSnapshot => {

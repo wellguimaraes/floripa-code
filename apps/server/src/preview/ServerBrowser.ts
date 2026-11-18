@@ -954,8 +954,10 @@ const make = Effect.gen(function* () {
       if (isolatedContext) await context.close().catch(constVoid);
       throw new ServerBrowserTabNotFoundError({ threadId: tab.threadId, tabId: tab.tabId });
     }
-    page.on("close", () => dropTab(tab, true));
-    page.on("crash", () => dropTab(tab, true));
+    // The desktop owns its page: losing it (window closed, app quitting) keeps
+    // the session, which closes only through the manager, so it can reopen.
+    page.on("close", () => dropTab(tab, desktop === null));
+    page.on("crash", () => dropTab(tab, desktop === null));
     tabs.set(key, tab);
     reportLiveTabs();
     // A popup is already loading its own URL, and the desktop loads its tab's.
