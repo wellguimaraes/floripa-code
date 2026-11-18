@@ -13,7 +13,7 @@ import {
 import type { ProjectFaviconProject } from "../../ProjectFavicon";
 import type { WorldSlot } from "../definition/types";
 import { type SignIcon, useSignIcon } from "../useSignIcon";
-import { KeepColorContext, keepColors } from "./contrast";
+import { keepColors } from "./contrast";
 import { settledMatrixWorld } from "./IslandMotion";
 import { geometry } from "./geometries";
 import { LitMaterial, TimeOfDayContext } from "./lighting";
@@ -158,98 +158,97 @@ export function Sign(props: {
   const width = board.width;
   const lampTarget = useMemo(() => new Object3D(), []);
   return (
-    // Keeps its colours at any contrast, so the project's name stays easy to spot.
-    <KeepColorContext value>
-      <group
-        ref={ref}
-        position={slot.position as [number, number, number]}
-        rotation-y={slot.facing}
-        userData={{ boardWidth: width } satisfies SignUserData}
+    // Only the board's face keeps its colours at any contrast, so the project's name stays easy
+    // to spot; the wooden frame greys out with the rest of the world.
+    <group
+      ref={ref}
+      position={slot.position as [number, number, number]}
+      rotation-y={slot.facing}
+      userData={{ boardWidth: width } satisfies SignUserData}
+    >
+      {/* One pole, running up behind the board to its middle. */}
+      <mesh
+        geometry={geometry.box}
+        position={[0, (BOARD_LIFT + BOARD_HEIGHT / 2) / 2, -DEPTH / 2 - POLE_WIDTH / 2]}
+        scale={[POLE_WIDTH, BOARD_LIFT + BOARD_HEIGHT / 2, POLE_WIDTH]}
       >
-        {/* One pole, running up behind the board to its middle. */}
-        <mesh
-          geometry={geometry.box}
-          position={[0, (BOARD_LIFT + BOARD_HEIGHT / 2) / 2, -DEPTH / 2 - POLE_WIDTH / 2]}
-          scale={[POLE_WIDTH, BOARD_LIFT + BOARD_HEIGHT / 2, POLE_WIDTH]}
-        >
-          <LitMaterial color={palette.signPost} />
-        </mesh>
-        <mesh
-          geometry={geometry.box}
-          position={[0, BOARD_LIFT + BOARD_HEIGHT / 2, 0]}
-          scale={[width + FRAME * 2, BOARD_HEIGHT + FRAME * 2, DEPTH]}
-        >
-          <LitMaterial color={palette.signPost} />
-        </mesh>
-        {/* A cap plank overhanging the top, for a bit of silhouette. */}
-        <mesh
-          geometry={geometry.box}
-          position={[0, BOARD_LIFT + BOARD_HEIGHT + FRAME + 0.1, 0]}
-          scale={[width + FRAME * 2 + 0.4, 0.2, DEPTH + 0.3]}
-        >
-          <LitMaterial color={palette.signPost} />
-        </mesh>
-        <mesh
-          geometry={geometry.plane}
-          position={[0, BOARD_LIFT + BOARD_HEIGHT / 2, DEPTH / 2 + 0.002]}
-          scale={[width, BOARD_HEIGHT, 1]}
+        <LitMaterial color={palette.signPost} />
+      </mesh>
+      <mesh
+        geometry={geometry.box}
+        position={[0, BOARD_LIFT + BOARD_HEIGHT / 2, 0]}
+        scale={[width + FRAME * 2, BOARD_HEIGHT + FRAME * 2, DEPTH]}
+      >
+        <LitMaterial color={palette.signPost} />
+      </mesh>
+      {/* A cap plank overhanging the top, for a bit of silhouette. */}
+      <mesh
+        geometry={geometry.box}
+        position={[0, BOARD_LIFT + BOARD_HEIGHT + FRAME + 0.1, 0]}
+        scale={[width + FRAME * 2 + 0.4, 0.2, DEPTH + 0.3]}
+      >
+        <LitMaterial color={palette.signPost} />
+      </mesh>
+      <mesh
+        geometry={geometry.plane}
+        position={[0, BOARD_LIFT + BOARD_HEIGHT / 2, DEPTH / 2 + 0.002]}
+        scale={[width, BOARD_HEIGHT, 1]}
 
-          onClick={(event) => {
-            const clicked = target(event);
-            event.stopPropagation();
-            const point = { x: event.nativeEvent.clientX, y: event.nativeEvent.clientY };
-            if (clicked === "prefs") onPrefsClick();
-            else if (clicked === "pullRequests") onPullRequestsClick(point);
-            else if (clicked === "list") onListClick(point);
-            else onBoardClick(point);
-          }}
-          onPointerMove={() => {
-            document.body.style.cursor = "pointer";
-          }}
-          onPointerOut={() => {
-            document.body.style.cursor = "";
-          }}
-        >
-          {/* Unlit so the name stays readable whatever the light does. */}
-          <meshBasicMaterial map={board.texture} onUpdate={keepColors} />
-        </mesh>
-        {[-width / 3, width / 3].map((x) => (
-          <group key={x} position={[x, CAP_TOP + 0.3, 0.1]} rotation-x={LAMP_TILT}>
-            <mesh geometry={geometry.cylinder} rotation-x={Math.PI / 2} scale={[0.3, 0.6, 0.3]}>
-              <LitMaterial color={palette.lampHousing} />
-            </mesh>
-            {/* The bulb's face, unlit so it glows at night. */}
-            <mesh
-              geometry={geometry.cylinder}
-              position-z={0.31}
-              rotation-x={Math.PI / 2}
-              scale={[0.24, 0.02, 0.24]}
-            >
-              <meshBasicMaterial
-                color={lit ? palette.lampBulb : palette.lampHousing}
-                onUpdate={keepColors}
-              />
-            </mesh>
-          </group>
-        ))}
-        {/*
-         * One light for both lamps: a warm pool on the island in front of the
-         * sign. Off is zero intensity, not unmounted, so the scene's light count
-         * holds and no material recompiles as islands empty and fill.
-         */}
-        <primitive object={lampTarget} position={[0, 0, LAMP_REACH]} />
-        <spotLight
-          position={[0, CAP_TOP + 0.3, 0.4]}
-          target={lampTarget}
-          color={palette.lampLight}
-          intensity={lit ? LAMP_INTENSITY : 0}
-          angle={0.75}
-          penumbra={0.7}
-          decay={1}
-          distance={28}
-        />
-      </group>
-    </KeepColorContext>
+        onClick={(event) => {
+          const clicked = target(event);
+          event.stopPropagation();
+          const point = { x: event.nativeEvent.clientX, y: event.nativeEvent.clientY };
+          if (clicked === "prefs") onPrefsClick();
+          else if (clicked === "pullRequests") onPullRequestsClick(point);
+          else if (clicked === "list") onListClick(point);
+          else onBoardClick(point);
+        }}
+        onPointerMove={() => {
+          document.body.style.cursor = "pointer";
+        }}
+        onPointerOut={() => {
+          document.body.style.cursor = "";
+        }}
+      >
+        {/* Unlit so the name stays readable whatever the light does. */}
+        <meshBasicMaterial map={board.texture} onUpdate={keepColors} />
+      </mesh>
+      {[-width / 3, width / 3].map((x) => (
+        <group key={x} position={[x, CAP_TOP + 0.3, 0.1]} rotation-x={LAMP_TILT}>
+          <mesh geometry={geometry.cylinder} rotation-x={Math.PI / 2} scale={[0.3, 0.6, 0.3]}>
+            <LitMaterial color={palette.lampHousing} />
+          </mesh>
+          {/* The bulb's face, unlit so it glows at night. */}
+          <mesh
+            geometry={geometry.cylinder}
+            position-z={0.31}
+            rotation-x={Math.PI / 2}
+            scale={[0.24, 0.02, 0.24]}
+          >
+            <meshBasicMaterial
+              color={lit ? palette.lampBulb : palette.lampHousing}
+              onUpdate={keepColors}
+            />
+          </mesh>
+        </group>
+      ))}
+      {/*
+       * One light for both lamps: a warm pool on the island in front of the
+       * sign. Off is zero intensity, not unmounted, so the scene's light count
+       * holds and no material recompiles as islands empty and fill.
+       */}
+      <primitive object={lampTarget} position={[0, 0, LAMP_REACH]} />
+      <spotLight
+        position={[0, CAP_TOP + 0.3, 0.4]}
+        target={lampTarget}
+        color={palette.lampLight}
+        intensity={lit ? LAMP_INTENSITY : 0}
+        angle={0.75}
+        penumbra={0.7}
+        decay={1}
+        distance={28}
+      />
+    </group>
   );
 }
 
