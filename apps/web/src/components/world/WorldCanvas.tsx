@@ -74,14 +74,7 @@ import { islandObstacles } from "./engine/route";
 import type { SlotRequest } from "./engine/slots";
 import type { WorldCharacter } from "./engine/world";
 import { type AbductedFigure, Abduction } from "./scene/Abduction";
-import {
-  BALLOON_NAME,
-  BALLOON_PX,
-  Character,
-  HITBOX_NAME,
-  WALK_DESTINATION,
-  WALKING_FLAG,
-} from "./scene/Character";
+import { BALLOON_NAME, BALLOON_PX, Character, HITBOX_NAME, WALK_PATH } from "./scene/Character";
 import { geometry } from "./scene/geometries";
 import { HAT_COUNT } from "./scene/Hat";
 import {
@@ -137,6 +130,7 @@ import { useRemoveIsland } from "./useRemoveIsland";
 import { IslandRunScriptDialog } from "./IslandRunScriptDialog";
 import { RestoreArchivedDialog } from "./RestoreArchivedDialog";
 import { layoutTags, type ScreenPoint } from "./scene/tagLayout";
+import { type BubbleSide, placeBeside, placeOn, roomiestSide, type ScreenRect } from "./bubbleSide";
 import { mainlandOffshore } from "./scene/coast";
 import { isStoppable, WorldBubble } from "./WorldBubble";
 import {
@@ -818,6 +812,7 @@ export default function WorldCanvas(props: {
 
   const holdViewOnClose = useRef<(() => void) | null>(null);
   const keepInView = useRef<((points: ReadonlyArray<Vector3>) => void) | null>(null);
+  const showBeside = useRef<ShowBeside | null>(null);
   const makeRoom = useRef<MakeRoom | null>(null);
   const { archiveThread } = useThreadActions();
   // Archive, not delete: each can be undone from its toast or Settings → Archived.
@@ -1583,11 +1578,23 @@ export default function WorldCanvas(props: {
       covered: coveredOf(container.getBoundingClientRect(), panel(), bars()),
     };
   }, [panel, bars]);
+  // A walk under an open bubble: the map shows the whole path, with room for the bubble on the
+  // side it keeps. A bubble dragged or resized by hand is let go, keeping its size.
+  const [bubbleRelease, setBubbleRelease] = useState(0);
+  const showWalk = (points: ReadonlyArray<Vector3>, side: BubbleSide) => {
+    const bubble = bubbleRef.current?.firstElementChild as HTMLElement | null | undefined;
+    if (bubble == null) return;
+    const byHand = `[${BUBBLE_MOVED_ATTRIBUTE}], [${BUBBLE_RESIZED_ATTRIBUTE}]`;
+    if (bubble.querySelector(byHand) !== null) setBubbleRelease((count) => count + 1);
+    const size = { width: bubble.offsetWidth, height: bubble.offsetHeight };
+    showBeside.current?.(points, size, side);
+  };
   const moveBubble = useBubblePlacement(
     bubbleRef,
     visibleArea,
     bubble?.facts.key ?? null,
     makeRoom,
+    showWalk,
   );
   const moveNewAgent = useBubblePlacement(
     newAgentRef,
@@ -1711,6 +1718,7 @@ export default function WorldCanvas(props: {
             zoomTo={zoomTo}
             holdViewOnClose={holdViewOnClose}
             keepInView={keepInView}
+            showBeside={showBeside}
             makeRoom={makeRoom}
             reveal={reveal}
             layout={islandLayout}
@@ -1719,7 +1727,7 @@ export default function WorldCanvas(props: {
             roots={roots}
             keys={bubble === null ? [] : [bubble.facts.key]}
             hatted={hatted}
-            holdWhileWalking
+            outline
             onMove={moveBubble}
           />
           <FollowTracker
@@ -1944,6 +1952,7 @@ export default function WorldCanvas(props: {
                 <BubbleResizeFrame
                   key={`${bubble.facts.key}:${listenKey === bubble.facts.key}`}
                   sizing={CHAT_BUBBLE_SIZING}
+                  release={bubbleRelease}
                 >
                   <WorldBubble
                     facts={bubble.facts}
@@ -2480,16 +2489,34 @@ const IDLE_SNOOZE_OPTIONS = [
 ] as const;
 /** Room between a balloon's top and the overlay above it. */
 const BALLOON_CLEARANCE_PX = 4;
-/** How long a held overlay takes to glide onto its character once the walk ends. */
+/** How long a bubble takes to glide to a new spot, as a walk starts or ends or it changes sides. */
 const GLIDE_MS = 320;
 const SPOT_MIN_SPACING_PX = 34;
 /** How far above an island's base its idle alarm popover floats. */
 const IDLE_ALARM_HEIGHT = 1;
+/** Half a character's width, in its own units, for the outline an overlay keeps clear of. */
+const CHARACTER_HALF_WIDTH = 0.35;
 // Reused on every frame; trackers only touch them inside their frame callback.
 const followPoint = new Vector3();
 const balloonPoint = new Vector3();
-const destinationPoint = new Vector3();
-const projectedPoint = new Vector3();
+const outlinePoint = new Vector3();
+const cameraRight = new Vector3();
+
+/** A walk a followed character is on: its path as the character holds it, and in the world. */
+interface TrackedWalk {
+  readonly path: ReadonlyArray<Vec3>;
+  /** The feet and the head at every point of the path. */
+  readonly world: ReadonlyArray<Vector3>;
+}
+
+/**
+ * A followed character's screen point, and with `outline`, the box an overlay keeps clear of and
+ * the walk it is on.
+ */
+type FollowPoint = ScreenPoint & {
+  readonly avoid?: ScreenRect;
+  readonly walk?: TrackedWalk;
+};
 
 /**
  * Reports where characters are on screen, just above their heads (or their
@@ -2503,81 +2530,87 @@ function FollowTracker(props: {
   /** Characters wearing a hat, followed from higher up. */
   readonly hatted: ReadonlySet<string>;
   /**
-   * Wait out a walk at a fixed spot in the world, then glide over once the character arrives.
-   * A walk up the screen glides to where it ends right away, so the character walks up under
-   * the overlay rather than into it; any other waits where it began.
+   * Also report each character's outline, for an overlay to sit beside rather than over it.
+   * While it walks, the outline takes in its whole path, from its copy to where it ends, so the
+   * overlay stays put and clear of the walk instead of chasing the walker.
    */
-  readonly holdWhileWalking?: boolean;
+  readonly outline?: boolean;
   /** Called once per drawn frame with every followed character's screen point. */
-  readonly onMove: (points: ReadonlyArray<ScreenPoint>) => void;
+  readonly onMove: (points: ReadonlyArray<FollowPoint>) => void;
 }) {
-  const { roots, keys, hatted, holdWhileWalking = false, onMove } = props;
+  const { roots, keys, hatted, outline = false, onMove } = props;
   const invalidate = useThree((state) => state.invalidate);
-  const held = useRef(new Map<string, Vector3>());
-  // Where each overlay was last put, and the glides from there to a new spot.
-  const shown = useRef(new Map<string, ScreenPoint>());
-  const glides = useRef(new Map<string, { readonly from: ScreenPoint; readonly at: number }>());
+  // Each walking character's walk, measured in the world once per path.
+  const walks = useRef(new Map<string, TrackedWalk>());
   const signature = keys.join("\u0000");
   useEffect(() => {
     if (signature !== "") invalidate();
   }, [signature, invalidate]);
-  const camera = useThree((state) => state.camera);
-  // Up the screen from the bottom, in the camera's -1 to 1.
-  const screenHeight = (point: Vector3) => projectedPoint.copy(point).project(camera).y;
   useFrame((state) => {
-    for (const map of [held.current, shown.current, glides.current]) {
-      for (const key of map.keys()) if (!keys.includes(key)) map.delete(key);
-    }
+    for (const key of walks.current.keys()) if (!keys.includes(key)) walks.current.delete(key);
     if (keys.length === 0) return;
-    const points: ScreenPoint[] = [];
+    const { camera, size } = state;
+    const toScreenX = (point: Vector3) => ((point.x + 1) / 2) * size.width;
+    const toScreenY = (point: Vector3) => ((1 - point.y) / 2) * size.height;
+    const points: FollowPoint[] = [];
     for (const key of keys) {
       const root = roots.current.get(key);
       if (root === undefined) continue;
-      const walking = holdWhileWalking && root.userData[WALKING_FLAG] === true;
-      const wasWalking = held.current.has(key);
       const lift = (FOLLOW_HEIGHT + (hatted.has(key) ? HAT_LIFT : 0)) * root.scale.y;
       root.getWorldPosition(followPoint);
       followPoint.y += lift;
-      if (walking && !wasWalking) {
-        const to = root.userData[WALK_DESTINATION] as Vec3 | undefined;
-        if (to !== undefined) {
-          root.parent?.localToWorld(destinationPoint.set(...to));
-          destinationPoint.y += lift;
-        }
-        const up = to !== undefined && screenHeight(destinationPoint) > screenHeight(followPoint);
-        held.current.set(key, (up ? destinationPoint : followPoint).clone());
-      }
-      if (!walking) held.current.delete(key);
-      const hold = held.current.get(key);
-      if (hold !== undefined) followPoint.copy(hold);
-      followPoint.project(state.camera);
-      let y = ((1 - followPoint.y) / 2) * state.size.height;
-      const balloon = walking ? undefined : root.getObjectByName(BALLOON_NAME);
+      followPoint.project(camera);
+      let y = toScreenY(followPoint);
+      const x = toScreenX(followPoint);
+      const path = outline
+        ? (root.userData[WALK_PATH] as ReadonlyArray<Vec3> | undefined)
+        : undefined;
+      const balloon = path !== undefined ? undefined : root.getObjectByName(BALLOON_NAME);
       if (balloon !== undefined) {
-        balloon.getWorldPosition(balloonPoint).project(state.camera);
-        const top = ((1 - balloonPoint.y) / 2) * state.size.height - BALLOON_PX / 2;
+        balloon.getWorldPosition(balloonPoint).project(camera);
+        const top = toScreenY(balloonPoint) - BALLOON_PX / 2;
         y = Math.min(y, top - BALLOON_CLEARANCE_PX);
       }
-      let point: ScreenPoint = { key, x: ((followPoint.x + 1) / 2) * state.size.width, y };
-      // A walk starting or ending moves the spot; glide there from where the overlay is.
-      const from = shown.current.get(key);
-      if (walking !== wasWalking && from !== undefined && !reducedMotion()) {
-        glides.current.set(key, { from, at: performance.now() });
+      if (!outline) {
+        points.push({ key, x, y });
+        continue;
       }
-      const glide = glides.current.get(key);
-      if (glide !== undefined) {
-        const t = Math.min(1, (performance.now() - glide.at) / GLIDE_MS);
-        const ease = 1 - (1 - t) ** 3;
-        point = {
-          key,
-          x: glide.from.x + (point.x - glide.from.x) * ease,
-          y: glide.from.y + (point.y - glide.from.y) * ease,
+      // Feet and head of every point the outline takes in, in the world.
+      const feetAndHead = (feet: Vector3) => [feet.clone(), feet.clone().setY(feet.y + lift)];
+      let walk = walks.current.get(key);
+      if (path === undefined) {
+        walks.current.delete(key);
+        walk = undefined;
+      } else if (walk?.path !== path) {
+        const world = path.flatMap((feet) =>
+          feetAndHead(root.parent!.localToWorld(outlinePoint.set(...feet))),
+        );
+        walk = { path, world };
+        walks.current.set(key, walk);
+      }
+      let corners = walk?.world;
+      if (corners === undefined) {
+        root.getWorldPosition(outlinePoint);
+        const half = CHARACTER_HALF_WIDTH * root.scale.x;
+        cameraRight.set(1, 0, 0).applyQuaternion(camera.quaternion).multiplyScalar(half);
+        corners = [
+          ...feetAndHead(outlinePoint.clone().add(cameraRight)),
+          ...feetAndHead(outlinePoint.clone().sub(cameraRight)),
+        ];
+      }
+      let avoid = { left: Infinity, top: y, right: -Infinity, bottom: -Infinity };
+      for (const corner of corners) {
+        outlinePoint.copy(corner).project(camera);
+        const cornerX = toScreenX(outlinePoint);
+        const cornerY = toScreenY(outlinePoint);
+        avoid = {
+          left: Math.min(avoid.left, cornerX),
+          top: Math.min(avoid.top, cornerY),
+          right: Math.max(avoid.right, cornerX),
+          bottom: Math.max(avoid.bottom, cornerY),
         };
-        if (t < 1) state.invalidate();
-        else glides.current.delete(key);
       }
-      shown.current.set(key, point);
-      points.push(point);
+      points.push({ key, x, y, avoid, ...(walk && { walk }) });
     }
     onMove(points);
   });
@@ -2758,26 +2791,50 @@ const BUBBLE_EDGE_PX = 8;
 const BUBBLE_GAP_PX = 12;
 
 /**
- * Places a bubble over its tracked point, shifted as little as it takes to stay in the part of
- * the canvas the panel and the bars leave visible. Returns the tracker's `onMove`. The bubble's
- * wrapper (`anchor`'s first child) centres it above the point; a change in its size draws no
- * frame, so that places it again too. `subject` is the key of the point it is open over, null
- * while it is closed. Given `makeRoom`, a bubble that opens, or grows, pushed down over its
- * character by the top edge slides the map down to make room above it, and closing it gives the
- * room back; a pan or zoom by hand leaves the map alone.
+ * Places a bubble beside the outline its tracker reports (see `placeBeside`), on the side with
+ * the most room. Without an outline, or with no side that fits, it goes over its tracked point,
+ * shifted as little as it takes to stay in the part of the canvas the panel and the bars leave
+ * visible. Returns the tracker's `onMove`. The bubble's wrapper (`anchor`'s first child) centres
+ * it above the point; a change in its size draws no frame, so that places it again too. `subject`
+ * is the key of the point it is open over, null while it is closed.
+ *
+ * While its character walks, the bubble keeps one side of the whole path, picked as the walk
+ * starts, and `onWalk` is told it then and on each re-route, to make room there. It picks again
+ * once the walk ends. A walk starting lets go of a bubble dragged or resized by hand. Moving to a
+ * new spot all at once (a walk starting, re-routing or ending, or a change of side), it glides.
+ *
+ * Given `makeRoom`, a bubble that opens, or grows, pushed down over its character by the top edge
+ * slides the map down to make room above it, and closing it gives the room back; a pan or zoom by
+ * hand leaves the map alone.
  */
 function useBubblePlacement(
   anchor: React.RefObject<HTMLDivElement | null>,
   visibleArea: () => VisibleArea | null,
   subject: string | null,
   makeRoom?: React.RefObject<MakeRoom | null>,
-): (points: ReadonlyArray<ScreenPoint>) => void {
+  onWalk?: (points: ReadonlyArray<Vector3>, side: BubbleSide) => void,
+): (points: ReadonlyArray<FollowPoint>) => void {
   const owner = useId();
-  const last = useRef<ScreenPoint | null>(null);
+  const last = useRef<FollowPoint | null>(null);
+  // The side the bubble sits on, kept while it fits so the bubble does not hop as the map moves.
+  const side = useRef<{ readonly key: string; readonly side: BubbleSide } | null>(null);
+  // The walk its character is on, and the side the bubble keeps for all of it.
+  const walk = useRef<{
+    readonly key: string;
+    readonly path: ReadonlyArray<Vec3>;
+    readonly side: BubbleSide;
+  } | null>(null);
+  // Where the bubble was last put, and what is left of a glide easing it to a new spot.
+  const shown = useRef<{ readonly key: string; left: number; top: number } | null>(null);
+  const glide = useRef<{ readonly dx: number; readonly dy: number; readonly at: number } | null>(
+    null,
+  );
+  const glideFrame = useRef<number | null>(null);
   const clearCharacter = useRef(false);
   // The size placement works from. A bubble resized by hand keeps the size it had before, so it
   // stays put while it grows and shrinks, until it opens again.
   const size = useRef<{ width: number; height: number } | null>(null);
+  const byHand = `[${BUBBLE_MOVED_ATTRIBUTE}], [${BUBBLE_RESIZED_ATTRIBUTE}]`;
   const resizedByHand = (bubble: Element) =>
     bubble.querySelector(`[${BUBBLE_RESIZED_ATTRIBUTE}]`) !== null;
   const place = () => {
@@ -2786,27 +2843,96 @@ function useBubblePlacement(
     const point = last.current;
     const area = visibleArea();
     if (element == null || bubble == null || point === null || area === null) return;
-    // Dragged by hand: it stays where it was dropped until it opens again.
+    const { covered } = area;
+    const inside = {
+      left: BUBBLE_EDGE_PX,
+      top: covered.top + BUBBLE_EDGE_PX,
+      right: area.width - covered.right - BUBBLE_EDGE_PX,
+      bottom: area.height - covered.bottom - BUBBLE_EDGE_PX,
+    };
+    // The outline moving all at once, the bubble glides to its new spot.
+    let jump = false;
+    if (point.walk === undefined || point.avoid === undefined) {
+      if (walk.current !== null) {
+        walk.current = null;
+        side.current = null;
+        jump = true;
+      }
+    } else if (walk.current?.key !== point.key || walk.current.path !== point.walk.path) {
+      // A re-route keeps the side; a new walk takes the one with the most room beside its path.
+      const kept =
+        walk.current?.key === point.key
+          ? walk.current.side
+          : roomiestSide({
+              avoid: point.avoid,
+              size: { width: bubble.offsetWidth, height: bubble.offsetHeight },
+              area: inside,
+              gap: BUBBLE_GAP_PX,
+            });
+      walk.current = { key: point.key, path: point.walk.path, side: kept };
+      jump = true;
+      if (point.key === subject) {
+        onWalk?.(point.walk.world, kept);
+        letGo(bubble);
+      }
+    }
+    // Dragged by hand: it stays where it was dropped until it opens again or its character walks.
     if (bubble.querySelector(`[${BUBBLE_MOVED_ATTRIBUTE}]`) !== null) return;
     if (size.current === null || !resizedByHand(bubble)) {
       size.current = { width: bubble.offsetWidth, height: bubble.offsetHeight };
     }
     const { width, height } = size.current;
-    const { covered } = area;
+    const put = (left: number, top: number) => {
+      const from = shown.current;
+      const now = performance.now();
+      if (from?.key !== point.key) glide.current = null;
+      else if (jump && !reducedMotion()) {
+        glide.current = { dx: from.left - left, dy: from.top - top, at: now };
+      }
+      let x = left;
+      let y = top;
+      if (glide.current !== null) {
+        const t = Math.min(1, (now - glide.current.at) / GLIDE_MS);
+        const rest = (1 - t) ** 3;
+        x += glide.current.dx * rest;
+        y += glide.current.dy * rest;
+        if (t === 1) glide.current = null;
+        // The map may be still, drawing no frames to place it by.
+        else {
+          glideFrame.current ??= requestAnimationFrame(() => {
+            glideFrame.current = null;
+            place();
+          });
+        }
+      }
+      shown.current = { key: point.key, left: x, top: y };
+      element.style.transform = `translate(${x + width / 2}px, ${y + height + BUBBLE_GAP_PX}px)`;
+    };
+    if (point.avoid !== undefined) {
+      const beside = { avoid: point.avoid, size: { width, height }, area: inside };
+      if (walk.current !== null) {
+        const spot = placeOn(walk.current.side, { ...beside, gap: BUBBLE_GAP_PX });
+        put(spot.left, spot.top);
+        return;
+      }
+      const previous = side.current?.key === point.key ? side.current.side : null;
+      const placed = placeBeside({ ...beside, gap: BUBBLE_GAP_PX, previous });
+      if (placed !== null) {
+        if (previous !== placed.side) jump = true;
+        side.current = { key: point.key, side: placed.side };
+        put(placed.left, placed.top);
+        if (point.key === subject) clearCharacter.current = false;
+        return;
+      }
+    }
+    if (side.current !== null) jump = true;
+    side.current = null;
     const clamp = (value: number, low: number, high: number) =>
       Math.min(Math.max(value, low), Math.max(low, high));
-    const left = clamp(
-      point.x - width / 2,
-      BUBBLE_EDGE_PX,
-      area.width - covered.right - width - BUBBLE_EDGE_PX,
-    );
+    const left = clamp(point.x - width / 2, inside.left, inside.right - width);
     const above = point.y - height - BUBBLE_GAP_PX;
-    const top = clamp(
-      above,
-      covered.top + BUBBLE_EDGE_PX,
-      area.height - covered.bottom - height - BUBBLE_EDGE_PX,
-    );
-    element.style.transform = `translate(${left + width / 2}px, ${top + height + BUBBLE_GAP_PX}px)`;
+    const top = clamp(above, inside.top, inside.bottom - height);
+    put(left, top);
     // Switching subjects, the tracker reports the old point until the next frame.
     if (!clearCharacter.current || point.key !== subject) return;
     clearCharacter.current = false;
@@ -2816,6 +2942,22 @@ function useBubblePlacement(
       area.height - covered.bottom - KEEP_IN_VIEW_MARGIN - point.y,
     );
     if (shift >= 1) makeRoom?.current?.push(owner, shift);
+  };
+  // Let go of a bubble dragged or resized by hand, gliding on from where it was dropped.
+  // `onWalk` resets the frame's own record of it; this keeps the frame between the two in place.
+  const letGo = (bubble: HTMLElement) => {
+    const dropped = bubble.querySelector<HTMLElement>(`[${BUBBLE_MOVED_ATTRIBUTE}]`);
+    if (dropped !== null && shown.current !== null) {
+      const before = dropped.getBoundingClientRect();
+      dropped.style.translate = "";
+      const after = dropped.getBoundingClientRect();
+      shown.current.left += before.left - after.left;
+      shown.current.top += before.top - after.top;
+    }
+    for (const element of bubble.querySelectorAll(byHand)) {
+      element.removeAttribute(BUBBLE_MOVED_ATTRIBUTE);
+      element.removeAttribute(BUBBLE_RESIZED_ATTRIBUTE);
+    }
   };
   const placeOnResize = useEffectEvent(() => {
     const bubble = anchor.current?.firstElementChild;
@@ -2829,11 +2971,21 @@ function useBubblePlacement(
     // Observing reports the size at once, which places the bubble as it opens.
     return observeResize(bubble, () => placeOnResize());
   }, [anchor, subject]);
-  // Switching subjects keeps the room; only closing gives it back.
+  // Switching subjects keeps the room; only closing gives it back, and opens afresh next time.
   useEffect(() => {
-    if (subject === null) makeRoom?.current?.release(owner);
+    if (subject !== null) return;
+    makeRoom?.current?.release(owner);
+    side.current = null;
+    walk.current = null;
+    shown.current = null;
   }, [makeRoom, owner, subject]);
-  return (points: ReadonlyArray<ScreenPoint>) => {
+  useEffect(
+    () => () => {
+      if (glideFrame.current !== null) cancelAnimationFrame(glideFrame.current);
+    },
+    [],
+  );
+  return (points: ReadonlyArray<FollowPoint>) => {
     last.current = points[0] ?? null;
     place();
   };
@@ -2856,6 +3008,7 @@ function WorldControls({
   zoomTo,
   holdViewOnClose,
   keepInView,
+  showBeside,
   makeRoom,
   reveal,
   layout,
@@ -2876,6 +3029,8 @@ function WorldControls({
   readonly holdViewOnClose: React.RefObject<(() => void) | null>;
   /** Set here: moves the map as little as it takes to show every point, if any is hidden. */
   readonly keepInView: React.RefObject<((points: ReadonlyArray<Vector3>) => void) | null>;
+  /** Set here: like `keepInView`, also leaving room on one side of the points for a bubble. */
+  readonly showBeside: React.RefObject<ShowBeside | null>;
   /** Set here: slides the map down to make room above a bubble, and back when it closes. */
   readonly makeRoom: React.RefObject<MakeRoom | null>;
   /** A spot that must show with room above it for the new-agent bubble; a new object checks again. */
@@ -3192,6 +3347,41 @@ function WorldControls({
       keepInViewWait.current = null;
     };
   }, [camera, size, covered, fly, keepInView]);
+  const showBesideWait = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    showBeside.current = (points, bubble, side) => {
+      showBesideWait.current?.();
+      showBesideWait.current = afterPaint(() => {
+        showBesideWait.current = null;
+        const controls = controlsRef.current;
+        // A hand on the map wins.
+        if (controls === null || gesturing.current) return;
+        const base = covered();
+        const across = bubble.width + BUBBLE_GAP_PX;
+        const down = bubble.height + BUBBLE_GAP_PX;
+        const room = {
+          above: { top: base.top + down },
+          right: { right: base.right + across },
+          left: { left: across },
+          below: { bottom: base.bottom + down },
+        }[side];
+        const next = viewShowing({
+          camera,
+          view: currentView(camera, controls),
+          points,
+          viewport: size,
+          covered: { ...base, ...room },
+          minZoom: controls.minZoom,
+        });
+        if (next !== null) fly(next);
+      });
+    };
+    return () => {
+      showBeside.current = null;
+      showBesideWait.current?.();
+      showBesideWait.current = null;
+    };
+  }, [camera, size, covered, fly, showBeside]);
   useEffect(() => {
     const onFloor = (view: View, all: View | null) =>
       all !== null && view.zoom <= all.zoom * FLOOR_SLACK;
@@ -3382,7 +3572,8 @@ function viewShowing(input: {
   readonly view: View;
   readonly points: ReadonlyArray<Vector3>;
   readonly viewport: { readonly width: number; readonly height: number };
-  readonly covered: Covered;
+  /** With `left`, room kept on the left too, e.g. for a bubble beside the points. */
+  readonly covered: Covered & { readonly left?: number };
   readonly minZoom: number;
 }): View | null {
   const { view, points, viewport } = input;
@@ -3391,7 +3582,7 @@ function viewShowing(input: {
   const screen = points.map((point) => toScreen(point, probe, viewport));
   const xs = screen.map((p) => p.x);
   const ys = screen.map((p) => p.y);
-  const left = KEEP_IN_VIEW_MARGIN;
+  const left = (input.covered.left ?? 0) + KEEP_IN_VIEW_MARGIN;
   const right = Math.max(left, viewport.width - input.covered.right - KEEP_IN_VIEW_MARGIN);
   const top = input.covered.top + KEEP_IN_VIEW_MARGIN;
   const bottom = Math.max(top, viewport.height - input.covered.bottom - KEEP_IN_VIEW_MARGIN);
@@ -3498,6 +3689,13 @@ function onScreen(
     );
   });
 }
+
+/** Moves the map as little as it takes to show `points` with room for `bubble` on their `side`. */
+type ShowBeside = (
+  points: ReadonlyArray<Vector3>,
+  bubble: { readonly width: number; readonly height: number },
+  side: BubbleSide,
+) => void;
 
 /** How far in from each edge something sits over the canvas, in pixels. */
 interface Covered {

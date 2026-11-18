@@ -10,6 +10,7 @@ import {
   MathUtils,
   Matrix4,
   type Mesh,
+  MeshBasicMaterial,
   MeshLambertMaterial,
   type Object3D,
   PropertyBinding,
@@ -20,7 +21,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 
 import type { Pose } from "../definition/types";
-import { keepColors } from "./contrast";
+import { grayscale, keepColors } from "./contrast";
 import { drawSoon, runStepSeconds } from "./frames";
 import { geometry } from "./geometries";
 import { GlowContext, LitMaterial } from "./lighting";
@@ -31,6 +32,8 @@ const MODEL_URL = `${import.meta.env.BASE_URL}world/character.glb`;
 /** Characters stand this tall in world units, like the shape-built ones did. */
 const HEIGHT = 1.45;
 const FADE_SECONDS = 0.25;
+/** A faded figure's depth pass draws at this order, and its colour pass just after. */
+const FADED_DEPTH_ORDER = 1;
 const FADE_FPS = 30;
 /** A quiet thread's character keeps swinging, at this fraction of the speed. */
 const PONDER_SPEED = 0.35;
@@ -90,9 +93,14 @@ export function CharacterModel(props: {
   readonly watch?: React.RefObject<Object3D | null> | undefined;
   /** Receives the right hand, so the caller can tie things to it. */
   readonly handRef?: React.RefObject<Object3D | null>;
+  /** Below 1, the whole figure is see-through, e.g. the copy left where a walk began. */
+  readonly opacity?: number;
+  /** Draws the figure in greys only, e.g. the copy left where a walk began. */
+  readonly gray?: boolean;
 }) {
   const { pose, shades, isWalking, handItem, headItem, handRef, watch } = props;
   const { raiseHand = false, raiseHands = false, reachHand = false, dangleLegs = false } = props;
+  const { opacity = 1, gray = false } = props;
   const gltf = useLoader(GLTFLoader, MODEL_URL);
   const invalidate = useThree((state) => state.invalidate);
   const glow = useContext(GlowContext);
@@ -102,20 +110,40 @@ export function CharacterModel(props: {
     const height = new Box3().setFromObject(gltf.scene, true).getSize(new Vector3()).y;
     scene.scale.setScalar(HEIGHT / (height || 1));
     const materials = new Map<Mesh, MeshLambertMaterial>();
+    const meshes: Mesh[] = [];
     scene.traverse((object) => {
-      const mesh = object as Mesh;
-      if (!mesh.isMesh) return;
+      if ((object as Mesh).isMesh) meshes.push(object as Mesh);
+    });
+    const faded = opacity < 1;
+    // Faded, the figure fades as one: a depth-only copy of every mesh draws first, so the
+    // colour pass only reaches the nearest surface, and limbs never show through the body.
+    // Both are in the transparent pass, after the scene behind them has been drawn.
+    const depthOnly = faded
+      ? new MeshBasicMaterial({ colorWrite: false, transparent: true })
+      : null;
+    for (const mesh of meshes) {
       const source = mesh.material as Material & { map?: MeshLambertMaterial["map"] };
       // The texture also masks the glow, so its shading shows in the dark too.
+      // Set at creation: whether a material is transparent picks its shader program.
       const material = new MeshLambertMaterial({
         map: source.map ?? null,
         emissiveMap: source.map ?? null,
+        transparent: faded,
+        opacity,
       });
-      keepColors(material);
+      if (gray) grayscale(material);
+      else keepColors(material);
       mesh.material = material;
       mesh.frustumCulled = false;
       materials.set(mesh, material);
-    });
+      if (depthOnly === null) continue;
+      // A skinned clone shares the skeleton, so the depth copy follows the animation.
+      const depth = mesh.clone(false);
+      depth.material = depthOnly;
+      depth.renderOrder = FADED_DEPTH_ORDER;
+      mesh.renderOrder = FADED_DEPTH_ORDER + 1;
+      mesh.parent?.add(depth);
+    }
     const head = scene.getObjectByName("head") ?? null;
     const mixer = new AnimationMixer(scene);
     const actions = new Map<string, AnimationAction>(
@@ -126,6 +154,7 @@ export function CharacterModel(props: {
       mixer,
       actions,
       materials,
+      depthOnly,
       // The loader strips dots from names: "handslot.r" becomes "handslotr".
       hand: scene.getObjectByName(PropertyBinding.sanitizeNodeName("handslot.r")) ?? null,
       head,
@@ -141,7 +170,7 @@ export function CharacterModel(props: {
         bones(scene, ["upperleg.r", "lowerleg.r", "foot.r"]),
       ],
     };
-  }, [gltf]);
+  }, [gltf, opacity, gray]);
 
   useEffect(() => {
     for (const [mesh, material] of rig.materials) {
@@ -192,6 +221,9 @@ export function CharacterModel(props: {
     () => () => {
       rig.mixer.stopAllAction();
       playing.current = null;
+      // Copies come and go with every walk; free their materials as they leave.
+      for (const material of rig.materials.values()) material.dispose();
+      rig.depthOnly?.dispose();
     },
     [rig],
   );

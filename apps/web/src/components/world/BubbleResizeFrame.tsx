@@ -1,5 +1,11 @@
 import * as Schema from "effect/Schema";
-import { useRef, type CSSProperties, type PointerEvent, type ReactNode } from "react";
+import {
+  useLayoutEffect,
+  useRef,
+  type CSSProperties,
+  type PointerEvent,
+  type ReactNode,
+} from "react";
 
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { cn } from "../../lib/utils";
@@ -71,14 +77,14 @@ const GRIPS = [
 /**
  * Set on the frame once the user starts resizing. The world's placement leaves a bubble that
  * carries it where it is, so a resize never slides or re-clamps the bubble or pans the map;
- * placement resumes when the bubble opens again.
+ * placement resumes when the bubble opens again, or its character starts walking (`release`).
  */
 export const BUBBLE_RESIZED_ATTRIBUTE = "data-bubble-resized";
 
 /**
  * Set on the frame once the user drags it by its handle. The world's placement then stops moving
- * the bubble at all, so it stays where it was dropped while the map pans or its character walks;
- * placement resumes when the bubble opens again.
+ * the bubble at all, so it stays where it was dropped while the map pans; placement resumes when
+ * the bubble opens again, or its character starts walking (`release`).
  */
 export const BUBBLE_MOVED_ATTRIBUTE = "data-bubble-moved";
 
@@ -107,9 +113,14 @@ const EDGE_PX = 8;
  */
 export function BubbleResizeFrame(props: {
   readonly sizing: BubbleSizing;
+  /**
+   * Changing it hands the bubble back to the world's placement: it drops where it was dragged
+   * to, and the offset a resize gave it, keeping its size.
+   */
+  readonly release?: number;
   readonly children: ReactNode;
 }) {
-  const { sizing } = props;
+  const { sizing, release } = props;
   const [stored, setStored] = useLocalStorage(sizing.storageKey, sizing.defaultSize, BubbleSize);
   const viewport = () => ({ width: window.innerWidth, height: window.innerHeight });
   const size = clampBubbleSize(stored, viewport(), sizing);
@@ -140,6 +151,15 @@ export function BubbleResizeFrame(props: {
     element.style.setProperty("--bubble-body-height", `${next.height}px`);
     element.style.translate = `${offset.current.x}px ${offset.current.y}px`;
   };
+
+  useLayoutEffect(() => {
+    const element = frame.current;
+    if (release === undefined || element === null) return;
+    offset.current = { x: 0, y: 0 };
+    element.style.translate = "";
+    element.removeAttribute(BUBBLE_MOVED_ATTRIBUTE);
+    element.removeAttribute(BUBBLE_RESIZED_ATTRIBUTE);
+  }, [release]);
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>, grip: (typeof GRIPS)[number]) => {
     if (event.button !== 0 || frame.current === null) return;

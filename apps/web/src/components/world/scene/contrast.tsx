@@ -9,7 +9,8 @@ import { useWorldContrastStore } from "../worldContrastStore";
  * only changes one renderer uniform: no material or React tree re-renders. The
  * scene uses CustomToneMapping, which runs three's ACES at exposure 1 and reads
  * `toneMappingExposure` as the saturation instead. Materials that define
- * WORLD_KEEP_COLOR (see `keepColors`) skip the desaturation.
+ * WORLD_KEEP_COLOR (see `keepColors`) skip the desaturation; WORLD_GRAYSCALE (see
+ * `grayscale`) ones lose all their colour at any contrast.
  */
 ShaderChunk.tonemapping_pars_fragment = ShaderChunk.tonemapping_pars_fragment.replace(
   "vec3 CustomToneMapping( vec3 color ) { return color; }",
@@ -26,7 +27,9 @@ vec3 CustomToneMapping( vec3 color ) {
 		vec3( -0.07367, -0.00605,  1.07602 )
 	);
 	color = saturate( ACESOutputMat * RRTAndODTFit( ACESInputMat * ( color / 0.6 ) ) );
-	#ifndef WORLD_KEEP_COLOR
+	#if defined( WORLD_GRAYSCALE )
+	color = vec3( dot( color, vec3( 0.2126, 0.7152, 0.0722 ) ) );
+	#elif !defined( WORLD_KEEP_COLOR )
 	color = mix( vec3( dot( color, vec3( 0.2126, 0.7152, 0.0722 ) ) ), color, toneMappingExposure );
 	#endif
 	return color;
@@ -39,6 +42,13 @@ const KEEP_COLOR = { WORLD_KEEP_COLOR: "" };
 export function keepColors(material: Material) {
   // Every material passes its defines to the shader; the types only declare them on ShaderMaterial.
   Object.assign(material, { defines: KEEP_COLOR });
+}
+
+const GRAYSCALE = { WORLD_GRAYSCALE: "" };
+
+/** Makes a material draw in greys only, at any contrast. Call it before the material's first draw. */
+export function grayscale(material: Material) {
+  Object.assign(material, { defines: GRAYSCALE });
 }
 
 /** True inside a character: its materials keep their colours at any contrast. */

@@ -1,5 +1,5 @@
 import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
-import { Suspense, useEffect, useEffectEvent, useMemo, useRef } from "react";
+import { Suspense, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import {
   BufferAttribute,
   BufferGeometry,
@@ -25,6 +25,7 @@ import { KeepColorContext, keepColors } from "./contrast";
 import { CharacterGlow, LitMaterial } from "./lighting";
 import { palette } from "./palette";
 import { SelectionRing } from "./SelectionRing";
+import { WalkTrail } from "./WalkTrail";
 import type { Ground } from "./shadows";
 
 export type { FamilyShades } from "./palette";
@@ -37,19 +38,16 @@ export const BALLOON_PX = 46;
 export const BALLOON_NAME = "balloon";
 /** The hitbox's name, so the island under a character can tell the click was the character's. */
 export const HITBOX_NAME = "character-hitbox";
-/** Set on a character's root while it walks, so overlays can wait for it to arrive. */
-export const WALKING_FLAG = "walking";
 /**
- * Set on a character's root as a walk is planned: where it ends, in its parent's space, so
- * overlays can go ahead.
+ * Set on a character's root while it walks, so overlays can make room for the walk: where the
+ * walk began (where its copy stands), then every point it still passes, at ground level in its
+ * parent's space. A re-route sets a new array, so overlays can tell the path changed.
  */
-export const WALK_DESTINATION = "walkDestination";
-function startWalk(root: Group | null, route: ReadonlyArray<Vec3>, ground: Ground): void {
+export const WALK_PATH = "walkPath";
+function startWalk(root: Group | null, path: ReadonlyArray<Vec3>, ground: Ground): void {
   if (root === null) return;
-  const end = route.at(-1);
-  root.userData[WALKING_FLAG] = end !== undefined;
-  root.userData[WALK_DESTINATION] =
-    end === undefined ? undefined : [end[0], end[1] + ground(end[0], end[2]), end[2]];
+  root.userData[WALK_PATH] =
+    path.length > 1 ? path.map(([x, y, z]): Vec3 => [x, y + ground(x, z), z]) : undefined;
 }
 
 /** On-screen length of the string between the raised hand and the balloon. */
@@ -59,11 +57,33 @@ const FALLBACK_HAND: readonly [number, number, number] = [0.3, 1.5, 0];
 /** Standing, the hitbox runs from the feet to just above the hat. */
 const HITBOX_CENTER_Y = 0.79;
 const handPoint = new Vector3();
+/** How see-through the copy left where a walk began is. */
+const GHOST_OPACITY = 0.65;
+/** How long the copy takes to fade away once the character arrives. */
+const GHOST_FADE_MS = 400;
 
 interface Motion {
   readonly position: [number, number, number];
   heading: number;
   route: Vec3[];
+}
+
+/**
+ * Where a walk began and how the character was resting there, so a see-through copy can stay
+ * that way until the character arrives.
+ */
+interface Ghost {
+  readonly position: Vec3;
+  readonly heading: number;
+  readonly lift: number;
+  /** The pose the model takes: a seat turns beach poses into sitting back. */
+  readonly pose: Pose;
+  /** The activity's own pose, which a seat does not change: a wave still raises both arms. */
+  readonly activityPose: Pose;
+  readonly fishing: boolean;
+  readonly ledge: boolean;
+  /** The character arrived: the copy fades out, and takes no more clicks. */
+  readonly leaving?: boolean;
 }
 
 export function Character(props: {
@@ -149,7 +169,16 @@ export function Character(props: {
     heading: placement.facing,
     route: [],
   });
+  // A copy stays where the walk began, and takes clicks there, so nobody chases a walker.
+  // A walk re-routed midway keeps the copy where the first one began.
+  const [ghost, setGhost] = useState<Ghost | null>(null);
+  // The walk's whole path, from where it began; a re-route keeps the stretch already walked.
+  const [trail, setTrail] = useState<ReadonlyArray<Vec3> | null>(null);
   const lastPlacement = useRef<Placement | null>(null);
+  // The activity before this render's, read when a walk starts; updated after that check runs.
+  const lastActivityPose = useRef(activity.pose);
+  // Where the walk under way began, then each point it has passed; a re-route keeps them.
+  const walked = useRef<Vec3[]>([]);
   const lastSurface = useRef(surface);
   // Where the frame loop puts the root, also put before anyone follows it: the trackers placing
   // tags and bubbles run ahead of this loop, and would read a new root at the island's origin.
@@ -179,7 +208,21 @@ export function Character(props: {
         current.route.push(...planRoute({ from, to, obstacles }));
         from = to;
       }
-      startWalk(root.current, current.route, ground);
+      // Just set down by the saucer, it was standing.
+      if (current.route.length > 0) {
+        setTrail([startAt, ...current.route]);
+        walked.current = [startAt];
+        setGhost({
+          position: startAt,
+          heading: placement.facing,
+          lift: 0,
+          pose: "stand",
+          activityPose: "stand",
+          fishing: false,
+          ledge: false,
+        });
+      }
+      startWalk(root.current, [startAt, ...current.route], ground);
       invalidate();
       return;
     }
@@ -189,7 +232,9 @@ export function Character(props: {
     if (resized && surface(current.position[0], current.position[2]) === null) {
       [current.position[0], current.position[1], current.position[2]] = placement.position;
       current.route = [];
-      if (root.current !== null) root.current.userData[WALKING_FLAG] = false;
+      startWalk(root.current, [], ground);
+      setGhost(null);
+      setTrail(null);
       invalidate();
       return;
     }
@@ -199,14 +244,34 @@ export function Character(props: {
       ? []
       : [previous.via, placement.via].filter((stop): stop is Vec3 => stop !== undefined);
     let from: Vec3 = [...current.position];
+    if (current.route.length === 0) walked.current = [from];
+    const ghostAt: Ghost = {
+      position: from,
+      heading: previous.facing,
+      lift: previous.seat ?? 0,
+      pose: previous.seat === undefined ? lastActivityPose.current : "slump",
+      activityPose: lastActivityPose.current,
+      fishing: previous.fishing === true,
+      ledge: previous.ledge === true,
+    };
     current.route = [];
     for (const to of [...stops, placement.position]) {
       current.route.push(...planRoute({ from, to, obstacles }));
       from = to;
     }
-    startWalk(root.current, current.route, ground);
+    const walks = current.route.length > 0;
+    setGhost((shown) =>
+      walks ? (shown !== null && shown.leaving !== true ? shown : ghostAt) : null,
+    );
+    const path = walks ? [...walked.current, ghostAt.position, ...current.route] : [];
+    setTrail(walks ? path : null);
+    startWalk(root.current, path, ground);
     invalidate();
   }, [placement, startAt, surface, obstacles, ground, invalidate]);
+  // After the walk check above, so a walk starting with a new activity copies the old one.
+  useEffect(() => {
+    lastActivityPose.current = activity.pose;
+  }, [activity.pose]);
 
   const speed = movement.walkSpeed * (facts.kid ? movement.kidSpeedScale : 1);
   const lastWalkFrame = useRef<number | null>(null);
@@ -229,6 +294,7 @@ export function Character(props: {
           current.position[0] = target[0];
           current.position[1] = target[1];
           current.position[2] = target[2];
+          walked.current.push(target);
           current.route.shift();
           budget -= distance;
         } else {
@@ -242,7 +308,13 @@ export function Character(props: {
       // Keep frames coming until the walk ends, plus one to draw the arrival
       // pose, at a capped rate rather than the display's.
       drawSoon(state.invalidate, movement.walkFps);
-      group.userData[WALKING_FLAG] = current.route.length > 0;
+      if (current.route.length === 0) {
+        group.userData[WALK_PATH] = undefined;
+        setGhost((shown) =>
+          shown === null || reducedMotion() ? null : { ...shown, leaving: true },
+        );
+        setTrail(null);
+      }
     }
     if (balloon.current !== null) {
       // Balloons keep one size on screen, so they stay easy to spot zoomed out:
@@ -397,8 +469,87 @@ export function Character(props: {
             </>
           ) : null}
         </group>
+        {trail === null ? null : <WalkTrail path={trail} ground={ground} color={shades.base} />}
+        {ghost === null ? null : (
+          <GhostFade
+            position={[
+              ghost.position[0],
+              ghost.position[1] + ghost.lift + ground(ghost.position[0], ghost.position[2]),
+              ghost.position[2],
+            ]}
+            heading={ghost.heading}
+            scale={scale}
+            leaving={ghost.leaving === true}
+            fps={movement.walkFps}
+            onGone={() => setGhost((shown) => (shown?.leaving === true ? null : shown))}
+          >
+            <mesh
+              name={HITBOX_NAME}
+              geometry={geometry.hitbox}
+              {...(ghost.pose === "lie" || ghost.pose === "dead"
+                ? { position: [0, 0.3, -0.35], "rotation-x": Math.PI / 2 }
+                : { "position-y": HITBOX_CENTER_Y })}
+              visible={false}
+              {...(ghost.leaving === true ? {} : pointer)}
+            />
+            <Suspense fallback={null}>
+              <CharacterModel
+                pose={ghost.pose}
+                shades={shades}
+                isWalking={() => false}
+                raiseHands={ghost.activityPose === "wave"}
+                reachHand={ghost.fishing}
+                dangleLegs={ghost.ledge}
+                opacity={GHOST_OPACITY}
+                gray
+              />
+            </Suspense>
+          </GhostFade>
+        )}
       </CharacterGlow>
     </KeepColorContext>
+  );
+}
+
+const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/** Holds the copy left where a walk began, and fades it out once `leaving` turns on. */
+function GhostFade(props: {
+  readonly position: Vec3;
+  readonly heading: number;
+  readonly scale: number;
+  readonly leaving: boolean;
+  readonly fps: number;
+  readonly onGone: () => void;
+  readonly children: React.ReactNode;
+}) {
+  const { position, heading, scale, leaving, fps, onGone, children } = props;
+  const group = useRef<Group>(null);
+  const fadeStart = useRef<number | null>(null);
+  const setOpacity = (opacity: number) =>
+    group.current?.traverse((object) => {
+      const material = (object as Mesh).material;
+      if (material !== undefined && !Array.isArray(material) && material.transparent) {
+        material.opacity = opacity;
+      }
+    });
+  useFrame((state) => {
+    // A new walk can begin mid-fade: the copy comes back in full at the new start.
+    if (!leaving) {
+      if (fadeStart.current !== null) setOpacity(GHOST_OPACITY);
+      fadeStart.current = null;
+      return;
+    }
+    fadeStart.current ??= performance.now();
+    const t = Math.min(1, (performance.now() - fadeStart.current) / GHOST_FADE_MS);
+    setOpacity(GHOST_OPACITY * (1 - t));
+    if (t < 1) drawSoon(state.invalidate, fps);
+    else onGone();
+  });
+  return (
+    <group ref={group} position={position} rotation-y={heading} scale={scale}>
+      {children}
+    </group>
   );
 }
 
