@@ -1411,6 +1411,26 @@ export default function WorldCanvas(props: {
       ...pile,
     }));
   }, [definition, islands, hoveredIsland]);
+  // Zoomed out too far for those, one button in the middle of the lawn stands in for them.
+  const newAgentCenter = useMemo(() => {
+    const island = islands.find((i) => i.key === hoveredIsland);
+    const spot = islandSpots.find((s) => s.key === hoveredIsland);
+    if (island === undefined || spot === undefined || newAgentSpots.length === 0) return null;
+    const lawn = island.definition.terrain.find((patch) => patch.kind === "grass");
+    const position: Vec3 =
+      lawn === undefined
+        ? [spot.x, island.offset[1] + NEW_AGENT_CENTER_HEIGHT, spot.z]
+        : [
+            island.offset[0] + lawn.center[0],
+            island.offset[1] + NEW_AGENT_CENTER_HEIGHT,
+            island.offset[2] + lawn.center[1],
+          ];
+    return { key: `${island.key}#center`, islandKey: island.key, position };
+  }, [islands, islandSpots, hoveredIsland, newAgentSpots.length]);
+  const newAgentTracked = useMemo(
+    () => (newAgentCenter === null ? newAgentSpots : [...newAgentSpots, newAgentCenter]),
+    [newAgentSpots, newAgentCenter],
+  );
   // The new-thread shortcut asks for an island, then opens the bubble at its
   // first free pile and brings that into view.
   const pickingProject = useWorldModeStore((state) => state.pickingProject);
@@ -1453,19 +1473,21 @@ export default function WorldCanvas(props: {
   useEffect(() => () => setPickingProject(false), [setPickingProject]);
   const spotRefs = useRef(new Map<string, HTMLButtonElement>());
   const moveSpots = useCallback((points: ReadonlyArray<ScreenPoint>) => {
-    // Zoomed out, the buttons would pile onto each other: show none until
-    // they sit clearly apart.
+    // Zoomed out, the pile buttons would pile onto each other: show the lawn's
+    // single button instead until they sit clearly apart.
+    const piles = points.filter((point) => !point.key.endsWith("#center"));
     let closest = Infinity;
-    for (const [index, a] of points.entries()) {
-      for (const b of points.slice(index + 1)) {
+    for (const [index, a] of piles.entries()) {
+      for (const b of piles.slice(index + 1)) {
         closest = Math.min(closest, Math.hypot(a.x - b.x, a.y - b.y));
       }
     }
-    const visible = closest >= SPOT_MIN_SPACING_PX;
+    const apart = closest >= SPOT_MIN_SPACING_PX;
     for (const point of points) {
       const spot = spotRefs.current.get(point.key);
       if (spot === undefined) continue;
       spot.style.transform = `translate(${point.x}px, ${point.y}px)`;
+      const visible = point.key.endsWith("#center") ? !apart : apart;
       spot.style.visibility = visible ? "visible" : "hidden";
     }
   }, []);
@@ -1742,7 +1764,7 @@ export default function WorldCanvas(props: {
             onMove={moveTags}
           />
           <FollowTracker roots={roots} keys={managerKeys} hatted={NO_HATS} onMove={moveManager} />
-          <PointTracker points={newAgentSpots} onMove={moveSpots} />
+          <PointTracker points={newAgentTracked} onMove={moveSpots} />
           <PointTracker points={missingFolders} onMove={moveMissingFolders} />
           <PointTracker points={idleAlarms} onMove={moveIdleAlarms} />
           <PointTracker
@@ -2004,6 +2026,36 @@ export default function WorldCanvas(props: {
           </span>
         </button>
       ))}
+      {newAgentCenter !== null ? (
+        // Positioned by PointTracker with the pile buttons, and shown only when those are hidden.
+        // Above the name tags and under the bubbles: zoomed out, a tag can sit on the lawn's middle.
+        <button
+          key={newAgentCenter.key}
+          type="button"
+          ref={(button) => {
+            if (button === null) spotRefs.current.delete(newAgentCenter.key);
+            else spotRefs.current.set(newAgentCenter.key, button);
+          }}
+          aria-label={`Start a new agent on ${projectTitles.get(newAgentCenter.islandKey) ?? "this island"}`}
+          className="pointer-events-none invisible absolute top-0 left-0 z-[25]"
+          onWheel={forwardWheel}
+          onClick={() => {
+            const pile = newAgentSpots[0];
+            if (pile === undefined) return;
+            setBubbleKey(null);
+            closeManager();
+            setNewAgent({
+              islandKey: pile.islandKey,
+              slotIndex: pile.slotIndex,
+              position: pile.position,
+            });
+          }}
+        >
+          <span className="theme-light pointer-events-auto flex size-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md ring-2 ring-background transition-transform hover:scale-110">
+            <PlusIcon className="size-3.5" />
+          </span>
+        </button>
+      ) : null}
       {missingFolders.map((spot) => (
         // Positioned by PointTracker on drawn frames, over the island's sign.
         <div
@@ -2494,6 +2546,8 @@ const BALLOON_CLEARANCE_PX = 4;
 /** How long a bubble takes to glide to a new spot, as a walk starts or ends or it changes sides. */
 const GLIDE_MS = 320;
 const SPOT_MIN_SPACING_PX = 34;
+/** How far above an island's base its lawn's new-agent button floats when zoomed out. */
+const NEW_AGENT_CENTER_HEIGHT = 1;
 /** How far above an island's base its idle alarm popover floats. */
 const IDLE_ALARM_HEIGHT = 1;
 /** Half a character's width, in its own units, for the outline an overlay keeps clear of. */
