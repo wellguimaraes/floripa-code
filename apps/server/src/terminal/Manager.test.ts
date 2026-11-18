@@ -1589,6 +1589,32 @@ it.layer(
       }),
   );
 
+  it.effect("turns off input modes a dead process left on in persisted history", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager();
+      yield* manager.open(openInput());
+      const process = ptyAdapter.processes[0];
+      expect(process).toBeDefined();
+      if (!process) return;
+
+      // A TUI enables any-event SGR mouse reporting and kitty keys, then the app quits under it.
+      process.emitData("tui\u001b[?1003h\u001b[?1006h\u001b[>1u");
+      yield* manager.close({ threadId: "thread-1" });
+
+      const reopened = yield* manager.open(openInput());
+      expect(reopened.history.startsWith("tui\u001b[?1003h\u001b[?1006h\u001b[>1u")).toBe(true);
+      expect(reopened.history.endsWith("\u001b[?1006l\u001b[?1015l\u001b[?1016l\u001b[=0;1u")).toBe(
+        true,
+      );
+      expect(reopened.history).toContain("\u001b[?1003l");
+
+      // Reopening again over already-reset history does not stack another reset.
+      yield* manager.close({ threadId: "thread-1" });
+      const again = yield* manager.open(openInput());
+      expect(again.history).toBe(reopened.history);
+    }),
+  );
+
   it.effect("strips replay-unsafe terminal query and reply sequences from persisted history", () =>
     Effect.gen(function* () {
       const { manager, ptyAdapter } = yield* createManager();

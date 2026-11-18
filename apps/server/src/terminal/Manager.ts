@@ -1144,6 +1144,25 @@ export class BoundedTerminalHistory {
   }
 }
 
+// Modes that make the terminal produce input on its own (mouse reports, focus
+// events) or re-encode keys (kitty keyboard flags). A full-screen app that dies
+// without turning them off leaves them in persisted history, and replaying that
+// history over a fresh shell would turn every pointer move into typed junk.
+const INPUT_MODE_ENABLE_PATTERN =
+  // oxlint-disable-next-line no-control-regex
+  /\u001b\[(?:\?[0-9;]*\b(?:9|100[0-6]|1015|1016)\b[0-9;]*h|[>=][0-9;]*u)/;
+const STALE_INPUT_MODE_RESET =
+  "\u001b[?9l\u001b[?1000l\u001b[?1001l\u001b[?1002l\u001b[?1003l\u001b[?1004l" +
+  "\u001b[?1005l\u001b[?1006l\u001b[?1015l\u001b[?1016l\u001b[=0;1u";
+
+/** Whether replaying persisted history would leave input modes from its dead process on. */
+function historyLeavesInputModesOn(history: string): boolean {
+  const lastReset = history.lastIndexOf(STALE_INPUT_MODE_RESET);
+  const sinceReset =
+    lastReset < 0 ? history : history.slice(lastReset + STALE_INPUT_MODE_RESET.length);
+  return INPUT_MODE_ENABLE_PATTERN.test(sinceReset);
+}
+
 function isCsiFinalByte(codePoint: number): boolean {
   return codePoint >= 0x40 && codePoint <= 0x7e;
 }
@@ -2762,6 +2781,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     if (Option.isNone(existing)) {
       yield* flushPersist(input, terminalId);
       const history = yield* readHistory(input, terminalId);
+      // The process that wrote this history is gone; the new shell starts with default input modes.
+      if (historyLeavesInputModesOn(history.value())) history.append(STALE_INPUT_MODE_RESET);
       const cols = input.cols ?? DEFAULT_OPEN_COLS;
       const rows = input.rows ?? DEFAULT_OPEN_ROWS;
       const session: TerminalSessionState = {
