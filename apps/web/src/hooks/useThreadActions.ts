@@ -33,6 +33,7 @@ import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { projectEnvironment } from "../state/projects";
 import { threadEnvironment } from "../state/threads";
 import { vcsEnvironment } from "../state/vcs";
+import { useWorldModeStore } from "../components/world/worldModeStore";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { refreshArchivedThreadsForEnvironment } from "../lib/archivedThreadsState";
 import { releaseComposerDraftUploads } from "../lib/composerDraftUploads";
@@ -467,7 +468,8 @@ export function useThreadActions() {
         failureTitle: "Failed to undo archive",
       });
 
-      if (shouldNavigateToDraft) {
+      // The world moves its chat off an archived agent itself (see WorldLayout).
+      if (shouldNavigateToDraft && !useWorldModeStore.getState().shown) {
         const navigationResult = await settlePromise(() =>
           handleNewThreadRef.current(scopeProjectRef(thread.environmentId, thread.projectId)),
         );

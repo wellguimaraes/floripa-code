@@ -14,7 +14,8 @@ interface WorldModeState {
   readonly setPickingProject: (picking: boolean) => void;
   /**
    * Archives the agent whose chat is open the world's way: its saucer exit, then the chat
-   * closes. Set while the world shows that agent.
+   * moves to the agent opened before it in that worktree, or closes. Set while the world shows
+   * that agent.
    */
   readonly archiveChatAgent: (() => Promise<void>) | null;
   readonly setArchiveChatAgent: (archive: (() => Promise<void>) | null) => void;

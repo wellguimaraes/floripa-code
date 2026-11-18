@@ -50,7 +50,8 @@ export const WorldArchiveButton = memo(function WorldArchiveButton({
   const [archiving, setArchiving] = useState(false);
 
   // Archive, not delete: it can be undone from the toast or Settings → Archived. The world's
-  // own archive plays the agent's exit and reports its own failures. Either way the chat closes.
+  // own archive plays the agent's exit and reports its own failures. Either way the chat moves
+  // to the agent opened before it in the same worktree, or closes.
   const archive = async (anchor: Element | null) => {
     if (chat === null || archiving) return;
     if (!(await confirmArchive(anchor))) return;

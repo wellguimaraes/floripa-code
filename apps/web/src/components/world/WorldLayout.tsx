@@ -24,7 +24,7 @@ import {
 import { cn } from "../../lib/utils";
 import { usePanelAnimationSettings, usePanelPresence } from "../../panelAnimations";
 import { selectThreadRightPanelState, useRightPanelStore } from "../../rightPanelStore";
-import { useThreadShell } from "../../state/entities";
+import { readProject, readThreadShell, useThreadShell } from "../../state/entities";
 import { buildThreadRouteParams, type ThreadRouteTarget } from "../../threadRoutes";
 import { DevOnboardingButton } from "../onboarding/DevOnboardingButton";
 import { RightPanelResizeHandle } from "../preview/RightPanelResizeHandle";
@@ -38,7 +38,9 @@ import { WORLD_MANAGERS_AVAILABLE } from "./worldManagerStore";
 import { WorldNavigation, WorldSettingsButton } from "./WorldNavigation";
 import { WorldUpdateButton } from "./WorldUpdateButton";
 import { WorldUsageBar } from "./WorldUsageBar";
+import { chatAfterArchive } from "./chatAfterArchive";
 import { islandWorlds } from "./definitions/island";
+import { afterPaint } from "./scene/frames";
 import { palette } from "./scene/palette";
 import { useWorldModeStore } from "./worldModeStore";
 import { scaleSurfacesWidth, WorldSurfacesWidthContext } from "./worldSurfacesWidth";
@@ -55,6 +57,8 @@ const SURFACES_DEFAULT_WIDTH = 604;
 const RAILS_WIDTH = 44;
 // Room left of the chat for its close button (4rem) and right of it for the margin (0.75rem).
 const CHAT_GUTTERS = 76;
+// How many opened chats archiving can go back through.
+const OPENED_CHATS_KEPT = 50;
 
 function readFrameMaxWidth(): number {
   if (typeof window === "undefined") return CHAT_DEFAULT_WIDTH + SURFACES_DEFAULT_WIDTH;
@@ -141,8 +145,8 @@ export function WorldLayout({
     void closeChat();
   };
 
-  // The chat closes once its agent is archived, from here or anywhere else. One opened
-  // already archived (from Settings → Archived, say) stays open.
+  // The chat leaves its agent once it is archived, from here or anywhere else (see
+  // leaveArchivedChat). One opened already archived (from Settings → Archived, say) stays open.
   const chatThreadRef = chatTarget?.threadRef ?? null;
   const chatThread = useThreadShell(chatThreadRef);
   // The held chat's surfaces size the frame, so it keeps its width while hidden.
@@ -224,6 +228,57 @@ export function WorldLayout({
     null,
     frameMotionMs,
   ).present;
+  // The chats opened here, oldest first, so archiving one can go back to the one before it.
+  const openedChats = useRef<ScopedThreadRef[]>([]);
+  const openChatKey = useRef<string | null>(null);
+  useEffect(() => {
+    openChatKey.current = selectedKey;
+    if (chatThreadRef === null) return;
+    openedChats.current = [
+      ...openedChats.current.filter((ref) => scopedThreadKey(ref) !== selectedKey),
+      chatThreadRef,
+    ].slice(-OPENED_CHATS_KEPT);
+  }, [chatThreadRef, selectedKey]);
+  // While the chat moves off an archived agent, its side of the frame fades out, and back in
+  // with the next agent, so the swap reads as one.
+  const [chatFaded, setChatFaded] = useState(false);
+  const leavingChatKey = useRef<string | null>(null);
+  // An archived agent's full chat gives way to the agent opened before it in the same
+  // worktree, if one is still there; otherwise, or with the chat collapsed, the chat closes.
+  // Both the world's own archive and the archive seen arriving call this, so it acts only
+  // while that agent's chat is still the open one, and once.
+  const leaveArchivedChat = async (archived: ScopedThreadRef) => {
+    const archivedKey = scopedThreadKey(archived);
+    if (openChatKey.current !== archivedKey || leavingChatKey.current === archivedKey) return;
+    const next = chatShown
+      ? chatAfterArchive(
+          openedChats.current,
+          archived,
+          readThreadShell,
+          (shell) =>
+            readProject({ environmentId: shell.environmentId, projectId: shell.projectId })
+              ?.workspaceRoot ?? null,
+        )
+      : null;
+    if (next === null) return closeChat();
+    leavingChatKey.current = archivedKey;
+    try {
+      if (frameMotionMs > 0 && !reducedMotion) {
+        setChatFaded(true);
+        await new Promise((resolve) => setTimeout(resolve, frameMotionMs));
+        // Another chat opened, or this one closed, while it faded.
+        if (openChatKey.current !== archivedKey) return;
+      }
+      await openThread(next);
+      await new Promise<void>((resolve) => afterPaint(resolve));
+    } finally {
+      leavingChatKey.current = null;
+      setChatFaded(false);
+    }
+  };
+  const onChatArchived = useEffectEvent(() => {
+    if (chatThreadRef !== null) void leaveArchivedChat(chatThreadRef);
+  });
   const chatArchived = chatThread !== null && chatThread.archivedAt != null;
   const chatWasArchived = useRef<{ key: string | null; archived: boolean }>({
     key: null,
@@ -233,9 +288,9 @@ export function WorldLayout({
     const was = chatWasArchived.current;
     chatWasArchived.current = { key: selectedKey, archived: chatArchived };
     if (selectedKey !== null && was.key === selectedKey && !was.archived && chatArchived) {
-      void navigate({ to: "/" });
+      onChatArchived();
     }
-  }, [chatArchived, navigate, selectedKey]);
+  }, [chatArchived, selectedKey]);
 
   // The world takes the whole window: the sidebar folds away while it shows
   // and comes back, if it was open, when the world closes.
@@ -281,7 +336,7 @@ export function WorldLayout({
             definitions={islandWorlds}
             selectedKey={selectedKey}
             onExpand={openThread}
-            onCollapse={closeChat}
+            onChatArchived={leaveArchivedChat}
             onOpenSurfaces={openSurfaces}
             chatCollapsed={chatTarget !== null && !chatShown}
             panel={readPanel}
@@ -360,7 +415,12 @@ export function WorldLayout({
               titlebar controls. The chat's header moves into its composer here; the
               frame's own header names the project and worktree above everything. */}
             <div
-              className="flex size-full flex-col overflow-hidden rounded-xl bg-background shadow-xl [contain:layout]"
+              className={cn(
+                "flex size-full flex-col overflow-hidden rounded-xl bg-background shadow-xl [contain:layout]",
+                // The chat's own column (ChatView marks it), not its surfaces or the header.
+                "[&_[data-chat-column-maximized-away]]:transition-opacity [&_[data-chat-column-maximized-away]]:duration-(--panel-animation-duration) [&_[data-chat-column-maximized-away]]:ease-out",
+                chatFaded && "[&_[data-chat-column-maximized-away]]:opacity-0",
+              )}
               style={
                 {
                   "--workspace-controls-top": "0px",

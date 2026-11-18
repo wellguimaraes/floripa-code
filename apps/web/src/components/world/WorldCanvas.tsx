@@ -152,8 +152,11 @@ export default function WorldCanvas(props: {
   readonly selectedKey: string | null;
   /** Opens a thread's full chat; settles once the chat shows it. */
   readonly onExpand: (ref: ScopedThreadRef) => Promise<void>;
-  /** Closes the full chat; settles once it has gone. */
-  readonly onCollapse: () => Promise<void>;
+  /**
+   * The open chat's agent was archived: the chat moves to another agent in its worktree or
+   * closes. Settles once it has.
+   */
+  readonly onChatArchived: (ref: ScopedThreadRef) => Promise<void>;
   /** Shows only the surfaces of a thread's worktree, its chat collapsed. */
   readonly onOpenSurfaces: (ref: ScopedThreadRef) => Promise<void>;
   /** The open chat is hidden behind its worktree's surfaces; clicks then leave it hidden. */
@@ -174,7 +177,7 @@ export default function WorldCanvas(props: {
     definitions,
     selectedKey,
     onExpand,
-    onCollapse,
+    onChatArchived,
     onOpenSurfaces,
     chatCollapsed,
     panel,
@@ -861,7 +864,7 @@ export default function WorldCanvas(props: {
       }
       return lead;
     };
-    // The open chat closes when its agent is archived, maybe before the archive call
+    // The open chat leaves its agent when it is archived, maybe before the archive call
     // returns; the map stays where it is rather than going back to its view before the chat.
     if (selectedKey !== null && keys.has(selectedKey)) holdViewOnClose.current?.();
     // Only the drawn characters keep their spots. The hidden subagents were never placed.
@@ -882,10 +885,9 @@ export default function WorldCanvas(props: {
     );
     const archived = characters.filter((character) => archivedKeys.has(character.facts.key));
     try {
-      // The open chat of an archived agent closes first, so its saucer is seen leaving.
-      if (selectedKey !== null && archivedKeys.has(selectedKey)) {
-        await onCollapse();
-      }
+      // The open chat leaves an archived agent first, so its saucer is seen leaving.
+      const chatFact = facts.find((fact) => fact.key === selectedKey && archivedKeys.has(fact.key));
+      if (chatFact !== undefined) await onChatArchived(chatFact.ref);
       abduct(archived);
     } finally {
       setArchiving((all) => all.filter((f) => !keys.has(f.key)));

@@ -92,7 +92,8 @@ skip that, and turn it back on in **Settings → General → World archive confi
 (`Alt`-click) a character to skip the bubble and open its chat; the map frames the character's
 island beside the panel. While a chat is open, clicking another character switches the
 chat to it instead of opening a bubble. The chat's footer has the same regenerate-title and
-archive buttons as the bubble, and `Option`+`A` (`Alt`+`A`) archives from the chat too; the chat stays open as the agent leaves. Close the chat with the **×** button beside the panel, by double-clicking its left edge, or
+archive buttons as the bubble, and `Option`+`A` (`Alt`+`A`) archives from the chat too. Archiving an agent whose chat is open switches the chat to the
+agent you had open before it in the same worktree, or closes the chat if there is none. Close the chat with the **×** button beside the panel, by double-clicking its left edge, or
 with `Shift`+`Escape` or `Cmd`+`W` (`Ctrl`+`W`), and the map goes back to where it was.
 `Cmd`+`W` also closes Settings when it opens over the world.
 
