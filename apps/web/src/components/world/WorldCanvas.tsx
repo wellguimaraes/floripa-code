@@ -104,6 +104,7 @@ import { MissingFolderPill, useMissingProjects } from "./MissingFolderPill";
 import { NewAgentBubble } from "./NewAgentBubble";
 import { useNewAgentDraftStore } from "./newAgentDraftStore";
 import { NewAgentProjectPicker } from "./NewAgentProjectPicker";
+import { confirmArchive } from "./useArchiveShortcut";
 import { useEnsureMainland } from "./useEnsureMainland";
 import { useIslandSignStats } from "./useIslandSignStats";
 import { useWorldHueStore } from "./worldHueStore";
@@ -1179,6 +1180,15 @@ export default function WorldCanvas(props: {
     }
   };
 
+  // The map's menu archives only after asking, the way the chat's archive button does.
+  const confirmAndArchiveAll = async (
+    chosen: ReadonlyArray<WorldCharacter>,
+    chosenExtras: ReadonlyArray<CharacterFacts> = [],
+  ) => {
+    if (!(await confirmArchive(null, chosen.length + chosenExtras.length))) return;
+    await archiveAll(chosen, chosenExtras);
+  };
+
   const showMenu = async (character: WorldCharacter, point: { x: number; y: number }) => {
     const all = islands.flatMap((island) => island.characters);
     const group =
@@ -1206,7 +1216,7 @@ export default function WorldCanvas(props: {
         awayFromPointer(point),
       );
       if (clicked === "stop") void stopAll(group);
-      else if (clicked === "archive") void archiveAll(group);
+      else if (clicked === "archive") void confirmAndArchiveAll(group);
       return;
     }
     const regenerating = readThreadShell(character.facts.ref)?.titleRegeneration != null;
@@ -1311,13 +1321,14 @@ export default function WorldCanvas(props: {
     );
     if (clicked === "open") openChat(character);
     else if (clicked === "stop") void stopAll([character]);
-    else if (clicked === "archive") void archiveAll([character]);
-    else if (clicked === "archive-subagents") void archiveAll(visibleSubagents, hiddenSubagents);
+    else if (clicked === "archive") void confirmAndArchiveAll([character]);
+    else if (clicked === "archive-subagents")
+      void confirmAndArchiveAll(visibleSubagents, hiddenSubagents);
     else if (clicked === "archive-idle-subagents")
-      void archiveAll(idleVisibleSubagents, idleHiddenSubagents);
-    else if (clicked === "archive-others") void archiveAll(others);
-    else if (clicked === "archive-left") void archiveAll(toTheLeft);
-    else if (clicked === "archive-all") void archiveAll([character, ...others]);
+      void confirmAndArchiveAll(idleVisibleSubagents, idleHiddenSubagents);
+    else if (clicked === "archive-others") void confirmAndArchiveAll(others);
+    else if (clicked === "archive-left") void confirmAndArchiveAll(toTheLeft);
+    else if (clicked === "archive-all") void confirmAndArchiveAll([character, ...others]);
     else if (clicked === "regenerate-title") void regenerateTitle(character);
     else if (clicked === "voice") {
       setPicked(new Set());

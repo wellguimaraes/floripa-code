@@ -18,6 +18,7 @@ import { useCallback, useMemo } from "react";
 import { pickSnoozePreset, resolveSnoozePresets } from "../components/Sidebar.snooze";
 import { worldThreadActionMenuItems } from "../components/world/worldThreadActionMenu";
 import { useWorldModeStore } from "../components/world/worldModeStore";
+import { confirmArchive } from "../components/world/useArchiveShortcut";
 import {
   buildThreadActionMenuItems,
   threadActionRequiresOperate,
@@ -56,6 +57,61 @@ function failureToast(title: string, error: unknown) {
       title,
       description: error instanceof Error ? error.message : "An error occurred.",
     }),
+  );
+}
+
+/**
+ * Archives a thread the way the title menu does: confirms when the user asked
+ * for that, lets the world play the agent's exit, and toasts its own failures.
+ * Shared by the title menu and the composer's `/archive` command, which passes
+ * `confirm: false` since typing the command is already deliberate.
+ */
+export function useArchiveThreadWithConfirm() {
+  const { archiveThread } = useThreadActions();
+  const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
+  return useCallback(
+    async (
+      threadRef: ScopedThreadRef,
+      opts: { readonly world?: boolean; readonly confirm?: boolean } = {},
+    ) => {
+      const thread = readThreadShell(threadRef);
+      if (!thread || thread.archivedAt != null) return;
+      if (!readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope)) {
+        failureToast(
+          "Thread action unavailable",
+          new Error("This connection cannot change threads."),
+        );
+        return;
+      }
+      // The world archives its way: it asks as the world's archive button does, then the
+      // agent leaves by saucer and the chat closes.
+      const archiveChatAgent = opts.world ? useWorldModeStore.getState().archiveChatAgent : null;
+      if (archiveChatAgent !== null) {
+        if (opts.confirm === false || (await confirmArchive(null))) await archiveChatAgent();
+        return;
+      }
+      if (opts.confirm !== false && confirmThreadArchive) {
+        const api = readLocalApi();
+        if (!api) return;
+        const confirmed = await settlePromise(() =>
+          api.dialogs.confirm(`Archive thread "${thread.title}"?`),
+        );
+        if (confirmed._tag === "Failure" || !confirmed.value) return;
+      }
+      let didArchive = false;
+      const result = await archiveThread(threadRef, {
+        onArchived: () => {
+          didArchive = true;
+        },
+      });
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        failureToast(
+          didArchive ? "Thread archived, but navigation failed" : "Failed to archive thread",
+          squashAtomCommandFailure(result),
+        );
+      }
+    },
+    [archiveThread, confirmThreadArchive],
   );
 }
 
@@ -99,7 +155,6 @@ export function useThreadActionMenu(input: {
     pinThread,
     confirmAndUnpinThread,
     setThreadAutoSettle,
-    archiveThread,
     deleteThread,
     markThreadUnread,
     turnThreadIntoProject,
@@ -110,7 +165,7 @@ export function useThreadActionMenu(input: {
   });
   const handleNewThread = useNewThreadHandler();
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
-  const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
+  const archiveWithConfirm = useArchiveThreadWithConfirm();
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
   const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{ path: string }>({
     onCopy: ({ path }) => {
@@ -325,33 +380,9 @@ export function useThreadActionMenu(input: {
           case "copy-thread-id":
             copyThreadIdToClipboard(thread.id, { threadId: thread.id });
             return;
-          case "archive": {
-            if (confirmThreadArchive) {
-              const confirmed = await settlePromise(() =>
-                api.dialogs.confirm(`Archive thread "${thread.title}"?`),
-              );
-              if (confirmed._tag === "Failure" || !confirmed.value) return;
-            }
-            // The world archives its way: the agent leaves by saucer and the chat closes.
-            const archiveChatAgent = world ? useWorldModeStore.getState().archiveChatAgent : null;
-            if (archiveChatAgent !== null) {
-              await archiveChatAgent();
-              return;
-            }
-            let didArchive = false;
-            const result = await archiveThread(threadRef, {
-              onArchived: () => {
-                didArchive = true;
-              },
-            });
-            if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-              failureToast(
-                didArchive ? "Thread archived, but navigation failed" : "Failed to archive thread",
-                squashAtomCommandFailure(result),
-              );
-            }
+          case "archive":
+            await archiveWithConfirm(threadRef, { world });
             return;
-          }
           case "delete": {
             if (confirmThreadDelete) {
               const confirmed = await settlePromise(() =>
@@ -384,8 +415,7 @@ export function useThreadActionMenu(input: {
       })();
     },
     [
-      archiveThread,
-      confirmThreadArchive,
+      archiveWithConfirm,
       confirmThreadDelete,
       confirmAndUnpinThread,
       copyBranchToClipboard,

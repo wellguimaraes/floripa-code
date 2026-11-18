@@ -1497,6 +1497,8 @@ export interface ChatComposerProps {
   onToggleKeepFullHistory: () => void;
   /** Picking /usage-limits from the menu is the action itself; the draft keeps nothing of it. */
   onUsageLimitsCommand?: (() => void) | undefined;
+  /** Archives the thread from `/archive` or `$archive`; absent where there is nothing to archive. */
+  onArchiveThread?: (() => void) | undefined;
   environmentUnavailable: {
     readonly label: string;
     readonly connection: EnvironmentConnectionPresentation;
@@ -2653,6 +2655,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         })),
       ];
     }
+    // `/archive` acts on the thread itself, so it is offered under `$` too, where people look for skills.
+    const archiveCommandItems =
+      props.onArchiveThread !== undefined
+        ? ([
+            {
+              id: "slash:archive",
+              type: "slash-command",
+              command: "archive",
+              label: composerTrigger.kind === "skill" ? "$archive" : "/archive",
+              description: "Archive this thread",
+            },
+          ] as const)
+        : [];
     if (composerTrigger.kind === "slash-command") {
       const builtInSlashCommandItems = [
         {
@@ -2691,6 +2706,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               },
             ] as const)
           : []),
+        ...archiveCommandItems,
       ] satisfies ReadonlyArray<Extract<ComposerCommandItem, { type: "slash-command" }>>;
       const slashMenuSkills = getProviderSkillsForSlashMenu(
         selectedProviderSkills,
@@ -2733,17 +2749,20 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       return searchSlashCommandItems(slashCommandItems, query);
     }
     if (composerTrigger.kind === "skill") {
-      return searchProviderSkills(selectedProviderSkills, composerTrigger.query).map((skill) => ({
-        id: `skill:${selectedProvider}:${skill.name}`,
-        type: "skill" as const,
-        provider: selectedProvider,
-        skill,
-        label: formatProviderSkillDisplayName(skill),
-        description:
-          skill.shortDescription ??
-          skill.description ??
-          (skill.scope ? `${skill.scope} skill` : "Run provider skill"),
-      }));
+      return [
+        ...searchSlashCommandItems(archiveCommandItems, composerTrigger.query.trim().toLowerCase()),
+        ...searchProviderSkills(selectedProviderSkills, composerTrigger.query).map((skill) => ({
+          id: `skill:${selectedProvider}:${skill.name}`,
+          type: "skill" as const,
+          provider: selectedProvider,
+          skill,
+          label: formatProviderSkillDisplayName(skill),
+          description:
+            skill.shortDescription ??
+            skill.description ??
+            (skill.scope ? `${skill.scope} skill` : "Run provider skill"),
+        })),
+      ];
     }
     if (
       composerTrigger.kind === "pull-request" &&
@@ -2806,6 +2825,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     environmentThreadShells,
     exactPullRequestLookup.data,
     planModeUiEnabled,
+    props.onArchiveThread,
     props.onFreshSession,
     pullRequestLookup.data,
     pullRequestProjectId,
@@ -4063,6 +4083,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           }
           return;
         }
+        if (item.command === "archive") {
+          const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
+            expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
+            focusEditorAfterReplace: false,
+          });
+          if (applied) {
+            setComposerHighlightedItemId(null);
+            props.onArchiveThread?.();
+          }
+          return;
+        }
         if (!planModeUiEnabled) return;
         void handleInteractionModeChange(item.command === "plan" ? "plan" : "default");
         const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
@@ -4194,6 +4225,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       handleInteractionModeChange,
       planModeUiEnabled,
       onUsageLimitsCommand,
+      props.onArchiveThread,
       props.onFreshSession,
       resolveActiveComposerTrigger,
       setComposerDraftThreadContextIntent,

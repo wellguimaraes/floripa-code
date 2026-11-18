@@ -38,19 +38,23 @@ export function useArchiveShortcut(archive: () => Promise<void>, enabled = true)
 }
 
 /**
- * Asks before archiving unless the user chose "Don't ask again" (Settings turns it back on).
- * A click asks in a popover beside `anchor`, the archive button; the shortcut passes null and
- * asks in a centered dialog. A second shortcut press while it is open is ignored, not queued.
+ * Asks before archiving `count` threads from the world when either archive confirmation setting
+ * is on. "Don't ask again" clears only the world one, so it is offered only when the general one
+ * is off. A click asks in a popover beside `anchor`, the archive button; the shortcut and the
+ * map's menu pass null and ask in a centered dialog. A second request while one is open is
+ * ignored, not queued.
  */
-export async function confirmArchive(anchor: Element | null): Promise<boolean> {
+export async function confirmArchive(anchor: Element | null, count = 1): Promise<boolean> {
   if (isConfirmDialogActive()) return false;
-  if (!getClientSettings().confirmWorldArchive) return true;
+  const { confirmThreadArchive, confirmWorldArchive } = getClientSettings();
+  if (!confirmThreadArchive && !confirmWorldArchive) return true;
+  const question = count === 1 ? "Archive this thread?" : `Archive ${count} threads?`;
   const choice = requestConfirmChoice(
-    "Archive this thread?\nYou can restore it by clicking the island billboard and choosing Restore archived agent…, or from Settings → Archived.",
-    { anchor, rememberLabel: "Don't ask again" },
+    `${question}\nYou can restore ${count === 1 ? "it" : "them"} by clicking the island billboard and choosing Restore archived agent…, or from Settings → Archived.`,
+    { anchor, ...(confirmThreadArchive ? {} : { rememberLabel: "Don't ask again" }) },
   );
   // No themed host is mounted; fall back to the native prompt rather than archiving unasked.
-  if (choice === undefined) return window.confirm("Archive this thread?");
+  if (choice === undefined) return window.confirm(question);
   const { confirmed, remember } = await choice;
   if (confirmed && remember) void persistClientSettingsPatch({ confirmWorldArchive: false });
   return confirmed;

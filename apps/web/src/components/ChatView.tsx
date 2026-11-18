@@ -101,6 +101,7 @@ import { isPasteAsTextShortcut } from "@t3tools/client-runtime/text-paste";
 import { effectiveSnoozed, threadWokeAt } from "@t3tools/client-runtime/state/thread-settled";
 import { declinePendingApprovals } from "@t3tools/client-runtime/state/thread-requests";
 import { useAcknowledgeThreadWoke, useThreadActions } from "../hooks/useThreadActions";
+import { useArchiveThreadWithConfirm } from "../hooks/useThreadActionMenu";
 import {
   deriveProviderSubagentStatus,
   deriveReportedModelSelection,
@@ -7372,6 +7373,13 @@ export default function ChatView(props: ChatViewProps) {
     () => armFreshSession(routeThreadKey),
     [routeThreadKey],
   );
+  const archiveWithConfirm = useArchiveThreadWithConfirm();
+  const archiveActiveThread = useCallback(() => {
+    if (activeThreadRef)
+      void archiveWithConfirm(activeThreadRef, { world: worldChatShown, confirm: false });
+  }, [activeThreadRef, archiveWithConfirm, worldChatShown]);
+  const archiveCommandAvailable =
+    activeThreadShell !== null && activeThreadShell.archivedAt == null && canOperateThread;
   const handleRestoreThreadBranch = useCallback(() => {
     if (!canWriteSourceControl) return;
     if (gitStatusQuery.data?.hasWorkingTreeChanges) {
@@ -11621,6 +11629,9 @@ export default function ChatView(props: ChatViewProps) {
                                   freshSessionCommandAvailable
                                     ? armFreshSessionForThread
                                     : undefined
+                                }
+                                onArchiveThread={
+                                  archiveCommandAvailable ? archiveActiveThread : undefined
                                 }
                                 // With attachments or contexts aboard the pick just inserts the
                                 // text, so it sends as a prompt like the typed path would.
