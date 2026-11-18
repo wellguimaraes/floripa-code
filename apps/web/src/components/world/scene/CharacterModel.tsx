@@ -21,7 +21,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 
 import type { Pose } from "../definition/types";
-import { grayscale, keepColors } from "./contrast";
+import { keepColors } from "./contrast";
 import { drawSoon, runStepSeconds } from "./frames";
 import { geometry } from "./geometries";
 import { GlowContext, LitMaterial } from "./lighting";
@@ -95,12 +95,10 @@ export function CharacterModel(props: {
   readonly handRef?: React.RefObject<Object3D | null>;
   /** Below 1, the whole figure is see-through, e.g. the copy left where a walk began. */
   readonly opacity?: number;
-  /** Draws the figure in greys only, e.g. the copy left where a walk began. */
-  readonly gray?: boolean;
 }) {
   const { pose, shades, isWalking, handItem, headItem, handRef, watch } = props;
   const { raiseHand = false, raiseHands = false, reachHand = false, dangleLegs = false } = props;
-  const { opacity = 1, gray = false } = props;
+  const { opacity = 1 } = props;
   const gltf = useLoader(GLTFLoader, MODEL_URL);
   const invalidate = useThree((state) => state.invalidate);
   const glow = useContext(GlowContext);
@@ -131,8 +129,7 @@ export function CharacterModel(props: {
         transparent: faded,
         opacity,
       });
-      if (gray) grayscale(material);
-      else keepColors(material);
+      keepColors(material);
       mesh.material = material;
       mesh.frustumCulled = false;
       materials.set(mesh, material);
@@ -170,7 +167,7 @@ export function CharacterModel(props: {
         bones(scene, ["upperleg.r", "lowerleg.r", "foot.r"]),
       ],
     };
-  }, [gltf, opacity, gray]);
+  }, [gltf, opacity]);
 
   useEffect(() => {
     for (const [mesh, material] of rig.materials) {

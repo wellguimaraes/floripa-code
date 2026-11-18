@@ -114,6 +114,8 @@ export function Character(props: {
   readonly onRoot: (key: string, root: Group | null) => void;
   /** Screen point to anchor a label at, or null when the pointer leaves. */
   readonly onHover: (character: WorldCharacter, point: { x: number; y: number } | null) => void;
+  /** Where the character's see-through copy stands, in the island's frame, or null once it is gone. */
+  readonly onGhost: (key: string, at: Vec3 | null) => void;
 }) {
   const {
     character,
@@ -127,6 +129,7 @@ export function Character(props: {
     selected,
     onRoot,
     onHover,
+    onGhost,
   } = props;
   const { onSelect, onOpen, onPick, onMenu } = props;
   const { facts, placement, activity, intent } = character;
@@ -172,6 +175,13 @@ export function Character(props: {
   // A copy stays where the walk began, and takes clicks there, so nobody chases a walker.
   // A walk re-routed midway keeps the copy where the first one began.
   const [ghost, setGhost] = useState<Ghost | null>(null);
+  // The copy keeps its spot taken: no new agent is offered on top of it.
+  const ghostSpot = ghost?.position ?? null;
+  useEffect(() => {
+    if (ghostSpot === null) return;
+    onGhost(facts.key, ghostSpot);
+    return () => onGhost(facts.key, null);
+  }, [facts.key, ghostSpot, onGhost]);
   // The walk's whole path, from where it began; a re-route keeps the stretch already walked.
   const [trail, setTrail] = useState<ReadonlyArray<Vec3> | null>(null);
   const lastPlacement = useRef<Placement | null>(null);
@@ -501,7 +511,6 @@ export function Character(props: {
                 reachHand={ghost.fishing}
                 dangleLegs={ghost.ledge}
                 opacity={GHOST_OPACITY}
-                gray
               />
             </Suspense>
           </GhostFade>

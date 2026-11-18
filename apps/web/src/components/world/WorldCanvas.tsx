@@ -717,6 +717,17 @@ export default function WorldCanvas(props: {
     if (root === null) roots.current.delete(key);
     else roots.current.set(key, root);
   }, []);
+  // Where each walker's see-through copy stands, by character, in its island's frame.
+  const [ghosts, setGhosts] = useState<ReadonlyMap<string, Vec3>>(() => new Map());
+  const registerGhost = useCallback((key: string, at: Vec3 | null) => {
+    setGhosts((all) => {
+      if (at === null ? !all.has(key) : all.get(key) === at) return all;
+      const next = new Map(all);
+      if (at === null) next.delete(key);
+      else next.set(key, at);
+      return next;
+    });
+  }, []);
   // Each island's sign, so framing an island keeps its whole board in view.
   const signs = useRef(new Map<string, Object3D>());
   const bubbleRef = useRef<HTMLDivElement>(null);
@@ -1412,12 +1423,19 @@ export default function WorldCanvas(props: {
   const newAgentSpots = useMemo(() => {
     const island = islands.find((i) => i.key === hoveredIsland);
     if (island === undefined) return [];
-    return freePiles(island, definition).map((pile) => ({
-      key: `${island.key}#${pile.slotIndex}`,
-      islandKey: island.key,
-      ...pile,
-    }));
-  }, [definition, islands, hoveredIsland]);
+    // A pile where a walker's copy still stands looks taken, so it offers no new agent.
+    const standing = island.characters.flatMap((c) => {
+      const at = ghosts.get(c.facts.key);
+      return at === undefined ? [] : [at];
+    });
+    return freePiles(island, definition)
+      .filter((pile) => !standing.some((at) => nearSlot(island, definition, pile.slotIndex, at)))
+      .map((pile) => ({
+        key: `${island.key}#${pile.slotIndex}`,
+        islandKey: island.key,
+        ...pile,
+      }));
+  }, [definition, islands, hoveredIsland, ghosts]);
   // Zoomed out too far for those, one button in the middle of the lawn stands in for them.
   const newAgentCenter = useMemo(() => {
     const island = islands.find((i) => i.key === hoveredIsland);
@@ -1943,6 +1961,7 @@ export default function WorldCanvas(props: {
                         onMenu={(target, point) => void showMenu(target, point)}
                         onRoot={registerRoot}
                         onHover={onHover}
+                        onGhost={registerGhost}
                       />
                     ))}
                 </IslandMotion>
@@ -3894,6 +3913,19 @@ function freePiles(
     ];
     return [{ slotIndex, position }];
   });
+}
+
+/** Whether `at`, in the island's frame, is on the new-agent slot `slotIndex`. */
+function nearSlot(
+  island: WorldIsland,
+  definition: WorldDefinition,
+  slotIndex: number,
+  at: Vec3,
+): boolean {
+  const area = island.definition.areas[definition.archipelago.newAgents.area];
+  const slot = area?.kind === "fixed" ? area.slots[slotIndex] : undefined;
+  // Piles sit about 4 apart, so a unit's slack only ever matches one.
+  return slot !== undefined && Math.hypot(slot.position[0] - at[0], slot.position[2] - at[2]) < 1;
 }
 
 /** Each island's ground in world coordinates. */
