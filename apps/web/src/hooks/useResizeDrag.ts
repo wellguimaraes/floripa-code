@@ -4,7 +4,8 @@ interface ResizeSession {
   width: number;
   /** The edge the handle sits on. "top" and "bottom" drag vertically, so `width` is a height. */
   edge: "left" | "right" | "top" | "bottom";
-  resize: (width: number) => number;
+  /** `modified` is whether Command (Ctrl elsewhere) is held. */
+  resize: (width: number, modified: boolean) => number;
   finish: (width: number, moved: boolean) => void;
   /** Runs on every end; `committed` is false when the drag was abandoned without `finish`. */
   cleanup?: (committed: boolean) => void;
@@ -14,6 +15,9 @@ const isVertical = (session: ResizeSession) => session.edge === "top" || session
 
 const pointerPosition = (session: ResizeSession, event: PointerEvent) =>
   isVertical(session) ? event.clientY : event.clientX;
+
+const isModified = (event: { metaKey: boolean; ctrlKey: boolean }) =>
+  event.metaKey || event.ctrlKey;
 
 /** Shared pointer lifecycle for side panels, including interrupted and sub-frame drags. */
 export function useResizeDrag<T extends HTMLElement>(
@@ -28,6 +32,7 @@ export function useResizeDrag<T extends HTMLElement>(
     pendingPosition: number;
     width: number;
     moved: boolean;
+    modified: boolean;
     frame: number | null;
   } | null>(null);
 
@@ -39,7 +44,7 @@ export function useResizeDrag<T extends HTMLElement>(
       (active.pendingPosition - active.startPosition) *
       (edge === "left" || edge === "top" ? -1 : 1);
     active.moved ||= Math.abs(delta) > 2;
-    active.width = active.session.resize(active.session.width + delta);
+    active.width = active.session.resize(active.session.width + delta, active.modified);
   }, []);
 
   const finish = useCallback(
@@ -75,18 +80,32 @@ export function useResizeDrag<T extends HTMLElement>(
 
   useEffect(() => {
     const onBlur = () => finish();
+    // Pressing or releasing the modifier applies at once, without waiting for the pointer to move.
+    const onKey = (event: KeyboardEvent) => {
+      const active = drag.current;
+      if (!active || active.modified === isModified(event)) return;
+      active.modified = isModified(event);
+      flush();
+    };
     window.addEventListener("blur", onBlur);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKey);
     return () => {
       window.removeEventListener("blur", onBlur);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKey);
       finish(false);
     };
-  }, [finish]);
+  }, [finish, flush]);
 
   const end = (event: PointerEvent<T>, usePosition: boolean) => {
     const active = drag.current;
     if (!active || active.pointerId !== event.pointerId) return;
     event.preventDefault();
-    if (usePosition) active.pendingPosition = pointerPosition(active.session, event);
+    if (usePosition) {
+      active.pendingPosition = pointerPosition(active.session, event);
+      active.modified = isModified(event);
+    }
     finish();
   };
 
@@ -117,6 +136,7 @@ export function useResizeDrag<T extends HTMLElement>(
         pendingPosition: pointerPosition(session, event),
         width: session.width,
         moved: false,
+        modified: isModified(event),
         frame: null,
       };
       document.body.style.cursor = isVertical(session) ? "row-resize" : "col-resize";
@@ -127,6 +147,7 @@ export function useResizeDrag<T extends HTMLElement>(
       if (!active || active.pointerId !== event.pointerId) return;
       event.preventDefault();
       active.pendingPosition = pointerPosition(active.session, event);
+      active.modified = isModified(event);
       active.moved ||= Math.abs(active.pendingPosition - active.startPosition) > 2;
       if (active.frame !== null) return;
       active.frame = requestAnimationFrame(() => {

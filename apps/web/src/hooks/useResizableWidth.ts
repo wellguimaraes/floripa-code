@@ -35,12 +35,17 @@ export interface UseResizableWidthOptions {
   readonly follow?: ((width: number) => ResizeFollower | null) | undefined;
 }
 
-/** Follows a drag live, before the width commits. */
+/**
+ * Follows a drag live, before the width commits. `modified` is whether Command (Ctrl
+ * elsewhere) is held, which may change mid-drag.
+ */
 export interface ResizeFollower {
   /** The host's bounds during this drag, in place of `minWidth` and `maxWidth`. */
-  readonly minWidth?: number;
-  readonly maxWidth?: number;
-  readonly resize?: (width: number) => void;
+  readonly bounds?: (modified: boolean) => {
+    readonly minWidth?: number;
+    readonly maxWidth?: number;
+  };
+  readonly resize?: (width: number, modified: boolean) => void;
   readonly finish?: () => void;
   readonly cancel?: () => void;
 }
@@ -125,14 +130,11 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
     return {
       width: clampedWidth,
       edge,
-      resize(value) {
-        const nextWidth = latestOptions.current.clamp(
-          value,
-          follower?.minWidth,
-          follower?.maxWidth,
-        );
+      resize(value, modified) {
+        const bounds = follower?.bounds?.(modified);
+        const nextWidth = latestOptions.current.clamp(value, bounds?.minWidth, bounds?.maxWidth);
         host?.style.setProperty(RESIZABLE_WIDTH_PROPERTY, `${nextWidth}px`);
-        follower?.resize?.(nextWidth);
+        follower?.resize?.(nextWidth, modified);
         return nextWidth;
       },
       // Commit once at drag-end to avoid 60Hz localStorage writes.

@@ -157,7 +157,8 @@ export function WorldLayout({
   // either side leaves the other as wide as it was. The edge drag writes straight to the frame:
   // with both sides shown it scales them together until the chat reaches its minimum, then
   // shrinks the surfaces; with only one shown it moves that one. The divider between them
-  // trades width within the frame, down to the chat's minimum.
+  // trades width within the frame, down to the chat's minimum; with Command held it keeps the
+  // chat's width and moves the frame's edge instead.
   const chatShown = !(surfaces.isOpen && surfaces.maximized);
   const surfacesHostRef = useRef<HTMLDivElement>(null);
   const bothSidesShown = chatShown && surfaces.isOpen;
@@ -166,14 +167,38 @@ export function WorldLayout({
     SURFACES_DEFAULT_WIDTH,
     SURFACES_MIN_WIDTH,
     chatShown ? CHAT_MIN_WIDTH : 0,
-    // The divider stops where the chat reaches its minimum. With the chat collapsed the surfaces
-    // keep their own width, so the frame's edge drags them along.
-    bothSidesShown
-      ? () => ({ maxWidth: chatAndSurfacesWidth.width - CHAT_MIN_WIDTH })
-      : chatShown
-        ? undefined
-        : followWithSurfaces(false),
+    // With the chat collapsed the surfaces keep their own width, so the frame's edge drags them along.
+    bothSidesShown ? followWithFrame : chatShown ? undefined : followWithSurfaces(false),
   );
+  // The divider stops where the chat reaches its minimum. With Command held the chat keeps its
+  // width and the frame grows or shrinks with the surfaces, up to the window.
+  function followWithFrame(startSurfaces: number): ResizeFollower | null {
+    const startFrame = chatAndSurfacesWidth.width;
+    const chat = startFrame - startSurfaces;
+    const frameMaxWidth = readFrameMaxWidth();
+    const frame = panelRef.current;
+    let width = startFrame;
+    // The frame animates its width when a side collapses; a live drag must not.
+    frame?.style.setProperty("transition-property", "none");
+    const restore = () => {
+      frame?.style.removeProperty("transition-property");
+      frame?.style.setProperty(RESIZABLE_WIDTH_PROPERTY, `${startFrame}px`);
+    };
+    return {
+      bounds: (modified) => ({
+        maxWidth: modified ? frameMaxWidth - chat : startFrame - CHAT_MIN_WIDTH,
+      }),
+      resize(surfaces, modified) {
+        width = modified ? chat + surfaces : startFrame;
+        frame?.style.setProperty(RESIZABLE_WIDTH_PROPERTY, `${width}px`);
+      },
+      finish() {
+        restore();
+        if (width !== startFrame) chatAndSurfacesWidth.setWidth(width);
+      },
+      cancel: restore,
+    };
+  }
   // Drags the surfaces along with the frame's edge, scaled with the chat or matching the frame.
   function followWithSurfaces(scale: boolean) {
     return (startWidth: number): ResizeFollower | null => {
@@ -184,7 +209,7 @@ export function WorldLayout({
       // The surfaces animate their width when they open; a live drag must not.
       host.style.setProperty("transition-property", "none");
       return {
-        ...(scale ? { minWidth: CHAT_MIN_WIDTH + SURFACES_MIN_WIDTH } : {}),
+        ...(scale ? { bounds: () => ({ minWidth: CHAT_MIN_WIDTH + SURFACES_MIN_WIDTH }) } : {}),
         resize(frameWidth) {
           width = scale
             ? scaleSurfacesWidth(frameWidth, start, {

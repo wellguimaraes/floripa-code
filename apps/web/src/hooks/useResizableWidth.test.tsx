@@ -41,11 +41,13 @@ const cancelAnimationFrame = vi.fn();
 let events: EventTarget;
 let frame: FrameRequestCallback | undefined;
 
-function pointer(clientX = 100) {
+function pointer(clientX = 100, metaKey = false) {
   return {
     button: 0,
     pointerId: 1,
     clientX,
+    metaKey,
+    ctrlKey: false,
     currentTarget: target,
     preventDefault() {},
     stopPropagation() {},
@@ -237,7 +239,7 @@ describe("panel resize followers", () => {
     const follow = (width: number): ResizeFollower => {
       startWidth = width;
       return {
-        minWidth: 100,
+        bounds: () => ({ minWidth: 100 }),
         resize: (next) => resized.push(next),
         finish: () => ended.push("finish"),
         cancel: () => ended.push("cancel"),
@@ -263,13 +265,40 @@ describe("panel resize followers", () => {
   });
 
   it("lets the follower lower the ceiling", async () => {
-    await act(() => renderer.update(<Panel follow={() => ({ maxWidth: 500 })} />));
+    await act(() =>
+      renderer.update(<Panel follow={() => ({ bounds: () => ({ maxWidth: 500 }) })} />),
+    );
     await act(() => {
       result.handlers.onPointerDown(pointer());
       result.handlers.onPointerUp(pointer(-200));
     });
     expect(result.width).toBe(500);
     expect(setItem).toHaveBeenCalledExactlyOnceWith("test-panel-width", "500");
+  });
+
+  it("switches bounds while Command is held, including when pressed mid-drag", async () => {
+    const resized: [number, boolean][] = [];
+    const follow = (): ResizeFollower => ({
+      bounds: (modified) => ({ maxWidth: modified ? 700 : 500 }),
+      resize: (width, modified) => resized.push([width, modified]),
+    });
+    await act(() => renderer.update(<Panel follow={follow} />));
+    await act(() => {
+      result.handlers.onPointerDown(pointer());
+      result.handlers.onPointerMove(pointer(-300));
+    });
+    await act(() => frame?.(0));
+    await act(() => {
+      events.dispatchEvent(Object.assign(new Event("keydown"), { metaKey: true, ctrlKey: false }));
+    });
+    expect(hostStyle.get(RESIZABLE_WIDTH_PROPERTY)).toBe("700px");
+    await act(() => result.handlers.onPointerUp(pointer(-300, true)));
+    expect(resized).toEqual([
+      [500, false],
+      [700, true],
+      [700, true],
+    ]);
+    expect(setItem).toHaveBeenCalledExactlyOnceWith("test-panel-width", "700");
   });
 
   it("cancels the follower when the drag is abandoned", async () => {
