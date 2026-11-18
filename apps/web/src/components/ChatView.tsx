@@ -522,6 +522,7 @@ import {
 import { useLinkedThreadPullRequest } from "./ThreadStatusIndicators";
 import type { ComposerBannerStackItem } from "./chat/ComposerBannerStack";
 import { ThreadStatusLine } from "./chat/ThreadStatusLine";
+import { BackgroundWorkCard } from "./chat/BackgroundWorkCard";
 import { ThreadNow, type ThreadNowItem } from "./chat/ThreadNow";
 import { formatRelativeTimeLabel, formatRelativeTimeUntilLabel } from "../timestampFormat";
 import { ComposerSurface } from "./chat/ComposerSurface";
@@ -7172,48 +7173,21 @@ export default function ChatView(props: ChatViewProps) {
     };
   }, [activeGoal, activeThread, isWorking, sendStandaloneCommand]);
 
-  const backgroundWorkNowItem = useMemo<ThreadNowItem | null>(() => {
+  // Memoized: it renders in the timeline's list footer.
+  const backgroundWorkCard = useMemo(() => {
     const presentation = presentPendingBackgroundWork(activeBackgroundTasks);
     if (presentation === null || !activeThread) {
       return null;
     }
-    return {
-      id: `background-work:${activeThread.id}`,
-      // Static: a line that animates forever repaints every frame.
-      icon: <span className="size-1.5 rounded-full bg-muted-foreground" aria-hidden="true" />,
-      title: presentation.title,
-      // A single named item is already in the title.
-      description:
-        presentation.items.length === 1 && presentation.items[0]?.childThreadId === undefined
-          ? undefined
-          : presentation.items.map((item, index) => {
-              const childThreadId = item.childThreadId;
-              return (
-                <Fragment key={item.taskId}>
-                  {index > 0 ? ", " : null}
-                  {childThreadId === undefined ? (
-                    item.label
-                  ) : (
-                    <InlineButton
-                      tone="muted"
-                      aria-label={`Open subagent ${item.label}`}
-                      onClick={() => onOpenRelatedThread(childThreadId)}
-                    >
-                      {item.label}
-                    </InlineButton>
-                  )}
-                </Fragment>
-              );
-            }),
-      actions: (
-        <InlineButton
-          disabled={!canOperateThread || isStoppingBackgroundWork}
-          onClick={() => void handleStopBackgroundWork()}
-        >
-          {isStoppingBackgroundWork ? "Stopping..." : "Stop"}
-        </InlineButton>
-      ),
-    };
+    return (
+      <BackgroundWorkCard
+        presentation={presentation}
+        canStop={canOperateThread}
+        stopping={isStoppingBackgroundWork}
+        onStop={() => void handleStopBackgroundWork()}
+        onOpenThread={onOpenRelatedThread}
+      />
+    );
   }, [
     activeBackgroundTasks,
     activeThread,
@@ -7282,11 +7256,11 @@ export default function ChatView(props: ChatViewProps) {
   const timelineFooter = useMemo(
     () => (
       <>
-        <ThreadNow attention={childInputNowItem} work={backgroundWorkNowItem} goal={goalNowItem} />
+        <ThreadNow attention={childInputNowItem} work={backgroundWorkCard} goal={goalNowItem} />
         {threadStatusLine}
       </>
     ),
-    [backgroundWorkNowItem, childInputNowItem, goalNowItem, threadStatusLine],
+    [backgroundWorkCard, childInputNowItem, goalNowItem, threadStatusLine],
   );
   const activeThreadHasCompactableConversation = serverVisibleTurnItems.some(
     ({ item }) =>

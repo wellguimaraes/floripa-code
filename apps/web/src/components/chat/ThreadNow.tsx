@@ -58,13 +58,14 @@ export function ThreadNow({
   goal,
 }: {
   readonly attention: ThreadNowItem | null;
-  readonly work: ThreadNowItem | null;
+  /** Background work renders as its own card. */
+  readonly work: ReactNode;
   readonly goal: ThreadNowItem | null;
 }): ReactNode {
   return (
     <>
       {attention ? <ThreadNowLine item={attention} announce /> : null}
-      {work ? <ThreadNowLine item={work} /> : null}
+      {work}
       {goal ? <ThreadNowLine item={goal} /> : null}
     </>
   );
