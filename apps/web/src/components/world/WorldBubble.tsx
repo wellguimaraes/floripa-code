@@ -63,6 +63,7 @@ import { type QueuedRunEdit, queuedRunEditCommandInput } from "../chat/queuedMes
 import { useQueuedRunEdit } from "../chat/useQueuedRunEdit";
 import { BubbleApproval } from "./BubbleApproval";
 import { BubbleComposer, type BubbleComposerHandle } from "./BubbleComposer";
+import type { BubbleSlashCommand } from "./useBubbleSuggestions";
 import type { CharacterFacts } from "./engine/facts";
 import { AppIcon } from "./AppIcon";
 import { CharacterHueButton } from "./CharacterHueButton";
@@ -74,6 +75,10 @@ import { RollingSwap } from "./RollingSwap";
 import { useLastExchange } from "./useLastExchange";
 import { useWorldLookStore } from "./worldLookStore";
 import { worktreeLabel } from "./worktreeLabel";
+
+const ARCHIVE_AGENT_COMMANDS: ReadonlyArray<BubbleSlashCommand> = [
+  { command: "archive-agent", description: "Archive this agent and its thread" },
+];
 
 /**
  * Whether the character's thread has a run to stop: working, waiting on you,
@@ -424,9 +429,10 @@ export function WorldBubble(props: {
   };
 
   // Archive, not delete: it can be undone from the toast or Settings → Archived.
-  const archive = async (anchor: Element | null) => {
+  // Typing `/archive-agent` is already deliberate, so it skips the confirmation.
+  const archive = async (anchor: Element | null, confirm = true) => {
     if (state.phase === "archiving") return;
-    if (!(await confirmArchive(anchor))) return;
+    if (confirm && !(await confirmArchive(anchor))) return;
     setState({ phase: "archiving" });
     const result = await archiveThread(facts.ref);
     if (result._tag === "Failure") {
@@ -457,6 +463,10 @@ export function WorldBubble(props: {
       attachments={attachments}
       text={text}
       onTextChange={setText}
+      slashCommands={ARCHIVE_AGENT_COMMANDS}
+      onSlashCommand={(command) => {
+        if (command === "archive-agent") void archive(null, false);
+      }}
       onSubmit={(said) => void send(said)}
       onExpand={expand}
       onClose={onClose}

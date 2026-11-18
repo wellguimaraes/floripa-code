@@ -355,7 +355,7 @@ export function NewAgentBubble(props: {
         slashCommands={slashCommands}
         onSlashCommand={(command) => {
           if (command === "model") setModelPickerOpen(true);
-          else if (command === "clear" || command === "archive") return;
+          else if (command === "clear" || command === "archive-agent") return;
           else setPicked((current) => ({ ...current, interactionMode: command }));
         }}
         environmentId={project.environmentId}

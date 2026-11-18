@@ -143,17 +143,31 @@ export function useBubbleSuggestions(input: {
       );
     }
     if (trigger.kind === "skill") {
-      return searchProviderSkills(skills, trigger.query).map((skill) => ({
-        id: `skill:${driver}:${skill.name}`,
-        type: "skill" as const,
-        provider: driver,
-        skill,
-        label: formatProviderSkillDisplayName(skill),
-        description:
-          skill.shortDescription ??
-          skill.description ??
-          (skill.scope ? `${skill.scope} skill` : "Run provider skill"),
-      }));
+      // `/archive-agent` acts on the agent itself, so it is offered under `$` too, as in the chat.
+      const archiveCommands = slashCommands
+        .filter(({ command }) => command === "archive-agent")
+        .map(({ command, description }) => ({
+          id: `slash:${command}`,
+          type: "slash-command" as const,
+          command,
+          // Reads like the skills beside it, by display name.
+          label: "Archive Agent",
+          description,
+        }));
+      return [
+        ...searchSlashCommandItems(archiveCommands, trigger.query.trim().toLowerCase()),
+        ...searchProviderSkills(skills, trigger.query).map((skill) => ({
+          id: `skill:${driver}:${skill.name}`,
+          type: "skill" as const,
+          provider: driver,
+          skill,
+          label: formatProviderSkillDisplayName(skill),
+          description:
+            skill.shortDescription ??
+            skill.description ??
+            (skill.scope ? `${skill.scope} skill` : "Run provider skill"),
+        })),
+      ];
     }
     return EMPTY_ITEMS;
   }, [

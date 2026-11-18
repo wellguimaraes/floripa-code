@@ -63,7 +63,7 @@ function failureToast(title: string, error: unknown) {
 /**
  * Archives a thread the way the title menu does: confirms when the user asked
  * for that, lets the world play the agent's exit, and toasts its own failures.
- * Shared by the title menu and the composer's `/archive` command, which passes
+ * Shared by the title menu and the composer's `/archive-agent` command, which passes
  * `confirm: false` since typing the command is already deliberate.
  */
 export function useArchiveThreadWithConfirm() {

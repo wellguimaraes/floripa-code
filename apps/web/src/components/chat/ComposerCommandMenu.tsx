@@ -14,6 +14,7 @@ import {
   type ThreadMentionIntent,
 } from "@t3tools/contracts";
 import {
+  ArchiveIcon,
   BlocksIcon,
   FolderIcon,
   FolderSymlinkIcon,
@@ -225,7 +226,16 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
               {formatProviderSkillDisplayName(isSlashSkill)}
             </>
           ) : (
-            props.item.label
+            <>
+              {/* Inside the label, so it sits closer than the row's icon gap. */}
+              {props.item.type === "slash-command" && props.item.command === "archive-agent" ? (
+                <ArchiveIcon
+                  aria-hidden="true"
+                  className="me-1 inline-block size-3.5 align-[-3px] text-warning"
+                />
+              ) : null}
+              {props.item.label}
+            </>
           )}
         </span>
         <span className="min-w-0 flex-1 truncate text-left text-secondary-label text-xs">

@@ -1497,7 +1497,7 @@ export interface ChatComposerProps {
   onToggleKeepFullHistory: () => void;
   /** Picking /usage-limits from the menu is the action itself; the draft keeps nothing of it. */
   onUsageLimitsCommand?: (() => void) | undefined;
-  /** Archives the thread from `/archive` or `$archive`; absent where there is nothing to archive. */
+  /** Archives the thread from `/archive-agent` or `$archive-agent`; absent where there is nothing to archive. */
   onArchiveThread?: (() => void) | undefined;
   environmentUnavailable: {
     readonly label: string;
@@ -2655,16 +2655,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         })),
       ];
     }
-    // `/archive` acts on the thread itself, so it is offered under `$` too, where people look for skills.
+    // `/archive-agent` acts on the thread itself, so it is offered under `$` too, where people look for skills.
     const archiveCommandItems =
       props.onArchiveThread !== undefined
         ? ([
             {
-              id: "slash:archive",
+              id: "slash:archive-agent",
               type: "slash-command",
-              command: "archive",
-              label: composerTrigger.kind === "skill" ? "$archive" : "/archive",
-              description: "Archive this thread",
+              command: "archive-agent",
+              // Under `$` it reads like the skills beside it, by display name.
+              label: composerTrigger.kind === "skill" ? "Archive Agent" : "/archive-agent",
+              description: "Archive this agent and its thread",
             },
           ] as const)
         : [];
@@ -4083,7 +4084,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           }
           return;
         }
-        if (item.command === "archive") {
+        if (item.command === "archive-agent") {
           const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
             expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
             focusEditorAfterReplace: false,
