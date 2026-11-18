@@ -2838,8 +2838,10 @@ interface VisibleArea {
 const NEW_AGENT_KEY = "new-agent";
 /** Room kept between a bubble and the edges of the visible canvas. */
 const BUBBLE_EDGE_PX = 8;
-/** How far above its point a bubble floats; the bubble's own wrapper adds the same 0.75rem. */
+/** The bubble's own wrapper floats it this far above the spot it is placed at (its 0.75rem). */
 const BUBBLE_GAP_PX = 12;
+/** Room kept between a bubble and the character it is placed beside. */
+const CHARACTER_GAP_PX = 24;
 
 /**
  * Places a bubble beside the outline its tracker reports (see `placeBeside`), on the side with
@@ -2918,7 +2920,7 @@ function useBubblePlacement(
               avoid: point.avoid,
               size: { width: bubble.offsetWidth, height: bubble.offsetHeight },
               area: inside,
-              gap: BUBBLE_GAP_PX,
+              gap: CHARACTER_GAP_PX,
             });
       walk.current = { key: point.key, path: point.walk.path, side: kept };
       jump = true;
@@ -2962,12 +2964,12 @@ function useBubblePlacement(
     if (point.avoid !== undefined) {
       const beside = { avoid: point.avoid, size: { width, height }, area: inside };
       if (walk.current !== null) {
-        const spot = placeOn(walk.current.side, { ...beside, gap: BUBBLE_GAP_PX });
+        const spot = placeOn(walk.current.side, { ...beside, gap: CHARACTER_GAP_PX });
         put(spot.left, spot.top);
         return;
       }
       const previous = side.current?.key === point.key ? side.current.side : null;
-      const placed = placeBeside({ ...beside, gap: BUBBLE_GAP_PX, previous });
+      const placed = placeBeside({ ...beside, gap: CHARACTER_GAP_PX, previous });
       if (placed !== null) {
         if (previous !== placed.side) jump = true;
         side.current = { key: point.key, side: placed.side };
@@ -2981,7 +2983,7 @@ function useBubblePlacement(
     const clamp = (value: number, low: number, high: number) =>
       Math.min(Math.max(value, low), Math.max(low, high));
     const left = clamp(point.x - width / 2, inside.left, inside.right - width);
-    const above = point.y - height - BUBBLE_GAP_PX;
+    const above = point.y - height - CHARACTER_GAP_PX;
     const top = clamp(above, inside.top, inside.bottom - height);
     put(left, top);
     // Switching subjects, the tracker reports the old point until the next frame.
@@ -3408,8 +3410,8 @@ function WorldControls({
         // A hand on the map wins.
         if (controls === null || gesturing.current) return;
         const base = covered();
-        const across = bubble.width + BUBBLE_GAP_PX;
-        const down = bubble.height + BUBBLE_GAP_PX;
+        const across = bubble.width + CHARACTER_GAP_PX;
+        const down = bubble.height + CHARACTER_GAP_PX;
         const room = {
           above: { top: base.top + down },
           right: { right: base.right + across },
