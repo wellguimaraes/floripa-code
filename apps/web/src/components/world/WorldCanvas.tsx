@@ -2559,6 +2559,8 @@ const IDLE_SNOOZE_OPTIONS = [
 const BALLOON_CLEARANCE_PX = 4;
 /** How long a bubble takes to glide to a new spot, as a walk starts or ends or it changes sides. */
 const GLIDE_MS = 320;
+/** How long an open bubble stays put as its character sets off, so a reply just sent reads first. */
+const WALK_HOLD_MS = 1000;
 const SPOT_MIN_SPACING_PX = 34;
 /** How far above an island's base its lawn's new-agent button floats when zoomed out. */
 const NEW_AGENT_CENTER_HEIGHT = 1;
@@ -2871,8 +2873,9 @@ const CHARACTER_GAP_PX = 24;
  * is the key of the point it is open over, null while it is closed.
  *
  * While its character walks, the bubble keeps one side of the whole path, picked as the walk
- * starts, and `onWalk` is told it then and on each re-route, to make room there. It picks again
- * once the walk ends. A walk starting lets go of a bubble dragged or resized by hand. Moving to a
+ * starts, and `onWalk` is told it then and on each re-route, to make room there. An open bubble
+ * waits `WALK_HOLD_MS` where it is before moving for the walk, as one usually follows a message
+ * just sent from it or the chat. It picks again once the walk ends. A walk starting lets go of a bubble dragged or resized by hand. Moving to a
  * new spot all at once (a walk starting, re-routing or ending, or a change of side), it glides.
  *
  * Given `makeRoom`, a bubble that opens, or grows, pushed down over its character by the top edge
@@ -2902,6 +2905,9 @@ function useBubblePlacement(
     null,
   );
   const glideFrame = useRef<number | null>(null);
+  // The walk an open bubble waits out before moving for it, and the timer that ends the wait.
+  const hold = useRef<{ readonly key: string; readonly until: number } | null>(null);
+  const holdTimer = useRef<number | null>(null);
   const clearCharacter = useRef(false);
   // The size placement works from. A bubble resized by hand keeps the size it had before, so it
   // stays put while it grows and shrinks, until it opens again.
@@ -2922,6 +2928,22 @@ function useBubblePlacement(
       right: area.width - covered.right - BUBBLE_EDGE_PX,
       bottom: area.height - covered.bottom - BUBBLE_EDGE_PX,
     };
+    // A walk setting off under the open bubble: it stays where it is for a moment first.
+    if (point.walk === undefined || point.key !== subject) hold.current = null;
+    else if (walk.current?.key !== point.key && shown.current?.key === point.key) {
+      const now = performance.now();
+      if (hold.current?.key !== point.key) {
+        hold.current = { key: point.key, until: now + WALK_HOLD_MS };
+      }
+      if (now < hold.current.until) {
+        // The map may be still, drawing no frames to place it by.
+        holdTimer.current ??= window.setTimeout(() => {
+          holdTimer.current = null;
+          place();
+        }, hold.current.until - now);
+        return;
+      }
+    }
     // The outline moving all at once, the bubble glides to its new spot.
     let jump = false;
     if (point.walk === undefined || point.avoid === undefined) {
@@ -3050,10 +3072,14 @@ function useBubblePlacement(
     side.current = null;
     walk.current = null;
     shown.current = null;
+    hold.current = null;
+    if (holdTimer.current !== null) window.clearTimeout(holdTimer.current);
+    holdTimer.current = null;
   }, [makeRoom, owner, subject]);
   useEffect(
     () => () => {
       if (glideFrame.current !== null) cancelAnimationFrame(glideFrame.current);
+      if (holdTimer.current !== null) window.clearTimeout(holdTimer.current);
     },
     [],
   );
