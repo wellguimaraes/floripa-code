@@ -1026,8 +1026,9 @@ function ComposerCommandMenuLayer(props: { anchor: HTMLElement | null; children:
       const drawerInset = drawerInsetRem * rootFontSizePx;
       // One extra pixel prevents fractional layout coordinates from exposing
       // the canvas between the drawer mask and the composer's foreground edge.
-      // Mirrors --chat-composer-attachment-overlap: calc(1rem + 1px).
-      const composerOverlap = rootFontSizePx + 1;
+      // Mirrors --chat-composer-attachment-overlap: calc(1rem + 1px). The world
+      // chat's card has a visible top border, so its drawer stops above it.
+      const composerOverlap = rootFontSizePx + (form?.dataset.chatComposerHeader ? 0 : 1);
       const next = {
         bottom: window.innerHeight - rect.top - composerOverlap,
         left: rect.left + drawerInset,
@@ -6802,6 +6803,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }}
       className="mx-auto w-full min-w-0 max-w-(--chat-content-max-width)"
       data-chat-composer-form="true"
+      data-chat-composer-header={props.header ? "true" : undefined}
       {...threadContextDropTargetProps()}
     >
       {composerControlsCollapsed && restingControlsHost
