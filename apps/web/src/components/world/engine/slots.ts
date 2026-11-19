@@ -38,6 +38,8 @@ export interface PlacedCharacter {
 }
 
 const OVERFLOW_SPACING = 0.9;
+/** How close a walker's copy stands to a slot to count as still on it. */
+const GHOST_REACH = 0.5;
 
 /**
  * Gives every character a spot in its intended area. A character keeps the
@@ -53,8 +55,14 @@ export function placeCharacters(input: {
   readonly previous: ReadonlyMap<string, Placement>;
   /** Slots asked for by character key, e.g. the pile a new agent was started from. */
   readonly requested?: ReadonlyMap<string, SlotRequest>;
+  /** Where each walker's see-through copy still stands, by character key. */
+  readonly ghosts?: ReadonlyMap<string, Vec3>;
 }): Map<string, PlacedCharacter> {
   const { definition, previous } = input;
+  const standing = input.characters.flatMap(({ facts }) => {
+    const at = input.ghosts?.get(facts.key);
+    return at === undefined ? [] : [at];
+  });
   const placed = new Map<string, PlacedCharacter>();
   const occupied = new Map<string, Set<number>>();
   const taken = (area: string) => {
@@ -84,17 +92,22 @@ export function placeCharacters(input: {
     for (const [areaId, members] of groupBy(characters, (c) => c.intent.go)) {
       const area = definition.areas[areaId] as FixedArea;
       const slots = taken(areaId);
-      const chosen = area.lineUp
-        ? lineUp(members, area, slots, familyOf)
-        : settle({
-            members,
-            areaId,
-            area,
-            slots,
-            previous,
-            requested: input.requested,
-            familyOf,
-          });
+      // A line closes ranks only once the copies left on its spots have faded, so
+      // nobody walks onto a spot that still looks taken.
+      const held = area.lineUp && standing.some((at) => ghostSlot(area, at) !== null);
+      const chosen = held
+        ? holdLine(members, areaId, area, slots, previous, standing)
+        : area.lineUp
+          ? lineUp(members, area, slots, familyOf)
+          : settle({
+              members,
+              areaId,
+              area,
+              slots,
+              previous,
+              requested: input.requested,
+              familyOf,
+            });
       for (const [character, slotIndex] of chosen) {
         placed.set(character.facts.key, {
           intent: character.intent,
@@ -214,6 +227,58 @@ function lineUp(
     slots.add(slotIndex);
     chosen.set(character, slotIndex);
   });
+  return chosen;
+}
+
+/** The front or spillover slot a copy standing at `at` is on, if any. */
+function ghostSlot(area: FixedArea, at: Vec3): number | null {
+  const spots = [...area.slots, ...(area.spillover ?? [])];
+  const index = spots.findIndex(
+    (spot) => Math.hypot(spot.position[0] - at[0], spot.position[2] - at[2]) < GHOST_REACH,
+  );
+  return index === -1 ? null : index;
+}
+
+/**
+ * Holds a line as it stands: everyone already in it keeps their slot, and newcomers,
+ * latest reply first, take the rightmost free front slot no copy stands on, else the
+ * first free one behind.
+ */
+function holdLine(
+  members: ReadonlyArray<PlacementInput>,
+  areaId: string,
+  area: FixedArea,
+  slots: Set<number>,
+  previous: ReadonlyMap<string, Placement>,
+  standing: ReadonlyArray<Vec3>,
+): Map<PlacementInput, number> {
+  const chosen = new Map<PlacementInput, number>();
+  const newcomers: PlacementInput[] = [];
+  for (const character of members) {
+    const before = previous.get(character.facts.key);
+    if (before?.area === areaId && !slots.has(before.slotIndex)) {
+      slots.add(before.slotIndex);
+      chosen.set(character, before.slotIndex);
+    } else {
+      newcomers.push(character);
+    }
+  }
+  const haunted = new Set(standing.map((at) => ghostSlot(area, at)));
+  const free = area.slots.flatMap((_, index) =>
+    slots.has(index) || haunted.has(index) ? [] : [index],
+  );
+  let back = area.slots.length;
+  for (const character of newcomers.toSorted((a, b) =>
+    b.facts.lastReplyAt.localeCompare(a.facts.lastReplyAt),
+  )) {
+    let slotIndex = free.pop();
+    if (slotIndex === undefined) {
+      while (slots.has(back) || haunted.has(back)) back += 1;
+      slotIndex = back;
+    }
+    slots.add(slotIndex);
+    chosen.set(character, slotIndex);
+  }
   return chosen;
 }
 

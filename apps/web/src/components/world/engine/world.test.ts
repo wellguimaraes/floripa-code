@@ -1,7 +1,7 @@
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import type { FixedArea, WorldDefinition } from "../definition/types";
+import type { FixedArea, Vec3, WorldDefinition } from "../definition/types";
 import { validateWorldDefinition } from "../definition/validate";
 import { ISLAND_SIZES, islandWorlds } from "../definitions/island";
 import {
@@ -283,6 +283,35 @@ describe("resolveWorld", () => {
     // Out of slots, the one who stopped first moves back to the spillover.
     expect(slotsOf([first!, second!, third!, fourth!]).map(([, slot]) => slot)).toEqual([
       3, 0, 1, 2,
+    ]);
+
+    // The first leaves, but its copy still stands on its towel: nobody moves up yet, and a
+    // newcomer takes the rightmost free towel the copy is not on.
+    const previous = new Map(
+      resolveWorld({ facts: [first!, second!, third!], definition: world, previous: new Map() })
+        .filter((c) => c.facts.key !== first!.key)
+        .map((c) => [c.facts.key, c.placement]),
+    );
+    const slotsHeld = (facts: CharacterFacts[], ghosts: ReadonlyMap<string, Vec3>) =>
+      resolveWorld({ facts, definition: world, previous, ghosts }).map((c) => [
+        c.facts.key,
+        c.placement.slotIndex,
+      ]);
+    const ghost = new Map<string, Vec3>([[first!.key, [0, 0, 10]]]);
+    const away = { ...first!, status: "working" as const };
+    expect(slotsHeld([away, second!, third!], ghost).slice(1)).toEqual([
+      [second!.key, 1],
+      [third!.key, 2],
+    ]);
+    expect(slotsHeld([away, second!, third!, fourth!], ghost).slice(1)).toEqual([
+      [second!.key, 1],
+      [third!.key, 2],
+      [fourth!.key, 3],
+    ]);
+    // Once the copy is gone, the line closes up.
+    expect(slotsHeld([away, second!, third!], new Map()).slice(1)).toEqual([
+      [second!.key, 0],
+      [third!.key, 1],
     ]);
   });
 

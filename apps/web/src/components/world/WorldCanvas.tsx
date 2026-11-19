@@ -443,6 +443,18 @@ export default function WorldCanvas(props: {
   const clock = useClock(
     anyoneWorking ? QUIET_CHECK_MS : anyoneResting || anyIdleAlarm ? REST_CHECK_MS : null,
   );
+  // Where each walker's see-through copy stands, by character, in its island's frame.
+  // Resters hold their line while one stands on a spot there.
+  const [ghosts, setGhosts] = useState<ReadonlyMap<string, Vec3>>(() => new Map());
+  const registerGhost = useCallback((key: string, at: Vec3 | null) => {
+    setGhosts((all) => {
+      if (at === null ? !all.has(key) : all.get(key) === at) return all;
+      const next = new Map(all);
+      if (at === null) next.delete(key);
+      else next.set(key, at);
+      return next;
+    });
+  }, []);
   const islands = useMemo(
     () =>
       memory.resolve({
@@ -455,6 +467,7 @@ export default function WorldCanvas(props: {
         chosenHues,
         checkedAt: clock,
         requested,
+        ghosts,
         columns: arrangementColumns(
           arrangement,
           visibleOrder.filter((key) => !mainland.has(key)).length,
@@ -469,6 +482,7 @@ export default function WorldCanvas(props: {
       visibleOrder,
       clock,
       requested,
+      ghosts,
       chosenHues,
       arrangement,
       mainland,
@@ -716,17 +730,6 @@ export default function WorldCanvas(props: {
   const registerRoot = useCallback((key: string, root: Object3D | null) => {
     if (root === null) roots.current.delete(key);
     else roots.current.set(key, root);
-  }, []);
-  // Where each walker's see-through copy stands, by character, in its island's frame.
-  const [ghosts, setGhosts] = useState<ReadonlyMap<string, Vec3>>(() => new Map());
-  const registerGhost = useCallback((key: string, at: Vec3 | null) => {
-    setGhosts((all) => {
-      if (at === null ? !all.has(key) : all.get(key) === at) return all;
-      const next = new Map(all);
-      if (at === null) next.delete(key);
-      else next.set(key, at);
-      return next;
-    });
   }, []);
   // Each island's sign, so framing an island keeps its whole board in view.
   const signs = useRef(new Map<string, Object3D>());
@@ -4053,6 +4056,7 @@ function createArchipelagoMemory() {
       /** Last clock tick; a new one re-checks pacing, quiet threads and reply ages. */
       readonly checkedAt: number;
       readonly requested: ReadonlyMap<string, SlotRequest>;
+      readonly ghosts: ReadonlyMap<string, Vec3>;
       readonly columns: number;
       readonly mainland: ReadonlySet<string>;
     }): WorldIsland[] {

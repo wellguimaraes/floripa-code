@@ -1,4 +1,4 @@
-import type { WorldActivity, WorldDefinition, WorldIntent } from "../definition/types";
+import type { Vec3, WorldActivity, WorldDefinition, WorldIntent } from "../definition/types";
 import type { CharacterFacts } from "./facts";
 import { resolveIntent } from "./rules";
 import { placeCharacters, type Placement, type SlotRequest } from "./slots";
@@ -16,6 +16,7 @@ export function resolveWorld(input: {
   readonly definition: WorldDefinition;
   readonly previous: ReadonlyMap<string, Placement>;
   readonly requested?: ReadonlyMap<string, SlotRequest>;
+  readonly ghosts?: ReadonlyMap<string, Vec3>;
 }): WorldCharacter[] {
   const { definition } = input;
   const placed = placeCharacters({
@@ -23,6 +24,7 @@ export function resolveWorld(input: {
     definition,
     previous: input.previous,
     ...(input.requested === undefined ? {} : { requested: input.requested }),
+    ...(input.ghosts === undefined ? {} : { ghosts: input.ghosts }),
   });
   return input.facts.map((facts) => {
     const { intent, placement } = placed.get(facts.key)!;

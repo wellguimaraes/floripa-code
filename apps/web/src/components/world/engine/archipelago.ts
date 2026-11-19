@@ -64,6 +64,8 @@ export function resolveArchipelago(input: {
   /** Colours picked by hand, by family seed; they win over every other rule. */
   readonly chosenHues?: Readonly<Record<string, number>>;
   readonly requested?: ReadonlyMap<string, SlotRequest>;
+  /** Where each walker's see-through copy still stands, by character, in its island's frame. */
+  readonly ghosts?: ReadonlyMap<string, Vec3>;
   /** Islands per grid row; the definition's `columns` when left out. */
   readonly columns?: number;
   /**
@@ -137,6 +139,7 @@ export function resolveArchipelago(input: {
       definition: islandDefinition,
       previous: previous.placements,
       ...(input.requested === undefined ? {} : { requested: input.requested }),
+      ...(input.ghosts === undefined ? {} : { ghosts: input.ghosts }),
     });
     for (const character of characters) placements.set(character.facts.key, character.placement);
     const cell = cells.get(key)!;
