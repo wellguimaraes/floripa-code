@@ -475,10 +475,12 @@ it.effect("waitForThread reads the run again only when the run updates", () =>
 );
 
 it.effect.each([
-  { status: "completed" as const, settles: true },
-  { status: "failed" as const, settles: false },
-  { status: "interrupted" as const, settles: false },
-])("settleAfterRun settles only when the run $status", ({ status, settles }) =>
+  { status: "completed" as const, action: "settle" as const, finishes: true },
+  { status: "failed" as const, action: "settle" as const, finishes: false },
+  { status: "interrupted" as const, action: "settle" as const, finishes: false },
+  { status: "completed" as const, action: "archive" as const, finishes: true },
+  { status: "interrupted" as const, action: "archive" as const, finishes: false },
+])("finishAfterRun $action only when the run $status", ({ status, action, finishes }) =>
   Effect.gen(function* () {
     const projectId = ProjectId.make("project:thread-management:settle-after-run");
     const threadId = ThreadId.make("thread:thread-management:settle-after-run");
@@ -505,9 +507,9 @@ it.effect.each([
       Effect.provide(layerTest),
     );
 
-    yield* service.settleAfterRun({ projectId, threadId, runId });
+    yield* service.finishAfterRun({ projectId, threadId, runId, action });
 
-    expect(dispatched).toEqual(settles ? ["thread.settle"] : []);
+    expect(dispatched).toEqual(finishes ? [`thread.${action}`] : []);
   }),
 );
 

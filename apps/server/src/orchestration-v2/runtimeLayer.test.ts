@@ -3446,10 +3446,11 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       const settled = yield* orchestrator
         .streamStoredEventsFrom({ threadId, afterSequence: 0, eventType: "thread.settled" })
         .pipe(Stream.runHead, Effect.forkChild);
-      const result = yield* threadManagement.settleThread({
+      const result = yield* threadManagement.finishThread({
         threadId,
         commandId: CommandId.make("runtime-layer-settle-after-run-settle"),
         byOwnAgent: true,
+        action: "settle",
       });
       assert.deepEqual(result, { settlesWhenTurnEnds: true });
       assert.isNull((yield* orchestrator.getThreadProjection(threadId)).thread.settledOverride);

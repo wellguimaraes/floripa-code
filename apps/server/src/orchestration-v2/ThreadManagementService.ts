@@ -276,6 +276,9 @@ export type ThreadManagementError = typeof ThreadManagementError.Type;
 
 type ThreadManagementFailure = ThreadManagementError | Orchestrator.OrchestratorV2Error;
 
+/** What a thread's own agent can end it with, once its turn completes. */
+export type ThreadFinishAction = "settle" | "archive";
+
 export interface ThreadManagementServiceShape {
   readonly searchThreadStream: (
     input: OrchestrationV2SearchThreadInput,
@@ -340,27 +343,31 @@ export interface ThreadManagementServiceShape {
     input: ThreadManagementWaitInput,
   ) => Effect.Effect<ThreadManagementWaitResult, ThreadManagementError>;
   /**
-   * Waits for `runId` to end, then settles the thread if the run completed.
-   * Settling stops the provider session, so an agent that settles its own
+   * Waits for `runId` to end, then settles or archives the thread if the run
+   * completed. Both stop the provider session, so an agent that ends its own
    * thread uses this to wait for its turn to end. A run that ends any other
-   * way leaves the thread active, as does anything `thread.settle` refuses
-   * then, such as a queued message.
+   * way leaves the thread active, as does anything the command refuses then,
+   * such as a queued message for settle.
    */
-  readonly settleAfterRun: (input: {
+  readonly finishAfterRun: (input: {
     readonly projectId: ProjectId;
     readonly threadId: ThreadId;
     readonly runId: RunId;
+    readonly action: ThreadFinishAction;
   }) => Effect.Effect<void, ThreadManagementFailure>;
   /**
-   * Settles a thread. When the thread's own agent asks, it is mid-turn, so
-   * the thread settles through `settleAfterRun` once that turn ends.
+   * Settles or archives a thread. When the thread's own agent asks, it is
+   * mid-turn, so the thread finishes through `finishAfterRun` once that turn ends.
    */
-  readonly settleThread: (input: {
+  readonly finishThread: (input: {
     readonly threadId: ThreadId;
     readonly commandId: CommandId;
     readonly byOwnAgent: boolean;
+    readonly action: ThreadFinishAction;
   }) => Effect.Effect<
-    { readonly sequence: number } | { readonly settlesWhenTurnEnds: true },
+    | { readonly sequence: number }
+    | { readonly settlesWhenTurnEnds: true }
+    | { readonly archivesWhenTurnEnds: true },
     Orchestrator.OrchestratorV2Error
   >;
   readonly interruptThread: (
@@ -467,7 +474,7 @@ function latestSteerableRun(
     .toSorted((left, right) => right.ordinal - left.ordinal)[0];
 }
 
-const SETTLE_AFTER_RUN_WAIT_MS = 24 * 60 * 60 * 1_000;
+const FINISH_AFTER_RUN_WAIT_MS = 24 * 60 * 60 * 1_000;
 
 const trimTrailingSeparators = (path: string) => path.replace(/(?<=.)[\\/]+$/, "");
 
@@ -799,33 +806,36 @@ const make = Effect.gen(function* () {
       return { threadId: input.threadId, run, timedOut: !isTerminalRunStatus(run.status) };
     });
 
-  const settleAfterRun: ThreadManagementServiceShape["settleAfterRun"] = Effect.fn(
-    "orchestrationV2.threadManagement.settleAfterRun",
+  const finishAfterRun: ThreadManagementServiceShape["finishAfterRun"] = Effect.fn(
+    "orchestrationV2.threadManagement.finishAfterRun",
   )(function* (input) {
     // A turn that outlives this wait leaves its thread active.
-    const { run } = yield* waitForThread({ ...input, timeoutMs: SETTLE_AFTER_RUN_WAIT_MS });
+    const { run } = yield* waitForThread({ ...input, timeoutMs: FINISH_AFTER_RUN_WAIT_MS });
     if (run?.status !== "completed") return;
     yield* dispatch({
-      type: "thread.settle",
-      commandId: CommandId.make(`server:settle-after-run:${input.runId}`),
+      type: `thread.${input.action}`,
+      commandId: CommandId.make(`server:${input.action}-after-run:${input.runId}`),
       threadId: input.threadId,
     });
   });
 
-  const settleThread: ThreadManagementServiceShape["settleThread"] = Effect.fn(
-    "orchestrationV2.threadManagement.settleThread",
+  const finishThread: ThreadManagementServiceShape["finishThread"] = Effect.fn(
+    "orchestrationV2.threadManagement.finishThread",
   )(function* (input) {
     const shell = input.byOwnAgent ? yield* orchestrator.getThreadShell(input.threadId) : null;
     if (shell != null && shell.activeRunId !== null) {
-      yield* settleAfterRun({
+      yield* finishAfterRun({
         projectId: shell.projectId,
         threadId: shell.id,
         runId: shell.activeRunId,
+        action: input.action,
       }).pipe(Effect.ignoreCause({ log: true }), Effect.forkIn(layerScope));
-      return { settlesWhenTurnEnds: true } as const;
+      return input.action === "settle"
+        ? ({ settlesWhenTurnEnds: true } as const)
+        : ({ archivesWhenTurnEnds: true } as const);
     }
     const result = yield* dispatch({
-      type: "thread.settle",
+      type: `thread.${input.action}`,
       commandId: input.commandId,
       threadId: input.threadId,
     });
@@ -1038,8 +1048,8 @@ const make = Effect.gen(function* () {
     listProjectThreads,
     sendToThread,
     waitForThread,
-    settleAfterRun,
-    settleThread,
+    finishAfterRun,
+    finishThread,
     interruptThread,
     archiveWorktreeThreads,
     stopDelegatedTasks,
