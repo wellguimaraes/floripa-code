@@ -11072,6 +11072,7 @@ export default function ChatView(props: ChatViewProps) {
     pullRequestAvailable: pullRequestSurfaceAvailable,
     pullRequestsAvailable: pullRequestsSurfaceAvailable,
     deviceAvailable: activeThreadRef !== null,
+    diffHasChanges: gitStatusQuery.data?.hasWorkingTreeChanges ?? false,
     // Scratch has no repository, so it never gets a diff or a pull request.
     ...(activeProjectIsScratch ? { neverAvailable: SCRATCH_NEVER_AVAILABLE_TYPES } : {}),
   };

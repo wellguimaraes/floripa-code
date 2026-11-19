@@ -183,6 +183,8 @@ interface RightPanelTabsProps {
   pullRequestsAvailable: boolean;
   deviceAvailable: boolean;
   neverAvailable?: readonly RightPanelSurfaceType[];
+  /** The checkout has uncommitted changes, which tints the rail's Diff type. */
+  diffHasChanges?: boolean;
   pullRequestStatusSeeds?: Readonly<Record<string, PullRequestTabStatusSeed>>;
   /** Some of the thread's pull requests build on each other, which the All PRs list shows. */
   hasStackedPullRequests?: boolean;
@@ -974,6 +976,8 @@ export interface RightPanelTypeAvailability {
   deviceAvailable: boolean;
   /** Types that can never apply here, e.g. Diff without a repository: left off the rail, not greyed. */
   neverAvailable?: readonly RightPanelSurfaceType[];
+  /** The checkout has uncommitted changes, which tints the rail's Diff type. */
+  diffHasChanges?: boolean;
 }
 
 const SURFACE_TYPE_META = {
@@ -1053,6 +1057,8 @@ export function RightPanelTypeRail(
         const active = props.activeType === type;
         // Diff and Files are always there once picked, so a count would say nothing.
         const shownCount = type === "diff" || type === "files" ? 0 : count;
+        // In use reads blue: a type with open tabs, or Diff while the checkout has changes.
+        const inUse = type === "diff" ? props.diffHasChanges === true : count > 0;
         const button = (
           <button
             type="button"
@@ -1066,6 +1072,7 @@ export function RightPanelTypeRail(
               active
                 ? "bg-foreground/10 text-foreground"
                 : "hover:bg-foreground/6 hover:text-foreground",
+              inUse && "text-[#5da0c4] hover:text-[#5da0c4]",
               !enabled && "cursor-default opacity-40 hover:bg-transparent",
             )}
           >
@@ -2064,6 +2071,9 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             {...(props.neverAvailable === undefined
               ? {}
               : { neverAvailable: props.neverAvailable })}
+            {...(props.diffHasChanges === undefined
+              ? {}
+              : { diffHasChanges: props.diffHasChanges })}
             className={cn(
               "border-border border-l",
               reservesTitleBarControls && "pt-(--workspace-topbar-height)",
