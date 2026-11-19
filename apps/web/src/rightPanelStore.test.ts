@@ -416,6 +416,18 @@ describe("rightPanelStore", () => {
     expect(terminalTabs()).toEqual([]);
   });
 
+  it("selects an agent terminal when the Terminal type shows no tabs, and only then", () => {
+    const store = useRightPanelStore.getState();
+    const panel = () => selectThreadRightPanelState(useRightPanelStore.getState().byPanelKey, refA);
+    store.activateType(refA, "terminal");
+    store.showAgentTerminals(refA, ["agent-dev"]);
+    expect(panel().activeSurfaceId).toBe("terminal:agent-dev");
+
+    store.open(refA, "diff");
+    store.showAgentTerminals(refA, ["agent-dev", "agent-test"]);
+    expect(panel().activeSurfaceId).toBe("diff");
+  });
+
   it("keeps a maximized panel per thread without counting it as a manual choice", () => {
     const store = useRightPanelStore.getState();
     store.open(refA, "preview");

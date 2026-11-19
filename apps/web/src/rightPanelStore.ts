@@ -850,8 +850,14 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
               seen.length !== terminalIds.length || seen.some((id) => !terminalIds.includes(id));
             if (added.length === 0 && !seenChanged) return current;
             const { seenAgentTerminalIds: _seen, ...rest } = current;
+            // A Terminal type left empty shows its first new tab instead of "no tabs".
+            const fillsEmptyTerminalType =
+              added.length > 0 &&
+              current.activeSurfaceId === null &&
+              current.activeType === "terminal";
             return {
               ...rest,
+              ...(fillsEmptyTerminalType ? { activeSurfaceId: terminalSurface(added[0]!).id } : {}),
               surfaces: [...current.surfaces, ...added.map(terminalSurface)],
               ...(terminalIds.length === 0 ? {} : { seenAgentTerminalIds: [...terminalIds] }),
             };
