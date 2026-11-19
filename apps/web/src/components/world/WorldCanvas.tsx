@@ -3153,6 +3153,8 @@ function WorldControls({
   } | null>(null);
   const gesturing = useRef(false);
   const fitted = useRef(false);
+  // Cancels the wait for a newly focused chat's panel to settle; set while that wait runs.
+  const waitForPanel = useRef<(() => void) | null>(null);
   // Pixels each open bubble slid the map down while on the zoom floor; framing every island
   // keeps that room, so the floor's own recentring does not cover the character again.
   const floorRoom = useRef(new Map<string, number>());
@@ -3323,14 +3325,24 @@ function WorldControls({
   // oxlint-disable-next-line react/exhaustive-effect-dependencies -- New islands or a resized canvas move the floor.
   useEffect(() => holdFloor(), [frame]);
   // Resizing the open panel zooms about what showed beside it, so the same
-  // stretch of map stays in view. Opening or closing it, from or to zero, moves nothing.
+  // stretch of map stays in view. Opening or closing it, from or to zero, moves nothing, and
+  // neither does switching chats: the new chat's panel width is left to `frameFocus`, so the
+  // map moves once, after the panel settles.
   const panelWidth = useRef(0);
   const keepShownBesidePanel = useEffectEvent(() => {
     const controls = controlsRef.current;
     const width = panel()?.getBoundingClientRect().width ?? 0;
     const grown = panelWidth.current > 0 && width > 0 ? width - panelWidth.current : 0;
     panelWidth.current = width;
-    if (controls === null || grown === 0 || gesturing.current || flight.current !== null) return;
+    if (
+      controls === null ||
+      grown === 0 ||
+      gesturing.current ||
+      flight.current !== null ||
+      waitForPanel.current !== null
+    ) {
+      return;
+    }
     // Measures the floor afresh: the panel's width moves it.
     frame();
     const hidden = covered();
@@ -3510,13 +3522,13 @@ function WorldControls({
       makeRoom.current = null;
     };
   }, [camera, fly, frame, makeRoom]);
-  const waitForPanel = useRef<(() => void) | null>(null);
   const stopWaiting = useCallback(() => {
     waitForPanel.current?.();
     waitForPanel.current = null;
   }, []);
   // Switching chats with the panel already open moves the map only for an agent not fully on
-  // screen; opening the first chat also wants its island in view.
+  // screen, and then as little as it takes, never zooming in; opening the first chat also wants
+  // its island in view, and frames it.
   const frameFocus = useEffectEvent((key: string, switching: boolean) => {
     const controls = controlsRef.current;
     const root = roots.current.get(key);
@@ -3533,10 +3545,23 @@ function WorldControls({
     const shown = switching
       ? [focusPoint, head]
       : [focusPoint, head, ...shorePoints(spot, island.reach), ...signsOf([spot.key])];
-    if (onScreen(camera, shown, size, covered())) return;
+    const hidden = covered();
+    if (onScreen(camera, shown, size, hidden)) return;
+    const view = currentView(camera, controls);
     // Switching chats keeps the view from before the first move.
-    beforeChat.current ??= currentView(camera, controls);
-    fly(frame(spot.key));
+    beforeChat.current ??= view;
+    fly(
+      switching
+        ? viewShowing({
+            camera,
+            view,
+            points: shown,
+            viewport: size,
+            covered: hidden,
+            minZoom: controls.minZoom,
+          })
+        : frame(spot.key),
+    );
   });
   const focusedBefore = useRef<string | null>(null);
   const onFocus = useEffectEvent((key: string | null) => {
