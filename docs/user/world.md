@@ -95,6 +95,7 @@ chat to it instead of opening a bubble. The chat's footer has the same regenerat
 archive buttons as the bubble, and `Option`+`A` (`Alt`+`A`) archives from the chat too. Archiving an agent whose chat is open switches the chat to the
 agent you had open before it in the same worktree, or closes the chat if there is none. Close the chat with the **×** button beside the panel, by double-clicking its left edge, or
 with `Shift`+`Escape` or `Cmd`+`W` (`Ctrl`+`W`), and the map goes back to where it was.
+When a terminal, browser, or file tab beside the chat has focus, `Cmd`+`W` closes that tab instead.
 `Cmd`+`W` also closes Settings when it opens over the world.
 
 Right-click a character for **Open chat**,

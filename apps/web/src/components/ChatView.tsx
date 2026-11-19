@@ -372,6 +372,7 @@ import {
 } from "./chat/composerProviderState";
 import { confirmTerminalClose, isTerminalCloseConfirmPending } from "../lib/terminalCloseConfirm";
 import { isPreviewFocused } from "../lib/previewFocus";
+import { isRightPanelFocused } from "../lib/rightPanelFocus";
 import { getTerminalFocusOwner } from "../lib/terminalFocus";
 import {
   preventRepeatedTerminalCloseShortcut,
@@ -7653,8 +7654,13 @@ export default function ChatView(props: ChatViewProps) {
       if (!command) return;
 
       // In the world the chat floats in its own frame, which the close chord closes like a
-      // window, surfaces and terminal included, rather than closing the app's window.
-      if (worldChatShown && (command === "rightPanel.close" || command === "terminal.close")) {
+      // window rather than closing the app's window. A focused surface closes on its own,
+      // through the handlers below, like it does outside the world.
+      if (
+        worldChatShown &&
+        ((command === "terminal.close" && terminalFocusOwner === null) ||
+          (command === "rightPanel.close" && !(activeRightPanelSurface && isRightPanelFocused())))
+      ) {
         event.preventDefault();
         event.stopPropagation();
         if (!event.repeat) void navigate({ to: "/" });
@@ -8016,12 +8022,11 @@ export default function ChatView(props: ChatViewProps) {
       const shownType = RIGHT_PANEL_TYPE_COMMANDS[action];
       if (action === "rightPanel.toggle") toggleRightPanel();
       else if (action === "rightPanel.toggleMaximized") toggleChatCollapsed();
-      else if (action === "rightPanel.close") {
-        if (worldChatShown) void navigate({ to: "/" });
-        else closeActiveRightPanelSurface();
-      } else if (shownType) activateRightPanelType(shownType);
+      // Only a focused browser page forwards the close chord, so it closes that tab, in the world too.
+      else if (action === "rightPanel.close") closeActiveRightPanelSurface();
+      else if (shownType) activateRightPanelType(shownType);
     });
-  }, [activateRightPanelType, navigate, toggleChatCollapsed, toggleRightPanel, worldChatShown]);
+  }, [activateRightPanelType, toggleChatCollapsed, toggleRightPanel]);
 
   // Paste-to-focus: the resting composer blurs on a click into the timeline,
   // so a paste that follows has no editable target and would be dropped.
