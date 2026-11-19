@@ -1057,8 +1057,10 @@ export function RightPanelTypeRail(
         const active = props.activeType === type;
         // Diff and Files are always there once picked, so a count would say nothing.
         const shownCount = type === "diff" || type === "files" ? 0 : count;
-        // In use reads blue: a type with open tabs, or Diff while the checkout has changes.
-        const inUse = type === "diff" ? props.diffHasChanges === true : count > 0;
+        // In use reads amber: a type with open tabs, or Diff while the checkout has changes.
+        // Files stays plain.
+        const inUse =
+          type === "diff" ? props.diffHasChanges === true : type !== "files" && count > 0;
         const button = (
           <button
             type="button"
@@ -1072,7 +1074,8 @@ export function RightPanelTypeRail(
               active
                 ? "bg-foreground/10 text-foreground"
                 : "hover:bg-foreground/6 hover:text-foreground",
-              inUse && "text-[#5da0c4] hover:text-[#5da0c4]",
+              inUse && "text-warning-foreground hover:bg-warning/12 hover:text-warning-foreground",
+              inUse && active && "bg-warning/16",
               !enabled && "cursor-default opacity-40 hover:bg-transparent",
             )}
           >
