@@ -75,6 +75,7 @@ import {
 } from "react";
 import { createPortal, flushSync } from "react-dom";
 import {
+  ARCHIVE_AGENT_PROMPT_TOKEN,
   clampCollapsedComposerCursor,
   type ComposerTrigger,
   type ComposerSubmissionIntent,
@@ -1498,7 +1499,7 @@ export interface ChatComposerProps {
   onToggleKeepFullHistory: () => void;
   /** Picking /usage-limits from the menu is the action itself; the draft keeps nothing of it. */
   onUsageLimitsCommand?: (() => void) | undefined;
-  /** Archives the thread from `/archive-agent` or `$archive-agent`; absent where there is nothing to archive. */
+  /** Offers Archive Agent under `/` and `$`; absent where there is nothing to archive. */
   onArchiveThread?: (() => void) | undefined;
   environmentUnavailable: {
     readonly label: string;
@@ -4086,13 +4087,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           return;
         }
         if (item.command === "archive-agent") {
-          const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
-            expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
-            focusEditorAfterReplace: false,
-          });
+          // A chip, not the action: sent alone it archives, sent with more the agent does.
+          const replacement = `${ARCHIVE_AGENT_PROMPT_TOKEN} `;
+          const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
+            snapshot.value,
+            trigger.rangeEnd,
+            replacement,
+          );
+          const applied = applyPromptReplacement(
+            trigger.rangeStart,
+            replacementRangeEnd,
+            replacement,
+            { expectedText: snapshot.value.slice(trigger.rangeStart, replacementRangeEnd) },
+          );
           if (applied) {
             setComposerHighlightedItemId(null);
-            props.onArchiveThread?.();
           }
           return;
         }
@@ -4227,7 +4236,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       handleInteractionModeChange,
       planModeUiEnabled,
       onUsageLimitsCommand,
-      props.onArchiveThread,
       props.onFreshSession,
       resolveActiveComposerTrigger,
       setComposerDraftThreadContextIntent,

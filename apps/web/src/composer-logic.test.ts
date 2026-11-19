@@ -22,6 +22,7 @@ import {
   expandCollapsedComposerCursor,
   formatAssistantCitationForComposer,
   isCollapsedCursorAdjacentToInlineToken,
+  isStandaloneArchiveAgentPrompt,
   parseStandaloneComposerSlashCommand,
   replaceTextRange,
 } from "./composer-logic";
@@ -801,6 +802,15 @@ describe("isCollapsedCursorAdjacentToInlineToken", () => {
 
     expect(isCollapsedCursorAdjacentToInlineToken(text, tokenEnd, "left")).toBe(true);
     expect(isCollapsedCursorAdjacentToInlineToken(text, tokenStart, "right")).toBe(true);
+  });
+});
+
+describe("isStandaloneArchiveAgentPrompt", () => {
+  it("archives only when the archive command is the whole prompt", () => {
+    expect(isStandaloneArchiveAgentPrompt(" $archive-agent ")).toBe(true);
+    expect(isStandaloneArchiveAgentPrompt("/archive-agent")).toBe(true);
+    expect(isStandaloneArchiveAgentPrompt("commit this, then $archive-agent")).toBe(false);
+    expect(isStandaloneArchiveAgentPrompt("$archive-agents")).toBe(false);
   });
 });
 

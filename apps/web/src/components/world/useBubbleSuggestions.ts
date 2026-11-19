@@ -10,6 +10,7 @@ import { formatProviderSkillDisplayName } from "@t3tools/shared/inlineSkills";
 import { useMemo, useState } from "react";
 
 import {
+  ARCHIVE_AGENT_PROMPT_TOKEN,
   type ComposerSlashCommand,
   detectComposerTrigger,
   replaceTextRange,
@@ -231,6 +232,8 @@ export function useBubbleSuggestions(input: {
         }
         return replace(`${serializeComposerFileLink(item.path)} `);
       case "slash-command":
+        // A chip, not the action: sent alone it archives, sent with more the agent does.
+        if (item.command === "archive-agent") return replace(`${ARCHIVE_AGENT_PROMPT_TOKEN} `);
         onSlashCommand(item.command);
         return replace("");
       case "provider-slash-command":

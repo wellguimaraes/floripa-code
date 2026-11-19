@@ -190,6 +190,7 @@ import { useActiveThreadRef } from "../hooks/useActiveThreadRef";
 import {
   type ComposerSubmissionIntent,
   collapseExpandedComposerCursor,
+  isStandaloneArchiveAgentPrompt,
   parseStandaloneComposerSlashCommand,
 } from "../composer-logic";
 import {
@@ -8772,6 +8773,22 @@ export default function ChatView(props: ChatViewProps) {
         feedbackUploadsInFlightRef.current.delete(routeThreadKey);
       });
 
+      return;
+    }
+    if (
+      archiveCommandAvailable &&
+      composerImages.length === 0 &&
+      composerFiles.length === 0 &&
+      sendableComposerTerminalContexts.length === 0 &&
+      composerPreviewAnnotations.length === 0 &&
+      composerReviewComments.length === 0 &&
+      composerThreadContexts.length === 0 &&
+      isStandaloneArchiveAgentPrompt(trimmed)
+    ) {
+      promptRef.current = "";
+      clearComposerDraftContent(composerDraftTarget);
+      composerRef.current?.resetCursorState();
+      archiveActiveThread();
       return;
     }
     if (

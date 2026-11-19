@@ -13,6 +13,7 @@ import * as DateTime from "effect/DateTime";
 import { ArchiveIcon, ChevronDownIcon, Maximize2Icon, RefreshCwIcon, XIcon } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 
+import { isStandaloneArchiveAgentPrompt } from "../../composer-logic";
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { useThreadActions } from "../../hooks/useThreadActions";
@@ -349,6 +350,10 @@ export function WorldBubble(props: {
     const message = said.trim();
     const hasAttachments = attachments.attachments.length > 0;
     if (message === "" && !hasAttachments) return;
+    if (!hasAttachments && isStandaloneArchiveAgentPrompt(message)) {
+      setText("");
+      return archive(null, false);
+    }
     if (thread === null || state.phase === "sending" || attachments.preparing) return;
     setState({ phase: "sending" });
     // What you send is the newest words: the exchange follows it down, even from up the scroll.
@@ -429,7 +434,7 @@ export function WorldBubble(props: {
   };
 
   // Archive, not delete: it can be undone from the toast or Settings → Archived.
-  // Typing `/archive-agent` is already deliberate, so it skips the confirmation.
+  // Sending `$archive-agent` alone is already deliberate, so it skips the confirmation.
   const archive = async (anchor: Element | null, confirm = true) => {
     if (state.phase === "archiving") return;
     if (confirm && !(await confirmArchive(anchor))) return;
@@ -464,9 +469,6 @@ export function WorldBubble(props: {
       text={text}
       onTextChange={setText}
       slashCommands={ARCHIVE_AGENT_COMMANDS}
-      onSlashCommand={(command) => {
-        if (command === "archive-agent") void archive(null, false);
-      }}
       onSubmit={(said) => void send(said)}
       onExpand={expand}
       onClose={onClose}

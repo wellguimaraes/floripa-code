@@ -362,6 +362,17 @@ export function composerStateAtPromptEnd(
   };
 }
 
+/**
+ * Picking Archive Agent from `/` or `$` leaves this chip in the draft. Sent alone it archives
+ * the thread; sent with more, the agent reads it and archives the thread when its turn ends.
+ */
+export const ARCHIVE_AGENT_PROMPT_TOKEN = "$archive-agent";
+
+/** The draft is only the archive command, chipped or typed as `/archive-agent`. */
+export function isStandaloneArchiveAgentPrompt(text: string): boolean {
+  return /^[$/]archive-agent$/i.test(text.trim());
+}
+
 export function parseStandaloneComposerSlashCommand(
   text: string,
 ): Exclude<ComposerSlashCommand, "model" | "clear" | "archive-agent"> | null {

@@ -41,6 +41,7 @@ import {
 import { EditorContent, useEditor } from "@tiptap/react";
 
 import {
+  ARCHIVE_AGENT_PROMPT_TOKEN,
   clampCollapsedComposerCursor,
   collapseExpandedComposerCursor,
   expandCollapsedComposerCursor,
@@ -901,7 +902,14 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
     const normalized = name.startsWith("$") ? name.slice(1) : name;
     const skill = skillsRef.current.find((candidate) => candidate.name === normalized);
     if (!skill) {
-      return { label: formatProviderSkillDisplayName({ name: normalized }), description: null };
+      return {
+        label: formatProviderSkillDisplayName({ name: normalized }),
+        // The composer's own Archive Agent chip, not a provider skill.
+        description:
+          `$${normalized}` === ARCHIVE_AGENT_PROMPT_TOKEN
+            ? "Archives this agent and its thread"
+            : null,
+      };
     }
     const shortDescription = skill.shortDescription?.trim();
     return {
