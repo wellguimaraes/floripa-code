@@ -51,6 +51,10 @@ vi.mock("./ServerBrowserContexts.ts", () => ({
       return makeContext().page as unknown as Page;
     }
     async connectDesktopPage(endpoint: string) {
+      desktopConnectAttempts.push(endpoint);
+      const gate = desktopConnectGate;
+      desktopConnectGate = null;
+      await gate?.promise;
       const context = makeContext();
       desktopConnections.push({ endpoint, context });
       return { browser: { close: async () => {} }, page: context.page as unknown as Page };
@@ -170,6 +174,9 @@ const desktopRenders = (tabId: string) => {
   return desktopTabs.has(tabId);
 };
 const releasedDesktopTabs: Array<string> = [];
+/** Holds the next desktop connection open until a test settles it. */
+let desktopConnectGate: PromiseWithResolvers<void> | null = null;
+const desktopConnectAttempts: Array<string> = [];
 const desktopConnections: Array<{ endpoint: string; context: ReturnType<typeof makeContext> }> = [];
 const testThread = {
   threadId: ThreadId.make("browser-test-thread"),
@@ -292,6 +299,8 @@ beforeEach(() => {
   desktopRendersNext = false;
   releasedDesktopTabs.length = 0;
   desktopConnections.length = 0;
+  desktopConnectGate = null;
+  desktopConnectAttempts.length = 0;
 });
 
 it.live("shares server tabs with threads in the same worktree only", () =>
@@ -1589,6 +1598,48 @@ it.live("an agent tab keeps throwaway storage when no client reported profiles",
     Effect.gen(function* () {
       yield* ready;
       expect(contextRequests).toEqual([{ profileId: "default", isolated: true }]);
+    }),
+  ).pipe(Effect.provide(layer)),
+);
+
+it.live("a desktop page swapped while the server connects is reconnected", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const manager = yield* Manager.PreviewManager;
+      yield* ServerBrowser.ServerBrowser;
+      yield* Effect.yieldNow;
+      desktopRendersNext = true;
+      const gate = Promise.withResolvers<void>();
+      desktopConnectGate = gate;
+      const opened = yield* manager.open({ threadId: scope.thread.threadId, runtime: "server" });
+      while (desktopConnectAttempts.length === 0) yield* Effect.yieldNow;
+      while (desktopDetaches.listenerCount("attach") === 0) yield* Effect.yieldNow;
+      // The webview remounted mid-connect: the old page left and a new one took its place.
+      const key = { threadId: scope.thread.threadId, tabId: opened.tabId };
+      desktopDetaches.emit("detach", key);
+      desktopDetaches.emit("attach", key);
+      yield* Effect.yieldNow;
+      // Leaving ended the connection that was still opening to the old page.
+      gate.reject(new Error("The desktop tab detached."));
+      while (desktopConnections.length === 0) yield* Effect.yieldNow;
+      expect(desktopConnectAttempts).toHaveLength(2);
+    }),
+  ).pipe(Effect.provide(layer)),
+);
+
+it.live("a desktop connection that ends while the desktop still renders the tab reconnects", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const manager = yield* Manager.PreviewManager;
+      yield* ServerBrowser.ServerBrowser;
+      yield* Effect.yieldNow;
+      desktopRendersNext = true;
+      yield* manager.open({ threadId: scope.thread.threadId, runtime: "server" });
+      while (desktopConnections.length === 0) yield* Effect.yieldNow;
+      // The relay socket closed without a detach reaching the server first.
+      yield* Effect.promise(() => desktopConnections[0]!.context.page.close());
+      while (desktopConnections.length < 2) yield* Effect.yieldNow;
+      expect(desktopConnections).toHaveLength(2);
     }),
   ).pipe(Effect.provide(layer)),
 );

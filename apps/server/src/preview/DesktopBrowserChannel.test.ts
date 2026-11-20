@@ -57,3 +57,49 @@ it("receives desktop messages and exits while the parent keeps both input pipes 
     for (const stream of child.stdio) stream?.destroy();
   }
 });
+
+it("releases the desktop relay only for the newest connection to a tab", async () => {
+  const child = NodeChildProcess.spawn(
+    process.execPath,
+    [NodeURL.fileURLToPath(new URL("./testing/DesktopRelayRelease.fixture.ts", import.meta.url))],
+    { stdio: ["ignore", "pipe", "pipe", "pipe", "pipe"] },
+  );
+  // @effect-diagnostics-next-line globalTimers:off -- Bounds the native subprocess on failure; success waits for process exit.
+  const watchdog = setTimeout(() => child.kill("SIGKILL"), 8_000);
+  let output = "";
+  let commands = "";
+  let errors = "";
+  child.stderr?.on("data", (chunk: Buffer) => {
+    errors += chunk.toString();
+  });
+  child.stdio[4]?.on("data", (chunk: Buffer) => {
+    commands += chunk.toString();
+  });
+  child.stdout?.on("data", (chunk: Buffer) => {
+    output += chunk.toString();
+    if (output.startsWith("ready\n")) {
+      output = output.slice("ready\n".length);
+      const input = child.stdio[3];
+      if (!input || !("write" in input)) throw new Error("Missing pipe 3");
+      input.write(
+        `${JSON.stringify({ type: "attached", threadId: "thread-1", tabId: "tab-1" })}\n`,
+      );
+    }
+  });
+  try {
+    const code = await new Promise<number | null>((resolve, reject) => {
+      child.once("error", reject);
+      child.once("close", resolve);
+    });
+    expect(errors).not.toContain("Error");
+    expect(output).toContain("done");
+    expect(code).toBe(0);
+    // The older connection ending must not reset the relay the newer one uses.
+    const releases = commands.split("\n").filter((line) => line.includes('"type":"release"'));
+    expect(releases).toHaveLength(1);
+  } finally {
+    clearTimeout(watchdog);
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    for (const stream of child.stdio) stream?.destroy();
+  }
+});

@@ -956,7 +956,12 @@ const make = Effect.gen(function* () {
     }
     // The desktop owns its page: losing it (window closed, app quitting) keeps
     // the session, which closes only through the manager, so it can reopen.
-    page.on("close", () => dropTab(tab, desktop === null));
+    page.on("close", () => {
+      dropTab(tab, desktop === null);
+      // The connection can end while the desktop still renders the tab, as
+      // when it swapped the page mid-connect. Come back to the page it has now.
+      if (desktop) runFork(reconnectDesktop(tab));
+    });
     page.on("crash", () => dropTab(tab, desktop === null));
     tabs.set(key, tab);
     reportLiveTabs();
@@ -1263,6 +1268,24 @@ const make = Effect.gen(function* () {
     pendingTabs.set(key, opening);
     return opening;
   };
+
+  /**
+   * Connects to the page the desktop renders for a tab, unless it is already
+   * connected. A connection that began before the desktop swapped the page
+   * ends with the old page, so it settles first.
+   */
+  const reconnectDesktop = (key: { readonly threadId: string; readonly tabId: string }) =>
+    Effect.gen(function* () {
+      const id = tabKey(key.threadId, key.tabId);
+      const pending = pendingTabs.get(id);
+      if (pending) yield* Effect.promise(() => pending.then(constVoid, constVoid));
+      if (tabs.has(id) || !(yield* desktopChannel.isAttached(key))) return;
+      const { sessions } = yield* manager.list({ threadId: ThreadId.make(key.threadId) });
+      const snapshot = sessions.find(
+        (session) => session.tabId === key.tabId && session.runtime === "server",
+      );
+      if (snapshot) yield* Effect.promise(() => ensureTab(snapshot).catch(constVoid));
+    }).pipe(Effect.ignore);
 
   const findTab = (caller: Caller, tabId: string) =>
     Effect.gen(function* () {
@@ -2488,19 +2511,7 @@ const make = Effect.gen(function* () {
   // The page came back, for example after its DevTools closed. Reconnect now
   // rather than on the next viewer or agent, or the tab's URL and title stop
   // reaching every client in the meantime.
-  yield* desktopChannel.attached.pipe(
-    Stream.runForEach((key) =>
-      Effect.gen(function* () {
-        if (tabs.has(tabKey(key.threadId, key.tabId))) return;
-        const { sessions } = yield* manager.list({ threadId: ThreadId.make(key.threadId) });
-        const snapshot = sessions.find(
-          (session) => session.tabId === key.tabId && session.runtime === "server",
-        );
-        if (snapshot) yield* Effect.promise(() => ensureTab(snapshot).catch(constVoid));
-      }).pipe(Effect.ignore),
-    ),
-    Effect.forkScoped,
-  );
+  yield* desktopChannel.attached.pipe(Stream.runForEach(reconnectDesktop), Effect.forkScoped);
   yield* Effect.sync(closeIdleAgentTabs).pipe(
     Effect.repeat(Schedule.spaced(IDLE_SWEEP_INTERVAL)),
     Effect.forkScoped,

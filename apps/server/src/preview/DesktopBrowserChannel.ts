@@ -159,8 +159,12 @@ const make = Effect.gen(function* () {
       }
       yield* Effect.addFinalizer(() =>
         Effect.gen(function* () {
-          if (inbound.get(id) === queue) inbound.delete(id);
           yield* Queue.shutdown(queue);
+          // The desktop keys its relay by tab alone. Once a newer connection
+          // to this tab registered, the relay is that connection's, and a late
+          // release would leave it deaf to the page.
+          if (inbound.get(id) !== queue) return;
+          inbound.delete(id);
           yield* command({ type: "release", ...key });
         }),
       );
@@ -173,12 +177,15 @@ const make = Effect.gen(function* () {
             connected = true;
             const writer = yield* socket.writer;
             const reader = yield* socket.reader;
-            yield* Stream.fromQueue(queue).pipe(
-              Stream.runForEach((message) => writer.write(message)),
-              Effect.forkScoped,
-            );
             const decoder = new TextDecoder();
-            return yield* reader.pull.pipe(
+            // The queue shuts down when the tab detaches. Ending the socket
+            // with it disconnects Playwright, so the server drops the tab, or
+            // fails a connection still opening, instead of keeping a page that
+            // never hears from the desktop again.
+            const forward = Stream.fromQueue(queue).pipe(
+              Stream.runForEach((message) => writer.write(message)),
+            );
+            const receive = reader.pull.pipe(
               Effect.flatMap((frames) =>
                 Effect.forEach(
                   frames,
@@ -193,6 +200,7 @@ const make = Effect.gen(function* () {
               ),
               Effect.forever,
             );
+            return yield* Effect.raceFirst(forward, receive);
           }).pipe(Effect.scoped, Effect.ignore),
         )
         .pipe(Effect.forkScoped);
