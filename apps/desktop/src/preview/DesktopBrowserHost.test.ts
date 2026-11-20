@@ -92,6 +92,19 @@ describe("DesktopBrowserHost", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("keeps a newer page attached when the page it replaced closes late", () =>
+    Effect.gen(function* () {
+      const host = yield* DesktopBrowserHost.make;
+      const replaced = makeDebuggee();
+      const current = makeDebuggee();
+      host.attach(key, replaced.tab);
+      host.attach(key, current.tab);
+      host.detach(key, replaced.tab.debugger);
+      // A backend starting now hears the newer page, not a detach.
+      expect(yield* takeEvents(host, 1)).toEqual([{ type: "attached", ...key }]);
+    }),
+  );
+
   it.effect("saves a server tab's download under its CDP guid where the server asked", () =>
     Effect.gen(function* () {
       const host = yield* DesktopBrowserHost.make;

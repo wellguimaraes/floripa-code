@@ -1046,9 +1046,11 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     ]);
     if (control) {
       // The server can only drive a tab while the desktop holds its debugger.
-      if (closedServerTab) browserHost.detach(closedServerTab);
+      if (closedServerTab) browserHost.detach(closedServerTab, control.debugger);
       for (const tab of (yield* SynchronizedRef.get(tabsRef)).values()) {
-        if (tab.webContentsId === webContentsId && tab.serverTab) browserHost.detach(tab.serverTab);
+        if (tab.webContentsId === webContentsId && tab.serverTab) {
+          browserHost.detach(tab.serverTab, control.debugger);
+        }
       }
       yield* Scope.close(control.scope, Exit.void).pipe(Effect.ignore);
     }

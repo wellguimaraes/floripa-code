@@ -77,8 +77,12 @@ export class DesktopBrowserHost extends Context.Service<
     readonly handleCommandLine: (line: string) => Effect.Effect<void>;
     /** Offers a server tab's `<webview>` to the server. */
     readonly attach: (key: DesktopBrowserTabKey, debuggee: DesktopBrowserTabDebugger) => void;
-    /** Withdraws it: closed, swapped, crashed, or devtools needs the debugger. */
-    readonly detach: (key: DesktopBrowserTabKey) => void;
+    /**
+     * Withdraws it: closed, swapped, crashed, or devtools needs the debugger.
+     * Names the debugger that is letting go, so a guest that closes after a
+     * newer one took over the same server tab leaves the newer one attached.
+     */
+    readonly detach: (key: DesktopBrowserTabKey, debuggee: Electron.Debugger) => void;
     /**
      * Whether a server tab's download came from the person at this desktop:
      * the server sent the page no input just before it started.
@@ -156,10 +160,10 @@ export const make = Effect.gen(function* () {
     return true;
   };
 
-  const detach = (key: DesktopBrowserTabKey) => {
+  const withdraw = (key: DesktopBrowserTabKey, debuggee?: Electron.Debugger) => {
     const id = keyOf(key);
     const tab = tabs.get(id);
-    if (!tab) return;
+    if (!tab || (debuggee !== undefined && tab.debuggee.debugger !== debuggee)) return;
     tabs.delete(id);
     tab.debuggee.debugger.off("message", tab.onMessage);
     emit({ type: "detached", ...key });
@@ -168,7 +172,7 @@ export const make = Effect.gen(function* () {
   const attach = (key: DesktopBrowserTabKey, debuggee: DesktopBrowserTabDebugger) => {
     const id = keyOf(key);
     if (tabs.get(id)?.debuggee.webContents === debuggee.webContents) return;
-    detach(key);
+    withdraw(key);
     const tab: AttachedTab = {
       key,
       debuggee,
@@ -238,7 +242,7 @@ export const make = Effect.gen(function* () {
     ).pipe(Stream.map((event) => lineEncoder.encode(`${encodeEvent(event)}\n`))),
     handleCommandLine,
     attach,
-    detach,
+    detach: withdraw,
     placeDownload,
     humanStartedDownload,
   });
