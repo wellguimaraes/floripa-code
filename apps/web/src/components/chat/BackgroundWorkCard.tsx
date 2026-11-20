@@ -9,7 +9,8 @@ import { Spinner } from "../ui/spinner";
 
 /**
  * Background work that outlives the turn, at the end of the timeline: one row per task, and one
- * Stop for all of it. Providers stop background work per thread, not per task.
+ * Stop for all of it. Providers stop background work per thread, not per task. Without
+ * `onOpenThread`, subagent rows are plain labels.
  */
 export function BackgroundWorkCard({
   presentation,
@@ -22,7 +23,7 @@ export function BackgroundWorkCard({
   readonly canStop: boolean;
   readonly stopping: boolean;
   readonly onStop: () => void;
-  readonly onOpenThread: (threadId: ThreadId) => void;
+  readonly onOpenThread?: (threadId: ThreadId) => void;
 }) {
   return (
     <section
@@ -58,7 +59,7 @@ export function BackgroundWorkCard({
                 <span aria-hidden className="flex shrink-0 opacity-60">
                   <Spinner size="sm" aria-hidden />
                 </span>
-                {childThreadId === undefined ? (
+                {childThreadId === undefined || onOpenThread === undefined ? (
                   <span className="min-w-0 truncate">{item.label}</span>
                 ) : (
                   <button

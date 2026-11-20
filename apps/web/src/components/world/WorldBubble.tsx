@@ -34,7 +34,6 @@ import { useTheme } from "../../hooks/useTheme";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { Button, InlineButton } from "../ui/button";
 import { Kbd } from "../ui/kbd";
-import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ProjectFavicon } from "../ProjectFavicon";
 import {
@@ -43,6 +42,7 @@ import {
   useLinkedThreadPullRequest,
 } from "../ThreadStatusIndicators";
 import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "../chat/composerPromptHistory";
+import { BackgroundWorkCard } from "../chat/BackgroundWorkCard";
 import { ComposerBanner } from "../chat/ComposerBanner";
 import { ExpandedImageDialog } from "../chat/ExpandedImageDialog";
 import { expandedImageKey, type ExpandedImagePreview } from "../chat/ExpandedImagePreview";
@@ -736,9 +736,18 @@ export function WorldBubble(props: {
                   />
                 </ComposerBanner.Root>
               ) : null}
+              {/* Work that outlives the turn ends the conversation, as the chat's timeline does. */}
+              {backgroundWork !== null ? (
+                <BackgroundWorkCard
+                  presentation={backgroundWork}
+                  canStop={isStoppable(facts)}
+                  stopping={state.phase === "stopping"}
+                  onStop={() => void stop()}
+                />
+              ) : null}
             </div>
-            {/* Pinned to the rule below while the turn scrolls: what the agent is still running and
-                  what is queued behind it, sitting on the rule, and the way back to the end above. */}
+            {/* Pinned to the rule below while the turn scrolls: what is queued behind the agent,
+                  sitting on the rule, and the way back to the end above. */}
             <div ref={exchangeFooter} className="sticky bottom-0 z-20 shrink-0">
               {awayFromEnd ? (
                 <div className="pointer-events-none absolute inset-x-0 bottom-full mb-2.5 flex justify-center">
@@ -759,38 +768,6 @@ export function WorldBubble(props: {
                     Scroll to end
                   </Button>
                 </div>
-              ) : null}
-              {backgroundWork !== null ? (
-                <ComposerBanner.Root role="status" placement="docked" density="comfortable">
-                  <ComposerBanner.Row>
-                    <ComposerBanner.Icon>
-                      <span className="flex opacity-40" aria-hidden="true">
-                        <Spinner size="xs" />
-                      </span>
-                    </ComposerBanner.Icon>
-                    <ComposerBanner.Content className="whitespace-nowrap">
-                      <span className="min-w-0 truncate font-medium">{backgroundWork.title}</span>
-                      {/* A single item is already named in the title. */}
-                      {backgroundWork.items.length > 1 ? (
-                        <span className="min-w-0 truncate text-muted-foreground">
-                          {backgroundWork.items.map((item) => item.label).join(", ")}
-                        </span>
-                      ) : null}
-                    </ComposerBanner.Content>
-                    {isStoppable(facts) ? (
-                      <ComposerBanner.Actions>
-                        <Button
-                          size="xs"
-                          variant="ghost"
-                          disabled={state.phase === "stopping"}
-                          onClick={() => void stop()}
-                        >
-                          {state.phase === "stopping" ? "Stopping..." : "Stop"}
-                        </Button>
-                      </ComposerBanner.Actions>
-                    ) : null}
-                  </ComposerBanner.Row>
-                </ComposerBanner.Root>
               ) : null}
               {/* Messages waiting behind the agent's current run, on the rule above the text box. */}
               <QueuedRunsControl
