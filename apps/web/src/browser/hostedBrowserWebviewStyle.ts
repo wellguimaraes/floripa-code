@@ -1,4 +1,8 @@
-import type { BrowserSurfaceCornerRadius, BrowserSurfaceRect } from "./browserSurfaceStore";
+import type {
+  BrowserSurfaceClipInset,
+  BrowserSurfaceCornerRadius,
+  BrowserSurfaceRect,
+} from "./browserSurfaceStore";
 
 export interface HostedBrowserWebviewSize {
   readonly width: number;
@@ -13,6 +17,7 @@ export interface HostedBrowserWebviewWrapperStyle {
   readonly zIndex: number;
   readonly pointerEvents: "auto" | "none";
   readonly borderRadius?: BrowserSurfaceCornerRadius;
+  readonly clipPath?: string;
   readonly visibility?: "hidden" | "visible";
 }
 
@@ -23,12 +28,14 @@ export function resolveHostedBrowserWebviewWrapperStyle(input: {
   readonly renderingActive: boolean;
   readonly keepPaintableWhenInactive?: boolean;
   readonly cornerRadius?: BrowserSurfaceCornerRadius;
+  readonly clipInset?: BrowserSurfaceClipInset | null;
   readonly zIndex?: number;
   readonly rect: BrowserSurfaceRect | null;
   readonly hiddenSize: HostedBrowserWebviewSize;
 }): HostedBrowserWebviewWrapperStyle {
   const {
     active,
+    clipInset = null,
     cornerRadius = 0,
     hiddenSize,
     keepPaintableWhenInactive = false,
@@ -45,6 +52,12 @@ export function resolveHostedBrowserWebviewWrapperStyle(input: {
       zIndex,
       pointerEvents: "auto",
       ...(cornerRadius ? { borderRadius: cornerRadius } : {}),
+      // The wrapper floats over the app, so a panel closing over the slot cannot clip it.
+      ...(clipInset
+        ? {
+            clipPath: `inset(${clipInset.top}px ${clipInset.right}px ${clipInset.bottom}px ${clipInset.left}px)`,
+          }
+        : {}),
     };
   }
 

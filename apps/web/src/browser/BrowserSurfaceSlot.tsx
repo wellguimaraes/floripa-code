@@ -2,7 +2,11 @@
 
 import { useLayoutEffect, useRef } from "react";
 
-import { acquireBrowserSurface, type BrowserSurfaceCornerRadius } from "./browserSurfaceStore";
+import {
+  acquireBrowserSurface,
+  type BrowserSurfaceClipInset,
+  type BrowserSurfaceCornerRadius,
+} from "./browserSurfaceStore";
 import { observeResize } from "../lib/observeResize";
 
 const CORNER_TOLERANCE_PX = 1;
@@ -22,6 +26,43 @@ function findRoundedClipAncestor(element: HTMLElement): HTMLElement | null {
     }
   }
   return null;
+}
+
+/** Ancestors that clip their overflow, such as a closing panel's frame. */
+function findClipAncestors(element: HTMLElement): HTMLElement[] {
+  const clips: HTMLElement[] = [];
+  for (let node = element.parentElement; node; node = node.parentElement) {
+    const style = getComputedStyle(node);
+    if (style.overflowX !== "visible" || style.overflowY !== "visible") clips.push(node);
+  }
+  return clips;
+}
+
+/**
+ * What the clipping ancestors cut off the slot. A closing panel shrinks around content that keeps
+ * its width, so the slot keeps its rect while less of it shows; the overlay webview must follow.
+ */
+function clipInsetWithin(
+  clips: ReadonlyArray<HTMLElement>,
+  rect: DOMRect,
+): BrowserSurfaceClipInset | null {
+  let { top, right, bottom, left } = rect;
+  for (const clip of clips) {
+    const bounds = clip.getBoundingClientRect();
+    top = Math.max(top, bounds.top);
+    right = Math.min(right, bounds.right);
+    bottom = Math.min(bottom, bounds.bottom);
+    left = Math.max(left, bounds.left);
+  }
+  const inset = {
+    top: Math.max(0, Math.round(top - rect.top)),
+    right: Math.max(0, Math.round(rect.right - right)),
+    bottom: Math.max(0, Math.round(rect.bottom - bottom)),
+    left: Math.max(0, Math.round(left - rect.left)),
+  };
+  return inset.top === 0 && inset.right === 0 && inset.bottom === 0 && inset.left === 0
+    ? null
+    : inset;
 }
 
 /**
@@ -128,25 +169,20 @@ export function BrowserSurfaceSlot(props: {
     if (!element) return;
     let lease = acquireBrowserSurface(tabId, fitSourceContent);
     const clip = findRoundedClipAncestor(element);
+    const clips = findClipAncestors(element);
     const update = () => {
       const rect = element.getBoundingClientRect();
       const presentation = presentationRef.current;
       const resolvedCornerRadius =
         presentation.cornerRadius ?? (clip ? cornerRadiusWithin(clip, rect) : 0);
-      const presented = lease.present(
-        {
-          x: Math.round(rect.x),
-          y: Math.round(rect.y),
-          width: Math.max(1, Math.round(rect.width)),
-          height: Math.max(1, Math.round(rect.height)),
-        },
-        presentation.visible && rect.width > 0 && rect.height > 0,
-        resolvedCornerRadius,
-        presentation.zIndex,
-      );
-      if (presentation.visible && !presented) {
-        lease.release();
-        lease = acquireBrowserSurface(tabId, fitSourceContent);
+      const clipInset = clipInsetWithin(clips, rect);
+      const shows =
+        rect.width > 0 &&
+        rect.height > 0 &&
+        (clipInset === null ||
+          (clipInset.left + clipInset.right < rect.width &&
+            clipInset.top + clipInset.bottom < rect.height));
+      const present = () =>
         lease.present(
           {
             x: Math.round(rect.x),
@@ -154,10 +190,15 @@ export function BrowserSurfaceSlot(props: {
             width: Math.max(1, Math.round(rect.width)),
             height: Math.max(1, Math.round(rect.height)),
           },
-          rect.width > 0 && rect.height > 0,
+          presentation.visible && shows,
           resolvedCornerRadius,
           presentation.zIndex,
+          clipInset,
         );
+      if (presentation.visible && !present()) {
+        lease.release();
+        lease = acquireBrowserSurface(tabId, fitSourceContent);
+        present();
       }
     };
     updateRef.current = update;

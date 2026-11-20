@@ -44,6 +44,18 @@ describe("resolveHostedBrowserWebviewWrapperStyle", () => {
     });
   });
 
+  it("cuts off the part of the webview a closing panel hides", () => {
+    expect(
+      resolveHostedBrowserWebviewWrapperStyle({
+        active: true,
+        renderingActive: true,
+        clipInset: { top: 0, right: 0, bottom: 0, left: 240 },
+        rect: { x: 12, y: 34, width: 800, height: 600 },
+        hiddenSize: { width: 1280, height: 800 },
+      }),
+    ).toMatchObject({ width: 800, clipPath: "inset(0px 0px 0px 240px)" });
+  });
+
   it("suspends painting for an inactive webview", () => {
     const style = resolveHostedBrowserWebviewWrapperStyle({
       active: false,

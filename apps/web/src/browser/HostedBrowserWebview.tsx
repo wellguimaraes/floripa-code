@@ -95,6 +95,7 @@ export function HostedBrowserWebview(props: {
     useShallow((state) => {
       const current = state.byTabId[runtimeTabId];
       return {
+        clipInset: current?.clipInset ?? null,
         content: current?.content ?? null,
         cornerRadius: current?.cornerRadius ?? 0,
         fitSourceContent: current?.fitSourceContent ?? false,
@@ -307,6 +308,7 @@ export function HostedBrowserWebview(props: {
     // suspend them, and automation continues to see the macOS guests as inactive.
     keepPaintableWhenInactive: isMacPlatform(navigator.platform),
     cornerRadius: presentation.cornerRadius,
+    clipInset: presentation.clipInset,
     zIndex: presentation.zIndex,
     rect: lastRect,
     hiddenSize,
