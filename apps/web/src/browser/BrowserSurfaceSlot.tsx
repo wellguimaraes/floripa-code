@@ -45,6 +45,61 @@ function cornerRadiusWithin(clip: HTMLElement, rect: DOMRect): BrowserSurfaceCor
   return corners.every((corner) => Number.parseFloat(corner) === 0) ? 0 : corners.join(" ");
 }
 
+const GEOMETRY_TRANSITION_PROPERTY =
+  /^(?:translate|transform|scale|inset|top|right|bottom|left|width|height|margin|padding)/;
+
+/**
+ * Re-measures every frame while an ancestor runs a geometry transition. A slide such as the
+ * world's chat frame entering with `translate` moves the slot without resizing anything, so
+ * no ResizeObserver fires and the overlay webview would keep the mid-slide position.
+ */
+function followAncestorTransitions(element: HTMLElement, update: () => void): () => void {
+  const running = new Map<Element, Set<string>>();
+  let frame = 0;
+  const tick = () => {
+    frame = 0;
+    for (const target of running.keys()) {
+      if (!target.isConnected) running.delete(target);
+    }
+    update();
+    if (running.size > 0) frame = window.requestAnimationFrame(tick);
+  };
+  const isAncestorGeometry = (
+    event: TransitionEvent,
+  ): event is TransitionEvent & {
+    target: Element;
+  } =>
+    event.target instanceof Element &&
+    event.target !== element &&
+    event.target.contains(element) &&
+    GEOMETRY_TRANSITION_PROPERTY.test(event.propertyName);
+  const onRun = (event: TransitionEvent) => {
+    if (!isAncestorGeometry(event)) return;
+    const properties = running.get(event.target) ?? new Set<string>();
+    properties.add(event.propertyName);
+    running.set(event.target, properties);
+    if (frame === 0) frame = window.requestAnimationFrame(tick);
+  };
+  const onStop = (event: TransitionEvent) => {
+    if (!isAncestorGeometry(event)) return;
+    const properties = running.get(event.target);
+    properties?.delete(event.propertyName);
+    if (properties?.size === 0) running.delete(event.target);
+    // The final position lands after the last running frame.
+    update();
+  };
+  document.addEventListener("transitionrun", onRun, true);
+  document.addEventListener("transitionend", onStop, true);
+  document.addEventListener("transitioncancel", onStop, true);
+  return () => {
+    document.removeEventListener("transitionrun", onRun, true);
+    document.removeEventListener("transitionend", onStop, true);
+    document.removeEventListener("transitioncancel", onStop, true);
+    if (frame !== 0) window.cancelAnimationFrame(frame);
+    running.clear();
+  };
+}
+
 export function BrowserSurfaceSlot(props: {
   readonly tabId: string;
   readonly visible: boolean;
@@ -117,10 +172,12 @@ export function BrowserSurfaceSlot(props: {
     // still moves on screen. The gap element carries the sidebar's width.
     observed.push(...document.querySelectorAll('[data-slot="sidebar-gap"]'));
     const stopObserving = observeResize(observed, update);
+    const stopFollowingTransitions = followAncestorTransitions(element, update);
     window.addEventListener("resize", update);
     window.addEventListener("scroll", update, true);
     return () => {
       stopObserving();
+      stopFollowingTransitions();
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
       if (updateRef.current === update) updateRef.current = null;
