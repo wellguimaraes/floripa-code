@@ -2253,6 +2253,8 @@ export default function WorldCanvas(props: {
           project={projectRecords.get(restoringOn) ?? null}
           color={islandPlate(restoringOn, islandPrefs[restoringOn])}
           projectRefs={projectMembers.get(restoringOn) ?? []}
+          island={islands.find((island) => island.key === restoringOn)}
+          onMainland={mainland.has(restoringOn)}
           onClose={() => setRestoringOn(null)}
         />
       ) : null}

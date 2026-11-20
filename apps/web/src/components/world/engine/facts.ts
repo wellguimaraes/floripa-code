@@ -325,7 +325,8 @@ function subagentParent(
   return parentId === null ? null : (byId.get(parentId) ?? null);
 }
 
-function lookSeed(
+/** The family a thread's character belongs to: the thread at the top of its subagent chain. */
+export function lookSeed(
   thread: EnvironmentThreadShell,
   byId: ReadonlyMap<string, EnvironmentThreadShell>,
 ): string {

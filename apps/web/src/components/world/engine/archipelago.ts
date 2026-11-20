@@ -288,19 +288,51 @@ function assignDistinct(input: {
   }
   for (const group of groups) {
     if (looks.has(group)) continue;
-    const preferred = hashString(group) % count;
-    let look = preferred;
-    for (let step = 0; step < count; step += 1) {
-      const candidate = (preferred + step) % count;
-      if (!used.has(candidate)) {
-        look = candidate;
-        break;
-      }
-    }
+    const look = freeLook(group, count, used);
     looks.set(group, look);
     used.add(look);
   }
   return looks;
+}
+
+/** The look picked by the group's key, moving to the next free one on a clash. */
+function freeLook(group: string, count: number, used: ReadonlySet<number>): number {
+  const preferred = hashString(group) % count;
+  for (let step = 0; step < count; step += 1) {
+    const candidate = (preferred + step) % count;
+    if (!used.has(candidate)) return candidate;
+  }
+  return preferred;
+}
+
+/**
+ * The colour and hat an archived agent comes back with when restored to the
+ * island, by the rules that dress newcomers: its family's colour or hat when
+ * still on the island, else a pick by hand, else the next free one.
+ */
+export function returningLook(input: {
+  readonly island: Pick<WorldIsland, "hues" | "hats"> | undefined;
+  readonly lookSeed: string;
+  /** Null in the project checkout, and on the mainland, where nobody wears a hat. */
+  readonly worktreePath: string | null;
+  readonly hueCount: number;
+  readonly hatCount: number;
+  readonly chosenHues: Readonly<Record<string, number>>;
+}): { readonly hue: number; readonly hat: number | null } {
+  const hues = input.island?.hues ?? new Map<string, number>();
+  const hats = input.island?.hats ?? new Map<string, number>();
+  const chosen = input.chosenHues[input.lookSeed];
+  const hue =
+    hues.get(input.lookSeed) ??
+    (chosen !== undefined && chosen < input.hueCount
+      ? chosen
+      : freeLook(input.lookSeed, input.hueCount, new Set(hues.values())));
+  const path = input.worktreePath;
+  const hat =
+    path === null || input.hatCount === 0
+      ? null
+      : (hats.get(path) ?? freeLook(path, input.hatCount, new Set(hats.values())));
+  return { hue, hat };
 }
 
 /** The first colour no family on the island wears yet: the default for a new agent there. */

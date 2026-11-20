@@ -1,5 +1,5 @@
-import { Canvas, useThree } from "@react-three/fiber";
-import { Suspense, useLayoutEffect, useRef, useState } from "react";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Box3, type Group, type SkinnedMesh, Vector3 } from "three";
 
 import { cn } from "../../../lib/utils";
@@ -89,6 +89,98 @@ export function HatPortrait(props: { readonly hat: number; readonly className?: 
       </Canvas>
     </div>
   );
+}
+
+/** Each look drawn once, by hue and hat, kept as an image so a list of characters holds no WebGL contexts. */
+const characterImages = new Map<string, string>();
+/** Portraits waiting to draw; only the first holds a canvas, so a long list never runs out of contexts. */
+const drawQueue: Array<() => void> = [];
+
+/** Calls `onTurn` once every portrait queued before it has drawn; the returned function leaves the queue. */
+function awaitTurn(onTurn: () => void): () => void {
+  drawQueue.push(onTurn);
+  if (drawQueue.length === 1) onTurn();
+  return () => {
+    const index = drawQueue.indexOf(onTurn);
+    if (index === -1) return;
+    drawQueue.splice(index, 1);
+    if (index === 0) drawQueue[0]?.();
+  };
+}
+
+/**
+ * `CharacterPortrait` as a still image, for lists: drawn once per look on a
+ * short-lived canvas, one at a time, then shared by every portrait wearing it.
+ */
+export function CharacterImage(props: {
+  readonly hue: number;
+  readonly hat: number | null;
+  readonly className?: string;
+}) {
+  const key = `${props.hue}:${props.hat ?? "bare"}`;
+  const image = characterImages.get(key);
+  // Bumped once this look is drawn, to show the cached image.
+  const [, setDrawn] = useState(0);
+  // Which look this portrait may draw now; a canvas only while it is this one.
+  const [turnFor, setTurnFor] = useState<string | null>(null);
+  useEffect(() => {
+    if (image !== undefined) return;
+    return awaitTurn(() => setTurnFor(key));
+  }, [image, key]);
+  const figure = useRef<Group>(null);
+  if (image !== undefined)
+    return <img src={image} alt="" aria-hidden className={cn("shrink-0", props.className)} />;
+  const shades = palette.families[props.hue] ?? palette.families[0];
+  return (
+    <div aria-hidden className={cn("relative shrink-0", props.className)}>
+      {turnFor === key ? (
+        <Canvas
+          style={{ position: "absolute", inset: 0 }}
+          frameloop="demand"
+          dpr={[1, 2]}
+          gl={{ antialias: true, alpha: true }}
+          orthographic
+          camera={{ position: [0, 0.8, 5], rotation: [0, 0, 0], zoom: 23 }}
+        >
+          <hemisphereLight args={[palette.skyLight, palette.groundLight, 1.7]} />
+          <directionalLight position={[6, 14, 9]} intensity={1.6} />
+          <Suspense fallback={null}>
+            <group ref={figure} rotation-y={-0.4}>
+              <CharacterModel
+                pose="stand"
+                shades={shades}
+                isWalking={notWalking}
+                headItem={props.hat === null ? undefined : <Hat style={props.hat} />}
+              />
+            </group>
+            <FitFigure figure={figure} />
+            <PosedSnapshot
+              onImage={(url) => {
+                characterImages.set(key, url);
+                setDrawn((count) => count + 1);
+              }}
+            />
+          </Suspense>
+        </Canvas>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Hands back the first frame once it has a size. Runs after the character's
+ * own frame callback has posed it, which a bare render outside the loop would skip.
+ */
+function PosedSnapshot(props: { readonly onImage: (url: string) => void }) {
+  const done = useRef(false);
+  useFrame(({ gl, scene, camera, size }) => {
+    if (done.current || size.width === 0 || size.height === 0) return;
+    gl.render(scene, camera);
+    done.current = true;
+    // Read in the same task as the render, before the drawing buffer clears.
+    props.onImage(gl.domElement.toDataURL());
+  }, 1);
+  return null;
 }
 
 /** Draws the scene once it has a size and hands it back as an image. */

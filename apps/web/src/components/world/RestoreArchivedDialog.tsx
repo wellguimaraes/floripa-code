@@ -29,7 +29,14 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group"
 import { Spinner } from "../ui/spinner";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { returningLook, type WorldIsland } from "./engine/archipelago";
+import { lookSeed } from "./engine/facts";
+import { CharacterImage } from "./scene/CharacterPortrait";
+import { HAT_COUNT } from "./scene/Hat";
+import { palette } from "./scene/palette";
 import { signTextColor } from "./scene/Sign";
+import { useWorldHueStore } from "./worldHueStore";
+import { worktreeLabel } from "./worktreeLabel";
 import { WorldProjectPill } from "./WorldProjectPill";
 
 /**
@@ -90,9 +97,13 @@ export function RestoreArchivedDialog(props: {
   readonly color: string;
   /** The projects that share the island. */
   readonly projectRefs: ReadonlyArray<ScopedProjectRef>;
+  /** The island as the world shows it, so each agent wears the look it comes back with. */
+  readonly island: Pick<WorldIsland, "hues" | "hats"> | undefined;
+  /** Mainland agents wear no hats. */
+  readonly onMainland: boolean;
   readonly onClose: () => void;
 }) {
-  const { title, project, color, projectRefs, onClose } = props;
+  const { title, project, color, projectRefs, island, onMainland, onClose } = props;
   const plate = useMemo(() => ({ background: color, text: signTextColor(color) }), [color]);
   const environmentIds = useMemo(
     () => [...new Set(projectRefs.map((ref) => ref.environmentId))] as EnvironmentId[],
@@ -117,6 +128,24 @@ export function RestoreArchivedDialog(props: {
           b.id.localeCompare(a.id),
       );
   }, [snapshots, projectRefs]);
+
+  const chosenHues = useWorldHueStore((state) => state.chosen);
+  const looks = useMemo(() => {
+    const byId = new Map(threads.map((thread) => [thread.id as string, thread]));
+    return new Map(
+      threads.map((thread) => [
+        `${thread.environmentId}:${thread.id}`,
+        returningLook({
+          island,
+          lookSeed: lookSeed(thread, byId),
+          worktreePath: onMainland ? null : thread.worktreePath,
+          hueCount: palette.families.length,
+          hatCount: HAT_COUNT,
+          chosenHues,
+        }),
+      ]),
+    );
+  }, [threads, island, onMainland, chosenHues]);
 
   const [query, setQuery] = useState("");
   const search = useArchivedThreadSearch(projectRefs, query);
@@ -226,12 +255,22 @@ export function RestoreArchivedDialog(props: {
             <ul className="-mx-2 flex flex-col">
               {visible.map(({ thread, snippet }) => {
                 const key = `${thread.environmentId}:${thread.id}`;
+                const look = looks.get(key);
                 return (
                   <li
                     key={key}
                     className="flex items-center gap-3 rounded-md px-2 py-1.5 hover:bg-accent"
                   >
+                    {look !== undefined ? (
+                      <CharacterImage hue={look.hue} hat={look.hat} className="h-10 w-7" />
+                    ) : null}
                     <div className="min-w-0 flex-1">
+                      {/* Mainland agents each get a folder of their own, not a worktree. */}
+                      {onMainland ? null : (
+                        <p className="truncate text-2xs text-muted-foreground/80">
+                          {worktreeLabel(thread)}
+                        </p>
+                      )}
                       <p className="truncate text-sm">{thread.title || "Untitled thread"}</p>
                       {snippet !== null ? (
                         <p className="truncate text-xs text-muted-foreground">{snippet}</p>
