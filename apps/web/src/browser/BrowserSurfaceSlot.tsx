@@ -195,7 +195,9 @@ export function BrowserSurfaceSlot(props: {
           presentation.zIndex,
           clipInset,
         );
-      if (presentation.visible && !present()) {
+      // Present first: a hidden slot must still report itself hidden.
+      const presented = present();
+      if (presentation.visible && !presented) {
         lease.release();
         lease = acquireBrowserSurface(tabId, fitSourceContent);
         present();
