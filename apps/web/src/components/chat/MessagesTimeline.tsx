@@ -302,6 +302,7 @@ import { useOpenPrLink } from "~/lib/openPullRequestLink";
 import { useClientSettings } from "~/hooks/useSettings";
 import type { ChatMarkdownContextReference } from "../ChatMarkdown";
 import { useMediaQuery } from "~/hooks/useMediaQuery";
+import { useHoverIntent } from "~/hooks/useHoverIntent";
 import { cn } from "~/lib/utils";
 import { useUiStateStore } from "~/uiStateStore";
 import { type TimestampFormat } from "@t3tools/contracts/settings";
@@ -2347,25 +2348,25 @@ function TimelineMinimap({
     resolvedCurrentIndex === null ? null : (items[resolvedCurrentIndex - 1] ?? null);
   const nextItem = resolvedCurrentIndex === null ? null : (items[resolvedCurrentIndex + 1] ?? null);
 
-  const resolveActiveIndexFromPointer = useCallback(
-    (event: MouseEvent<HTMLElement>) => {
-      const rect = event.currentTarget.getBoundingClientRect();
+  const railRef = useRef<HTMLButtonElement>(null);
+  const resolveIndexAtPointerY = useCallback(
+    (pointerY: number) => {
+      const rect = railRef.current?.getBoundingClientRect();
+      if (!rect) return null;
       return resolveTimelineMinimapIndexFromPointer({
         itemCount: items.length,
         railTop: rect.top,
         railHeight: rect.height,
-        pointerY: event.clientY,
+        pointerY,
       });
     },
     [items.length],
   );
 
-  const updateActiveIndexFromPointer = useCallback(
-    (event: MouseEvent<HTMLElement>) => {
-      const nextIndex = resolveActiveIndexFromPointer(event);
-      setActiveIndex(nextIndex);
-    },
-    [resolveActiveIndexFromPointer],
+  // The preview and fisheye wait for the pointer to settle on the rail, so sweeping
+  // across it toward the sidebar doesn't flash a preview.
+  const hoverIntent = useHoverIntent((point) =>
+    setActiveIndex(resolveIndexAtPointerY(point.clientY)),
   );
 
   const moveActiveIndex = useCallback(
@@ -2416,13 +2417,14 @@ function TimelineMinimap({
           />
           <button
             aria-label={`Jump to message: ${activeItem?.userText ?? "User message"}`}
+            ref={railRef}
             className="absolute inset-y-0 left-0 w-full cursor-pointer bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
             onBlur={() => setActiveIndex(null)}
             onClick={(event) => {
               if (timelineMinimapEventTargetsPreview(event.target)) {
                 return;
               }
-              const nextIndex = resolveActiveIndexFromPointer(event);
+              const nextIndex = resolveIndexAtPointerY(event.clientY);
               const selectedItem = nextIndex === null ? null : (items[nextIndex] ?? null);
               if (selectedItem) {
                 onSelect(selectedItem);
@@ -2450,8 +2452,15 @@ function TimelineMinimap({
                 }
               }
             }}
-            onMouseLeave={() => setActiveIndex(null)}
-            onMouseMove={updateActiveIndexFromPointer}
+            onMouseLeave={() => {
+              hoverIntent.reset();
+              setActiveIndex(null);
+            }}
+            onMouseMove={(event) => {
+              if (hoverIntent.track(event)) {
+                setActiveIndex(resolveIndexAtPointerY(event.clientY));
+              }
+            }}
             onMouseDown={(event) => {
               if (timelineMinimapEventTargetsPreview(event.target)) {
                 return;
