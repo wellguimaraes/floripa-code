@@ -305,6 +305,35 @@ function freeLook(group: string, count: number, used: ReadonlySet<number>): numb
   return preferred;
 }
 
+/** How a character looks: its family colour (an index into `palette.families`) and its worktree's hat. */
+export interface CharacterLook {
+  readonly hue: number;
+  readonly hat: number | null;
+}
+
+/**
+ * A character's look on its island. Every view of a character reads it from
+ * here (the figure, its ghost, the saucer, the chat header, portraits), so
+ * none of them can disagree on its colour or hat.
+ */
+export function lookOf(
+  island: Pick<WorldIsland, "hues" | "hats"> | undefined,
+  facts: Pick<CharacterFacts, "lookSeed" | "worktreePath">,
+): CharacterLook {
+  return {
+    hue: island?.hues.get(facts.lookSeed) ?? 0,
+    hat: worktreeHat(island, facts.worktreePath),
+  };
+}
+
+/** The hat everyone working in that worktree wears; null in the project checkout and on the mainland. */
+export function worktreeHat(
+  island: Pick<WorldIsland, "hats"> | null | undefined,
+  worktreePath: string | null,
+): number | null {
+  return worktreePath === null ? null : (island?.hats.get(worktreePath) ?? null);
+}
+
 /**
  * The colour and hat an archived agent comes back with when restored to the
  * island, by the rules that dress newcomers: its family's colour or hat when
@@ -318,7 +347,7 @@ export function returningLook(input: {
   readonly hueCount: number;
   readonly hatCount: number;
   readonly chosenHues: Readonly<Record<string, number>>;
-}): { readonly hue: number; readonly hat: number | null } {
+}): CharacterLook {
   const hues = input.island?.hues ?? new Map<string, number>();
   const hats = input.island?.hats ?? new Map<string, number>();
   const chosen = input.chosenHues[input.lookSeed];

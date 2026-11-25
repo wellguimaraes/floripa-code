@@ -57,9 +57,11 @@ import {
   arrangementColumns,
   EMPTY_ARCHIPELAGO_MEMORY,
   islandBounds,
+  lookOf,
   resolveArchipelago,
   suggestHue,
   type WorldIsland,
+  worktreeHat,
 } from "./engine/archipelago";
 import { EMPTY_BEAT_GATE, gateBeats } from "./engine/beats";
 import {
@@ -512,15 +514,7 @@ export default function WorldCanvas(props: {
       const plate = signPlate(islandPlate(island.key, islandPrefs[island.key]));
       for (const { facts: character } of island.characters) {
         families.set(character.key, { island, seed: character.lookSeed });
-        looks.set(character.key, {
-          kid: character.kid,
-          plate,
-          hue: island.hues.get(character.lookSeed) ?? 0,
-          hat:
-            character.worktreePath === null
-              ? null
-              : (island.hats.get(character.worktreePath) ?? null),
-        });
+        looks.set(character.key, { ...lookOf(island, character), kid: character.kid, plate });
       }
     }
     setLooks(looks, (threadKey, hue) => {
@@ -535,9 +529,7 @@ export default function WorldCanvas(props: {
       new Set(
         islands.flatMap((island) =>
           island.characters.flatMap(({ facts: character }) =>
-            character.worktreePath !== null && island.hats.has(character.worktreePath)
-              ? [character.key]
-              : [],
+            lookOf(island, character).hat === null ? [] : [character.key],
           ),
         ),
       ),
@@ -747,18 +739,15 @@ export default function WorldCanvas(props: {
       seen.push(at, at.clone().setY(at.y + FOLLOW_HEIGHT * root.scale.y));
       const island = islands.find((i) => i.characters.includes(character));
       if (island !== undefined) islandKeys.add(island.key);
-      const hue = island?.hues.get(character.facts.lookSeed) ?? 0;
+      const look = lookOf(island, character.facts);
       return [
         {
           key: character.facts.key,
           position: [at.x, at.y, at.z],
           scale: root.scale.y,
           facing: root.rotation.y,
-          shades: palette.families[hue]!,
-          hat:
-            character.facts.worktreePath === null
-              ? null
-              : (island?.hats.get(character.facts.worktreePath) ?? null),
+          shades: palette.families[look.hue]!,
+          hat: look.hat,
         },
       ];
     });
@@ -1939,34 +1928,33 @@ export default function WorldCanvas(props: {
                   ) : null}
                   {island.characters
                     .filter((character) => !abducted.has(character.facts.key))
-                    .map((character) => (
-                      <Character
-                        key={character.facts.key}
-                        character={character}
-                        startAt={landedAt.get(character.facts.key)}
-                        shades={palette.families[island.hues.get(character.facts.lookSeed) ?? 0]!}
-                        hat={
-                          character.facts.worktreePath === null
-                            ? null
-                            : (island.hats.get(character.facts.worktreePath) ?? null)
-                        }
-                        obstacles={islandObstacles(island.definition)}
-                        ground={groundHeight(island.definition)}
-                        surface={surfaceAt(island.definition)}
-                        movement={definition.movement}
-                        selected={
-                          character.facts.key === (bubble?.facts.key ?? ringKey) ||
-                          picked.has(character.facts.key)
-                        }
-                        onSelect={selectCharacter}
-                        onOpen={openChat}
-                        onPick={togglePicked}
-                        onMenu={(target, point) => void showMenu(target, point)}
-                        onRoot={registerRoot}
-                        onHover={onHover}
-                        onGhost={registerGhost}
-                      />
-                    ))}
+                    .map((character) => {
+                      const look = lookOf(island, character.facts);
+                      return (
+                        <Character
+                          key={character.facts.key}
+                          character={character}
+                          startAt={landedAt.get(character.facts.key)}
+                          shades={palette.families[look.hue]!}
+                          hat={look.hat}
+                          obstacles={islandObstacles(island.definition)}
+                          ground={groundHeight(island.definition)}
+                          surface={surfaceAt(island.definition)}
+                          movement={definition.movement}
+                          selected={
+                            character.facts.key === (bubble?.facts.key ?? ringKey) ||
+                            picked.has(character.facts.key)
+                          }
+                          onSelect={selectCharacter}
+                          onOpen={openChat}
+                          onPick={togglePicked}
+                          onMenu={(target, point) => void showMenu(target, point)}
+                          onRoot={registerRoot}
+                          onHover={onHover}
+                          onGhost={registerGhost}
+                        />
+                      );
+                    })}
                 </IslandMotion>
               </FadedContext>
             );
@@ -2006,7 +1994,7 @@ export default function WorldCanvas(props: {
                   <WorldBubble
                     facts={bubble.facts}
                     listen={listenKey === bubble.facts.key}
-                    hue={bubbleIsland?.hues.get(bubble.facts.lookSeed) ?? 0}
+                    hue={lookOf(bubbleIsland, bubble.facts).hue}
                     onHueChange={(hue) => recolorFamily(bubbleIsland, bubble.facts.lookSeed, hue)}
                     onMainland={bubbleIsland !== undefined && mainland.has(bubbleIsland.key)}
                     onClose={() => setBubbleKey(null)}
@@ -2274,7 +2262,10 @@ export default function WorldCanvas(props: {
           staleDays={islandStaleDays(islandPrefs[listOn.key])}
           onOpenSurfaces={(worktree) => void openWorktreeSurfaces(listOn.key, worktree)}
           hatOf={(path) =>
-            islands.find((island) => island.key === listOn.key)?.hats.get(path) ?? null
+            worktreeHat(
+              islands.find((island) => island.key === listOn.key),
+              path,
+            )
           }
           onClose={() => setListOn(null)}
         />
@@ -2288,7 +2279,10 @@ export default function WorldCanvas(props: {
           loading={signStats.get(pullRequestsOn.key)?.pullRequestsLoading ?? false}
           agents={pullRequestAgents}
           hatOf={(path) =>
-            islands.find((island) => island.key === pullRequestsOn.key)?.hats.get(path) ?? null
+            worktreeHat(
+              islands.find((island) => island.key === pullRequestsOn.key),
+              path,
+            )
           }
           onSelect={openIslandPullRequest}
           onClose={() => setPullRequestsOn(null)}

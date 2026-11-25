@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { returningLook } from "./archipelago";
+import { lookOf, returningLook } from "./archipelago";
 import { hashString } from "./hash";
 
 const base = { hueCount: 10, hatCount: 6, chosenHues: {} };
@@ -8,10 +8,10 @@ const base = { hueCount: 10, hatCount: 6, chosenHues: {} };
 describe("returningLook", () => {
   it("wears its family's colour and its worktree's hat while they are on the island", () => {
     const island = { hues: new Map([["parent", 4]]), hats: new Map([["/wt", 2]]) };
-    expect(returningLook({ ...base, island, lookSeed: "parent", worktreePath: "/wt" })).toEqual({
-      hue: 4,
-      hat: 2,
-    });
+    const look = returningLook({ ...base, island, lookSeed: "parent", worktreePath: "/wt" });
+    expect(look).toEqual({ hue: 4, hat: 2 });
+    // The restore list previews exactly what the world will draw.
+    expect(look).toEqual(lookOf(island, { lookSeed: "parent", worktreePath: "/wt" }));
   });
 
   it("keeps a colour picked by hand, even one another family wears", () => {

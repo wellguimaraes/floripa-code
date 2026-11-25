@@ -1,12 +1,9 @@
 import { create } from "zustand";
 
+import type { CharacterLook } from "./engine/archipelago";
 import { palette } from "./scene/palette";
 
-export interface WorldLook {
-  /** Index into `palette.families`. */
-  readonly hue: number;
-  /** The worktree's hat; null in the project checkout. */
-  readonly hat: number | null;
+export interface WorldLook extends CharacterLook {
   /** The island sign's colour, and the text colour that reads on it. */
   readonly plate: { readonly background: string; readonly text: string };
   /** A subagent wears its family's colour, so repainting it repaints the family. */
