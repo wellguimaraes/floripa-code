@@ -100,6 +100,8 @@ export function ManagerBubble(props: {
     readonly key: string;
     readonly ref: ScopedThreadRef;
     readonly hue: number;
+    /** The existing worktree it works in, so it arrives in that worktree's hat; else null. */
+    readonly worktreePath: string | null;
   }) => void;
 }) {
   const { resolvedTheme } = useTheme();
@@ -244,7 +246,12 @@ export function ManagerBubble(props: {
           setup,
         );
         const ref = { environmentId: project.environmentId, threadId };
-        onStarted({ key: scopedThreadKey(ref), ref, hue: suggestedHue });
+        onStarted({
+          key: scopedThreadKey(ref),
+          ref,
+          hue: suggestedHue,
+          worktreePath: pick.workspace.kind === "worktree" ? pick.workspace.path : null,
+        });
       }
       attachments.sent();
       // No receipt: the agent who got it, or the new one walking in, shows it was sent.

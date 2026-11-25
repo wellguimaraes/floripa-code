@@ -768,7 +768,7 @@ export default function WorldCanvas(props: {
   const arrive = (
     island: WorldIsland,
     slotIndex: number,
-    thread: { readonly key: string; readonly hue: number },
+    thread: { readonly key: string; readonly hue: number; readonly worktreePath: string | null },
   ) => {
     const area = island.definition.areas[definition.archipelago.newAgents.area];
     const slot = area?.kind === "fixed" ? area.slots[slotIndex] : undefined;
@@ -791,8 +791,8 @@ export default function WorldCanvas(props: {
             scale: definition.movement.characterScale,
             facing: slot.facing,
             shades: palette.families[thread.hue]!,
-            // Its worktree's hat is not decided until it lands.
-            hat: null,
+            // A new worktree's hat is not decided until it lands; an existing one's already is.
+            hat: worktreeHat(island, thread.worktreePath),
           },
         ],
         arriving: { landed: false, at: slot.position },

@@ -72,7 +72,7 @@ import {
   type WorldAgentSetup,
   type WorldAgentWorkspace,
 } from "./useStartWorldAgent";
-import type { WorldIsland } from "./engine/archipelago";
+import { type WorldIsland, worktreeHat } from "./engine/archipelago";
 import { worktreesByRecency } from "./worktreesByRecency";
 
 const workspaceValue = (workspace: WorldAgentWorkspace) =>
@@ -149,6 +149,8 @@ export function NewAgentBubble(props: {
     readonly key: string;
     readonly ref: ScopedThreadRef;
     readonly hue: number;
+    /** The existing worktree it works in, so it arrives in that worktree's hat; else null. */
+    readonly worktreePath: string | null;
   }) => void;
 }) {
   const { islandName, project, suggestedHue, island, draft, onClose, onLeave, onStarted } = props;
@@ -210,12 +212,13 @@ export function NewAgentBubble(props: {
         sync: null,
         syncing: false,
         workspace: item,
-        hat: island?.hats.get(worktree.path) ?? null,
+        hat: worktreeHat(island, worktree.path),
         agents: agentsIn(worktree.path),
       };
     }),
   ];
   const selectedWorkspace = workspace ?? workspaces.defaultWorkspace;
+  const worktreePath = selectedWorkspace.kind === "worktree" ? selectedWorkspace.path : null;
 
   const providers =
     useServerConfigs().get(project.environmentId)?.providers ?? EMPTY_SERVER_PROVIDERS;
@@ -323,7 +326,7 @@ export function NewAgentBubble(props: {
         useComposerDraftStore.getState().setStickyModelSelection(picked.modelSelection);
       const ref = { environmentId: project.environmentId, threadId };
       started.current = true;
-      onStarted({ key: scopedThreadKey(ref), ref, hue });
+      onStarted({ key: scopedThreadKey(ref), ref, hue, worktreePath });
     } catch (error) {
       setState({
         phase: "error",
@@ -386,7 +389,12 @@ export function NewAgentBubble(props: {
             data-bubble-drag-handle=""
             className="-mx-2.5 flex cursor-grab touch-none items-stretch gap-1.5 border-b border-border px-2.5 pb-3 active:cursor-grabbing"
           >
-            <CharacterHueButton hue={hue} hat={null} onHueChange={setHue} className="w-10" />
+            <CharacterHueButton
+              hue={hue}
+              hat={worktreeHat(island, worktreePath)}
+              onHueChange={setHue}
+              className="w-10"
+            />
             <div className="flex min-w-0 flex-1 flex-col items-start">
               <span className="max-w-full truncate text-base font-medium">Start New Agent</span>
               {workspaces.isRepo && selectedWorkspace.kind === "new-worktree" ? (
