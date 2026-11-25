@@ -97,20 +97,23 @@ export const palette = {
     { light: "#f9a8d4", base: "#ec4899", dark: "#be185d" },
     { light: "#e7e5e4", base: "#78716c", dark: "#44403c" },
   ],
-  /** Worktree hats; see `Hat`. */
+  /**
+   * Worktree hats; see `Hat`. Each hat takes its own hue and lightness so two
+   * worktrees never wear look-alike hats, even as small sidebar icons.
+   */
   hats: {
-    hardHat: "#9a3412",
-    hardHatRidge: "#431407",
-    straw: "#713f12",
-    strawBand: "#292524",
+    hardHat: "#c81e1e",
+    hardHatRidge: "#7f1d1d",
+    straw: "#ceb98d",
+    strawBand: "#44403c",
     topHat: "#111827",
-    topHatBand: "#7f1d1d",
-    beanie: "#1e3a8a",
-    beanieCuff: "#0f172a",
-    party: "#581c87",
-    partyPuff: "#1e1b4b",
-    crown: "#78350f",
-    crownPoints: "#451a03",
+    topHatBand: "#b91c1c",
+    beanie: "#22c55e",
+    beanieCuff: "#15803d",
+    party: "#c026d3",
+    partyPuff: "#f0abfc",
+    crown: "#eab308",
+    crownPoints: "#ca8a04",
   },
   /** One per project, picked by the project's key; the island's plate shows it at the shore. */
   plates: ["#f97316", "#8b5cf6", "#ec4899", "#14b8a6", "#eab308", "#ef4444", "#3b82f6", "#22c55e"],
