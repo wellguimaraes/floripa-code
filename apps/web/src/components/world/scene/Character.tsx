@@ -510,6 +510,7 @@ export function Character(props: {
                 raiseHands={ghost.activityPose === "wave"}
                 reachHand={ghost.fishing}
                 dangleLegs={ghost.ledge}
+                headItem={hat === null ? undefined : <Hat style={hat} />}
                 opacity={GHOST_OPACITY}
               />
             </Suspense>

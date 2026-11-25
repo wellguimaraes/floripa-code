@@ -24,7 +24,7 @@ import type { Pose } from "../definition/types";
 import { keepColors } from "./contrast";
 import { drawSoon, runStepSeconds } from "./frames";
 import { geometry } from "./geometries";
-import { GlowContext, LitMaterial } from "./lighting";
+import { GlowContext, LitMaterial, OpacityContext } from "./lighting";
 import { type FamilyShades, palette } from "./palette";
 
 // KayKit "Rogue" (CC0), trimmed to these clips; see public/world/LICENSE.txt.
@@ -297,7 +297,7 @@ export function CharacterModel(props: {
           quaternion={rig.crown.quaternion}
           scale={rig.crown.scale}
         >
-          {headItem}
+          <OpacityContext value={opacity}>{headItem}</OpacityContext>
           {pose === "dead" ? <DeadEyes ref={deadEyes} face={shades.light} /> : null}
         </group>
       ) : null}

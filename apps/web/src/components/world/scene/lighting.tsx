@@ -38,6 +38,12 @@ export function toFaded(color: string): string {
  * characters glow a little at night, so their colours read in the dark.
  */
 export const GlowContext = createContext(0);
+
+/**
+ * Below 1, lit surfaces are see-through, e.g. the hat on the copy a character leaves
+ * where a walk began. Read once: whether a material is transparent picks its shader.
+ */
+export const OpacityContext = createContext(1);
 /** Characters' glow while the lamps are on, from 18:00 to 07:00. Portraits never glow. */
 const CHARACTER_GLOW = 0.4;
 
@@ -73,6 +79,7 @@ export function LitMaterial(props: {
   const faded = useContext(FadedContext);
   const keepColor = useContext(KeepColorContext);
   const glow = useContext(GlowContext);
+  const opacity = useContext(OpacityContext);
   const color = faded ? toFaded(props.color) : props.color;
   return (
     <meshLambertMaterial
@@ -82,6 +89,7 @@ export function LitMaterial(props: {
       emissiveIntensity={glow}
       flatShading={props.flatShading ?? false}
       side={props.side ?? 0}
+      {...(opacity < 1 ? { transparent: true, opacity } : {})}
     />
   );
 }
