@@ -59,6 +59,9 @@ six worktrees.
 
 The water ripples around an island while an agent on it waits for your answer
 or approval, so you can spot it from far out. It stops as soon as you reply.
+It also ripples for five seconds when an agent finishes its turn and goes to
+rest. Turn that off in **Settings → General → World ripple when an agent
+finishes**.
 
 An agent with subagents has one smaller copy beside it. The copy mines the
 same rock pile on the agent's island, and its title is only the count, such

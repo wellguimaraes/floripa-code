@@ -568,6 +568,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["ask before thread island agent chat shortcut don't ask again"],
   },
   {
+    id: "world-ripple-on-agent-finish",
+    title: "World ripple when an agent finishes",
+    to: "/settings/general",
+    searchTerms: ["island water wave animation done complete turn rest notify"],
+  },
+  {
     id: "delete-confirmation",
     title: "Delete confirmation",
     to: "/settings/general",

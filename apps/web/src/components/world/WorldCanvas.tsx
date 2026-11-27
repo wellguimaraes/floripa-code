@@ -416,6 +416,44 @@ export default function WorldCanvas(props: {
     );
     return () => clearTimeout(timer);
   }, [freshIslands.batch]);
+  // Islands where an agent just finished its turn and went to rest ripple for
+  // FINISH_RIPPLE_MS, by island key, with the stamp of the latest finish there.
+  const rippleOnFinish = useClientSettings((settings) => settings.worldRippleOnAgentFinish);
+  const [finishedIslands, setFinishedIslands] = useState<ReadonlyMap<string, number>>(
+    () => new Map(),
+  );
+  const wasResting = useRef<ReadonlyMap<string, boolean> | null>(null);
+  const finishTimers = useRef(new Set<ReturnType<typeof setTimeout>>());
+  useEffect(() => {
+    const previous = wasResting.current;
+    wasResting.current = new Map(visibleFacts.map((f) => [f.key, isResting(f)]));
+    // Agents seen for the first time, e.g. as an environment connects, did not just finish.
+    if (previous === null || !rippleOnFinish) return;
+    const done = new Set(
+      visibleFacts
+        .filter((f) => !f.kid && isResting(f) && previous.get(f.key) === false)
+        .map((f) => f.projectKey),
+    );
+    if (done.size === 0) return;
+    const stamp = performance.now();
+    setFinishedIslands((current) => {
+      const next = new Map(current);
+      for (const key of done) next.set(key, stamp);
+      return next;
+    });
+    const timer = setTimeout(() => {
+      finishTimers.current.delete(timer);
+      setFinishedIslands((current) => {
+        const next = new Map([...current].filter(([key, at]) => !done.has(key) || at !== stamp));
+        return next.size === current.size ? current : next;
+      });
+    }, FINISH_RIPPLE_MS);
+    finishTimers.current.add(timer);
+  }, [visibleFacts, rippleOnFinish]);
+  useEffect(() => {
+    const timers = finishTimers.current;
+    return () => timers.forEach(clearTimeout);
+  }, []);
   // A new one makes the camera frame every island where they settle.
   // Rising islands come last, once the rest have moved aside.
   const islandLayout = useMemo(
@@ -578,7 +616,11 @@ export default function WorldCanvas(props: {
     0,
     ...islands.flatMap((island) => island.characters.map((c) => c.activity.ambientFps ?? 0)),
     islands.some(
-      (island) => island.ripple || idleAlarmed.has(island.key) || freshIslands.keys.has(island.key),
+      (island) =>
+        island.ripple ||
+        idleAlarmed.has(island.key) ||
+        freshIslands.keys.has(island.key) ||
+        finishedIslands.has(island.key),
     )
       ? definition.archipelago.ripple.fps
       : 0,
@@ -1847,7 +1889,9 @@ export default function WorldCanvas(props: {
                     definition={island.definition}
                     furniture={buildFurniture(island.definition, island.characters)}
                     ripple={
-                      island.ripple || freshIslands.keys.has(island.key)
+                      island.ripple ||
+                      freshIslands.keys.has(island.key) ||
+                      finishedIslands.has(island.key)
                         ? "plain"
                         : idleAlarmed.has(island.key)
                           ? "wavy"
@@ -2531,6 +2575,8 @@ const NO_HATS: ReadonlySet<string> = new Set();
 const NO_KEYS: ReadonlySet<string> = new Set();
 /** How long a just-added project's island ripples. */
 const FRESH_RIPPLE_MS = 2000;
+/** How long an island ripples after one of its agents finishes and goes to rest. */
+const FINISH_RIPPLE_MS = 5000;
 /** How recently a project must have been created for its island to count as just added. */
 const FRESH_PROJECT_MS = 60_000;
 /** Extra height over a hatted head: the tallest hats rise about this far. */

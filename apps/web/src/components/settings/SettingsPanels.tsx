@@ -686,6 +686,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.confirmWorldArchive !== DEFAULT_UNIFIED_SETTINGS.confirmWorldArchive
         ? ["World archive confirmation"]
         : []),
+      ...(settings.worldRippleOnAgentFinish !== DEFAULT_UNIFIED_SETTINGS.worldRippleOnAgentFinish
+        ? ["World ripple when an agent finishes"]
+        : []),
       ...(settings.confirmThreadDelete !== DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete
         ? ["Delete confirmation"]
         : []),
@@ -719,6 +722,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.confirmQuit,
       settings.confirmThreadArchive,
       settings.confirmWorldArchive,
+      settings.worldRippleOnAgentFinish,
       settings.confirmThreadDelete,
       settings.confirmThreadUnpin,
       settings.composerChipAttachmentRemoval,
@@ -883,6 +887,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
       confirmThreadArchive: DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive,
       confirmWorldArchive: DEFAULT_UNIFIED_SETTINGS.confirmWorldArchive,
+      worldRippleOnAgentFinish: DEFAULT_UNIFIED_SETTINGS.worldRippleOnAgentFinish,
       confirmThreadDelete: DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete,
       confirmThreadUnpin: DEFAULT_UNIFIED_SETTINGS.confirmThreadUnpin,
       confirmQuit: DEFAULT_UNIFIED_SETTINGS.confirmQuit,
@@ -3449,6 +3454,33 @@ export function GeneralSettingsPanel() {
                 updateSettings({ confirmWorldArchive: Boolean(checked) })
               }
               aria-label="Confirm world archiving"
+            />
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("world-ripple-on-agent-finish")}
+          description="Ripple the water around an island for a few seconds when one of its agents finishes and goes to rest."
+          resetAction={
+            settings.worldRippleOnAgentFinish !==
+            DEFAULT_UNIFIED_SETTINGS.worldRippleOnAgentFinish ? (
+              <SettingResetButton
+                label="world ripple when an agent finishes"
+                onClick={() =>
+                  updateSettings({
+                    worldRippleOnAgentFinish: DEFAULT_UNIFIED_SETTINGS.worldRippleOnAgentFinish,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.worldRippleOnAgentFinish}
+              onCheckedChange={(checked) =>
+                updateSettings({ worldRippleOnAgentFinish: Boolean(checked) })
+              }
+              aria-label="Ripple the island when an agent finishes"
             />
           }
         />
