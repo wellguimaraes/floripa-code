@@ -193,10 +193,7 @@ import {
   buildExpandedImagePreview,
   ExpandedImagePreview,
 } from "./ExpandedImagePreview";
-import {
-  SNAP_SHOT_ATTACHMENT_FRAME_CLASS,
-  SnapShotAttachmentDetails,
-} from "./SnapShotAttachmentDetails";
+import { MESSAGE_IMAGE_GRID_MAX, MessageImageStack, UserImageThumbnail } from "./MessageImages";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { HtmlRenderFrame } from "./HtmlRenderFrame";
 import { McpAppFrame } from "./McpAppFrame";
@@ -2825,49 +2822,6 @@ export function useMessageWithImagePreviews<M extends Pick<ChatMessage, "attachm
   }, [previewUrls, projectPreviews, resources, message]);
 }
 
-/** A sent image in a message's media grid; opens the full picture among `images`. */
-export function UserImageThumbnail({
-  image,
-  images,
-  onImageExpand,
-}: {
-  image: ChatImageAttachment;
-  images: ReadonlyArray<ChatImageAttachment>;
-  onImageExpand: (preview: ExpandedImagePreview) => void;
-}) {
-  return (
-    <div
-      className={cn(
-        "bg-background/70",
-        image.source?.kind === "snap-shot" && image.previewUrl
-          ? cn(SNAP_SHOT_ATTACHMENT_FRAME_CLASS, "col-span-2")
-          : "aspect-[4/3] overflow-hidden rounded-lg border border-border/80",
-      )}
-    >
-      {image.previewUrl ? (
-        <button
-          type="button"
-          className="block h-full w-full cursor-zoom-in"
-          aria-label={`Preview ${image.name}`}
-          onClick={() => {
-            const preview = buildExpandedImagePreview(images, image.id);
-            if (preview) onImageExpand(preview);
-          }}
-        >
-          <img src={image.previewUrl} alt={image.name} className="block size-full object-cover" />
-        </button>
-      ) : (
-        <div className="flex min-h-[72px] items-center justify-center px-2 py-3 text-center text-2xs text-muted-foreground/70">
-          {image.name}
-        </div>
-      )}
-      {image.previewUrl && image.source?.kind === "snap-shot" ? (
-        <SnapShotAttachmentDetails source={image.source} />
-      ) : null}
-    </div>
-  );
-}
-
 function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
   const item = row.projectedItem?.item;
@@ -2944,6 +2898,7 @@ function UserMessageContent({ row }: { row: Extract<TimelineRow, { kind: "messag
   );
   const regularImages = userImages.filter((image) => !image.name.startsWith("preview-annotation-"));
   const unchippedFiles = otherUserFiles.filter((file) => !chippedAttachmentIds.has(file.id));
+  const stackImages = regularImages.length > MESSAGE_IMAGE_GRID_MAX;
   const annotationRecordIds = useMemo(
     () =>
       resolvedContext.records
@@ -3097,9 +3052,12 @@ function UserMessageContent({ row }: { row: Extract<TimelineRow, { kind: "messag
             )}
           >
             <MessageAuthorHeading>You</MessageAuthorHeading>
-            {(regularImages.length > 0 || userVideos.length > 0) && (
+            {stackImages ? (
+              <MessageImageStack images={regularImages} onImageExpand={ctx.onImageExpand} />
+            ) : null}
+            {((!stackImages && regularImages.length > 0) || userVideos.length > 0) && (
               <div className="mb-2 grid max-w-[210px] grid-cols-2 gap-2">
-                {regularImages.map((image) => (
+                {(stackImages ? [] : regularImages).map((image) => (
                   <UserImageThumbnail
                     key={image.id}
                     image={image}

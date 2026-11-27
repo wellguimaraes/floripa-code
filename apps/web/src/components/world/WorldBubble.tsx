@@ -45,11 +45,15 @@ import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "../chat/composerPromptHistory"
 import { BackgroundWorkCard } from "../chat/BackgroundWorkCard";
 import { ComposerBanner } from "../chat/ComposerBanner";
 import { ExpandedImageDialog } from "../chat/ExpandedImageDialog";
+import {
+  MESSAGE_IMAGE_GRID_MAX,
+  MessageImageStack,
+  UserImageThumbnail,
+} from "../chat/MessageImages";
 import { expandedImageKey, type ExpandedImagePreview } from "../chat/ExpandedImagePreview";
 import {
   ClampedUserMessage,
   type UserMessageChipState,
-  UserImageThumbnail,
   UserMessageActions,
   useMessageWithImagePreviews,
 } from "../chat/MessagesTimeline";
@@ -848,7 +852,9 @@ function ExchangePin(props: {
         {/* A long message stays a pin, not a wall over the reply. */}
         <div className={cn(expanded && "max-h-64 overflow-y-auto")}>
           <RollingSwap swapKey={message.id}>
-            {images.length > 0 ? (
+            {images.length > MESSAGE_IMAGE_GRID_MAX ? (
+              <MessageImageStack images={images} onImageExpand={setExpandedImage} />
+            ) : images.length > 0 ? (
               <div className="mb-2 grid max-w-[210px] grid-cols-2 gap-2 last:mb-0">
                 {images.map((image) => (
                   <UserImageThumbnail
