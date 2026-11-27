@@ -18,7 +18,7 @@ import {
   type PreviewAdjustInput,
 } from "@t3tools/contracts";
 import { normalizePreviewUrl, resolveAddressBarInput } from "@t3tools/shared/preview";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   BROWSER_HISTORY_MAX_ENTRIES_PER_PROJECT,
@@ -166,6 +166,10 @@ export function PreviewView({
   const recentHistoryEntries = useThreadRecentHistory(
     threadRef,
     BROWSER_HISTORY_MAX_ENTRIES_PER_PROJECT,
+  );
+  const recentHistoryUrls = useMemo(
+    () => recentHistoryEntries.map((entry) => entry.url),
+    [recentHistoryEntries],
   );
   const miniPlayerTabId = usePreviewMiniPlayerStore((state) =>
     selectThreadPreviewMiniPlayerTabId(state.byThreadKey, threadRef),
@@ -984,6 +988,7 @@ export function PreviewView({
         onForward={handleForward}
         onRefresh={handleRefresh}
         onSubmit={(next) => void handleSubmitUrl(next)}
+        historyUrls={recentHistoryUrls}
         onOpenInBrowser={tabId ? handleOpenInBrowser : undefined}
         // Capture, annotation, and the more menu drive the desktop webview, so
         // server tabs leave them out. Floating works for both.

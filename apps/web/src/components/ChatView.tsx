@@ -346,6 +346,7 @@ import {
 } from "~/projectScripts";
 import { newDraftId, newMessageId, newThreadId } from "~/lib/utils";
 import { registerFaviconProjectForThread } from "~/browserFaviconStore";
+import { useBrowserHistoryStore } from "~/browserHistoryStore";
 import { getProviderModelCapabilities } from "../providerModels";
 import {
   applyProviderInstanceSettings,
@@ -2298,7 +2299,7 @@ export default function ChatView(props: ChatViewProps) {
   // The header leads with the same project label the sidebar shows, since the
   // project's own title is often just its folder name.
   const { sidebarProjectGroupingMode, sidebarProjectGroupingOverrides } = settings;
-  const activeProjectGroupLabel = useMemo(() => {
+  const activeProjectGroup = useMemo(() => {
     if (!activeProject) return null;
     const group = buildProjectGroups({
       projects: allProjects,
@@ -2310,7 +2311,7 @@ export default function ChatView(props: ChatViewProps) {
           ref.environmentId === activeProject.environmentId && ref.projectId === activeProject.id,
       ),
     );
-    return group?.label ?? null;
+    return group ?? null;
   }, [
     activeProject,
     allProjects,
@@ -2318,10 +2319,21 @@ export default function ChatView(props: ChatViewProps) {
     sidebarProjectGroupingMode,
     sidebarProjectGroupingOverrides,
   ]);
+  const activeProjectGroupLabel = activeProjectGroup?.label ?? null;
   useEffect(() => {
     if (!activeThreadRef || !activeProjectRef) return;
     registerFaviconProjectForThread(activeThreadRef, activeProjectRef);
   }, [activeProjectRef, activeThreadRef]);
+  // Browser history is keyed by the sidebar's project row, so recents follow
+  // the grouping the user sees. Wait for settings so a default grouping never
+  // files visits under a key the user's grouping would not produce.
+  const browserHistoryProjectKey = activeProjectGroup?.key ?? null;
+  useEffect(() => {
+    if (!clientSettingsHydrated || !activeThreadRef || !browserHistoryProjectKey) return;
+    useBrowserHistoryStore
+      .getState()
+      .registerThreadProject(activeThreadRef, browserHistoryProjectKey);
+  }, [activeThreadRef, browserHistoryProjectKey, clientSettingsHydrated]);
   const activeEnvironment =
     activeThread == null ? null : (environmentById.get(activeThread.environmentId) ?? null);
   const activeEnvironmentConnectionPhase = activeEnvironment?.connection.phase ?? "available";

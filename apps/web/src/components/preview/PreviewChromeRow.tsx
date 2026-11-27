@@ -12,6 +12,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -20,6 +21,8 @@ import { Button } from "~/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/input-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";
+
+import { type AddressBarCompletion, findAddressBarCompletion } from "./addressBarCompletion";
 
 interface Props {
   url: string;
@@ -34,6 +37,8 @@ interface Props {
   onForward: () => void;
   onRefresh: () => void;
   onSubmit: (url: string) => void;
+  /** Visited URLs, most recent first, used to complete what the user types. */
+  historyUrls?: ReadonlyArray<string> | undefined;
   /** When provided, renders an "Open in browser" affordance to the right. */
   onOpenInBrowser?: (() => void) | undefined;
   onCapture?: ((record: boolean) => void) | undefined;
@@ -78,6 +83,7 @@ export function PreviewChromeRow({
   onForward,
   onRefresh,
   onSubmit,
+  historyUrls,
   onOpenInBrowser,
   onCapture,
   captureDisabled,
@@ -95,6 +101,14 @@ export function PreviewChromeRow({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [draft, setDraft] = useState(url);
   const [inputFocused, setInputFocused] = useState(false);
+  const [completion, setCompletion] = useState<AddressBarCompletion | null>(null);
+
+  // Selects the suggested remainder once React has written the completed value.
+  useLayoutEffect(() => {
+    const node = inputRef.current;
+    if (!completion || !node || node.value !== completion.text) return;
+    node.setSelectionRange(completion.typed.length, completion.text.length);
+  }, [completion]);
 
   useEffect(() => {
     if (focusUrlNonce == null) return;
@@ -105,7 +119,8 @@ export function PreviewChromeRow({
 
   const submit = (event?: FormEvent | KeyboardEvent) => {
     event?.preventDefault();
-    const next = draft.trim();
+    const next = completion && draft === completion.text ? completion.url : draft.trim();
+    setCompletion(null);
     if (next.length === 0) return;
     onSubmit(next);
     inputRef.current?.blur();
@@ -181,19 +196,38 @@ export function PreviewChromeRow({
                 <InputGroupInput
                   ref={inputRef}
                   value={inputFocused ? draft : url}
-                  onChange={(event) => setDraft(event.target.value)}
+                  onChange={(event) => {
+                    const typed = event.target.value;
+                    // Only plain typing completes, so deleting the suggestion sticks.
+                    const isTyping =
+                      (event.nativeEvent as InputEvent).inputType === "insertText" &&
+                      event.target.selectionEnd === typed.length;
+                    const next = isTyping
+                      ? findAddressBarCompletion(historyUrls ?? [], typed)
+                      : null;
+                    setCompletion(next);
+                    setDraft(next?.text ?? typed);
+                  }}
                   onFocus={() => {
                     setDraft(url);
+                    setCompletion(null);
                     setInputFocused(true);
                     queueMicrotask(() => inputRef.current?.select());
                   }}
                   onBlur={() => {
                     setInputFocused(false);
+                    setCompletion(null);
                   }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") submit(event);
                     if (event.key === "Escape") {
                       event.preventDefault();
+                      // First Escape drops the suggestion, the next restores the page URL.
+                      if (completion && draft === completion.text) {
+                        setDraft(completion.typed);
+                        setCompletion(null);
+                        return;
+                      }
                       setDraft(url);
                       inputRef.current?.blur();
                     }
